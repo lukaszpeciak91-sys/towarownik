@@ -19,4 +19,13 @@ The following decisions are approved for V0.1:
 - Use neutral Towarownik branding with no retailer branding.
 - Validate through local APK testing first, followed by Google Play Internal Testing.
 
-These decisions describe intended product behavior. The bootstrap does not implement search, networking, parsing, store availability, or final UI behavior.
+These decisions describe the broader intended product behavior. The currently implemented subset is recorded below.
+
+## OBI product lookup core v0.1
+
+- The first implemented lookup accepts only a seven-digit OBIK. EAN and name search remain future work.
+- Store `075` is selected through OBI's store-change endpoint, using one cookie-preserving OkHttp session through its redirect to `/p/{OBIK}`.
+- The selected-store Nuxt payload is authoritative for `stock` and `pricing.grossPrice`. Online price and shipping cost are not substitutes for local gross price.
+- Confirmed numeric stock `0` means zero. Missing, negative, or malformed stock means unknown and must not be converted to zero.
+- Missing local price remains unknown. Retrieval and required product-identity failures produce an unavailable result rather than invented data.
+- No generic retailer abstraction is introduced; transport and structured parsing are OBI-specific and remain outside Compose.

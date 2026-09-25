@@ -2,19 +2,20 @@
 
 ## Current phase
 
-**V0.1 — Android bootstrap**
+**V0.1 — OBI product lookup core**
 
-The native Android project, Gradle 9.5.0 wrapper, Android Gradle Plugin 9.3.0, Kotlin Compose plugin 2.3.21, placeholder launch screen, basic unit-test setup, and wrapper-based continuous-integration configuration are established. No OBI integration or product behavior is implemented.
+The native Android bootstrap is established. The first data capability now validates a seven-digit OBIK, selects OBI Nowy Sącz store `075` in a cookie-preserving HTTP session, follows the product redirect, and structurally parses matching product identity, exact local stock, local gross price, canonical URL, and EAN when available. Deterministic text fixtures cover positive, zero, missing, misleading-price, malformed, and identity cases. Product UI is not implemented.
 
 ## Next implementation milestone
 
-**OBI HTTP session + product/store payload parser**
+**Product lookup presentation**
 
-Implement transport and parsing as isolated, tested components. The work must define honest retrieval and parsing failure behavior and must not couple OBI-specific payload details to Compose UI.
+Connect repository results to a small responsive Compose flow in a future focused change, without exposing OBI page structure to UI.
 
 ## Not started
 
-- Search input and OBIK/EAN/name detection
+- Search input and lookup presentation
+- EAN/name detection and search
 - Product and text-search result presentation
 - Local and nearby-store availability behavior
 - External product-link behavior
