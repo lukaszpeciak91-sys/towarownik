@@ -63,6 +63,7 @@ class ObiDiagnosticNetworkInterceptor(
     private fun sanitizeInfrastructureValue(value: String): String =
         value
             .replace(IPV4, "[redacted-ip]")
+            .replace(IPV6, "[redacted-ip]")
             .take(MAX_INFRASTRUCTURE_VALUE_LENGTH)
 
     private companion object {
@@ -76,6 +77,7 @@ class ObiDiagnosticNetworkInterceptor(
             "Age",
         )
         val IPV4 = Regex("""\b(?:\d{1,3}\.){3}\d{1,3}\b""")
+        val IPV6 = Regex("""(?i)\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b""")
         const val MAX_INFRASTRUCTURE_VALUE_LENGTH = 200
     }
 }
