@@ -29,18 +29,16 @@ class ObiSearchParser(
 
             val pageText = html.plainText()
             val allProductLinks = PRODUCT_LINK.findAll(html).toList()
-            val diagnosticCandidates = linkedSetOf<String>()
-            allProductLinks.forEach { match ->
-                val href = match.groupValues[2]
-                PRODUCT_PATH.find(href)?.groupValues?.get(1)?.let(diagnosticCandidates::add)
+            val diagnosticCandidateLinks = allProductLinks.mapNotNull { match ->
+                PRODUCT_PATH.find(match.groupValues[2])?.groupValues?.get(1)
             }
             diagnostics.parserStage(
                 diagnosticId,
-                "CANDIDATE_LINK_COUNT=${diagnosticCandidates.size}",
+                "CANDIDATE_LINK_COUNT=${diagnosticCandidateLinks.size}",
             )
             diagnostics.parserStage(
                 diagnosticId,
-                "CANDIDATE_COUNT_AFTER_DEDUPE=${diagnosticCandidates.size}",
+                "CANDIDATE_COUNT_AFTER_DEDUPE=${diagnosticCandidateLinks.distinct().size}",
             )
 
             val zeroResultRule = zeroResultRule(pageText)
