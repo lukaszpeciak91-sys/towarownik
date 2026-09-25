@@ -39,3 +39,14 @@ These decisions describe the broader intended product behavior. The currently im
 - A single EAN candidate may proceed directly only when the fetched product payload confirms the queried EAN.
 - Selecting any candidate uses the existing store `075` product lookup for exact local stock and local price.
 - Search parser uncertainty is a data failure, not a not-found guess.
+
+
+## In-app OBI diagnostics v0.1
+
+- Diagnostics are temporary engineering infrastructure and are OFF by default.
+- The diagnostics screen is opened by long-pressing the Towarownik title; no permanent diagnostic action is added to the normal search UI.
+- Diagnostic history is in-memory only and bounded to the last 10 OBI operations.
+- The report may include public request URLs, redirect statuses, safe response metadata, parser stages, and error mappings.
+- Cookie and Set-Cookie values, full response bodies, tokens, device identifiers, account data, IP addresses, and precise location must never be included.
+- Diagnostic instrumentation must not modify OBI request URLs, request headers, redirect following, cookie/session behavior, parser rules, or not-found semantics.
+- Deterministic CI is not evidence that the live OBI contract still matches fixtures; live phone diagnostics are required before revising integration assumptions.
