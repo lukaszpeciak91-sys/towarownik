@@ -1,10 +1,10 @@
 # Towarownik
 
-Towarownik is a small native Android utility for fast retail product lookup. The V0.1 core can retrieve and parse an OBI product by its seven-digit OBIK; the app still shows a placeholder screen because product UI is outside this milestone.
+Towarownik is a small native Android utility for fast retail product lookup. The V0.1 device POC can accept a seven-digit OBIK, retrieve and parse the OBI product for store 075, and present the local result in a minimal Compose screen.
 
 ## Project status
 
-The current phase is **V0.1 — OBI product lookup core**. See [the progress log](docs/progress.md) for the next milestone and [the decision record](docs/decisions.md) for the approved scope.
+The current phase is **V0.1 — OBIK lookup device POC**. See [the progress log](docs/progress.md) for the next milestone and [the decision record](docs/decisions.md) for the approved scope.
 
 ## Technology
 
@@ -21,6 +21,7 @@ The current phase is **V0.1 — OBI product lookup core**. See [the progress log
 - Activity Compose: 1.13.0
 - OkHttp: 4.12.0
 - kotlinx.serialization JSON: 1.9.0
+- Kotlin coroutines: 1.10.2
 
 ## Local bootstrap and build
 
@@ -34,7 +35,7 @@ The debug APK is generated under `app/build/outputs/apk/debug/` and must not be 
 
 ## Scope boundaries
 
-This milestone intentionally has no EAN or text search, barcode or OCR support, persistence, dependency injection, navigation framework, analytics, accounts, ads, product images, Firebase, or AI. Dependencies and capabilities must only be introduced with a concrete requirement.
+This milestone intentionally supports OBIK lookup only. It has no EAN or text search, multiple results, nearby-store fallback, barcode or OCR support, persistence, dependency injection, navigation framework, analytics, accounts, ads, product images, Firebase, or AI. Dependencies and capabilities must only be introduced with a concrete requirement.
 
 ## Documentation
 
