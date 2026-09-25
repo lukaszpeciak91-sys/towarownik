@@ -45,8 +45,25 @@ class ObiHttpClient(
             .addQueryParameter("storeNumber", storeNumber)
             .addQueryParameter("redirectUrl", "/p/$obik")
             .build()
-        val request = Request.Builder().url(selectionUrl).get().build()
+        return execute(
+            Request.Builder().url(selectionUrl).get().build(),
+            emptyReason = "OBI returned an empty product page",
+        )
+    }
 
+    fun fetchSearch(query: String): ObiHttpResult {
+        val searchUrl = baseUrl.newBuilder()
+            .addPathSegment("search")
+            .addPathSegment(query)
+            .addPathSegment("")
+            .build()
+        return execute(
+            Request.Builder().url(searchUrl).get().build(),
+            emptyReason = "OBI returned an empty search page",
+        )
+    }
+
+    private fun execute(request: Request, emptyReason: String): ObiHttpResult {
         return try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -59,7 +76,7 @@ class ObiHttpClient(
                 } else {
                     val body = response.body?.string()
                     if (body.isNullOrBlank()) {
-                        ObiHttpResult.Failure(ObiHttpFailureKind.DATA, "OBI returned an empty product page")
+                        ObiHttpResult.Failure(ObiHttpFailureKind.DATA, emptyReason)
                     } else {
                         ObiHttpResult.Success(body)
                     }
