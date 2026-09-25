@@ -14,10 +14,19 @@ data class LocalProduct(
     val storeNumber: String = NOWY_SACZ_STORE_NUMBER,
 )
 
+enum class ProductLookupFailure {
+    NETWORK,
+    NOT_FOUND,
+    DATA,
+}
+
 sealed interface ProductLookupResult {
     data class Found(val product: LocalProduct) : ProductLookupResult
     data class InvalidObik(val input: String) : ProductLookupResult
-    data class Unavailable(val reason: String) : ProductLookupResult
+    data class Unavailable(
+        val failure: ProductLookupFailure,
+        internal val reason: String,
+    ) : ProductLookupResult
 }
 
 class ProductLookupRepository(
@@ -31,9 +40,28 @@ class ProductLookupRepository(
             is ObiHttpResult.Success -> parser.parse(response.html, obik, NOWY_SACZ_STORE_NUMBER)
                 .fold(
                     onSuccess = { ProductLookupResult.Found(it) },
-                    onFailure = { ProductLookupResult.Unavailable(it.message ?: "OBI payload could not be parsed") },
+                    onFailure = { exception ->
+                        val failure = if (exception is ObiProductNotFoundException) {
+                            ProductLookupFailure.NOT_FOUND
+                        } else {
+                            ProductLookupFailure.DATA
+                        }
+                        ProductLookupResult.Unavailable(
+                            failure = failure,
+                            reason = exception.message ?: "OBI payload could not be parsed",
+                        )
+                    },
                 )
-            is ObiHttpResult.Failure -> ProductLookupResult.Unavailable(response.reason)
+            is ObiHttpResult.Failure -> ProductLookupResult.Unavailable(
+                failure = when (response.kind) {
+                    ObiHttpFailureKind.TRANSPORT,
+                    ObiHttpFailureKind.SERVER,
+                    -> ProductLookupFailure.NETWORK
+                    ObiHttpFailureKind.NOT_FOUND -> ProductLookupFailure.NOT_FOUND
+                    ObiHttpFailureKind.DATA -> ProductLookupFailure.DATA
+                },
+                reason = response.reason,
+            )
         }
     }
 
