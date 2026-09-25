@@ -1,5 +1,8 @@
 package pl.lukaszpeciak.towarownik.product
 
+private const val OBIK_LENGTH = 7
+private val EAN_LENGTHS = setOf(8, 12, 13, 14)
+
 sealed interface ProductSearchInput {
     data class Obik(val value: String) : ProductSearchInput
     data class Ean(val value: String) : ProductSearchInput
@@ -75,8 +78,4 @@ class ProductSearchRepository(
         }
     }
 
-    private companion object {
-        const val OBIK_LENGTH = 7
-        val EAN_LENGTHS = setOf(8, 12, 13, 14)
-    }
 }
