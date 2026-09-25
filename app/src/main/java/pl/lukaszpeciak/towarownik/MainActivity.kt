@@ -1,9 +1,11 @@
 package pl.lukaszpeciak.towarownik
 
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,23 +37,47 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
+import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.ui.theme.TowarownikTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        configureDiagnosticsContext()
         setContent {
             TowarownikTheme {
                 TowarownikApp()
             }
         }
+    }
+
+    private fun configureDiagnosticsContext() {
+        val packageInfo = packageManager.getPackageInfo(packageName, 0)
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode.toLong()
+        }
+        ObiDiagnostics.recorder.configureDeviceContext(
+            DiagnosticDeviceContext(
+                versionName = packageInfo.versionName ?: "unknown",
+                versionCode = versionCode,
+                androidVersion = Build.VERSION.RELEASE,
+                apiLevel = Build.VERSION.SDK_INT,
+                manufacturer = Build.MANUFACTURER,
+                model = Build.MODEL,
+            ),
+        )
     }
 }
 
@@ -59,6 +85,7 @@ class MainActivity : ComponentActivity() {
 private fun TowarownikApp() {
     val controller = remember { ProductSearchController() }
     val scope = rememberCoroutineScope()
+    var diagnosticsOpen by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var uiState by remember { mutableStateOf<ProductSearchUiState>(ProductSearchUiState.Idle) }
     var lookupJob by remember { mutableStateOf<Job?>(null) }
@@ -88,6 +115,13 @@ private fun TowarownikApp() {
         }
     }
 
+    if (diagnosticsOpen) {
+        ObiDiagnosticsScreen(
+            onBack = { diagnosticsOpen = false },
+        )
+        return
+    }
+
     TowarownikScreen(
         query = query,
         state = uiState,
@@ -100,6 +134,7 @@ private fun TowarownikApp() {
         onSearch = ::submitLookup,
         onSelectResult = ::selectResult,
         onClear = ::resetLookup,
+        onOpenDiagnostics = { diagnosticsOpen = true },
     )
 }
 
@@ -111,6 +146,7 @@ private fun TowarownikScreen(
     onSearch: () -> Unit,
     onSelectResult: (SearchResultItem) -> Unit,
     onClear: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
 ) {
     val isLoading = state is ProductSearchUiState.Loading
 
@@ -131,6 +167,11 @@ private fun TowarownikScreen(
             ) {
                 Text(
                     text = "Towarownik",
+                    modifier = Modifier.pointerInput(onOpenDiagnostics) {
+                        detectTapGestures(
+                            onLongPress = { onOpenDiagnostics() },
+                        )
+                    },
                     style = MaterialTheme.typography.headlineMedium,
                 )
 
@@ -266,6 +307,7 @@ private fun TowarownikScreenPreview() {
             onSearch = {},
             onSelectResult = {},
             onClear = {},
+            onOpenDiagnostics = {},
         )
     }
 }
