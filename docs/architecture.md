@@ -14,12 +14,12 @@ HTTP/session transport
 OBI-specific payload parser
 ```
 
-The product lookup core now implements the repository, HTTP/session transport, and OBI payload parser layers. It is intentionally not connected to Compose yet.
+The product lookup core implements the repository, HTTP/session transport, and OBI payload parser layers. The OBIK device POC connects Compose to the repository through a small UI controller that runs the blocking lookup on `Dispatchers.IO` and exposes only application UI state.
 
 ## Boundaries
 
 - **UI / Compose** renders state and reports user intent. It must not issue HTTP requests or understand OBI payload details.
-- **Repository / domain layer** will coordinate search rules and expose application-oriented results without leaking transport or page-format details into the UI.
+- **Repository / domain layer** coordinates search rules and exposes application-oriented results without leaking transport or page-format details into the UI.
 - **HTTP/session transport** will retrieve public data and report transport outcomes. It must not interpret OBI payloads.
 - **OBI-specific payload parser** will translate retrieved payloads into validated data. Parsing failures must be explicit; missing or malformed values must never be invented.
 

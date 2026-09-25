@@ -8,9 +8,19 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+enum class ObiHttpFailureKind {
+    TRANSPORT,
+    NOT_FOUND,
+    SERVER,
+    DATA,
+}
+
 sealed interface ObiHttpResult {
     data class Success(val html: String) : ObiHttpResult
-    data class Failure(val reason: String) : ObiHttpResult
+    data class Failure(
+        internal val kind: ObiHttpFailureKind,
+        val reason: String,
+    ) : ObiHttpResult
 }
 
 class ObiHttpClient(
@@ -40,15 +50,26 @@ class ObiHttpClient(
         return try {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    ObiHttpResult.Failure("OBI returned HTTP ${response.code}")
+                    val kind = if (response.code == 404) {
+                        ObiHttpFailureKind.NOT_FOUND
+                    } else {
+                        ObiHttpFailureKind.SERVER
+                    }
+                    ObiHttpResult.Failure(kind, "OBI returned HTTP ${response.code}")
                 } else {
                     val body = response.body?.string()
-                    if (body.isNullOrBlank()) ObiHttpResult.Failure("OBI returned an empty product page")
-                    else ObiHttpResult.Success(body)
+                    if (body.isNullOrBlank()) {
+                        ObiHttpResult.Failure(ObiHttpFailureKind.DATA, "OBI returned an empty product page")
+                    } else {
+                        ObiHttpResult.Success(body)
+                    }
                 }
             }
         } catch (exception: Exception) {
-            ObiHttpResult.Failure("OBI request failed: ${exception.message ?: exception.javaClass.simpleName}")
+            ObiHttpResult.Failure(
+                ObiHttpFailureKind.TRANSPORT,
+                "OBI request failed: ${exception.message ?: exception.javaClass.simpleName}",
+            )
         }
     }
 
@@ -56,7 +77,9 @@ class ObiHttpClient(
         private val cookies = ConcurrentHashMap<String, Cookie>()
 
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            cookies.forEach { cookie -> this.cookies["${cookie.domain}|${cookie.path}|${cookie.name}"] = cookie }
+            cookies.forEach { cookie ->
+                this.cookies["${cookie.domain}|${cookie.path}|${cookie.name}"] = cookie
+            }
         }
 
         override fun loadForRequest(url: HttpUrl): List<Cookie> = cookies.values.filter { it.matches(url) }

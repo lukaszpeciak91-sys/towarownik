@@ -20,7 +20,9 @@ class ObiPayloadParser(private val json: Json = Json { ignoreUnknownKeys = true 
             selectedStore?.string("storeNumber") == storeNumber &&
                 selectedProduct != null &&
                 PRODUCT_NUMBER_KEYS.any { key -> selectedProduct.string(key) == expectedObik }
-        } ?: error("Product $expectedObik for selected OBI store $storeNumber is absent from OBI payload")
+        } ?: error(
+            "Expected product $expectedObik for selected OBI store $storeNumber is missing from OBI payload structure",
+        )
         val product = selectedContext["product"] as JsonObject
 
         val name = PRODUCT_NAME_KEYS.firstNotNullOfOrNull(product::string)
