@@ -9,6 +9,7 @@ import org.junit.Test
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticInputType
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
+import pl.lukaszpeciak.towarownik.diagnostics.Store075CookieMatch
 
 class ObiDiagnosticsIntegrationTest {
     @Test
@@ -103,40 +104,79 @@ class ObiDiagnosticsIntegrationTest {
     }
 
     @Test
-    fun `captures redirect followed by final 404`() {
+    fun `redirect final 404 captures challenge signatures and redacts URL secrets`() {
         MockWebServer().use { server ->
             val recorder = enabledRecorder()
+            val secret = "VERY_SECRET_CHALLENGE_TOKEN"
             server.enqueue(
                 MockResponse()
                     .setResponseCode(302)
-                    .addHeader("Location", "/p/3496072"),
+                    .addHeader("Location", "/challenge?token=$secret"),
             )
-            server.enqueue(MockResponse().setResponseCode(404).setBody("missing"))
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(404)
+                    .addHeader("Content-Type", "text/html; charset=utf-8")
+                    .setBody(
+                        """
+                        <!doctype html>
+                        <html>
+                        <head>
+                          <title>Access Denied</title>
+                          <link rel="canonical" href="https://www.obi.pl/p/3496072?token=$secret">
+                        </head>
+                        <body>
+                          challenge __NUXT_DATA__ 3496072 selectedStore 075
+                        </body>
+                        </html>
+                        """.trimIndent(),
+                    ),
+            )
             val repository = productRepository(server, recorder)
 
             val result = repository.lookupObik("3496072")
 
             assertTrue(result is ProductLookupResult.Unavailable)
             assertEquals(
-                listOf(302, 404),
-                recorder.snapshots().single().hops.map { it.status },
+                ProductLookupFailure.NOT_FOUND,
+                (result as ProductLookupResult.Unavailable).failure,
             )
-            assertTrue(
-                recorder.snapshots().single().finalUrl!!.contains("/p/3496072"),
+            val operation = recorder.snapshots().single()
+            assertEquals(listOf(302, 404), operation.hops.map { it.status })
+            assertEquals("/challenge?token=REDACTED", operation.hops[0].location)
+            assertTrue(operation.finalUrl!!.contains("/challenge?token=REDACTED"))
+
+            val body = operation.bodySignatures!!
+            assertEquals("Access Denied", body.title)
+            assertTrue(body.accessDeniedOrChallenge)
+            assertTrue(body.containsNuxtData)
+            assertEquals(true, body.containsRequestedObik)
+            assertEquals(
+                "https://www.obi.pl/p/3496072?token=REDACTED",
+                body.canonicalUrl,
             )
+            assertTrue(body.decodedBodyUtf8Bytes > 0)
+
+            val report = recorder.report()
+            assertFalse(report.contains(secret))
+            assertTrue(report.contains("body.accessDeniedOrChallenge=true"))
+            assertTrue(report.contains("body.containsNuxtData=true"))
+            assertTrue(report.contains("body.containsRequestedObik=true"))
+            assertTrue(report.contains("finalStatus=404"))
         }
     }
 
     @Test
-    fun `successful product page records parser decisions and sanitized cookie evidence`() {
+    fun `successful product page records matching store 075 before product request`() {
         MockWebServer().use { server ->
             val recorder = enabledRecorder()
-            val secret = "VERY_SECRET_COOKIE_VALUE"
+            val sessionSecret = "VERY_SECRET_SESSION_VALUE"
             server.enqueue(
                 MockResponse()
                     .setResponseCode(302)
                     .addHeader("Location", "/p/7313810")
-                    .addHeader("Set-Cookie", "store=$secret; Path=/"),
+                    .addHeader("Set-Cookie", "store=075; Path=/")
+                    .addHeader("Set-Cookie", "session=$sessionSecret; Path=/"),
             )
             server.enqueue(
                 MockResponse()
@@ -151,9 +191,17 @@ class ObiDiagnosticsIntegrationTest {
             assertTrue(result is ProductLookupResult.Found)
             val operation = recorder.snapshots().single()
             assertEquals(listOf(302, 200), operation.hops.map { it.status })
+            assertEquals(
+                Store075CookieMatch.MATCH,
+                operation.hops[0].setCookieStore075Match,
+            )
+            assertEquals(
+                Store075CookieMatch.MATCH,
+                operation.hops[1].outgoingStore075CookieMatch,
+            )
+            assertEquals(Store075CookieMatch.MATCH, operation.store075CookieMatch)
             assertTrue(operation.outgoingCookies.any { it.name == "store" })
             assertTrue(operation.setCookies.any { it.name == "store" })
-            assertTrue(operation.storeContextCookiePresent)
             assertTrue(operation.bodySignatures!!.containsNuxtData)
             assertEquals(true, operation.bodySignatures!!.containsSelectedStore)
             assertEquals(true, operation.bodySignatures!!.containsStore075)
@@ -165,8 +213,82 @@ class ObiDiagnosticsIntegrationTest {
             assertTrue(operation.parserStages.contains("FINAL_PARSE_RESULT=SUCCESS"))
 
             val report = recorder.report()
-            assertTrue(report.contains("outgoingCookieNames=store"))
-            assertTrue(report.contains("setCookieNames=store"))
+            assertTrue(report.contains("store075CookieMatch=true"))
+            assertTrue(report.contains("outgoingStore075CookieMatch=true"))
+            assertTrue(report.contains("setCookieStore075Match=true"))
+            assertFalse(report.contains("store=075"))
+            assertFalse(report.contains(sessionSecret))
+        }
+    }
+
+    @Test
+    fun `different store cookie is reported false without exposing its value`() {
+        MockWebServer().use { server ->
+            val recorder = enabledRecorder()
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .addHeader("Location", "/p/7313810")
+                    .addHeader("Set-Cookie", "store=999; Path=/"),
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("<html><body>product</body></html>"),
+            )
+            val client = ObiHttpClient(
+                baseUrl = server.url("/"),
+                diagnostics = recorder,
+            )
+
+            val result = client.fetchProduct("7313810", "075")
+            recorder.finish(result.diagnosticId())
+
+            val operation = recorder.snapshots().single()
+            assertEquals(
+                Store075CookieMatch.MISMATCH,
+                operation.hops.last().outgoingStore075CookieMatch,
+            )
+            assertEquals(Store075CookieMatch.MISMATCH, operation.store075CookieMatch)
+            val report = recorder.report()
+            assertTrue(report.contains("store075CookieMatch=false"))
+            assertFalse(report.contains("store=999"))
+        }
+    }
+
+    @Test
+    fun `unrecognized cookie keeps store 075 match unknown and hides cookie value`() {
+        MockWebServer().use { server ->
+            val recorder = enabledRecorder()
+            val secret = "VERY_SECRET_SESSION"
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .addHeader("Location", "/p/7313810")
+                    .addHeader("Set-Cookie", "session=$secret; Path=/"),
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("<html><body>product</body></html>"),
+            )
+            val client = ObiHttpClient(
+                baseUrl = server.url("/"),
+                diagnostics = recorder,
+            )
+
+            val result = client.fetchProduct("7313810", "075")
+            recorder.finish(result.diagnosticId())
+
+            val operation = recorder.snapshots().single()
+            assertEquals(
+                Store075CookieMatch.UNKNOWN,
+                operation.hops.last().outgoingStore075CookieMatch,
+            )
+            assertEquals(Store075CookieMatch.UNKNOWN, operation.store075CookieMatch)
+            val report = recorder.report()
+            assertTrue(report.contains("store075CookieMatch=unknown"))
+            assertTrue(report.contains("session"))
             assertFalse(report.contains(secret))
         }
     }
