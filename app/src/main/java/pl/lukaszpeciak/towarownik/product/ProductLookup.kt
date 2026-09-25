@@ -55,8 +55,7 @@ class ProductLookupRepository(
             is ObiHttpResult.Failure -> ProductLookupResult.Unavailable(
                 failure = when (response.kind) {
                     ObiHttpFailureKind.TRANSPORT,
-                    ObiHttpFailureKind.SERVER,
-                    -> ProductLookupFailure.NETWORK
+                    ObiHttpFailureKind.SERVER -> ProductLookupFailure.NETWORK
                     ObiHttpFailureKind.NOT_FOUND -> ProductLookupFailure.NOT_FOUND
                     ObiHttpFailureKind.DATA -> ProductLookupFailure.DATA
                 },
