@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik
 
 import java.math.BigDecimal
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -50,6 +51,8 @@ internal class ObikLookupController(
             withContext(ioDispatcher) {
                 lookup(input)
             }
+        } catch (exception: CancellationException) {
+            throw exception
         } catch (_: Exception) {
             onState(ObikLookupUiState.Error(LOOKUP_ERROR_MESSAGE))
             return
