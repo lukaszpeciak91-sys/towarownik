@@ -124,6 +124,18 @@ class ObiHttpClient(
             client.newCall(request).execute().use { response ->
                 diagnostics.mappingTrace(diagnosticId, "HTTP ${response.code}")
                 if (!response.isSuccessful) {
+                    if (diagnosticId != null) {
+                        runCatching {
+                            response.peekBody(DIAGNOSTIC_ERROR_BODY_PREVIEW_BYTES).string()
+                        }.getOrNull()?.let { preview ->
+                            recordDiagnosticBodySignatures(
+                                diagnosticId = diagnosticId,
+                                body = preview,
+                                bodySignatures = bodySignatures,
+                            )
+                        }
+                    }
+
                     val kind = if (response.code == 404) {
                         ObiHttpFailureKind.NOT_FOUND
                     } else {
@@ -139,7 +151,11 @@ class ObiHttpClient(
                     diagnostics.parserStage(diagnosticId, "HTTP_SUCCESS")
                     val body = response.body?.string()
                     if (body != null && diagnosticId != null) {
-                        diagnostics.recordBodySignatures(diagnosticId, bodySignatures(body))
+                        recordDiagnosticBodySignatures(
+                            diagnosticId = diagnosticId,
+                            body = body,
+                            bodySignatures = bodySignatures,
+                        )
                     }
                     if (body.isNullOrBlank()) {
                         diagnostics.mappingTrace(diagnosticId, "ObiHttpFailureKind.DATA")
@@ -172,6 +188,17 @@ class ObiHttpClient(
         }
     }
 
+    private fun recordDiagnosticBodySignatures(
+        diagnosticId: Long,
+        body: String,
+        bodySignatures: (String) -> DiagnosticBodySignatures,
+    ) {
+        runCatching { bodySignatures(body) }
+            .onSuccess { signatures ->
+                diagnostics.recordBodySignatures(diagnosticId, signatures)
+            }
+    }
+
     private class SessionCookieJar : CookieJar {
         private val cookies = ConcurrentHashMap<String, Cookie>()
 
@@ -182,5 +209,9 @@ class ObiHttpClient(
         }
 
         override fun loadForRequest(url: HttpUrl): List<Cookie> = cookies.values.filter { it.matches(url) }
+    }
+
+    private companion object {
+        const val DIAGNOSTIC_ERROR_BODY_PREVIEW_BYTES = 64L * 1024L
     }
 }
