@@ -1,5 +1,6 @@
 package pl.lukaszpeciak.towarownik.product
 
+import java.math.BigDecimal
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
@@ -29,7 +30,7 @@ class ProductLookupRepositoryTest {
                 httpClient = ObiHttpClient(server.url("/")),
             )
 
-            val result = repository.lookupObik("7313810")
+            val result = repository.lookupObik(OBIK)
 
             assertTrue(result is ProductLookupResult.Unavailable)
             assertEquals(
@@ -47,7 +48,7 @@ class ProductLookupRepositoryTest {
                 httpClient = ObiHttpClient(server.url("/")),
             )
 
-            val result = repository.lookupObik("7313810")
+            val result = repository.lookupObik(OBIK)
 
             assertTrue(result is ProductLookupResult.Unavailable)
             assertEquals(
@@ -58,14 +59,16 @@ class ProductLookupRepositoryTest {
     }
 
     @Test
-    fun `malformed successful response maps to data failure`() {
+    fun `missing expected selected store structure maps to data failure`() {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setBody("<html>not an OBI payload</html>"))
+            val changedPayload = fixture("real-7313810-store-075.html")
+                .replace("\"selectedStore\":3", "\"storeContext\":3")
+            server.enqueue(MockResponse().setBody(changedPayload))
             val repository = ProductLookupRepository(
                 httpClient = ObiHttpClient(server.url("/")),
             )
 
-            val result = repository.lookupObik("7313810")
+            val result = repository.lookupObik(OBIK)
 
             assertTrue(result is ProductLookupResult.Unavailable)
             assertEquals(
@@ -73,5 +76,50 @@ class ProductLookupRepositoryTest {
                 (result as ProductLookupResult.Unavailable).failure,
             )
         }
+    }
+
+    @Test
+    fun `malformed successful response maps to data failure instead of not found`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("<html>not an OBI payload</html>"))
+            val repository = ProductLookupRepository(
+                httpClient = ObiHttpClient(server.url("/")),
+            )
+
+            val result = repository.lookupObik(OBIK)
+
+            assertTrue(result is ProductLookupResult.Unavailable)
+            assertEquals(
+                ProductLookupFailure.DATA,
+                (result as ProductLookupResult.Unavailable).failure,
+            )
+        }
+    }
+
+    @Test
+    fun `successful lookup behavior is unchanged`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(fixture("real-7313810-store-075.html")))
+            val repository = ProductLookupRepository(
+                httpClient = ObiHttpClient(server.url("/")),
+            )
+
+            val result = repository.lookupObik(OBIK)
+
+            assertTrue(result is ProductLookupResult.Found)
+            val product = (result as ProductLookupResult.Found).product
+            assertEquals(OBIK, product.obik)
+            assertEquals("Produkt OBI 7313810", product.name)
+            assertEquals(17, product.stock)
+            assertEquals(BigDecimal("123.45"), product.grossPrice)
+            assertEquals("075", product.storeNumber)
+        }
+    }
+
+    private fun fixture(name: String): String =
+        checkNotNull(javaClass.getResource("/obi/$name")).readText()
+
+    private companion object {
+        const val OBIK = "7313810"
     }
 }
