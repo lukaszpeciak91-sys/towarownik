@@ -31,22 +31,49 @@ class ObiHttpClientTest {
     }
 
     @Test
-    fun `non successful response is a clean failure`() {
+    fun `server response is classified separately from transport failure`() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(503).setBody("temporary"))
             val result = ObiHttpClient(server.url("/")).fetchProduct("7313810", "075")
-            assertEquals(ObiHttpResult.Failure("OBI returned HTTP 503"), result)
+            assertEquals(
+                ObiHttpResult.Failure(
+                    ObiHttpFailureKind.SERVER,
+                    "OBI returned HTTP 503",
+                ),
+                result,
+            )
         }
     }
 
     @Test
-    fun `blank successful response is an empty product page failure`() {
+    fun `not found response is classified explicitly`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(404).setBody("missing"))
+            val result = ObiHttpClient(server.url("/")).fetchProduct("7313810", "075")
+            assertEquals(
+                ObiHttpResult.Failure(
+                    ObiHttpFailureKind.NOT_FOUND,
+                    "OBI returned HTTP 404",
+                ),
+                result,
+            )
+        }
+    }
+
+    @Test
+    fun `blank successful response is a data failure`() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("   \n"))
 
             val result = ObiHttpClient(server.url("/")).fetchProduct("7313810", "075")
 
-            assertEquals(ObiHttpResult.Failure("OBI returned an empty product page"), result)
+            assertEquals(
+                ObiHttpResult.Failure(
+                    ObiHttpFailureKind.DATA,
+                    "OBI returned an empty product page",
+                ),
+                result,
+            )
         }
     }
 }
