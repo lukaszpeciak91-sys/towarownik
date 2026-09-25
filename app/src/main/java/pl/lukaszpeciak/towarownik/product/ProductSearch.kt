@@ -1,5 +1,9 @@
 package pl.lukaszpeciak.towarownik.product
 
+import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticInputType
+import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
+import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
+
 private const val OBIK_LENGTH = 7
 private val EAN_LENGTHS = setOf(8, 12, 13, 14)
 
@@ -42,40 +46,103 @@ fun classifyProductSearchInput(rawInput: String): ProductSearchInput {
 class ProductSearchRepository(
     private val httpClient: ObiHttpClient = ObiHttpClient(),
     private val parser: ObiSearchParser = ObiSearchParser(),
+    private val diagnostics: ObiDiagnosticRecorder = ObiDiagnostics.recorder,
 ) {
     fun search(query: String): ProductSearchResult {
-        return when (val response = httpClient.fetchSearch(query)) {
-            is ObiHttpResult.Success -> parser.parse(response.html)
-                .fold(
-                    onSuccess = { parsed ->
-                        when (parsed) {
-                            is ObiSearchParseResult.Results ->
-                                ProductSearchResult.Candidates(parsed.items)
-                            ObiSearchParseResult.NoResults ->
+        val diagnosticInputType = when (classifyProductSearchInput(query)) {
+            is ProductSearchInput.Ean -> ObiDiagnosticInputType.EAN
+            is ProductSearchInput.Text -> ObiDiagnosticInputType.TEXT
+            is ProductSearchInput.Obik -> ObiDiagnosticInputType.OBIK
+            ProductSearchInput.Invalid -> ObiDiagnosticInputType.UNKNOWN
+        }
+
+        return when (
+            val response = httpClient.fetchSearch(
+                query = query,
+                inputType = diagnosticInputType,
+            )
+        ) {
+            is ObiHttpResult.Success -> {
+                val parsed = parser.parse(
+                    html = response.html,
+                    diagnosticId = response.diagnosticId,
+                )
+                parsed.fold(
+                    onSuccess = { parsedSearch ->
+                        when (parsedSearch) {
+                            is ObiSearchParseResult.Results -> {
+                                diagnostics.finish(response.diagnosticId)
+                                ProductSearchResult.Candidates(parsedSearch.items)
+                            }
+                            ObiSearchParseResult.NoResults -> {
+                                diagnostics.mappingTrace(
+                                    response.diagnosticId,
+                                    "SearchParseResult.NoResults",
+                                )
+                                diagnostics.mappingTrace(
+                                    response.diagnosticId,
+                                    "ProductSearchResult.NotFound",
+                                )
+                                diagnostics.mappingTrace(response.diagnosticId, "UI NOT_FOUND")
+                                diagnostics.finish(response.diagnosticId)
                                 ProductSearchResult.NotFound
+                            }
                         }
                     },
                     onFailure = { exception ->
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ProductLookupFailure.DATA",
+                        )
+                        diagnostics.mappingTrace(response.diagnosticId, "UI DATA_ERROR")
+                        diagnostics.finish(response.diagnosticId)
                         ProductSearchResult.Unavailable(
                             failure = ProductLookupFailure.DATA,
                             reason = exception.message ?: "OBI search payload could not be parsed",
                         )
                     },
                 )
+            }
 
-            is ObiHttpResult.Failure -> when (response.kind) {
-                ObiHttpFailureKind.NOT_FOUND -> ProductSearchResult.NotFound
-                ObiHttpFailureKind.TRANSPORT,
-                ObiHttpFailureKind.SERVER -> ProductSearchResult.Unavailable(
-                    failure = ProductLookupFailure.NETWORK,
-                    reason = response.reason,
-                )
-                ObiHttpFailureKind.DATA -> ProductSearchResult.Unavailable(
-                    failure = ProductLookupFailure.DATA,
-                    reason = response.reason,
-                )
+            is ObiHttpResult.Failure -> {
+                val result = when (response.kind) {
+                    ObiHttpFailureKind.NOT_FOUND -> {
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ProductSearchResult.NotFound",
+                        )
+                        diagnostics.mappingTrace(response.diagnosticId, "UI NOT_FOUND")
+                        ProductSearchResult.NotFound
+                    }
+
+                    ObiHttpFailureKind.TRANSPORT,
+                    ObiHttpFailureKind.SERVER -> {
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ProductLookupFailure.NETWORK",
+                        )
+                        diagnostics.mappingTrace(response.diagnosticId, "UI NETWORK_ERROR")
+                        ProductSearchResult.Unavailable(
+                            failure = ProductLookupFailure.NETWORK,
+                            reason = response.reason,
+                        )
+                    }
+
+                    ObiHttpFailureKind.DATA -> {
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ProductLookupFailure.DATA",
+                        )
+                        diagnostics.mappingTrace(response.diagnosticId, "UI DATA_ERROR")
+                        ProductSearchResult.Unavailable(
+                            failure = ProductLookupFailure.DATA,
+                            reason = response.reason,
+                        )
+                    }
+                }
+                diagnostics.finish(response.diagnosticId)
+                result
             }
         }
     }
-
 }
