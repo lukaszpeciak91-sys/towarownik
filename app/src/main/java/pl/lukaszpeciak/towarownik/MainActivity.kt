@@ -208,12 +208,8 @@ private fun ProductResult(state: ObikLookupUiState.Success) {
 private fun TowarownikScreenPreview() {
     TowarownikTheme {
         TowarownikScreen(
-            obik = "7313810",
-            state = ObikLookupUiState.Success(
-                name = "Przykładowy produkt",
-                stock = 12,
-                grossPrice = java.math.BigDecimal("49.99"),
-            ),
+            obik = "",
+            state = ObikLookupUiState.Idle,
             onObikChange = {},
             onSearch = {},
             onClear = {},
