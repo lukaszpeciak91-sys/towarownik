@@ -10,10 +10,12 @@ build/
 # Local Android SDK and machine configuration
 local.properties
 
-# Generated packages and artifacts
+# Generated packages, signing material and artifacts
 *.apk
 *.aab
 *.jar
+*.jks
+*.keystore
 
 # Device and profiling output
 captures/

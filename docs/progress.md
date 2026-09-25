@@ -2,19 +2,17 @@
 
 ## Current phase
 
-**V0.1 — live OBI diagnostic instrumentation**
+**V0.1 — Google Play Internal Testing packaging**
 
-Unified OBIK/EAN/name search remains unchanged. A temporary in-app diagnostic mode now captures bounded, sanitized evidence for OBI transport, redirects, cookie names, response signatures, parser decisions, and final error classification so live failures can be investigated from the phone without Android Studio or Logcat.
+The app keeps the merged unified search and OBI diagnostic behavior unchanged. Release signing is now configured from environment variables only, and a manual GitHub Actions workflow can build a signed Android App Bundle for Google Play after repository signing secrets are configured.
 
-Diagnostics are OFF by default and session-only. The report never stores cookie values or complete response bodies. The normal request URLs, redirect behavior, headers, parsing rules, and not-found semantics are intentionally unchanged in this milestone.
-
-Deterministic CI validates the diagnostic recorder against mocked redirects, HTTP failures, cookies, product pages, and search parser decisions. It does not prove compatibility with live OBI.
+The release workflow reconstructs the upload keystore only in the GitHub runner temporary directory, runs `./gradlew check bundleRelease`, uploads `towarownik-play-release-aab`, and removes the transient keystore. No keystore, credential, APK, or AAB is committed.
 
 ## Next implementation milestone
 
-**Live OBI contract validation**
+**Produce and upload the first Internal Testing AAB**
 
-Run the diagnostic build on a real phone with OBIK `3496072`, text `dedra`, and control text `qbrick system`. Use the resulting report to locate the first live transport/session/parser mismatch before implementing any integration fix.
+After this release configuration is merged, add the four documented GitHub Actions secrets, run **Build signed Play AAB**, download the `towarownik-play-release-aab` artifact, and upload its `app-release.aab` to Google Play Console Internal Testing. Signed `bundleRelease` cannot be validated until real signing secrets exist.
 
 ## Not started
 
