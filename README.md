@@ -1,10 +1,10 @@
 # Towarownik
 
-Towarownik is a small native Android utility for fast retail product lookup. The V0.1 device POC can accept a seven-digit OBIK, retrieve and parse the OBI product for store 075, and present the local result in a minimal Compose screen.
+Towarownik is a small native Android utility for fast retail product lookup. The V0.1 flow uses one search field for a seven-digit OBIK, EAN/GTIN, or product name, then presents the selected product for OBI store 075.
 
 ## Project status
 
-The current phase is **V0.1 — OBIK lookup device POC**. See [the progress log](docs/progress.md) for the next milestone and [the decision record](docs/decisions.md) for the approved scope.
+The current phase is **V0.1 — unified OBI product search**. See [the progress log](docs/progress.md) for the next milestone and [the decision record](docs/decisions.md) for the approved scope.
 
 ## Technology
 
@@ -35,7 +35,7 @@ The debug APK is generated under `app/build/outputs/apk/debug/` and must not be 
 
 ## Scope boundaries
 
-This milestone intentionally supports OBIK lookup only. It has no EAN or text search, multiple results, nearby-store fallback, barcode or OCR support, persistence, dependency injection, navigation framework, analytics, accounts, ads, product images, Firebase, or AI. Dependencies and capabilities must only be introduced with a concrete requirement.
+This milestone supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. It has no nearby-store fallback, barcode or OCR support, persistence, dependency injection, navigation framework, analytics, accounts, ads, product images, Firebase, or AI. Dependencies and capabilities must only be introduced with a concrete requirement.
 
 ## Documentation
 
