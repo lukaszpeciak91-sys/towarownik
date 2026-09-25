@@ -1,0 +1,25 @@
+# Android Studio and IntelliJ IDEA
+.idea/
+*.iml
+
+# Gradle caches and generated build output
+.gradle/
+**/build/
+build/
+
+# Local Android SDK and machine configuration
+local.properties
+
+# Generated packages and artifacts
+*.apk
+*.aab
+*.jar
+
+# Device and profiling output
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
