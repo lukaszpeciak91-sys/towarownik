@@ -22,7 +22,7 @@ fun productBodySignatures(
     return commonSignatures(html).copy(
         containsRequestedObik = html.contains(requestedObik),
         containsCanonicalProductUrl = canonical?.contains("/p/", ignoreCase = true) == true,
-        canonicalUrl = canonical,
+        canonicalUrl = sanitizeDiagnosticUrl(canonical),
         containsSelectedStore = html.contains("selectedStore"),
         containsStore075 = html.contains("075"),
     )
@@ -53,7 +53,7 @@ private fun commonSignatures(html: String): DiagnosticBodySignatures {
     ).filter(lower::contains)
 
     return DiagnosticBodySignatures(
-        actualBodyBytes = html.toByteArray(Charsets.UTF_8).size,
+        decodedBodyUtf8Bytes = html.toByteArray(Charsets.UTF_8).size,
         looksLikeHtml = html.contains("<html", ignoreCase = true) || html.contains("<!doctype html", ignoreCase = true),
         title = TITLE.find(html)?.groupValues?.get(1)?.plainText()?.take(MAX_TITLE_LENGTH),
         accessDeniedOrChallenge = indicators.isNotEmpty(),
