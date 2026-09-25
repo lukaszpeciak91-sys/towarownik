@@ -59,7 +59,7 @@ class ObiDiagnosticRecorder(
             inputType = inputType,
             identifier = identifier,
             timestampMillis = clock(),
-            requestedUrl = requestedUrl,
+            requestedUrl = sanitizeDiagnosticUrl(requestedUrl) ?: "[redacted-url]",
             requestMethod = requestMethod,
         )
         return id
@@ -90,24 +90,34 @@ class ObiDiagnosticRecorder(
         contentEncoding: String?,
         declaredContentLength: Long?,
         safeInfrastructureHeaders: Map<String, String>,
+        outgoingCookies: List<DiagnosticCookie>,
         setCookies: List<DiagnosticCookie>,
+        outgoingStore075CookieMatch: Store075CookieMatch,
+        setCookieStore075Match: Store075CookieMatch,
     ) {
         val operation = id?.let(active::get) ?: return
+        val sanitizedUrl = sanitizeDiagnosticUrl(url) ?: "[redacted-url]"
+        val sanitizedLocation = sanitizeDiagnosticUrl(location)
+
         if (operation.hops.size < MAX_HOPS) {
             operation.hops += DiagnosticHttpHop(
                 number = operation.hops.size + 1,
                 status = status,
-                url = url,
-                location = location,
+                url = sanitizedUrl,
+                location = sanitizedLocation,
                 contentType = contentType,
                 contentEncoding = contentEncoding,
                 declaredContentLength = declaredContentLength,
                 safeInfrastructureHeaders = safeInfrastructureHeaders,
+                outgoingCookies = outgoingCookies.distinct(),
+                setCookies = setCookies.distinct(),
+                outgoingStore075CookieMatch = outgoingStore075CookieMatch,
+                setCookieStore075Match = setCookieStore075Match,
             )
         }
         operation.setCookies.addAll(setCookies)
         operation.finalStatus = status
-        operation.finalUrl = url
+        operation.finalUrl = sanitizedUrl
     }
 
     @Synchronized
@@ -117,7 +127,9 @@ class ObiDiagnosticRecorder(
 
     @Synchronized
     fun recordBodySignatures(id: Long?, signatures: DiagnosticBodySignatures) {
-        id?.let(active::get)?.bodySignatures = signatures
+        id?.let(active::get)?.bodySignatures = signatures.copy(
+            canonicalUrl = sanitizeDiagnosticUrl(signatures.canonicalUrl),
+        )
     }
 
     @Synchronized
@@ -179,7 +191,7 @@ class ObiDiagnosticRecorder(
             appendLine("durationMs=${record.durationMillis ?: -1}")
             appendLine("outgoingCookieNames=${record.outgoingCookies.safeCookieList()}")
             appendLine("setCookieNames=${record.setCookies.safeCookieList()}")
-            appendLine("storeContextCookiePresent=${record.storeContextCookiePresent}")
+            appendLine("store075CookieMatch=${record.store075CookieMatch.reportValue}")
 
             appendLine("redirectChain:")
             if (record.hops.isEmpty()) {
@@ -189,6 +201,16 @@ class ObiDiagnosticRecorder(
                     append("  hop=${hop.number} status=${hop.status} url=${hop.url}")
                     hop.location?.let { append(" location=$it") }
                     appendLine()
+                    appendLine("    outgoingCookieNames=${hop.outgoingCookies.safeCookieList()}")
+                    appendLine(
+                        "    outgoingStore075CookieMatch=" +
+                            hop.outgoingStore075CookieMatch.reportValue,
+                    )
+                    appendLine("    setCookieNames=${hop.setCookies.safeCookieList()}")
+                    appendLine(
+                        "    setCookieStore075Match=" +
+                            hop.setCookieStore075Match.reportValue,
+                    )
                     appendLine("    contentType=${hop.contentType ?: "(none)"}")
                     appendLine("    contentEncoding=${hop.contentEncoding ?: "(none)"}")
                     appendLine("    declaredContentLength=${hop.declaredContentLength ?: -1}")
@@ -204,7 +226,7 @@ class ObiDiagnosticRecorder(
             appendLine("finalUrl=${record.finalUrl ?: "(none)"}")
 
             record.bodySignatures?.let { body ->
-                appendLine("body.actualBytes=${body.actualBodyBytes}")
+                appendLine("body.decodedBodyUtf8Bytes=${body.decodedBodyUtf8Bytes}")
                 appendLine("body.looksLikeHtml=${body.looksLikeHtml}")
                 appendLine("body.title=${body.title ?: "(none)"}")
                 appendLine("body.accessDeniedOrChallenge=${body.accessDeniedOrChallenge}")
@@ -273,9 +295,8 @@ class ObiDiagnosticRecorder(
         val parserStages: MutableList<String> = mutableListOf(),
         val errorMappingTrace: MutableList<String> = mutableListOf(),
     ) {
-        fun snapshot(): DiagnosticOperationSnapshot {
-            val allCookies = outgoingCookies + setCookies
-            return DiagnosticOperationSnapshot(
+        fun snapshot(): DiagnosticOperationSnapshot =
+            DiagnosticOperationSnapshot(
                 id = id,
                 operation = operation,
                 inputType = inputType,
@@ -289,9 +310,8 @@ class ObiDiagnosticRecorder(
                 durationMillis = durationMillis,
                 outgoingCookies = outgoingCookies.distinct(),
                 setCookies = setCookies.distinct(),
-                storeContextCookiePresent = allCookies.any { cookie ->
-                    cookie.name.contains("store", ignoreCase = true)
-                },
+                store075CookieMatch = hops.lastOrNull()?.outgoingStore075CookieMatch
+                    ?: Store075CookieMatch.UNKNOWN,
                 hops = hops.toList(),
                 finalStatus = finalStatus,
                 finalUrl = finalUrl,
@@ -299,7 +319,6 @@ class ObiDiagnosticRecorder(
                 parserStages = parserStages.toList(),
                 errorMappingTrace = errorMappingTrace.toList(),
             )
-        }
     }
 
     private companion object {
