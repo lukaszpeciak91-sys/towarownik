@@ -46,7 +46,8 @@ These decisions describe the broader intended product behavior. The currently im
 - Diagnostics are temporary engineering infrastructure and are OFF by default.
 - The diagnostics screen is opened by long-pressing the Towarownik title; no permanent diagnostic action is added to the normal search UI.
 - Diagnostic history is in-memory only and bounded to the last 10 OBI operations.
-- The report may include public request URLs, redirect statuses, safe response metadata, parser stages, and error mappings.
-- Cookie and Set-Cookie values, full response bodies, tokens, device identifiers, account data, IP addresses, and precise location must never be included.
+- The report may include sanitized request/redirect/canonical URLs, redirect statuses, safe response metadata, parser stages, and error mappings. Unknown query values are redacted; explicitly safe values such as `storeNumber=075` may remain visible.
+- Cookie values may be inspected transiently only to determine whether recognizable store context matches `075`; only `true`/`false`/`unknown` evidence and cookie names may be retained. Cookie and Set-Cookie values, full response bodies, tokens, device identifiers, account data, IP addresses, and precise location must never be included.
+- Final 4xx/5xx responses may use a bounded in-memory preview to derive the same safe body signatures. `decodedBodyUtf8Bytes` describes decoded diagnostic text re-encoded as UTF-8 and is not a raw HTTP byte count.
 - Diagnostic instrumentation must not modify OBI request URLs, request headers, redirect following, cookie/session behavior, parser rules, or not-found semantics.
 - Deterministic CI is not evidence that the live OBI contract still matches fixtures; live phone diagnostics are required before revising integration assumptions.
