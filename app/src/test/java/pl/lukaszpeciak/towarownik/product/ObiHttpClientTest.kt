@@ -31,6 +31,21 @@ class ObiHttpClientTest {
     }
 
     @Test
+    fun `search request uses encoded public search path`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("<html>search</html>"))
+            val client = ObiHttpClient(server.url("/"))
+
+            assertTrue(client.fetchSearch("qbrick system") is ObiHttpResult.Success)
+
+            assertEquals(
+                "/search/qbrick%20system/",
+                server.takeRequest().requestUrl?.encodedPath,
+            )
+        }
+    }
+
+    @Test
     fun `server response is classified separately from transport failure`() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(503).setBody("temporary"))

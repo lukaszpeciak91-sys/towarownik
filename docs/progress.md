@@ -2,23 +2,26 @@
 
 ## Current phase
 
-**V0.1 — OBIK lookup device POC**
+**V0.1 — unified OBI product search**
 
-The first end-to-end Android lookup flow is implemented. The Compose screen accepts exactly seven numeric OBIK digits, validates input locally, runs the existing store `075` lookup off the main thread, and presents loading, success, and human-readable error states. A successful result shows only the product name, exact Nowy Sącz stock when known, and local Nowy Sącz price when known. Unknown stock or price remains explicitly unavailable rather than becoming zero.
+Towarownik now uses one search field for three supported inputs: a seven-digit OBIK, plausible EAN/GTIN values, and product-name text. OBIK remains a direct lookup. EAN and text use OBI's public search route and produce at most five ordered candidates when selection is required.
 
-The flow is ready for manual device validation with OBIK `7313810`. CI remains deterministic and does not depend on live OBI.
+Text results are always user-selected. Multiple EAN results are also user-selected; a single EAN candidate opens directly only after the selected product payload confirms the queried EAN. Candidate selection then reuses the existing store `075` lookup, preserving exact Nowy Sącz stock and local-price semantics.
+
+Search parsing distinguishes explicit no-result states from data/parser failures. CI uses deterministic UTF-8 text fixtures and does not depend on live OBI.
 
 ## Next implementation milestone
 
-**EAN and product-name search**
+**Device validation and next bounded V0.1 capability**
 
-Extend the unified search input beyond the current OBIK-only POC while preserving the repository/transport/parser boundaries. Text search should remain bounded to at most five results.
+Validate unified OBIK/EAN/name search on a real Android device before adding another product capability.
 
 ## Not started
 
-- EAN/name detection and search
-- Multiple text-search results
+- Camera barcode scanning
 - Local and nearby-store fallback behavior
 - External product-link behavior
-- Barcode scanning
-- Final responsive visual polish
+- Persistence/history/favorites
+- Product images
+- AI
+- Final Play release polish

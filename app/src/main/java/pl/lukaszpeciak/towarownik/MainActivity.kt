@@ -22,6 +22,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -56,51 +57,62 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun TowarownikApp() {
-    val controller = remember { ObikLookupController() }
+    val controller = remember { ProductSearchController() }
     val scope = rememberCoroutineScope()
-    var obik by rememberSaveable { mutableStateOf("") }
-    var uiState by remember { mutableStateOf<ObikLookupUiState>(ObikLookupUiState.Idle) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var uiState by remember { mutableStateOf<ProductSearchUiState>(ProductSearchUiState.Idle) }
     var lookupJob by remember { mutableStateOf<Job?>(null) }
 
     fun resetLookup() {
         lookupJob?.cancel()
         lookupJob = null
-        obik = ""
-        uiState = ObikLookupUiState.Idle
+        query = ""
+        uiState = ProductSearchUiState.Idle
     }
 
     fun submitLookup() {
         lookupJob?.cancel()
         lookupJob = scope.launch {
-            controller.submit(obik) { state ->
+            controller.submit(query) { state ->
+                uiState = state
+            }
+        }
+    }
+
+    fun selectResult(item: SearchResultItem) {
+        lookupJob?.cancel()
+        lookupJob = scope.launch {
+            controller.select(item) { state ->
                 uiState = state
             }
         }
     }
 
     TowarownikScreen(
-        obik = obik,
+        query = query,
         state = uiState,
-        onObikChange = { value ->
+        onQueryChange = { value ->
             lookupJob?.cancel()
             lookupJob = null
-            obik = value
-            uiState = ObikLookupUiState.Idle
+            query = value
+            uiState = ProductSearchUiState.Idle
         },
         onSearch = ::submitLookup,
+        onSelectResult = ::selectResult,
         onClear = ::resetLookup,
     )
 }
 
 @Composable
 private fun TowarownikScreen(
-    obik: String,
-    state: ObikLookupUiState,
-    onObikChange: (String) -> Unit,
+    query: String,
+    state: ProductSearchUiState,
+    onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
+    onSelectResult: (SearchResultItem) -> Unit,
     onClear: () -> Unit,
 ) {
-    val isLoading = state is ObikLookupUiState.Loading
+    val isLoading = state is ProductSearchUiState.Loading
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Box(
@@ -123,19 +135,19 @@ private fun TowarownikScreen(
                 )
 
                 OutlinedTextField(
-                    value = obik,
-                    onValueChange = onObikChange,
+                    value = query,
+                    onValueChange = onQueryChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("OBIK") },
+                    label = { Text("OBIK / EAN / nazwa") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
+                        keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Search,
                     ),
                     keyboardActions = KeyboardActions(
                         onSearch = { if (!isLoading) onSearch() },
                     ),
-                    trailingIcon = if (obik.isNotEmpty()) {
+                    trailingIcon = if (query.isNotEmpty()) {
                         {
                             IconButton(onClick = onClear) {
                                 Text(
@@ -158,9 +170,9 @@ private fun TowarownikScreen(
                 }
 
                 when (state) {
-                    ObikLookupUiState.Idle -> Unit
+                    ProductSearchUiState.Idle -> Unit
 
-                    ObikLookupUiState.Loading -> Row(
+                    ProductSearchUiState.Loading -> Row(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -168,9 +180,14 @@ private fun TowarownikScreen(
                         Text("Szukam produktu…")
                     }
 
-                    is ObikLookupUiState.Success -> ProductResult(state)
+                    is ProductSearchUiState.SearchResults -> SearchResults(
+                        state = state,
+                        onSelectResult = onSelectResult,
+                    )
 
-                    is ObikLookupUiState.Error -> Text(
+                    is ProductSearchUiState.Success -> ProductResult(state)
+
+                    is ProductSearchUiState.Error -> Text(
                         text = state.message,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyLarge,
@@ -184,7 +201,42 @@ private fun TowarownikScreen(
 }
 
 @Composable
-private fun ProductResult(state: ObikLookupUiState.Success) {
+private fun SearchResults(
+    state: ProductSearchUiState.SearchResults,
+    onSelectResult: (SearchResultItem) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Wyniki",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        state.items.forEach { item ->
+            OutlinedButton(
+                onClick = { onSelectResult(item) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    item.name?.let { name ->
+                        Text(
+                            text = name,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    Text(
+                        text = "OBIK: ${item.obik}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductResult(state: ProductSearchUiState.Success) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = state.name,
@@ -208,10 +260,11 @@ private fun ProductResult(state: ObikLookupUiState.Success) {
 private fun TowarownikScreenPreview() {
     TowarownikTheme {
         TowarownikScreen(
-            obik = "",
-            state = ObikLookupUiState.Idle,
-            onObikChange = {},
+            query = "",
+            state = ProductSearchUiState.Idle,
+            onQueryChange = {},
             onSearch = {},
+            onSelectResult = {},
             onClear = {},
         )
     }

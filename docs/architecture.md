@@ -14,7 +14,7 @@ HTTP/session transport
 OBI-specific payload parser
 ```
 
-The product lookup core implements the repository, HTTP/session transport, and OBI payload parser layers. The OBIK device POC connects Compose to the repository through a small UI controller that runs the blocking lookup on `Dispatchers.IO` and exposes only application UI state.
+The product lookup core implements repository, HTTP/session transport, and OBI-specific parsing. The unified search controller runs blocking repository work on `Dispatchers.IO` and exposes only application UI state to Compose.
 
 ## Boundaries
 
@@ -32,6 +32,16 @@ Transport and parsing must remain isolated from the UI. An OBI website change sh
 `ObiPayloadParser` extracts the `__NUXT_DATA__` script as JSON and resolves Nuxt's flattened references. It selects only an object whose product identifier matches the requested OBIK. Product identity may be supplemented from Product JSON-LD; canonical-link markup is a URL fallback. It does not scrape visible price or availability text.
 
 Local stock comes only from the matched product object's `stock` value in the selected-store Nuxt payload. Local price comes only from that object's `pricing.grossPrice`; neither online price nor shipping cost is a fallback. A parsed integer stock of `0` is confirmed zero. An absent, negative, or unparseable stock is `null` (unknown), and absent/unparseable local price is also `null`.
+
+## Unified search flow
+
+Input classification is explicit: exactly seven digits are an OBIK; numeric GTIN/EAN lengths 8, 12, 13, or 14 are EAN input; other non-blank input is text; blank or unsupported all-numeric lengths are invalid.
+
+OBIK continues to use the direct store-`075` product lookup without a candidate list. EAN and text queries use OBI's public `/search/{query}/` route. `ObiSearchParser` reads product links structurally, preserves their page order, deduplicates by OBIK, and returns at most five candidates. A canonical product URL is also accepted as a single search candidate when OBI redirects a search directly to a product page.
+
+Text search always requires user selection before product lookup. Multiple EAN candidates also require selection. A single EAN candidate is opened automatically only after the existing product payload confirms that its EAN equals the user's query; otherwise the candidate remains selectable instead of being guessed.
+
+An explicit empty-search state or HTTP 404 maps to not found. Unrecognized or changed search structure maps to a data failure, never to not found. Selecting a candidate runs the existing store-`075` product lookup, so local stock and local gross price keep the same data rules.
 
 ## UI and configuration
 
