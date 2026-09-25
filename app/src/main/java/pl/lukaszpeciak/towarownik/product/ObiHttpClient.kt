@@ -138,7 +138,7 @@ class ObiHttpClient(
                 } else {
                     diagnostics.parserStage(diagnosticId, "HTTP_SUCCESS")
                     val body = response.body?.string()
-                    if (body != null) {
+                    if (body != null && diagnosticId != null) {
                         diagnostics.recordBodySignatures(diagnosticId, bodySignatures(body))
                     }
                     if (body.isNullOrBlank()) {
