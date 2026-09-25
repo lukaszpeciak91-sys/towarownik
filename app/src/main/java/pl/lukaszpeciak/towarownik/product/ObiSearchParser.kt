@@ -6,7 +6,7 @@ internal sealed interface ObiSearchParseResult {
 }
 
 class ObiSearchParser {
-    fun parse(html: String): Result<ObiSearchParseResult> = runCatching {
+    internal fun parse(html: String): Result<ObiSearchParseResult> = runCatching {
         val candidates = LinkedHashMap<String, String?>()
 
         PRODUCT_LINK.findAll(html).forEach { match ->
