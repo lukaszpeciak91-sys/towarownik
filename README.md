@@ -33,6 +33,19 @@ The committed Gradle wrapper is the canonical build entry point. With JDK 17 and
 
 The debug APK is generated under `app/build/outputs/apk/debug/` and must not be committed.
 
+## Signed Google Play AAB
+
+A signed release bundle is built only by the manual GitHub Actions workflow **Build signed Play AAB**. Configure these repository Actions secrets first:
+
+- `ANDROID_KEYSTORE_BASE64` — Base64-encoded upload keystore;
+- `ANDROID_KEYSTORE_PASSWORD`;
+- `ANDROID_KEY_ALIAS`;
+- `ANDROID_KEY_PASSWORD`.
+
+Then open **Actions → Build signed Play AAB → Run workflow**. The workflow runs `./gradlew check bundleRelease`, reconstructs the keystore only under the runner's temporary directory, and removes it after the job. Download the resulting artifact named `towarownik-play-release-aab`; it contains `app-release.aab` built from `app/build/outputs/bundle/release/app-release.aab`.
+
+Never commit keystores, signing credentials, APKs, or AABs.
+
 ## Scope boundaries
 
 This milestone supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. It has no nearby-store fallback, barcode or OCR support, persistence, dependency injection, navigation framework, analytics, accounts, ads, product images, Firebase, or AI. Dependencies and capabilities must only be introduced with a concrete requirement.
