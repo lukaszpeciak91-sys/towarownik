@@ -10,8 +10,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 
-internal class ObiProductNotFoundException(message: String) : IllegalStateException(message)
-
 class ObiPayloadParser(private val json: Json = Json { ignoreUnknownKeys = true }) {
     fun parse(html: String, expectedObik: String, storeNumber: String): Result<LocalProduct> = runCatching {
         val nuxt = parseScript(html, "__NUXT_DATA__") ?: error("Missing OBI Nuxt payload")
@@ -22,8 +20,8 @@ class ObiPayloadParser(private val json: Json = Json { ignoreUnknownKeys = true 
             selectedStore?.string("storeNumber") == storeNumber &&
                 selectedProduct != null &&
                 PRODUCT_NUMBER_KEYS.any { key -> selectedProduct.string(key) == expectedObik }
-        } ?: throw ObiProductNotFoundException(
-            "Product $expectedObik for selected OBI store $storeNumber is absent from OBI payload",
+        } ?: error(
+            "Expected product $expectedObik for selected OBI store $storeNumber is missing from OBI payload structure",
         )
         val product = selectedContext["product"] as JsonObject
 
