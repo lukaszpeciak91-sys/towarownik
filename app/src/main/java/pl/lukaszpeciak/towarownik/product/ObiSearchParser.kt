@@ -14,6 +14,16 @@ class ObiSearchParser {
             )
         }
 
+        val pageText = html.plainText()
+        if (
+            pageText.contains("Nie znaleźliśmy żadnych wyników", ignoreCase = true) ||
+            pageText.contains("Nie znaleziono produktów", ignoreCase = true) ||
+            pageText.contains("Brak wyników", ignoreCase = true) ||
+            (pageText.contains("Wyniki dla", ignoreCase = true) && ZERO_RESULT_COUNT.containsMatchIn(pageText))
+        ) {
+            return@runCatching ObiSearchParseResult.NoResults
+        }
+
         val candidates = LinkedHashMap<String, String?>()
 
         PRODUCT_LINK.findAll(html).forEach { match ->
@@ -34,17 +44,6 @@ class ObiSearchParser {
                     .take(MAX_RESULTS)
                     .map { (obik, name) -> ProductSearchCandidate(obik, name) },
             )
-        }
-
-        val pageText = html.plainText()
-        if (pageText.contains("Wyniki dla", ignoreCase = true) && ZERO_RESULT_COUNT.containsMatchIn(pageText)) {
-            return@runCatching ObiSearchParseResult.NoResults
-        }
-        if (
-            pageText.contains("Nie znaleziono produktów", ignoreCase = true) ||
-            pageText.contains("Brak wyników", ignoreCase = true)
-        ) {
-            return@runCatching ObiSearchParseResult.NoResults
         }
 
         error("OBI search payload has no recognizable product results or explicit empty state")
