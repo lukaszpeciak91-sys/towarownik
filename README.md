@@ -14,20 +14,15 @@ The current phase is **V0.1 — Android bootstrap**. See [the progress log](docs
 - Minimum SDK: 26 (Android 8.0)
 - Compile and target SDK: 36
 - JDK: 17
-- Gradle: 8.11.1
-- Android Gradle Plugin: 8.10.1
-- Kotlin and Compose compiler plugin: 2.1.21
-- Compose BOM: 2025.05.01
+- Gradle: 9.5.0
+- Android Gradle Plugin: 9.3.0
+- Kotlin Compose compiler plugin: 2.3.21
+- Compose BOM: 2026.06.00
+- Activity Compose: 1.13.0
 
 ## Local bootstrap and build
 
-The binary `gradle/wrapper/gradle-wrapper.jar` is intentionally absent because Codex must not create or commit binary files. After checkout, generate it locally from a trusted Gradle installation:
-
-```bash
-gradle wrapper --gradle-version 8.11.1 --distribution-type bin
-```
-
-The generated wrapper JAR remains ignored. With JDK 17 and Android SDK Platform 36 installed and `ANDROID_HOME` or `ANDROID_SDK_ROOT` configured, run:
+The committed Gradle wrapper is the canonical build entry point. With JDK 17 and Android SDK Platform 36 installed and `ANDROID_HOME` or `ANDROID_SDK_ROOT` configured, run:
 
 ```bash
 ./gradlew check assembleDebug

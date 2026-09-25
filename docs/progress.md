@@ -4,7 +4,7 @@
 
 **V0.1 — Android bootstrap**
 
-The native Android project, Kotlin and Compose configuration, placeholder launch screen, basic unit-test setup, and continuous-integration configuration are established. No OBI integration or product behavior is implemented.
+The native Android project, Gradle 9.5.0 wrapper, Android Gradle Plugin 9.3.0, Kotlin Compose plugin 2.3.21, placeholder launch screen, basic unit-test setup, and wrapper-based continuous-integration configuration are established. No OBI integration or product behavior is implemented.
 
 ## Next implementation milestone
 
