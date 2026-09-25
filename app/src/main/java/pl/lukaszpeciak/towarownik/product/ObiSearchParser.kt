@@ -73,7 +73,7 @@ class ObiSearchParser {
         var text = replace(TAG, " ")
             .replace("&nbsp;", " ", ignoreCase = true)
             .replace("&amp;", "&", ignoreCase = true)
-            .replace("&quot;", """, ignoreCase = true)
+            .replace("&quot;", "\\\"", ignoreCase = true)
             .replace("&#39;", "'", ignoreCase = true)
             .replace("&lt;", "<", ignoreCase = true)
             .replace("&gt;", ">", ignoreCase = true)
