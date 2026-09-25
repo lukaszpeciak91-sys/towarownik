@@ -23,6 +23,41 @@ class ObiPayloadParserTest {
     }
 
     @Test
+    fun `real OBI structure ties identity local stock and gross price to store 075`() {
+        val product = parser.parse(fixture("real-7313810-store-075.html"), OBIK, STORE).getOrThrow()
+
+        assertEquals(OBIK, product.obik)
+        assertEquals("Produkt OBI 7313810", product.name)
+        assertEquals(STORE, product.storeNumber)
+        assertEquals(17, product.stock)
+        assertEquals(BigDecimal("123.45"), product.grossPrice)
+        assertEquals("https://www.obi.pl/p/7313810", product.productUrl)
+        assertEquals("5900007313810", product.ean)
+    }
+
+    @Test
+    fun `real OBI structure does not use online seller price or shipping cost as local price`() {
+        val product = parser.parse(fixture("real-7313810-store-075.html"), OBIK, STORE).getOrThrow()
+
+        assertEquals(BigDecimal("123.45"), product.grossPrice)
+        assertTrue(product.grossPrice != BigDecimal("111.11"))
+        assertTrue(product.grossPrice != BigDecimal("19.99"))
+    }
+
+    @Test
+    fun `real OBI structure preserves confirmed zero local stock`() {
+        val product = parser.parse(fixture("real-7313810-store-075-zero-stock.html"), OBIK, STORE).getOrThrow()
+
+        assertEquals(0, product.stock)
+        assertEquals(BigDecimal("123.45"), product.grossPrice)
+    }
+
+    @Test
+    fun `real OBI structure rejects a different selected store context`() {
+        assertTrue(parser.parse(fixture("real-7313810-store-075.html"), OBIK, "999").isFailure)
+    }
+
+    @Test
     fun `preserves confirmed zero stock`() {
         assertEquals(0, parser.parse(fixture("zero-stock.html"), OBIK, STORE).getOrThrow().stock)
     }

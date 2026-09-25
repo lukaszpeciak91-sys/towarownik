@@ -38,4 +38,15 @@ class ObiHttpClientTest {
             assertEquals(ObiHttpResult.Failure("OBI returned HTTP 503"), result)
         }
     }
+
+    @Test
+    fun `blank successful response is an empty product page failure`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("   \n"))
+
+            val result = ObiHttpClient(server.url("/")).fetchProduct("7313810", "075")
+
+            assertEquals(ObiHttpResult.Failure("OBI returned an empty product page"), result)
+        }
+    }
 }

@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **V0.1 — Android bootstrap**. See [the progress log](docs/progress.md) for the next milestone and [the decision record](docs/decisions.md) for the approved scope.
+The current phase is **V0.1 — OBI product lookup core**. See [the progress log](docs/progress.md) for the next milestone and [the decision record](docs/decisions.md) for the approved scope.
 
 ## Technology
 

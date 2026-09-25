@@ -42,8 +42,8 @@ class ObiHttpClient(
                 if (!response.isSuccessful) {
                     ObiHttpResult.Failure("OBI returned HTTP ${response.code}")
                 } else {
-                    val body = response.body.string()
-                    if (body.isBlank()) ObiHttpResult.Failure("OBI returned an empty product page")
+                    val body = response.body?.string()
+                    if (body.isNullOrBlank()) ObiHttpResult.Failure("OBI returned an empty product page")
                     else ObiHttpResult.Success(body)
                 }
             }

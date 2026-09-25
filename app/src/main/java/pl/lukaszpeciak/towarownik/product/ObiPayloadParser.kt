@@ -9,15 +9,19 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 class ObiPayloadParser(private val json: Json = Json { ignoreUnknownKeys = true }) {
     fun parse(html: String, expectedObik: String, storeNumber: String): Result<LocalProduct> = runCatching {
         val nuxt = parseScript(html, "__NUXT_DATA__") ?: error("Missing OBI Nuxt payload")
         val decoded = NuxtDecoder(nuxt).decode()
-        val product = decoded.objects().firstOrNull { candidate ->
-            PRODUCT_NUMBER_KEYS.any { key -> candidate.string(key) == expectedObik }
-        } ?: error("Product $expectedObik is absent from OBI payload")
+        val selectedContext = decoded.objects().firstOrNull { candidate ->
+            val selectedStore = candidate["selectedStore"] as? JsonObject
+            val selectedProduct = candidate["product"] as? JsonObject
+            selectedStore?.string("storeNumber") == storeNumber &&
+                selectedProduct != null &&
+                PRODUCT_NUMBER_KEYS.any { key -> selectedProduct.string(key) == expectedObik }
+        } ?: error("Product $expectedObik for selected OBI store $storeNumber is absent from OBI payload")
+        val product = selectedContext["product"] as JsonObject
 
         val name = PRODUCT_NAME_KEYS.firstNotNullOfOrNull(product::string)
             ?: jsonLdProduct(html, expectedObik)?.string("name")
