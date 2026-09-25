@@ -7,6 +7,13 @@ internal sealed interface ObiSearchParseResult {
 
 class ObiSearchParser {
     internal fun parse(html: String): Result<ObiSearchParseResult> = runCatching {
+        val canonicalObik = CANONICAL_PRODUCT.find(html)?.groupValues?.get(1)
+        if (canonicalObik != null) {
+            return@runCatching ObiSearchParseResult.Results(
+                listOf(ProductSearchCandidate(canonicalObik, null)),
+            )
+        }
+
         val candidates = LinkedHashMap<String, String?>()
 
         PRODUCT_LINK.findAll(html).forEach { match ->
@@ -26,13 +33,6 @@ class ObiSearchParser {
                 candidates.entries
                     .take(MAX_RESULTS)
                     .map { (obik, name) -> ProductSearchCandidate(obik, name) },
-            )
-        }
-
-        val canonicalObik = CANONICAL_PRODUCT.find(html)?.groupValues?.get(1)
-        if (canonicalObik != null) {
-            return@runCatching ObiSearchParseResult.Results(
-                listOf(ProductSearchCandidate(canonicalObik, null)),
             )
         }
 
@@ -57,7 +57,10 @@ class ObiSearchParser {
             """<a\b([^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*)>(.*?)</a>""",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
         )
-        val PRODUCT_PATH = Regex("""(?:https?://(?:www\.)?obi\.pl)?/p/(\d{7})(?:/|\?|#|$)""", RegexOption.IGNORE_CASE)
+        val PRODUCT_PATH = Regex(
+            """(?:https?://(?:www\.)?obi\.pl)?/p/(\d{7})(?:/|\?|#|$)""",
+            RegexOption.IGNORE_CASE,
+        )
         val CANONICAL_PRODUCT = Regex(
             """<link\b(?=[^>]*\brel\s*=\s*["']canonical["'])[^>]*\bhref\s*=\s*["'][^"']*/p/(\d{7})(?:/[^"']*)?["'][^>]*>""",
             RegexOption.IGNORE_CASE,
@@ -73,7 +76,7 @@ class ObiSearchParser {
         var text = replace(TAG, " ")
             .replace("&nbsp;", " ", ignoreCase = true)
             .replace("&amp;", "&", ignoreCase = true)
-            .replace("&quot;", "\\\"", ignoreCase = true)
+            .replace("&quot;", "\"", ignoreCase = true)
             .replace("&#39;", "'", ignoreCase = true)
             .replace("&lt;", "<", ignoreCase = true)
             .replace("&gt;", ">", ignoreCase = true)
