@@ -41,13 +41,8 @@ class ProductLookupRepository(
                 .fold(
                     onSuccess = { ProductLookupResult.Found(it) },
                     onFailure = { exception ->
-                        val failure = if (exception is ObiProductNotFoundException) {
-                            ProductLookupFailure.NOT_FOUND
-                        } else {
-                            ProductLookupFailure.DATA
-                        }
                         ProductLookupResult.Unavailable(
-                            failure = failure,
+                            failure = ProductLookupFailure.DATA,
                             reason = exception.message ?: "OBI payload could not be parsed",
                         )
                     },
