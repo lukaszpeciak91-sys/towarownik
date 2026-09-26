@@ -17,6 +17,9 @@ class ObiDiagnosticRecorder(
     private val history = ArrayDeque<DiagnosticOperationSnapshot>()
 
     @Volatile
+    private var liveProbeReport: ObiLiveProbeReport? = null
+
+    @Volatile
     private var enabled = false
 
     @Volatile
@@ -40,6 +43,7 @@ class ObiDiagnosticRecorder(
     fun clear() {
         active.clear()
         history.clear()
+        liveProbeReport = null
     }
 
     @Synchronized
@@ -160,6 +164,11 @@ class ObiDiagnosticRecorder(
     fun snapshots(): List<DiagnosticOperationSnapshot> = history.toList()
 
     @Synchronized
+    fun setLiveProbeReport(report: ObiLiveProbeReport) {
+        liveProbeReport = report
+    }
+
+    @Synchronized
     fun report(): String {
         val records = history.toList() + active.values.map(MutableOperation::snapshot)
         return renderReport(records)
@@ -178,7 +187,6 @@ class ObiDiagnosticRecorder(
 
         if (records.isEmpty()) {
             appendLine("No captured OBI operations.")
-            return@buildString
         }
 
         records.forEachIndexed { index, record ->
@@ -270,6 +278,11 @@ class ObiDiagnosticRecorder(
                 record.errorMappingTrace.forEach { appendLine("  $it") }
             }
             appendLine()
+        }
+
+        liveProbeReport?.let { probe ->
+            appendLine()
+            append(probe.render())
         }
     }
 
