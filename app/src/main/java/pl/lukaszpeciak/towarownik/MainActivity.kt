@@ -1,7 +1,5 @@
 package pl.lukaszpeciak.towarownik
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -52,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -301,7 +298,7 @@ private fun ConversationDrawer(
     ModalDrawerSheet {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -475,7 +472,7 @@ private fun AdvisorTopBar(
                 }
                 IconButton(onClick = onOpenSearch) {
                     Text(
-                        text = "⌕",
+                        text = "🔍",
                         style = MaterialTheme.typography.headlineSmall,
                     )
                 }
@@ -833,56 +830,6 @@ private fun ManualSearchResults(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Pokaż więcej")
-            }
-        }
-    }
-}
-
-@Composable
-internal fun VerifiedProductCard(
-    product: VerifiedProductUiModel,
-) {
-    val context = LocalContext.current
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        tonalElevation = 2.dp,
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = product.name,
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                text = "OBIK: ${product.obik}",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = formatStore075Price(product.grossPrice),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Text(
-                text = formatStore075Stock(product.stock),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            OutlinedButton(
-                onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse(product.productUrl),
-                            ),
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Otwórz w OBI")
             }
         }
     }
