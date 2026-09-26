@@ -25,6 +25,21 @@ class ObiSearchParserTest {
     }
 
     @Test
+    fun `recognized product links win over embedded zero-result phrase`() {
+        val result = parser.parse(fixture("search-results-with-hidden-empty-state.html")).getOrThrow()
+
+        assertEquals(
+            ObiSearchParseResult.Results(
+                listOf(
+                    ProductSearchCandidate("3496072", "Dragon Klej uniwersalny Butapren 50 ml"),
+                    ProductSearchCandidate("1234567", "Drugi produkt"),
+                ),
+            ),
+            result,
+        )
+    }
+
+    @Test
     fun `canonical product redirect becomes one reliable candidate`() {
         val result = parser.parse(fixture("search-single-product.html")).getOrThrow()
 
