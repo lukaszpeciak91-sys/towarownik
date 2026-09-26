@@ -40,6 +40,37 @@ class ObiSearchParserTest {
     }
 
     @Test
+    fun `empty result state wins over unrelated recommendation product link`() {
+        assertEquals(
+            ObiSearchParseResult.NoResults,
+            parser.parse(fixture("search-empty.html")).getOrThrow(),
+        )
+    }
+
+    @Test
+    fun `positive result count without recognizable products is a data failure`() {
+        val html = """
+            <html><body>
+            <h1>Wyniki dla dedra (2)</h1>
+            <div>Brak rozpoznawalnych kart produktów</div>
+            </body></html>
+        """.trimIndent()
+
+        assertTrue(parser.parse(html).isFailure)
+    }
+
+    @Test
+    fun `product link without positive result count or empty state is ambiguous`() {
+        val html = """
+            <html><body>
+            <a href="/p/7014053/rekomendacja">Rekomendacja</a>
+            </body></html>
+        """.trimIndent()
+
+        assertTrue(parser.parse(html).isFailure)
+    }
+
+    @Test
     fun `canonical product redirect becomes one reliable candidate`() {
         val result = parser.parse(fixture("search-single-product.html")).getOrThrow()
 
