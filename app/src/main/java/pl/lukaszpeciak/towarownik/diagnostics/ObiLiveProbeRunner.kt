@@ -41,15 +41,13 @@ internal class ObiLiveProbeRunner(
         )
         sections += ObiProbeSection("endpoint-baseline", endpointSteps)
 
-        val profileSteps = ObiProbeProfile.entries.associateWith { profile ->
-            ObiProbeSession(baseUrl, profile, nativeUserAgent)
+        ObiProbeProfile.entries.forEach { profile ->
+            val step = ObiProbeSession(baseUrl, profile, nativeUserAgent)
                 .get("search-dedra", urls.search(), ObiProbeBodyKind.SEARCH)
-                .also { step ->
-                    sections += ObiProbeSection("profile-${profile.reportName}", listOf(step))
-                }
+            sections += ObiProbeSection("profile-${profile.reportName}", listOf(step))
         }
 
-        val baselineSequences = listOf(
+        val sessionSequences = listOf(
             runSessionSequence(
                 urls = urls,
                 profile = ObiProbeProfile.A_BASELINE,
@@ -68,42 +66,46 @@ internal class ObiLiveProbeRunner(
                 bootstrap = ProbeBootstrap.CANONICAL_PRODUCT,
                 sectionName = "session-S2-baseline",
             ),
+            runSessionSequence(
+                urls = urls,
+                profile = ObiProbeProfile.E_COMBINED_HTML,
+                bootstrap = ProbeBootstrap.NONE,
+                sectionName = "session-S0-profile-E",
+            ),
+            runSessionSequence(
+                urls = urls,
+                profile = ObiProbeProfile.E_COMBINED_HTML,
+                bootstrap = ProbeBootstrap.ROOT,
+                sectionName = "session-S1-profile-E",
+            ),
+            runSessionSequence(
+                urls = urls,
+                profile = ObiProbeProfile.E_COMBINED_HTML,
+                bootstrap = ProbeBootstrap.CANONICAL_PRODUCT,
+                sectionName = "session-S2-profile-E",
+            ),
+            runSessionSequence(
+                urls = urls,
+                profile = ObiProbeProfile.G_BROWSER_HTML,
+                bootstrap = ProbeBootstrap.NONE,
+                sectionName = "session-S0-profile-G",
+            ),
+            runSessionSequence(
+                urls = urls,
+                profile = ObiProbeProfile.G_BROWSER_HTML,
+                bootstrap = ProbeBootstrap.ROOT,
+                sectionName = "session-S1-profile-G",
+            ),
+            runSessionSequence(
+                urls = urls,
+                profile = ObiProbeProfile.G_BROWSER_HTML,
+                bootstrap = ProbeBootstrap.CANONICAL_PRODUCT,
+                sectionName = "session-S2-profile-G",
+            ),
         )
-        baselineSequences.forEach { sections += it.section }
+        sessionSequences.forEach { sections += it.section }
 
-        val combinedSearch = profileSteps.getValue(ObiProbeProfile.E_COMBINED_HTML)
-        val baselineSearch = profileSteps.getValue(ObiProbeProfile.A_BASELINE)
-        val combinedSequences = if (
-            combinedSearch.isNormalHtml() &&
-            !baselineSearch.isNormalHtml()
-        ) {
-            listOf(
-                runSessionSequence(
-                    urls = urls,
-                    profile = ObiProbeProfile.E_COMBINED_HTML,
-                    bootstrap = ProbeBootstrap.NONE,
-                    sectionName = "session-S0-profile-E",
-                ),
-                runSessionSequence(
-                    urls = urls,
-                    profile = ObiProbeProfile.E_COMBINED_HTML,
-                    bootstrap = ProbeBootstrap.ROOT,
-                    sectionName = "session-S1-profile-E",
-                ),
-                runSessionSequence(
-                    urls = urls,
-                    profile = ObiProbeProfile.E_COMBINED_HTML,
-                    bootstrap = ProbeBootstrap.CANONICAL_PRODUCT,
-                    sectionName = "session-S2-profile-E",
-                ),
-            ).also { sequences ->
-                sequences.forEach { sections += it.section }
-            }
-        } else {
-            emptyList()
-        }
-
-        val storeOpportunity = (baselineSequences + combinedSequences)
+        val storeOpportunity = sessionSequences
             .firstOrNull { sequence ->
                 sequence.storeStep.hops.firstOrNull()?.status?.let { it != 404 } == true
             }
@@ -297,17 +299,34 @@ internal class ObiProbeSession(
 
         return try {
             client.newCall(request).execute().use { response ->
-                val preview = runCatching {
-                    response.peekBody(BODY_PREVIEW_BYTES).string()
-                }.getOrDefault("")
+                val previewBytes = runCatching {
+                    response.peekBody(BODY_PREVIEW_PROBE_BYTES).bytes()
+                }.getOrDefault(ByteArray(0))
+                val previewTruncated = when {
+                    previewBytes.size > BODY_PREVIEW_LIMIT_BYTES -> true
+                    previewBytes.size < BODY_PREVIEW_LIMIT_BYTES -> false
+                    else -> null
+                }
+                val previewText = previewBytes
+                    .copyOfRange(
+                        0,
+                        minOf(previewBytes.size, BODY_PREVIEW_LIMIT_BYTES),
+                    )
+                    .toString(Charsets.UTF_8)
                 val signatures = when (bodyKind) {
-                    ObiProbeBodyKind.GENERIC -> genericBodySignatures(preview)
-                    ObiProbeBodyKind.SEARCH -> searchBodySignatures(preview)
+                    ObiProbeBodyKind.GENERIC -> genericBodySignatures(previewText)
+                    ObiProbeBodyKind.SEARCH -> searchBodySignatures(previewText)
                     ObiProbeBodyKind.PRODUCT -> productBodySignatures(
-                        preview,
+                        previewText,
                         OBI_PROBE_CONTROL_OBIK,
                     )
                 }
+                val bodyPreview = ObiProbeBodyPreview(
+                    previewUtf8Bytes = previewText.toByteArray(Charsets.UTF_8).size,
+                    previewLimitBytes = BODY_PREVIEW_LIMIT_BYTES,
+                    previewTruncated = previewTruncated,
+                    signatures = signatures,
+                )
 
                 ObiProbeStep(
                     label = label,
@@ -317,7 +336,7 @@ internal class ObiProbeSession(
                     hops = traceInterceptor.end(),
                     finalStatus = response.code,
                     finalUrl = sanitizeDiagnosticUrl(response.request.url.toString()),
-                    bodySignatures = signatures,
+                    bodyPreview = bodyPreview,
                     errorType = null,
                 )
             }
@@ -330,7 +349,7 @@ internal class ObiProbeSession(
                 hops = traceInterceptor.end(),
                 finalStatus = null,
                 finalUrl = null,
-                bodySignatures = null,
+                bodyPreview = null,
                 errorType = exception.javaClass.simpleName,
             )
         }
@@ -340,7 +359,8 @@ internal class ObiProbeSession(
         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
 
     private companion object {
-        const val BODY_PREVIEW_BYTES = 64L * 1024L
+        const val BODY_PREVIEW_LIMIT_BYTES = 64 * 1024
+        const val BODY_PREVIEW_PROBE_BYTES = BODY_PREVIEW_LIMIT_BYTES.toLong() + 1L
     }
 }
 
@@ -355,6 +375,14 @@ internal fun ObiProbeProfile.applyHeaders(
         ObiProbeProfile.D_LANGUAGE_ONLY -> builder.header("Accept-Language", POLISH_ACCEPT_LANGUAGE)
         ObiProbeProfile.E_COMBINED_HTML -> {
             builder.header("User-Agent", nativeUserAgent)
+            builder.header("Accept", HTML_ACCEPT)
+            builder.header("Accept-Language", POLISH_ACCEPT_LANGUAGE)
+        }
+        ObiProbeProfile.F_BROWSER_UA_ONLY -> {
+            builder.header("User-Agent", SYNTHETIC_BROWSER_USER_AGENT)
+        }
+        ObiProbeProfile.G_BROWSER_HTML -> {
+            builder.header("User-Agent", SYNTHETIC_BROWSER_USER_AGENT)
             builder.header("Accept", HTML_ACCEPT)
             builder.header("Accept-Language", POLISH_ACCEPT_LANGUAGE)
         }
@@ -415,10 +443,8 @@ private class ProbeCookieJar : CookieJar {
         cookies.values.filter { it.matches(url) }
 }
 
-private fun ObiProbeStep.isNormalHtml(): Boolean =
-    finalStatus in 200..299 &&
-        bodySignatures?.looksLikeHtml == true &&
-        bodySignatures?.accessDeniedOrChallenge == false
+private const val SYNTHETIC_BROWSER_USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
 
 private const val HTML_ACCEPT =
     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
