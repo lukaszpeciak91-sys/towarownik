@@ -7,8 +7,8 @@ import {
   MAX_TOOL_QUERY_CHARS,
   START_BODY_MAX_BYTES,
   START_MESSAGE_MAX_CHARS,
-} from "./config";
-import type { ToolArguments, VerifiedProduct, VerifiedToolResult } from "./types";
+} from "./config.js";
+import type { ToolArguments, VerifiedProduct, VerifiedToolResult } from "./types.js";
 
 export class InvalidRequestError extends Error {}
 export class RequestTooLargeError extends Error {}
