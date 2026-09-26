@@ -64,6 +64,16 @@ class ObiPayloadParserTest {
     }
 
     @Test
+    fun `non-string live OBI EAN array value is not guessed`() {
+        val html = fixture("live-3496072-store-075.html")
+            .replace(",[27],{\"product\":24}", ",[13],{\"product\":24}")
+
+        val product = parser.parse(html, LIVE_OBIK, STORE).getOrThrow()
+
+        assertNull(product.ean)
+    }
+
+    @Test
     fun `current live OBI shape never substitutes seller or fallback values for local store data`() {
         val product = parser.parse(
             fixture("live-3496072-store-075.html"),
