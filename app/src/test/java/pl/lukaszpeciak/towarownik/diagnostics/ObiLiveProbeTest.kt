@@ -12,6 +12,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.product.ObiBrowserCompatibilityProfile
 import pl.lukaszpeciak.towarownik.product.ObiHttpClient
 
 class ObiLiveProbeTest {
@@ -57,12 +58,12 @@ class ObiLiveProbeTest {
                         assertEquals(POLISH_LANGUAGE_VALUE, request.getHeader("Accept-Language"))
                     }
                     ObiProbeProfile.F_BROWSER_UA_ONLY -> {
-                        assertEquals(SYNTHETIC_BROWSER_USER_AGENT, request.getHeader("User-Agent"))
+                        assertEquals(ObiBrowserCompatibilityProfile.USER_AGENT, request.getHeader("User-Agent"))
                         assertNull(request.getHeader("Accept"))
                         assertNull(request.getHeader("Accept-Language"))
                     }
                     ObiProbeProfile.G_BROWSER_HTML -> {
-                        assertEquals(SYNTHETIC_BROWSER_USER_AGENT, request.getHeader("User-Agent"))
+                        assertEquals(ObiBrowserCompatibilityProfile.USER_AGENT, request.getHeader("User-Agent"))
                         assertEquals(HTML_ACCEPT_VALUE, request.getHeader("Accept"))
                         assertEquals(POLISH_LANGUAGE_VALUE, request.getHeader("Accept-Language"))
                     }
@@ -77,8 +78,10 @@ class ObiLiveProbeTest {
     }
 
     @Test
-    fun `baseline probe request profile matches current production search profile`() {
+    fun `production search now matches proven browser HTML profile while baseline remains historical control`() {
         MockWebServer().use { server ->
+            val urls = ObiProbeUrls(server.url("/"))
+
             server.enqueue(MockResponse().setResponseCode(200).setBody("<html></html>"))
             ObiProbeSession(
                 baseUrl = server.url("/"),
@@ -86,22 +89,36 @@ class ObiLiveProbeTest {
                 nativeUserAgent = "unused",
             ).get(
                 "baseline",
-                ObiProbeUrls(server.url("/")).search(),
+                urls.search(),
                 ObiProbeBodyKind.SEARCH,
             )
-            val probeRequest = server.takeRequest()
+            val baselineRequest = server.takeRequest()
+
+            server.enqueue(MockResponse().setResponseCode(200).setBody("<html></html>"))
+            ObiProbeSession(
+                baseUrl = server.url("/"),
+                profile = ObiProbeProfile.G_BROWSER_HTML,
+                nativeUserAgent = "unused",
+            ).get(
+                "browser-html",
+                urls.search(),
+                ObiProbeBodyKind.SEARCH,
+            )
+            val browserRequest = server.takeRequest()
 
             server.enqueue(MockResponse().setResponseCode(200).setBody("<html></html>"))
             ObiHttpClient(baseUrl = server.url("/")).fetchSearch("dedra")
             val productionRequest = server.takeRequest()
 
-            assertEquals(productionRequest.path, probeRequest.path)
-            assertFalse(productionRequest.getHeader("User-Agent") == SYNTHETIC_BROWSER_USER_AGENT)
+            assertEquals(baselineRequest.path, productionRequest.path)
+            assertEquals(browserRequest.path, productionRequest.path)
+            assertEquals("okhttp/4.12.0", baselineRequest.getHeader("User-Agent"))
+
             listOf("User-Agent", "Accept", "Accept-Language", "Accept-Encoding").forEach { header ->
                 assertEquals(
                     "Header $header",
+                    browserRequest.getHeader(header),
                     productionRequest.getHeader(header),
-                    probeRequest.getHeader(header),
                 )
             }
         }
@@ -406,7 +423,7 @@ class ObiLiveProbeTest {
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val isBrowserHtml =
-                        request.getHeader("User-Agent") == SYNTHETIC_BROWSER_USER_AGENT &&
+                        request.getHeader("User-Agent") == ObiBrowserCompatibilityProfile.USER_AGENT &&
                             request.getHeader("Accept") == HTML_ACCEPT_VALUE &&
                             request.getHeader("Accept-Language") == POLISH_LANGUAGE_VALUE
                     val isStore = request.requestUrl?.encodedPath == "/api/disc/store/change"
