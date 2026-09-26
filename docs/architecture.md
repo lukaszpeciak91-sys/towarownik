@@ -65,7 +65,31 @@ When the model returns that function call, the Worker validates the tool name an
 
 The proxy normalizes OpenAI output to either `answer` or `tool_request`. Raw Responses payloads, reasoning items, token/usage metadata, internal instructions, and upstream error bodies do not cross into Android.
 
-On Android, `AdvisorProxyClient` is the isolated authenticated transport boundary. `AdvisorController` owns one stateless customer case and may execute at most two local tool calls before terminating with a bounded error. It never automatically retries a completed proxy request. `FindAvailableObi075Tool` is the only Android tool adapter; there is no generic agent/plugin framework. Leaving an active advisor flow cancels its coroutine/OkHttp call where practical. Separate customer cases never reuse prior response/call IDs.
+On Android, `AdvisorProxyClient` is the isolated authenticated transport boundary. `AdvisorController` owns one USER turn and may execute at most two local tool calls during that turn before terminating with a bounded error. The allowance resets for every new USER message. It never automatically retries a completed proxy request. `FindAvailableObi075Tool` remains the only Android tool adapter; there is no generic agent/plugin framework.
+
+Conversation continuity is local-first:
+
+```text
+Room conversation.lastResponseId
+        ↓
+POST /v1/agent/message
+        ↓
+Responses API previous_response_id
+        ↓
+tool loop if requested
+        ↓
+FINAL answer responseId
+        ↓
+transaction: ASSISTANT message + replace lastResponseId
+```
+
+The first USER turn has no previous response and uses `/v1/agent/start`. Later turns use the last successfully completed final answer response ID. Tool request response IDs are used only transiently for `/continue`; call IDs are never persisted. A new conversation starts with no response ID.
+
+Room schema v1 contains `conversations` and `messages` with a CASCADE foreign key. Room stores rendered USER/ASSISTANT text, timestamps, local title, draft, and nullable final `lastResponseId`; it does not store secrets, OBI payloads, raw OpenAI responses, or reasoning data.
+
+A trailing USER without a committed ASSISTANT means the turn was interrupted. Recovery removes only that trailing USER, restores its text to `draft`, and leaves the prior final `lastResponseId` unchanged. No proxy/OpenAI request runs during recovery. Completed assistant text and its final response ID are committed in one Room transaction.
+
+Conversation history search is local SQL substring matching over title and message text. It has no AI/network dependency. Conversations are ordered by `updatedAt` descending. On cold start the most recently updated useful conversation is restored when practical. Switching/new conversation cancels active work and generation-guards stale UI callbacks.
 
 ## OBIK lookup flow
 
@@ -103,10 +127,19 @@ Deterministic fixtures and CI prove code behavior against known inputs; they do 
 
 The application uses a single Compose activity and state-based top-level surfaces; Navigation Compose is intentionally not introduced. The default surface is the advisor chat shell. Its top bar has a modal drawer action, centered Towarownik title, explicit new-case action, and quick access to the independent full-screen Wyszukiwarka OBI. The drawer currently contains only “Nowa rozmowa”, a local conversation-search field, and an honest empty-history area; no fake or persisted conversations are created.
 
-The advisor remains technically one-shot in this milestone. The submitted user request and final normalized assistant answer are rendered as timestamped chat messages, while progress/error states appear inside the conversation surface. Simple Markdown markers are normalized before display. Starting a new case cancels active work, clears draft/rendered messages, and protects the new case from stale callbacks. Message timestamps use device/system local time only.
+The advisor is now genuinely multi-turn within one local customer conversation. After a completed ASSISTANT answer the composer is enabled again; the next USER message continues from that conversation's stored final response ID. Submitted/completed messages persist with createdAt timestamps and keep the existing local HH:mm presentation. Simple Markdown markers are still normalized before storage/display. Starting or opening another conversation cancels active work, recovers any interrupted trailing USER to the old conversation's draft, and protects the new selection from stale callbacks.
 
 The Wyszukiwarka OBI has its own Back surface and keeps advisor UI state intact. Completed manual-search state, typed search query, advisor draft/messages, and selected top-level surface use Compose saved state where practical so rotation does not unnecessarily erase the current screen. A reusable verified-product UI model/card receives only trusted Android-side exact lookup data and opens the existing `LocalProduct.productUrl` through the normal external browser intent.
 
 `TOWAROWNIK_APP_TOKEN` is injected at Android build time through `BuildConfig`. Missing token configuration keeps compilation and ordinary search working; DORADCA fails locally before any network call. The signed Play workflow receives the token only from the matching GitHub Actions secret. The static token is only an Internal Testing abuse barrier and is extractable from an APK/AAB; it is not strong device authentication.
 
 The application uses the normal Android resource system. No orientation is locked, so the UI must continue to adapt cleanly to portrait and landscape sizes. Navigation, dependency injection, persistence, and other frameworks should be added only if a concrete feature requires them.
+
+
+## Multi-turn proxy continuation
+
+The Worker additionally exposes authenticated `POST /v1/agent/message` with exact input `{previousResponseId,message}`. Android cannot override model, instructions, tools, reasoning effort, token budget, or OpenAI URL. The Worker resends the stable server-controlled instructions/tool declaration and passes `previous_response_id` plus only the new user message to the Responses API.
+
+Using `previous_response_id` avoids manually sending the complete local transcript on each turn, but previous context tokens in that chain are still billed as input tokens. No summarization or compaction is implemented yet.
+
+Server-side instructions explicitly require a fresh `find_available_obi_075` call when the current question depends on current store-075 availability, stock, price, or selecting currently available products. Historical stock/price statements are context only, never current authority.
