@@ -105,3 +105,18 @@ These decisions describe the broader intended product behavior. The currently im
 - Android tool results are strict, compact, and bounded: at most five products; seven-digit OBIK; bounded names; stock is non-negative integer or null; price is finite non-negative number or null. Arbitrary extra structures such as OBI HTML/Nuxt are rejected.
 - Raw OpenAI responses/errors are not forwarded. Client errors map to bounded 400/413, app auth to 401, missing server configuration to 503, and upstream/protocol failures to 502.
 - No application-level OpenAI retry, streaming, web search, file search, computer use, hosted shell, image generation, MCP, analytics, or server-side OBI implementation is introduced.
+
+
+## Android advisor integration v0.1
+
+- The app exposes two separate top-level modes without a navigation framework: **WYSZUKIWARKA** is the default and preserves the existing OBIK/EAN/text flow; **DORADCA** is the technical assistant integration surface.
+- Ordinary search never calls the Cloudflare proxy or OpenAI and remains usable when the advisor build token is absent.
+- Android owns execution of the one known tool, `find_available_obi_075(query, limit)`, using the existing `ProductSearchRepository` followed by bounded sequential exact `ProductLookupRepository` calls. No OBI transport/parser code is duplicated.
+- A search `NotFound` becomes a verified empty tool result. Search failure stops the advisor flow. Failed exact lookups never create fake zero-stock products; verified successes may be returned alongside skipped failures, but zero verified products plus any exact failure stops the flow.
+- Compact tool output contains only OBIK, exact product name, stock, and local gross price. Confirmed stock `0` remains `0`; unknown stock/price remain `null`. HTML, Nuxt, cookies, URLs, diagnostics, and parser reasons never enter the proxy payload.
+- `AdvisorController` owns one customer case, stores no persistent history, and enforces `MAX_LOCAL_TOOL_CALLS_PER_CASE = 2`. A third requested tool is not executed and does not trigger another continue request.
+- Android proxy transport has no application retry, disables OkHttp connection retry, uses bounded timeouts, and cancels the active Call when its coroutine is cancelled.
+- `TOWAROWNIK_APP_TOKEN` is injected through BuildConfig from the build environment. Missing configuration fails DORADCA locally before networking and does not weaken WYSZUKIWARKA.
+- The shared static app token is only an Internal Testing abuse barrier and can be extracted from a distributed APK/AAB; it is not treated as strong device/user authentication.
+- The manual signed AAB workflow requires the GitHub Actions secret `TOWAROWNIK_APP_TOKEN` and passes it to Gradle only for the release build.
+- The final advisor personality/prompt, persistent chat, general chat, additional tools, and cost/policy tuning remain later milestones.
