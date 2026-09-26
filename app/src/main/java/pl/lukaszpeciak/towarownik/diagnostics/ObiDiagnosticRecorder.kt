@@ -164,7 +164,7 @@ class ObiDiagnosticRecorder(
     fun snapshots(): List<DiagnosticOperationSnapshot> = history.toList()
 
     @Synchronized
-    fun setLiveProbeReport(report: ObiLiveProbeReport) {
+    internal fun setLiveProbeReport(report: ObiLiveProbeReport) {
         liveProbeReport = report
     }
 
