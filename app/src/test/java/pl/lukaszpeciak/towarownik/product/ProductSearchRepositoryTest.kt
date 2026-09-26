@@ -50,6 +50,30 @@ class ProductSearchRepositoryTest {
     }
 
     @Test
+    fun `confirmed CloudFront edge 404 is network failure not not found`() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(404)
+                    .addHeader("Server", "CloudFront")
+                    .addHeader("x-cache", "Error from cloudfront")
+                    .setBody(""),
+            )
+            val repository = ProductSearchRepository(
+                httpClient = ObiHttpClient(server.url("/")),
+            )
+
+            val result = repository.search("dedra")
+
+            assertTrue(result is ProductSearchResult.Unavailable)
+            assertEquals(
+                ProductLookupFailure.NETWORK,
+                (result as ProductSearchResult.Unavailable).failure,
+            )
+        }
+    }
+
+    @Test
     fun `malformed search payload maps to data failure not not found`() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(fixture("search-malformed.html")))
