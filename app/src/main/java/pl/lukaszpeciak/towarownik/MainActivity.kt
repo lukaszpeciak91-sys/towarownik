@@ -536,7 +536,7 @@ private fun AdvisorChatScreen(
     onOpenDiagnostics: () -> Unit,
 ) {
     val isRunning = state.isRunning()
-    val composerEnabled = !isRunning
+    val composerEnabled = isAdvisorComposerEnabled(state)
 
     Scaffold(
         topBar = {
