@@ -356,7 +356,6 @@ private fun AdvisorScreen(
                 OutlinedButton(
                     onClick = onNewCase,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !isRunning,
                 ) {
                     Text("Nowa sprawa")
                 }
