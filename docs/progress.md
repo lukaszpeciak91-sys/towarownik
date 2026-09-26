@@ -14,7 +14,7 @@ Hardware verification of app `0.1.2 (3)` confirmed that the browser-compatible p
 
 The remaining failure is parser-side. `ObiPayloadParser` successfully parses the Nuxt JSON but its historical object-shape assumption no longer finds the expected product/store context, producing `PRODUCT_ID_MATCH_FAILED`, `STORE_075_MATCH_FAILED`, and a DATA error.
 
-A developer-only GitHub Actions live contract probe is being added so current public OBI HTML and Nuxt structure can be inspected without rebuilding the Android app for every diagnostic iteration. The probe keeps its cookie jar out of artifacts and emits bounded structural summaries suitable for updating deterministic sanitized fixtures.
+A developer-only GitHub Actions live contract probe is being added so current public OBI HTML and Nuxt structure can be inspected without rebuilding the Android app for every diagnostic iteration. It is manual-only; pull-request CI remains deterministic. The probe validates OBIK/store inputs, sanitizes the final URL, uploads raw payloads only after HTTP 200 from the expected OBI host, deletes its cookie jar before artifact handling, and labels raw captures as short-lived sensitive diagnostics. Its inspector now resolves flattened Nuxt references explicitly so fields such as local stock and gross price cannot be confused with reference indices. Deterministic Python tests run in normal CI.
 
 ## Next implementation milestone
 
