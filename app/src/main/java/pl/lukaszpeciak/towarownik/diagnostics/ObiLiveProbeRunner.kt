@@ -443,7 +443,7 @@ private class ProbeCookieJar : CookieJar {
         cookies.values.filter { it.matches(url) }
 }
 
-private const val SYNTHETIC_BROWSER_USER_AGENT =
+internal const val SYNTHETIC_BROWSER_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
 
 private const val HTML_ACCEPT =
