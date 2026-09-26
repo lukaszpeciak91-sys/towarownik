@@ -78,6 +78,7 @@ internal class AdvisorController(
                 }
 
                 is AdvisorProxyResult.ToolRequest -> {
+                    val toolRequest = proxyResult
                     if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_CASE) {
                         onState(
                             AdvisorUiState.Error(
@@ -91,7 +92,7 @@ internal class AdvisorController(
                     onState(AdvisorUiState.RunningLocalTool)
 
                     val localResult = try {
-                        executeTool(proxyResult.arguments)
+                        executeTool(toolRequest.arguments)
                     } catch (exception: CancellationException) {
                         throw exception
                     } catch (_: Exception) {
@@ -114,8 +115,8 @@ internal class AdvisorController(
 
                     proxyResult = when (val continued = safeProxyCall {
                         continueAgent(
-                            proxyResult.responseId,
-                            proxyResult.callId,
+                            toolRequest.responseId,
+                            toolRequest.callId,
                             verifiedResult,
                         )
                     }) {
