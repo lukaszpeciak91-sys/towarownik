@@ -1,6 +1,14 @@
+import json
 import unittest
+from pathlib import Path
 
 import obi_live_contract_probe as probe
+
+FIXTURE_PATH = Path(__file__).with_name("fixtures") / "obi_flattened_nuxt.json"
+
+
+def flattened_fixture():
+    return json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 class NuxtExtractionTest(unittest.TestCase):
@@ -48,31 +56,30 @@ class FlattenedReferenceTest(unittest.TestCase):
         self.assertEqual("wrapper", trace["chain"][0]["resolved"]["type"])
         self.assertEqual("object", trace["chain"][1]["resolved"]["type"])
 
-    def test_keyword_hit_reports_resolved_stock_and_price_not_reference_indices(self):
-        root = [
-            {"articleData": 1},
-            {"stock": 2, "pricing": 3},
-            25,
-            {"grossPrice": 4},
-            12.99,
-        ]
+    def test_keyword_hit_reports_resolved_live_shape_values_not_reference_indices(self):
+        root = flattened_fixture()
 
         hits = probe.keyword_hits(root)
-        by_key = {hit["key"]: hit for hit in hits if hit["objectPath"] == "$[1]"}
+        store_article = next(hit for hit in hits if hit["objectPath"] == "$[10]" and hit["key"] == "stock")
+        store_pricing = next(hit for hit in hits if hit["objectPath"] == "$[10]" and hit["key"] == "pricing")
+        gross = next(hit for hit in hits if hit["objectPath"] == "$[12]" and hit["key"] == "grossPrice")
+        seller = next(hit for hit in hits if hit["objectPath"] == "$[14]" and hit["key"] == "stock")
 
         self.assertEqual(
-            "ref top[2] -> 25",
-            probe.format_reference_trace(by_key["stock"]["referenceTrace"]),
+            "ref top[11] -> 25",
+            probe.format_reference_trace(store_article["referenceTrace"]),
         )
         self.assertEqual(
-            "ref top[3] -> object keys=['grossPrice']",
-            probe.format_reference_trace(by_key["pricing"]["referenceTrace"]),
+            "ref top[12] -> object keys=['grossPrice']",
+            probe.format_reference_trace(store_pricing["referenceTrace"]),
         )
-
-        gross = next(hit for hit in hits if hit["objectPath"] == "$[3]" and hit["key"] == "grossPrice")
         self.assertEqual(
-            "ref top[4] -> 12.99",
+            "ref top[15] -> 12.99",
             probe.format_reference_trace(gross["referenceTrace"]),
+        )
+        self.assertEqual(
+            "ref top[17] -> 9",
+            probe.format_reference_trace(seller["referenceTrace"]),
         )
 
     def test_reverse_reference_layers_walk_from_value_to_owner(self):
@@ -96,6 +103,29 @@ class FlattenedReferenceTest(unittest.TestCase):
 
         many_keys = {f"stock{index}": index for index in range(probe.MAX_KEY_HITS + 20)}
         self.assertEqual(probe.MAX_KEY_HITS, len(probe.keyword_hits([many_keys])))
+
+
+class UrlSanitizationTest(unittest.TestCase):
+    def test_expected_obi_url_drops_query_and_fragment(self):
+        expected, safe = probe.sanitize_obi_final_url(
+            "https://www.obi.pl/p/3496072/example?token=secret#fragment"
+        )
+        self.assertTrue(expected)
+        self.assertEqual("https://www.obi.pl/p/3496072/example", safe)
+
+    def test_unexpected_or_invalid_url_is_redacted(self):
+        cases = [
+            "https://example.com/p/3496072?token=secret",
+            "http://www.obi.pl/p/3496072",
+            "https://user:pass@www.obi.pl/p/3496072",
+            "https://www.obi.pl:444/p/3496072",
+            "https://[invalid",
+        ]
+        for value in cases:
+            with self.subTest(value=value):
+                expected, safe = probe.sanitize_obi_final_url(value)
+                self.assertFalse(expected)
+                self.assertTrue(safe.startswith("REDACTED_"))
 
 
 class InputValidationTest(unittest.TestCase):
