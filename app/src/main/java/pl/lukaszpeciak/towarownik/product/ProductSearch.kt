@@ -55,7 +55,8 @@ class ProductSearchRepository(
     private val diagnostics: ObiDiagnosticRecorder = ObiDiagnostics.recorder,
 ) {
     fun search(query: String): ProductSearchResult {
-        val diagnosticInputType = when (classifyProductSearchInput(query)) {
+        val normalizedQuery = normalizeProductSearchInput(query)
+        val diagnosticInputType = when (classifyProductSearchInput(normalizedQuery)) {
             is ProductSearchInput.Ean -> ObiDiagnosticInputType.EAN
             is ProductSearchInput.Text -> ObiDiagnosticInputType.TEXT
             is ProductSearchInput.Obik -> ObiDiagnosticInputType.OBIK
@@ -64,7 +65,7 @@ class ProductSearchRepository(
 
         return when (
             val response = httpClient.fetchSearch(
-                query = query,
+                query = normalizedQuery,
                 inputType = diagnosticInputType,
             )
         ) {
