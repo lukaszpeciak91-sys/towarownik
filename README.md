@@ -37,7 +37,9 @@ The debug APK is generated under `app/build/outputs/apk/debug/` and must not be 
 
 The manual GitHub Actions workflow **OBI live contract probe** inspects the current public OBI product payload without changing or rebuilding the Android app. By default it requests OBIK `3496072` for store `075` through the same browser-compatible request profile used by production.
 
-The workflow stores a short-lived Actions artifact containing the downloaded public product HTML, extracted `__NUXT_DATA__`, and bounded schema summaries. Its temporary cookie jar is deleted before artifact upload and is never committed. Use this workflow to refresh parser evidence when OBI changes, then keep deterministic sanitized fixtures in the repository for normal tests.
+The workflow is manual-only. It always emits a bounded safe summary, but raw HTML and extracted `__NUXT_DATA__` are uploaded only after HTTP 200 from the expected `www.obi.pl` host. Raw captures are deliberately treated as short-lived sensitive diagnostic artifacts because a live public page can contain request-specific identifiers or future transient tokens; their retention is one day. The temporary cookie jar is deleted before any artifact upload and is never committed.
+
+Normal pull-request CI never calls live OBI. It runs deterministic Python tests for the inspector alongside the Android checks. Use the manual probe only to refresh contract evidence when OBI changes, then convert confirmed structure into sanitized deterministic fixtures for parser tests.
 
 ## Signed Google Play AAB
 
