@@ -129,11 +129,11 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
 internal fun recoverInterruptedAdvisorCase(
     state: AdvisorCaseUiState,
 ): AdvisorCaseUiState {
-    val onlyMessage = state.messages.singleOrNull()
-    return if (onlyMessage?.role == ChatMessageRole.USER) {
-        AdvisorCaseUiState(
-            draft = onlyMessage.text,
-            messages = emptyList(),
+    val lastMessage = state.messages.lastOrNull()
+    return if (lastMessage?.role == ChatMessageRole.USER) {
+        state.copy(
+            draft = lastMessage.text,
+            messages = state.messages.dropLast(1),
         )
     } else {
         state
