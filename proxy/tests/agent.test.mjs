@@ -421,6 +421,47 @@ test("malformed model function arguments are a bounded upstream failure", async 
   assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
 });
 
+test("message without Authorization returns 401", async () => {
+  const worker = createWorker(async () => {
+    throw new Error("upstream must not be called");
+  });
+
+  const response = await worker.fetch(
+    jsonRequest(
+      "/v1/agent/message",
+      { previousResponseId: "resp_previous", message: "hello" },
+      { authorization: false },
+    ),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await responseJson(response), { error: "unauthorized" });
+});
+
+test("valid message chains previous response with server-controlled configuration", async () => {
+  const fake = fakeOpenAI(answerPayload("Follow-up answer"));
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/message", {
+      previousResponseId: "resp_previous",
+      message: "A coś tańszego?",
+    }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const capture = fake.captures[0];
+  assert.equal(capture.body.previous_response_id, "resp_previous");
+  assert.equal(capture.body.input, "A coś tańszego?");
+  assert.equal(capture.body.model, OPENAI_MODEL);
+  assert.equal(capture.body.instructions, AGENT_INSTRUCTIONS);
+  assert.equal(capture.body.reasoning.effort, "low");
+  assert.equal(capture.body.tools.length, 1);
+  assert.equal(capture.body.tools[0].name, LOCAL_TOOL_NAME);
+});
+
 test("valid continue sends previous_response_id and function_call_output", async () => {
   const fake = fakeOpenAI(answerPayload("Final synthetic answer"));
   const worker = createWorker(fake.fetch);
