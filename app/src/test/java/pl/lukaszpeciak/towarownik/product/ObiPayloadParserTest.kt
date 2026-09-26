@@ -43,6 +43,27 @@ class ObiPayloadParserTest {
     }
 
     @Test
+    fun `current live OBI EAN comes from singleton Nuxt array without JSON-LD fallback`() {
+        val product = parser.parse(
+            fixture("live-3496072-store-075.html"),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals("5903649001412", product.ean)
+    }
+
+    @Test
+    fun `multiple live OBI EAN values are not guessed`() {
+        val html = fixture("live-3496072-store-075.html")
+            .replace(",[27],{\"product\":24}", ",[27,27],{\"product\":24}")
+
+        val product = parser.parse(html, LIVE_OBIK, STORE).getOrThrow()
+
+        assertNull(product.ean)
+    }
+
+    @Test
     fun `current live OBI shape never substitutes seller or fallback values for local store data`() {
         val product = parser.parse(
             fixture("live-3496072-store-075.html"),
