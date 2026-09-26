@@ -9,6 +9,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 KEY_TERMS = (
     "product",
@@ -63,6 +64,26 @@ def validate_identifiers(obik: str, store: str) -> None:
         raise ValueError("OBIK must contain exactly 7 digits")
     if re.fullmatch(r"\d{3}", store) is None:
         raise ValueError("Store number must contain exactly 3 digits")
+
+
+def sanitize_obi_final_url(raw_url: str) -> tuple[bool, str]:
+    try:
+        parsed = urlsplit(raw_url)
+        port = parsed.port
+    except ValueError:
+        return False, "REDACTED_INVALID_URL"
+
+    expected = bool(
+        parsed.scheme == "https"
+        and parsed.hostname == "www.obi.pl"
+        and port in (None, 443)
+        and parsed.username is None
+        and parsed.password is None
+    )
+    if not expected:
+        return False, "REDACTED_UNEXPECTED_HOST"
+
+    return True, urlunsplit(("https", "www.obi.pl", parsed.path or "/", "", ""))
 
 
 def extract_nuxt_payload(html: str) -> str:
@@ -374,6 +395,10 @@ def main() -> int:
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
+    expected_host, safe_final_url = sanitize_obi_final_url(args.final_url)
+    if not expected_host:
+        raise SystemExit("Final URL is not a safe expected OBI URL")
+
     html_path = Path(args.html)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -398,7 +423,7 @@ def main() -> int:
         obik=args.obik,
         store=args.store,
         status=args.status,
-        final_url=args.final_url,
+        final_url=safe_final_url,
     )
 
     (out_dir / "summary.json").write_text(
