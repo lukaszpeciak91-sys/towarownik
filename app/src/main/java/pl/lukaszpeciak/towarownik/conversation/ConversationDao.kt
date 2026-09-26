@@ -19,11 +19,11 @@ internal abstract class ConversationDao {
     @Query(
         """
         SELECT c.* FROM conversations c
-        WHERE c.title LIKE :pattern ESCAPE '\\' COLLATE NOCASE
+        WHERE c.title LIKE :pattern ESCAPE '\' COLLATE NOCASE
            OR EXISTS (
                 SELECT 1 FROM messages m
                 WHERE m.conversationId = c.id
-                  AND m.text LIKE :pattern ESCAPE '\\' COLLATE NOCASE
+                  AND m.text LIKE :pattern ESCAPE '\' COLLATE NOCASE
            )
         ORDER BY c.updatedAt DESC, c.id DESC
         """,
