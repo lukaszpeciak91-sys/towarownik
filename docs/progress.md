@@ -2,43 +2,47 @@
 
 ## Current phase
 
-**V0.1 — OBI text-search false-empty repair**
+**AI assistant / proxy foundation**
 
-Live Android diagnostics on app `0.1.5 (6)` confirmed that text-search transport and product-link extraction work: `dedra` produced 76 recognized unique product links while OBI reported 706 results, `pufas` produced 4, and the full Pufas product name produced 1. The failure was a parser precedence bug: a generic embedded “Nie znaleźliśmy żadnych wyników” phrase was treated as authoritative before recognized product links, causing false `NoResults`.
+PR #13 completed the OBI text-search false-empty repair. Positive OBI search pages now require a positive `Wyniki dla … (N)` count before recognized product links are accepted, while true empty pages with recommendation links remain protected from false positive results.
 
-The first precedence-only fix was rejected in audit because OBI can also include recommendation product links on a true zero-result page. The hardened rule now requires a positive `Wyniki dla … (N)` count before any product links are accepted as search results. This preserves both live positive pages and true empty pages with cross-sell recommendations.
+The existing Android OBI path is now considered the authoritative local product-data capability for the next phase: search discovery, OBIK extraction, exact store-`075` lookup, local stock, and local price stay in Android.
 
+The new phase introduces the smallest production-shaped Cloudflare Worker foundation under `proxy/` for a future Towarownik AI assistant. The Worker currently exposes only `GET /health` and has deterministic TypeScript/tests/CI. It makes no OpenAI request, has no agent endpoints, does not consume API credits, and contains no OBI transport or parser code.
 
-## Previous completed context
+The intended future split is:
 
-**V0.1 — OBI live payload/parser contract repair**
+```text
+Android local OBI lookup ── authoritative product/stock/price
 
-Hardware verification of app `0.1.2 (3)` confirmed that the browser-compatible production transport is working end to end:
+Android AI interaction
+        ↓
+Cloudflare Worker proxy
+        ↓
+OpenAI
+```
 
-- the store-change request for `075` returns HTTP 302 to the bare product path;
-- OBI redirects the bare product path to the canonical slug;
-- the final product response is HTTP 200 and contains real OBI HTML;
-- the production request uses the proven browser-compatible User-Agent, HTML Accept, Polish Accept-Language, redirect handling, and cookie session;
-- the full response contains valid `__NUXT_DATA__`, the requested OBIK, store `075`, and the canonical product URL.
+If the future model requests an OBI lookup, Android will execute the high-level local tool using the existing repositories and return only compact structured data. OBI HTML/Nuxt payloads stay out of the proxy/OpenAI path.
 
-Hardware verification of app `0.1.3 (4)` reproduced the parser failure after transport success: `NUXT_JSON_PARSE_OK` followed by `PRODUCT_ID_MATCH_FAILED` and `STORE_075_MATCH_FAILED`. The live contract probe established the concrete mismatch: current payloads use `Ref`/`ShallowRef`, `skuId`, `product.store.information.storeId`, and `product.store.articleData` for local stock/pricing.
+## Next implementation milestone
 
-A developer-only GitHub Actions live contract probe is being added so current public OBI HTML and Nuxt structure can be inspected without rebuilding the Android app for every diagnostic iteration. It is manual-only; pull-request CI remains deterministic. The probe validates OBIK/store inputs, sanitizes the final URL, uploads raw payloads only after HTTP 200 from the expected OBI host, deletes its cookie jar before artifact handling, and labels raw captures as short-lived sensitive diagnostics. Its inspector now resolves flattened Nuxt references explicitly so fields such as local stock and gross price cannot be confused with reference indices. Deterministic Python tests run in normal CI.
+**Define the authenticated AI conversation contract**
 
-## Current implementation milestone
-
-**Repair `ObiPayloadParser` against the confirmed live Nuxt contract**
-
-The parser fix adds confirmed `Ref`/`ShallowRef` unwrapping, `skuId` identity, store binding through `product.store.information`, and local stock/price through `product.store.articleData`. A sanitized deterministic fixture preserves the observed distinction between local stock `25` / gross price `12.99` and unrelated seller stock `9` / seller or fallback prices.
-
-After this PR passes review and CI, perform one final Android verification before the next Play AAB.
+After the proxy foundation is deployed and its health endpoint is verified, define the smallest authenticated agent request/response contract before adding any OpenAI call, prompt, model selection, tool calling, or Android chat UI.
 
 ## Not started
 
+- OpenAI API integration
+- OpenAI model selection
+- Agent prompts
+- Agent start/continue endpoints
+- Conversation history
+- Tool/function calling
+- Android chat UI
+- App-to-proxy authentication implementation
 - Camera barcode scanning
 - Local and nearby-store fallback behavior
 - External product-link behavior
 - Persistence/history/favorites
 - Product images
-- AI
 - Final Play release polish
