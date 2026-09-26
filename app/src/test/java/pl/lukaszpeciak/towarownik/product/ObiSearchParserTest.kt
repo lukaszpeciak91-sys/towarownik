@@ -48,6 +48,43 @@ class ObiSearchParserTest {
     }
 
     @Test
+    fun `positive result count caps candidates before later recommendation links`() {
+        val html = """
+            <html><body>
+            <h1>Wyniki dla pufas (1)</h1>
+            <a href="/p/3496072/wynik">Prawdziwy wynik</a>
+            <section class="recommendations">
+              <a href="/p/7014053/rekomendacja">Rekomendacja</a>
+            </section>
+            </body></html>
+        """.trimIndent()
+
+        assertEquals(
+            ObiSearchParseResult.Results(
+                listOf(ProductSearchCandidate("3496072", "Prawdziwy wynik")),
+            ),
+            parser.parse(html).getOrThrow(),
+        )
+    }
+
+    @Test
+    fun `empty phrase before recommendation rating prevents false positive result count`() {
+        val html = """
+            <html><body>
+            <h1>Wyniki dla qubrick</h1>
+            <p>Nie znaleźliśmy żadnych wyników dla qubrick.</p>
+            <a href="/p/7014053/rekomendacja">Rekomendacja</a>
+            <span>4.8 (31)</span>
+            </body></html>
+        """.trimIndent()
+
+        assertEquals(
+            ObiSearchParseResult.NoResults,
+            parser.parse(html).getOrThrow(),
+        )
+    }
+
+    @Test
     fun `positive result count without recognizable products is a data failure`() {
         val html = """
             <html><body>
