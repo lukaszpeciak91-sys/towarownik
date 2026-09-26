@@ -61,7 +61,16 @@ internal class FindAvailableObi075Tool(
                 search.items
                     .take(arguments.limit.coerceAtMost(MAX_TOOL_PRODUCTS))
                     .forEach { candidate ->
-                        when (val lookup = lookupObik(candidate.obik)) {
+                        val lookup = try {
+                            lookupObik(candidate.obik)
+                        } catch (exception: CancellationException) {
+                            throw exception
+                        } catch (_: Exception) {
+                            lookupFailed = true
+                            return@forEach
+                        }
+
+                        when (lookup) {
                             is ProductLookupResult.Found -> {
                                 val product = lookup.product
                                 verified += AdvisorVerifiedProduct(
