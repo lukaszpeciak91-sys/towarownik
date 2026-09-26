@@ -40,6 +40,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -59,9 +62,16 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import pl.lukaszpeciak.towarownik.agent.AdvisorController
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
+import pl.lukaszpeciak.towarownik.conversation.ConversationDatabase
+import pl.lukaszpeciak.towarownik.conversation.ConversationRepository
+import pl.lukaszpeciak.towarownik.conversation.ConversationSummary
+import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
+import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
+import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.ui.theme.TowarownikTheme
@@ -106,8 +116,14 @@ private enum class AppSurface {
 
 @Composable
 private fun TowarownikApp() {
+    val context = LocalContext.current.applicationContext
     val advisorController = remember { AdvisorController.production() }
     val manualSearchController = remember { ManualSearchController() }
+    val conversationRepository = remember {
+        ConversationRepository(
+            ConversationDatabase.get(context).conversationDao(),
+        )
+    }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
@@ -118,6 +134,12 @@ private fun TowarownikApp() {
     val surface = runCatching { AppSurface.valueOf(surfaceName) }
         .getOrDefault(AppSurface.ADVISOR)
 
+    var activeConversationId by rememberSaveable {
+        mutableStateOf<Long?>(null)
+    }
+    var freshCaseSelected by rememberSaveable {
+        mutableStateOf(false)
+    }
     var advisorCase by rememberSaveable(
         stateSaver = AdvisorCaseUiStateSaver,
     ) {
@@ -127,6 +149,7 @@ private fun TowarownikApp() {
         mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
     }
     var advisorJob by remember { mutableStateOf<Job?>(null) }
+    var draftPersistJob by remember { mutableStateOf<Job?>(null) }
     var advisorGeneration by remember { mutableIntStateOf(0) }
 
     var manualQuery by rememberSaveable { mutableStateOf("") }
@@ -138,51 +161,150 @@ private fun TowarownikApp() {
     var manualJob by remember { mutableStateOf<Job?>(null) }
     var drawerQuery by rememberSaveable { mutableStateOf("") }
 
-    fun newAdvisorCase() {
-        advisorGeneration += 1
-        advisorJob?.cancel()
-        advisorJob = null
-        advisorState = AdvisorUiState.Idle
-        advisorCase = advisorCase.newCase()
+    val historyFlow = remember(drawerQuery) {
+        conversationRepository.observeConversations(drawerQuery)
     }
+    val conversationHistory by historyFlow.collectAsState(
+        initial = emptyList(),
+    )
 
-    fun submitAdvisorCase() {
-        if (
-            advisorJob?.isActive == true ||
-            advisorCase.messages.isNotEmpty()
-        ) {
+    fun applyConversation(
+        conversation: PersistedConversation?,
+    ) {
+        if (conversation == null) {
+            activeConversationId = null
+            advisorCase = AdvisorCaseUiState()
             return
         }
+
+        activeConversationId = conversation.id
+        advisorCase = conversation.toAdvisorCaseUiState()
+    }
+
+    suspend fun cancelAndRecoverActiveTurn() {
+        advisorGeneration += 1
+        advisorJob?.cancelAndJoin()
+        advisorJob = null
+        draftPersistJob?.cancelAndJoin()
+        draftPersistJob = null
+
+        activeConversationId?.let { conversationId ->
+            conversationRepository.recoverInterruptedTurn(conversationId)
+        }
+    }
+
+    fun newAdvisorCase() {
+        scope.launch {
+            cancelAndRecoverActiveTurn()
+            freshCaseSelected = true
+            activeConversationId = null
+            advisorState = AdvisorUiState.Idle
+            advisorCase = AdvisorCaseUiState()
+        }
+    }
+
+    fun openConversation(conversationId: Long) {
+        scope.launch {
+            cancelAndRecoverActiveTurn()
+            val loaded = conversationRepository
+                .loadRecoveringInterrupted(conversationId)
+            if (loaded != null) {
+                freshCaseSelected = false
+                advisorState = AdvisorUiState.Idle
+                applyConversation(loaded)
+            }
+            drawerState.close()
+        }
+    }
+
+    fun updateAdvisorDraft(value: String) {
+        advisorCase = advisorCase.withDraft(value)
+        val conversationId = activeConversationId ?: return
+        draftPersistJob?.cancel()
+        draftPersistJob = scope.launch {
+            conversationRepository.updateDraft(
+                conversationId = conversationId,
+                draft = value,
+            )
+        }
+    }
+
+    fun submitAdvisorTurn() {
+        if (advisorJob?.isActive == true) return
 
         val submitted = advisorCase.draft.trim()
         if (submitted.isBlank()) return
 
-        advisorCase = advisorCase
-            .withDraft("")
-            .withMessage(
-                AdvisorChatMessage(
-                    role = ChatMessageRole.USER,
-                    text = submitted,
-                    createdAt = System.currentTimeMillis(),
-                ),
-            )
-
         val generation = advisorGeneration
         advisorJob = scope.launch {
-            advisorController.runCase(submitted) { state ->
-                if (generation == advisorGeneration) {
+            draftPersistJob?.cancelAndJoin()
+            draftPersistJob = null
+
+            val turn = conversationRepository.beginUserTurn(
+                conversationId = activeConversationId,
+                text = submitted,
+            )
+
+            if (generation != advisorGeneration) {
+                conversationRepository.recoverInterruptedTurn(
+                    turn.conversationId,
+                )
+                return@launch
+            }
+
+            activeConversationId = turn.conversationId
+            freshCaseSelected = false
+            conversationRepository.load(turn.conversationId)
+                ?.let(::applyConversation)
+
+            val finalState = advisorController.runTurn(
+                input = submitted,
+                previousResponseId = turn.previousResponseId,
+            ) { state ->
+                if (
+                    generation == advisorGeneration &&
+                    activeConversationId == turn.conversationId
+                ) {
                     advisorState = state
-                    if (state is AdvisorUiState.Success) {
-                        val displayText = normalizeAdvisorDisplayText(state.text)
-                        advisorCase = advisorCase.withMessage(
-                            AdvisorChatMessage(
-                                role = ChatMessageRole.ASSISTANT,
-                                text = displayText,
-                                createdAt = System.currentTimeMillis(),
-                            ),
-                        )
+                }
+            }
+
+            when (finalState) {
+                is AdvisorUiState.Success -> {
+                    val displayText = normalizeAdvisorDisplayText(
+                        finalState.text,
+                    )
+                    conversationRepository.completeAssistantTurn(
+                        conversationId = turn.conversationId,
+                        text = displayText,
+                        finalResponseId = finalState.responseId,
+                    )
+                    if (
+                        generation == advisorGeneration &&
+                        activeConversationId == turn.conversationId
+                    ) {
+                        conversationRepository.load(turn.conversationId)
+                            ?.let(::applyConversation)
+                        advisorState = finalState.copy(text = displayText)
                     }
                 }
+
+                is AdvisorUiState.Error -> {
+                    val recovered = conversationRepository
+                        .recoverInterruptedTurn(turn.conversationId)
+                    if (
+                        generation == advisorGeneration &&
+                        activeConversationId == turn.conversationId
+                    ) {
+                        applyConversation(recovered)
+                        advisorState = finalState
+                    }
+                }
+
+                AdvisorUiState.Idle,
+                AdvisorUiState.LoadingProxy,
+                AdvisorUiState.RunningLocalTool,
+                AdvisorUiState.WaitingForFinalAnswer -> Unit
             }
         }
     }
@@ -215,6 +337,28 @@ private fun TowarownikApp() {
         surfaceName = AppSurface.ADVISOR.name
     }
 
+    LaunchedEffect(Unit) {
+        val savedConversationId = activeConversationId
+        when {
+            savedConversationId != null -> {
+                conversationRepository
+                    .loadRecoveringInterrupted(savedConversationId)
+                    ?.let(::applyConversation)
+            }
+
+            !freshCaseSelected &&
+                advisorCase.draft.isBlank() &&
+                advisorCase.messages.isEmpty() -> {
+                conversationRepository
+                    .loadMostRecentRecoveringInterrupted()
+                    ?.let {
+                        freshCaseSelected = false
+                        applyConversation(it)
+                    }
+            }
+        }
+    }
+
     if (diagnosticsOpen) {
         ObiDiagnosticsScreen(
             onBack = { diagnosticsOpen = false },
@@ -229,23 +373,21 @@ private fun TowarownikApp() {
                 drawerContent = {
                     ConversationDrawer(
                         query = drawerQuery,
+                        conversations = conversationHistory,
                         onQueryChange = { drawerQuery = it },
                         onNewConversation = {
                             newAdvisorCase()
                             scope.launch { drawerState.close() }
                         },
+                        onOpenConversation = ::openConversation,
                     )
                 },
             ) {
                 AdvisorChatScreen(
                     advisorCase = advisorCase,
                     state = advisorState,
-                    onDraftChange = {
-                        if (advisorCase.messages.isEmpty()) {
-                            advisorCase = advisorCase.withDraft(it)
-                        }
-                    },
-                    onSubmit = ::submitAdvisorCase,
+                    onDraftChange = ::updateAdvisorDraft,
+                    onSubmit = ::submitAdvisorTurn,
                     onOpenDrawer = {
                         scope.launch { drawerState.open() }
                     },
@@ -292,8 +434,10 @@ private fun TowarownikApp() {
 @Composable
 private fun ConversationDrawer(
     query: String,
+    conversations: List<ConversationSummary>,
     onQueryChange: (String) -> Unit,
     onNewConversation: () -> Unit,
+    onOpenConversation: (Long) -> Unit,
 ) {
     ModalDrawerSheet {
         Column(
@@ -322,21 +466,52 @@ private fun ConversationDrawer(
                 label = { Text("Przeszukaj rozmowy...") },
             )
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.TopStart,
-            ) {
+            if (conversations.isEmpty()) {
                 Text(
                     text = if (query.isBlank()) {
                         "Brak zapisanych rozmów."
                     } else {
-                        "Historia rozmów nie jest jeszcze dostępna."
+                        "Brak rozmów zawierających tę frazę."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(
+                        items = conversations,
+                        key = { conversation -> conversation.id },
+                    ) { conversation ->
+                        OutlinedButton(
+                            onClick = {
+                                onOpenConversation(conversation.id)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.Start,
+                            ) {
+                                Text(
+                                    text = conversation.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Text(
+                                    text = formatHistoryTimestamp(
+                                        conversation.updatedAt,
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -354,7 +529,7 @@ private fun AdvisorChatScreen(
     onOpenDiagnostics: () -> Unit,
 ) {
     val isRunning = state.isRunning()
-    val composerEnabled = advisorCase.messages.isEmpty() && !isRunning
+    val composerEnabled = !isRunning
 
     Scaffold(
         topBar = {
@@ -369,7 +544,6 @@ private fun AdvisorChatScreen(
             AdvisorComposer(
                 value = advisorCase.draft,
                 enabled = composerEnabled,
-                hasSubmittedMessage = advisorCase.messages.isNotEmpty(),
                 onValueChange = onDraftChange,
                 onSend = onSubmit,
             )
@@ -485,7 +659,6 @@ private fun AdvisorTopBar(
 private fun AdvisorComposer(
     value: String,
     enabled: Boolean,
-    hasSubmittedMessage: Boolean,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
@@ -512,13 +685,7 @@ private fun AdvisorComposer(
                     minLines = 1,
                     maxLines = 4,
                     placeholder = {
-                        Text(
-                            if (hasSubmittedMessage) {
-                                "Nowa rozmowa, aby zadać kolejne pytanie"
-                            } else {
-                                "Opisz czego potrzebuje klient…"
-                            },
-                        )
+                        Text("Opisz czego potrzebuje klient…")
                     },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
@@ -851,6 +1018,11 @@ private fun ErrorText(message: String) {
     )
 }
 
+private fun formatHistoryTimestamp(updatedAt: Long): String =
+    Instant.ofEpochMilli(updatedAt)
+        .atZone(ZoneId.systemDefault())
+        .format(HISTORY_TIME_FORMATTER)
+
 private fun formatLocalTime(createdAt: Long): String =
     Instant.ofEpochMilli(createdAt)
         .atZone(ZoneId.systemDefault())
@@ -862,6 +1034,7 @@ private fun AdvisorUiState.isRunning(): Boolean =
         this is AdvisorUiState.WaitingForFinalAnswer
 
 private val CHAT_TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm")
+private val HISTORY_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd.MM HH:mm")
 
 @Preview(showBackground = true)
 @Composable
