@@ -68,7 +68,7 @@ Raw OpenAI responses, reasoning items, usage metadata, internal instructions, an
 
 ## OpenAI contract
 
-The current cost-sensitive validation model is `gpt-6-luna` with low reasoning effort and a bounded output budget. Model choice is centralized and may be revisited after real evaluations.
+The current cost-sensitive validation model is `gpt-5.6-luna` with low reasoning effort and a bounded output budget. Model choice is centralized and may be revisited after real evaluations.
 
 The Worker uses native `fetch` against the Responses API. It enables no OpenAI built-in tools: no web search, file search, computer use, hosted shell, image generation, MCP, or other paid built-in tool.
 
