@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **chat-style shell + manual OBI search v0.2**. The default surface is now the Towarownik advisor chat shell with a modal conversation drawer, explicit new-case actions, and one-shot advisor messages presented as chat bubbles. Direct OBI search remains a separate full-screen local surface reachable from the top-right search action and does not depend on the proxy/OpenAI path.
+The current phase is **persistent advisor conversations + multi-turn v0.3**. Advisor conversations are stored locally in Room, appear in the existing drawer, can be searched by title or message phrase, and may continue across multiple user turns using the conversation's last completed OpenAI response ID. Direct OBI search remains a separate full-screen local surface and does not depend on the proxy/OpenAI path.
 
 ## Technology
 
@@ -46,7 +46,7 @@ Normal pull-request CI never calls live OBI. It runs deterministic Python tests 
 
 The self-contained Cloudflare Worker project lives under `proxy/`. `GET /health` remains public. `POST /v1/agent/start` and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
 
-Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android executes the existing `ProductSearchRepository` + `ProductLookupRepository` flow, returns only compact verified product records, and remains capped at five products per tool call. The human-only Wyszukiwarka OBI may parse at most 25 recognized candidates from the already downloaded search HTML and reveals them in chunks of five; this does not add or assume an OBI pagination endpoint. There is still no persistent assistant history and the final advisor persona remains a later milestone.
+Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android executes the existing `ProductSearchRepository` + `ProductLookupRepository` flow, returns only compact verified product records, and remains capped at five products per tool call. The human-only Wyszukiwarka OBI may parse at most 25 recognized candidates from the already downloaded search HTML and reveals them in chunks of five; this does not add or assume an OBI pagination endpoint. Conversation history is now local and persistent, but the final advisor persona, structured advisor product cards, summarization/compaction, and strong user/device identity remain later milestones.
 
 Proxy checks require Node.js 22:
 
@@ -77,7 +77,7 @@ Never commit keystores, signing credentials, APKs, or AABs.
 
 ## Scope boundaries
 
-The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search. Exact product facts still come only from the existing store-`075` lookup. The manual search surface may browse up to 25 recognized candidates from one OBI HTML response in five-item increments; the advisor/local tool remains independently capped at five. Exact results show product name, OBIK, local gross price, local stock, and the trusted `LocalProduct.productUrl` for external browser opening. The chat shell deliberately provides no persisted history, fake conversations, multi-turn OpenAI reuse, generic tool framework, server-side OBI logic, streaming, analytics, or final assistant persona.
+The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search. Exact product facts still come only from the existing store-`075` lookup. The manual search surface may browse up to 25 recognized candidates from one OBI HTML response in five-item increments; the advisor/local tool remains independently capped at five. Exact results show product name, OBIK, local gross price, local stock, and the trusted `LocalProduct.productUrl` for external browser opening. The chat shell now persists conversations/messages locally and uses `previous_response_id` for normal follow-up turns. It still has no transcript replay fallback, compaction/summarization, generic tool framework, server-side OBI logic, streaming, analytics, or final assistant persona.
 
 ## Documentation
 
@@ -85,3 +85,20 @@ The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-n
 - [Product and technical decisions](docs/decisions.md)
 - [Progress and next milestone](docs/progress.md)
 - [Contributor and agent rules](AGENTS.md)
+
+
+## Local conversation persistence
+
+Room schema v1 stores only local conversation metadata and rendered USER/ASSISTANT messages:
+
+- conversation: id, title, createdAt, updatedAt, nullable lastResponseId, draft;
+- message: id, conversationId, role, text, createdAt;
+- message rows cascade when their conversation is deleted.
+
+No API keys, app bearer tokens, OBI HTML/cookies, parser internals, raw OpenAI responses, or reasoning data are persisted.
+
+History search is entirely local and performs case-insensitive SQLite phrase matching against conversation titles and USER/ASSISTANT message text. No proxy, OpenAI, embeddings, or network request is involved.
+
+A first user send creates the conversation and derives a bounded local title from that message. Follow-up turns use the stored final `lastResponseId`. Only the final answer response ID advances conversation context; transient tool-call IDs are never stored.
+
+If a request is interrupted after the USER message was written but before an ASSISTANT completion, the trailing USER message is removed during recovery and its text becomes the editable draft. No paid request is repeated automatically.
