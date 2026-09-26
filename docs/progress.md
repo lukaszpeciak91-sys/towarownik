@@ -6,7 +6,7 @@
 
 Live Android diagnostics on app `0.1.5 (6)` confirmed that text-search transport and product-link extraction work: `dedra` produced 76 recognized unique product links while OBI reported 706 results, `pufas` produced 4, and the full Pufas product name produced 1. The failure was a parser precedence bug: a generic embedded “Nie znaleźliśmy żadnych wyników” phrase was treated as authoritative before recognized product links, causing false `NoResults`.
 
-The search parser now treats recognized product links as stronger evidence than generic zero-result phrases. Explicit zero-result wording is used only when no product candidates were extracted.
+The first precedence-only fix was rejected in audit because OBI can also include recommendation product links on a true zero-result page. The hardened rule now requires a positive `Wyniki dla … (N)` count before any product links are accepted as search results. This preserves both live positive pages and true empty pages with cross-sell recommendations.
 
 
 ## Previous completed context
