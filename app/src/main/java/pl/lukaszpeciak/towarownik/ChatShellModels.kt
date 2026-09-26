@@ -36,8 +36,8 @@ internal data class AdvisorCaseUiState(
 }
 
 internal val AdvisorCaseUiStateSaver = Saver<AdvisorCaseUiState, String>(
-    save = { state -> encodeAdvisorCase(state) },
-    restore = { raw -> decodeAdvisorCase(raw) },
+    save = { state -> saveAdvisorCase(state) },
+    restore = { raw -> restoreAdvisorCase(raw) },
 )
 
 internal fun normalizeAdvisorDisplayText(raw: String): String =
@@ -48,7 +48,7 @@ internal fun normalizeAdvisorDisplayText(raw: String): String =
         .replace("`", "")
         .trim()
 
-private fun encodeAdvisorCase(state: AdvisorCaseUiState): String =
+internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
     buildJsonObject {
         put("draft", state.draft)
         put(
@@ -67,7 +67,7 @@ private fun encodeAdvisorCase(state: AdvisorCaseUiState): String =
         )
     }.toString()
 
-private fun decodeAdvisorCase(raw: String): AdvisorCaseUiState =
+internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
     runCatching {
         val root = Json.parseToJsonElement(raw) as JsonObject
         val draft = root["draft"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -95,11 +95,28 @@ private fun decodeAdvisorCase(raw: String): AdvisorCaseUiState =
             }
             .orEmpty()
 
-        AdvisorCaseUiState(
-            draft = draft,
-            messages = messages,
+        recoverInterruptedAdvisorCase(
+            AdvisorCaseUiState(
+                draft = draft,
+                messages = messages,
+            ),
         )
     }.getOrDefault(AdvisorCaseUiState())
+
+
+internal fun recoverInterruptedAdvisorCase(
+    state: AdvisorCaseUiState,
+): AdvisorCaseUiState {
+    val onlyMessage = state.messages.singleOrNull()
+    return if (onlyMessage?.role == ChatMessageRole.USER) {
+        AdvisorCaseUiState(
+            draft = onlyMessage.text,
+            messages = emptyList(),
+        )
+    } else {
+        state
+    }
+}
 
 private val MARKDOWN_HEADING = Regex(
     pattern = """(?m)^\s*#{1,6}\s+""",
