@@ -83,12 +83,11 @@ internal fun safeDiagnosticInfrastructureHeaders(response: Response): Map<String
         }
     }.toMap()
 
-internal fun diagnosticProtocolLabel(protocol: Protocol): String = when (protocol) {
-    Protocol.HTTP_1_0 -> "HTTP/1.0"
-    Protocol.HTTP_1_1 -> "HTTP/1.1"
-    Protocol.HTTP_2 -> "HTTP/2"
-    Protocol.H2_PRIOR_KNOWLEDGE -> "HTTP/2 prior knowledge"
-    Protocol.QUIC -> "QUIC"
+internal fun diagnosticProtocolLabel(protocol: Protocol): String = when (protocol.toString()) {
+    "http/1.0" -> "HTTP/1.0"
+    "http/1.1" -> "HTTP/1.1"
+    "h2" -> "HTTP/2"
+    "h2_prior_knowledge" -> "HTTP/2 prior knowledge"
     else -> protocol.toString()
 }
 
