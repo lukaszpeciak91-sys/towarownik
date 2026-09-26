@@ -64,7 +64,11 @@ These decisions describe the broader intended product behavior. The currently im
 ## OBI live contract tooling v0.1
 
 - Live Android verification remains authoritative for end-to-end app behavior, but parser-contract discovery does not require a new AAB for every iteration.
-- A manual GitHub Actions probe may request the same public OBI product flow with the proven browser-compatible headers and store selection, then retain the public HTML and extracted `__NUXT_DATA__` only as short-lived workflow artifacts.
-- The workflow must not upload its cookie jar or commit captured live payloads.
-- A repository-side inspector produces bounded structural evidence: exact OBIK/store occurrences, flattened-reference neighborhoods, and relevant key names around product/store/stock/price fields.
+- The GitHub Actions live probe is manual-only (`workflow_dispatch`) and is never part of pull-request checks. Normal CI must remain deterministic and must not depend on live OBI.
+- The manual probe may request the same public OBI product flow with the proven browser-compatible headers and store selection.
+- Inputs are restricted to a seven-digit OBIK and a three-digit store number before any request is made.
+- The cookie jar is deleted before artifact upload and captured live payloads are never committed.
+- A safe summary artifact contains only sanitized transport metadata and bounded structural evidence. Raw HTML and extracted `__NUXT_DATA__` may be uploaded only after HTTP 200 from the expected `www.obi.pl` host and are treated as short-lived sensitive diagnostic artifacts.
+- The inspector must distinguish flattened Nuxt reference indices from resolved values. Relevant fields are reported as explicit chains such as `stock -> ref top[793] -> 25`, not as the misleading pseudo-value `stock=793`.
+- Deterministic tests cover Nuxt extraction, malformed/missing payloads, reverse-reference traversal, bounded collectors, wrapper dereferencing, value-vs-reference semantics, and identifier validation.
 - Parser fixes must still be converted into deterministic sanitized fixtures and tests before merge; the live workflow is evidence gathering, not a replacement for CI fixtures.
