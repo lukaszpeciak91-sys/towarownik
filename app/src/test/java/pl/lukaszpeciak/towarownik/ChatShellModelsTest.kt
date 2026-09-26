@@ -3,6 +3,7 @@ package pl.lukaszpeciak.towarownik
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 
 class ChatShellModelsTest {
     @Test
@@ -89,6 +90,52 @@ class ChatShellModelsTest {
         assertEquals("Znajdź pochłaniacz wilgoci.", restored.draft)
         assertTrue(restored.messages.isEmpty())
         assertTrue(restored.draft.isNotBlank())
+    }
+
+    @Test
+    fun `completed assistant answer enables composer for next turn`() {
+        assertTrue(
+            isAdvisorComposerEnabled(
+                AdvisorUiState.Success(
+                    text = "Done",
+                    responseId = "resp_done",
+                ),
+            ),
+        )
+        assertTrue(
+            !isAdvisorComposerEnabled(
+                AdvisorUiState.LoadingProxy,
+            ),
+        )
+    }
+
+    @Test
+    fun `multi-turn interrupted trailing user restores only that text as draft`() {
+        val interrupted = AdvisorCaseUiState(
+            messages = listOf(
+                AdvisorChatMessage(
+                    role = ChatMessageRole.USER,
+                    text = "Pierwszy turn",
+                    createdAt = 100L,
+                ),
+                AdvisorChatMessage(
+                    role = ChatMessageRole.ASSISTANT,
+                    text = "Pierwsza odpowiedź",
+                    createdAt = 200L,
+                ),
+                AdvisorChatMessage(
+                    role = ChatMessageRole.USER,
+                    text = "A coś tańszego?",
+                    createdAt = 300L,
+                ),
+            ),
+        )
+
+        val restored = restoreAdvisorCase(saveAdvisorCase(interrupted))
+
+        assertEquals("A coś tańszego?", restored.draft)
+        assertEquals(2, restored.messages.size)
+        assertEquals(ChatMessageRole.ASSISTANT, restored.messages.last().role)
     }
 
     @Test
