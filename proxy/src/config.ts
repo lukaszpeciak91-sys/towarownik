@@ -1,5 +1,5 @@
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-export const OPENAI_MODEL = "gpt-6-luna";
+export const OPENAI_MODEL = "gpt-5.6-luna";
 export const OPENAI_REASONING_EFFORT = "low";
 export const OPENAI_MAX_OUTPUT_TOKENS = 384;
 
