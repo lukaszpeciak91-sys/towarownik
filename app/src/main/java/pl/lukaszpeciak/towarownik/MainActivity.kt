@@ -44,6 +44,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import pl.lukaszpeciak.towarownik.agent.AdvisorController
+import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.ui.theme.TowarownikTheme
@@ -81,20 +83,37 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private enum class AppMode {
+    SEARCH,
+    ADVISOR,
+}
+
 @Composable
 private fun TowarownikApp() {
-    val controller = remember { ProductSearchController() }
+    val searchController = remember { ProductSearchController() }
+    val advisorController = remember { AdvisorController.production() }
     val scope = rememberCoroutineScope()
+
     var diagnosticsOpen by remember { mutableStateOf(false) }
+    var mode by rememberSaveable { mutableStateOf(AppMode.SEARCH) }
+
     var query by rememberSaveable { mutableStateOf("") }
-    var uiState by remember { mutableStateOf<ProductSearchUiState>(ProductSearchUiState.Idle) }
+    var searchState by remember {
+        mutableStateOf<ProductSearchUiState>(ProductSearchUiState.Idle)
+    }
     var lookupJob by remember { mutableStateOf<Job?>(null) }
+
+    var advisorInput by rememberSaveable { mutableStateOf("") }
+    var advisorState by remember {
+        mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
+    }
+    var advisorJob by remember { mutableStateOf<Job?>(null) }
 
     fun resetLookup() {
         lookupJob?.cancel()
         lookupJob = null
         query = ""
-        uiState = ProductSearchUiState.Idle
+        searchState = ProductSearchUiState.Idle
     }
 
     fun submitLookup() {
@@ -102,8 +121,8 @@ private fun TowarownikApp() {
         lookupJob?.cancel()
         query = submission.nextVisibleQuery
         lookupJob = scope.launch {
-            controller.submit(submission.submittedQuery) { state ->
-                uiState = state
+            searchController.submit(submission.submittedQuery) { state ->
+                searchState = state
             }
         }
     }
@@ -111,10 +130,42 @@ private fun TowarownikApp() {
     fun selectResult(item: SearchResultItem) {
         lookupJob?.cancel()
         lookupJob = scope.launch {
-            controller.select(item) { state ->
-                uiState = state
+            searchController.select(item) { state ->
+                searchState = state
             }
         }
+    }
+
+    fun resetAdvisorCase() {
+        advisorJob?.cancel()
+        advisorJob = null
+        advisorInput = ""
+        advisorState = AdvisorUiState.Idle
+    }
+
+    fun submitAdvisorCase() {
+        if (advisorJob?.isActive == true) return
+        val submittedCase = advisorInput
+        advisorJob = scope.launch {
+            advisorController.runCase(submittedCase) { state ->
+                advisorState = state
+            }
+        }
+    }
+
+    fun openSearch() {
+        advisorJob?.cancel()
+        advisorJob = null
+        if (advisorState.isRunning()) {
+            advisorState = AdvisorUiState.Idle
+        }
+        mode = AppMode.SEARCH
+    }
+
+    fun openAdvisor() {
+        lookupJob?.cancel()
+        lookupJob = null
+        mode = AppMode.ADVISOR
     }
 
     if (diagnosticsOpen) {
@@ -124,24 +175,42 @@ private fun TowarownikApp() {
         return
     }
 
-    TowarownikScreen(
-        query = query,
-        state = uiState,
-        onQueryChange = { value ->
-            query = value
-            if (lookupJob?.isActive != true) {
-                uiState = ProductSearchUiState.Idle
-            }
-        },
-        onSearch = ::submitLookup,
-        onSelectResult = ::selectResult,
-        onClear = ::resetLookup,
-        onOpenDiagnostics = { diagnosticsOpen = true },
-    )
+    when (mode) {
+        AppMode.SEARCH -> SearchScreen(
+            query = query,
+            state = searchState,
+            onQueryChange = { value ->
+                query = value
+                if (lookupJob?.isActive != true) {
+                    searchState = ProductSearchUiState.Idle
+                }
+            },
+            onSearch = ::submitLookup,
+            onSelectResult = ::selectResult,
+            onClear = ::resetLookup,
+            onOpenDiagnostics = { diagnosticsOpen = true },
+            onOpenAdvisor = ::openAdvisor,
+        )
+
+        AppMode.ADVISOR -> AdvisorScreen(
+            input = advisorInput,
+            state = advisorState,
+            onInputChange = { value ->
+                advisorInput = value
+                if (!advisorState.isRunning()) {
+                    advisorState = AdvisorUiState.Idle
+                }
+            },
+            onSubmit = ::submitAdvisorCase,
+            onNewCase = ::resetAdvisorCase,
+            onOpenSearch = ::openSearch,
+            onOpenDiagnostics = { diagnosticsOpen = true },
+        )
+    }
 }
 
 @Composable
-private fun TowarownikScreen(
+private fun SearchScreen(
     query: String,
     state: ProductSearchUiState,
     onQueryChange: (String) -> Unit,
@@ -149,98 +218,230 @@ private fun TowarownikScreen(
     onSelectResult: (SearchResultItem) -> Unit,
     onClear: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenAdvisor: () -> Unit,
 ) {
     val isLoading = state is ProductSearchUiState.Loading
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 600.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Text(
-                    text = "Towarownik",
-                    modifier = Modifier.pointerInput(onOpenDiagnostics) {
-                        detectTapGestures(
-                            onLongPress = { onOpenDiagnostics() },
-                        )
-                    },
-                    style = MaterialTheme.typography.headlineMedium,
-                )
+        ScreenColumn(innerPadding = innerPadding) {
+            AppTitle(onOpenDiagnostics = onOpenDiagnostics)
+            ModeSelector(
+                current = AppMode.SEARCH,
+                onSearch = {},
+                onAdvisor = onOpenAdvisor,
+            )
 
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("OBIK / EAN / nazwa") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Search,
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onSearch = { if (!isLoading) onSearch() },
-                    ),
-                    trailingIcon = if (query.isNotEmpty()) {
-                        {
-                            IconButton(onClick = onClear) {
-                                Text(
-                                    text = "×",
-                                    style = MaterialTheme.typography.titleLarge,
-                                )
-                            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("OBIK / EAN / nazwa") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Search,
+                ),
+                keyboardActions = KeyboardActions(
+                    onSearch = { if (!isLoading) onSearch() },
+                ),
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = onClear) {
+                            Text(
+                                text = "×",
+                                style = MaterialTheme.typography.titleLarge,
+                            )
                         }
-                    } else {
-                        null
-                    },
+                    }
+                } else {
+                    null
+                },
+            )
+
+            Button(
+                onClick = onSearch,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading,
+            ) {
+                Text("Szukaj")
+            }
+
+            when (state) {
+                ProductSearchUiState.Idle -> Unit
+
+                ProductSearchUiState.Loading -> ProgressRow("Szukam produktu…")
+
+                is ProductSearchUiState.SearchResults -> SearchResults(
+                    state = state,
+                    onSelectResult = onSelectResult,
                 )
 
-                Button(
-                    onClick = onSearch,
+                is ProductSearchUiState.Success -> ProductResult(state)
+
+                is ProductSearchUiState.Error -> ErrorText(state.message)
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+}
+
+@Composable
+private fun AdvisorScreen(
+    input: String,
+    state: AdvisorUiState,
+    onInputChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onNewCase: () -> Unit,
+    onOpenSearch: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+) {
+    val isRunning = state.isRunning()
+
+    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+        ScreenColumn(innerPadding = innerPadding) {
+            AppTitle(onOpenDiagnostics = onOpenDiagnostics)
+            ModeSelector(
+                current = AppMode.ADVISOR,
+                onSearch = onOpenSearch,
+                onAdvisor = {},
+            )
+
+            OutlinedTextField(
+                value = input,
+                onValueChange = onInputChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Opisz czego potrzebuje klient") },
+                minLines = 4,
+                maxLines = 7,
+                enabled = !isRunning,
+            )
+
+            Button(
+                onClick = onSubmit,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isRunning && input.isNotBlank(),
+            ) {
+                Text("Zapytaj")
+            }
+
+            when (state) {
+                AdvisorUiState.Idle -> Unit
+                AdvisorUiState.LoadingProxy -> ProgressRow("Łączę z doradcą…")
+                AdvisorUiState.RunningLocalTool -> ProgressRow("Sprawdzam OBI…")
+                AdvisorUiState.WaitingForFinalAnswer ->
+                    ProgressRow("Przygotowuję odpowiedź…")
+
+                is AdvisorUiState.Success -> Text(
+                    text = state.text,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+
+                is AdvisorUiState.Error -> ErrorText(state.message)
+            }
+
+            if (state !is AdvisorUiState.Idle) {
+                OutlinedButton(
+                    onClick = onNewCase,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading,
+                    enabled = !isRunning,
                 ) {
-                    Text("Szukaj")
+                    Text("Nowa sprawa")
                 }
+            }
 
-                when (state) {
-                    ProductSearchUiState.Idle -> Unit
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+    }
+}
 
-                    ProductSearchUiState.Loading -> Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        CircularProgressIndicator()
-                        Text("Szukam produktu…")
-                    }
+@Composable
+private fun ScreenColumn(
+    innerPadding: androidx.compose.foundation.layout.PaddingValues,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 600.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            content = content,
+        )
+    }
+}
 
-                    is ProductSearchUiState.SearchResults -> SearchResults(
-                        state = state,
-                        onSelectResult = onSelectResult,
-                    )
+@Composable
+private fun AppTitle(
+    onOpenDiagnostics: () -> Unit,
+) {
+    Text(
+        text = "Towarownik",
+        modifier = Modifier.pointerInput(onOpenDiagnostics) {
+            detectTapGestures(
+                onLongPress = { onOpenDiagnostics() },
+            )
+        },
+        style = MaterialTheme.typography.headlineMedium,
+    )
+}
 
-                    is ProductSearchUiState.Success -> ProductResult(state)
+@Composable
+private fun ModeSelector(
+    current: AppMode,
+    onSearch: () -> Unit,
+    onAdvisor: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (current == AppMode.SEARCH) {
+            Button(onClick = {}) {
+                Text("WYSZUKIWARKA")
+            }
+        } else {
+            OutlinedButton(onClick = onSearch) {
+                Text("WYSZUKIWARKA")
+            }
+        }
 
-                    is ProductSearchUiState.Error -> Text(
-                        text = state.message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
+        if (current == AppMode.ADVISOR) {
+            Button(onClick = {}) {
+                Text("DORADCA")
+            }
+        } else {
+            OutlinedButton(onClick = onAdvisor) {
+                Text("DORADCA")
             }
         }
     }
+}
+
+@Composable
+private fun ProgressRow(text: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator()
+        Text(text)
+    }
+}
+
+@Composable
+private fun ErrorText(message: String) {
+    Text(
+        text = message,
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodyLarge,
+    )
 }
 
 @Composable
@@ -298,11 +499,16 @@ private fun ProductResult(state: ProductSearchUiState.Success) {
     }
 }
 
+private fun AdvisorUiState.isRunning(): Boolean =
+    this is AdvisorUiState.LoadingProxy ||
+        this is AdvisorUiState.RunningLocalTool ||
+        this is AdvisorUiState.WaitingForFinalAnswer
+
 @Preview(showBackground = true)
 @Composable
-private fun TowarownikScreenPreview() {
+private fun SearchScreenPreview() {
     TowarownikTheme {
-        TowarownikScreen(
+        SearchScreen(
             query = "",
             state = ProductSearchUiState.Idle,
             onQueryChange = {},
@@ -310,6 +516,7 @@ private fun TowarownikScreenPreview() {
             onSelectResult = {},
             onClear = {},
             onOpenDiagnostics = {},
+            onOpenAdvisor = {},
         )
     }
 }
