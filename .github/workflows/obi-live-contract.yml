@@ -1,0 +1,80 @@
+name: OBI live contract probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      obik:
+        description: Seven-digit OBIK to inspect
+        required: true
+        default: "3496072"
+      store:
+        description: OBI store number
+        required: true
+        default: "075"
+  pull_request:
+    paths:
+      - ".github/workflows/obi-live-contract.yml"
+      - "tools/obi_live_contract_probe.py"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      OBIK: ${{ inputs.obik || '3496072' }}
+      STORE: ${{ inputs.store || '075' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch live OBI product page
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          out="build/obi-live-contract"
+          mkdir -p "$out"
+          cookie_jar="$out/cookies.txt"
+          url="https://www.obi.pl/api/disc/store/change?storeNumber=${STORE}&redirectUrl=/p/${OBIK}"
+
+          mapfile -t curl_meta < <(
+            curl               --silent               --show-error               --location               --compressed               --max-time 30               --cookie-jar "$cookie_jar"               --cookie "$cookie_jar"               --user-agent "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"               --header "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"               --header "Accept-Language: pl-PL,pl;q=0.9"               --output "$out/product.html"               --write-out "%{http_code}\n%{url_effective}\n"               "$url"
+          )
+
+          status="${curl_meta[0]:-}"
+          final_url="${curl_meta[1]:-}"
+
+          printf 'status=%s\nfinalUrl=%s\nobik=%s\nstore=%s\n'             "$status" "$final_url" "$OBIK" "$STORE" > "$out/transport.txt"
+
+          rm -f "$cookie_jar"
+
+          if [[ "$status" != "200" ]]; then
+            echo "OBI probe ended with HTTP $status at $final_url"
+            exit 1
+          fi
+
+          python3 tools/obi_live_contract_probe.py             --html "$out/product.html"             --obik "$OBIK"             --store "$STORE"             --status "$status"             --final-url "$final_url"             --out-dir "$out"
+
+      - name: Print contract summary
+        if: always()
+        run: |
+          if [[ -f build/obi-live-contract/summary.txt ]]; then
+            cat build/obi-live-contract/summary.txt
+          elif [[ -f build/obi-live-contract/transport.txt ]]; then
+            cat build/obi-live-contract/transport.txt
+          fi
+
+      - name: Upload live contract artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: obi-live-contract-${{ env.OBIK }}-store-${{ env.STORE }}
+          path: |
+            build/obi-live-contract/product.html
+            build/obi-live-contract/nuxt.json
+            build/obi-live-contract/summary.json
+            build/obi-live-contract/summary.txt
+            build/obi-live-contract/transport.txt
+          if-no-files-found: warn
+          retention-days: 3
