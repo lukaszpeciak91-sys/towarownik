@@ -17,6 +17,9 @@ class ObiDiagnosticRecorder(
     private val history = ArrayDeque<DiagnosticOperationSnapshot>()
 
     @Volatile
+    private var liveProbeReport: ObiLiveProbeReport? = null
+
+    @Volatile
     private var enabled = false
 
     @Volatile
@@ -40,6 +43,7 @@ class ObiDiagnosticRecorder(
     fun clear() {
         active.clear()
         history.clear()
+        liveProbeReport = null
     }
 
     @Synchronized
@@ -86,6 +90,8 @@ class ObiDiagnosticRecorder(
         status: Int,
         url: String,
         location: String?,
+        protocol: String?,
+        safeRequestHeaders: Map<String, String>,
         contentType: String?,
         contentEncoding: String?,
         declaredContentLength: Long?,
@@ -105,6 +111,8 @@ class ObiDiagnosticRecorder(
                 status = status,
                 url = sanitizedUrl,
                 location = sanitizedLocation,
+                protocol = protocol,
+                safeRequestHeaders = safeRequestHeaders,
                 contentType = contentType,
                 contentEncoding = contentEncoding,
                 declaredContentLength = declaredContentLength,
@@ -156,6 +164,11 @@ class ObiDiagnosticRecorder(
     fun snapshots(): List<DiagnosticOperationSnapshot> = history.toList()
 
     @Synchronized
+    internal fun setLiveProbeReport(report: ObiLiveProbeReport) {
+        liveProbeReport = report
+    }
+
+    @Synchronized
     fun report(): String {
         val records = history.toList() + active.values.map(MutableOperation::snapshot)
         return renderReport(records)
@@ -174,7 +187,6 @@ class ObiDiagnosticRecorder(
 
         if (records.isEmpty()) {
             appendLine("No captured OBI operations.")
-            return@buildString
         }
 
         records.forEachIndexed { index, record ->
@@ -201,6 +213,12 @@ class ObiDiagnosticRecorder(
                     append("  hop=${hop.number} status=${hop.status} url=${hop.url}")
                     hop.location?.let { append(" location=$it") }
                     appendLine()
+                    appendLine("    protocol=${hop.protocol ?: "(none)"}")
+                    appendLine(
+                        "    requestHeaders=" +
+                            hop.safeRequestHeaders.entries.joinToString { "${it.key}=${it.value}" }
+                                .ifBlank { "(none)" },
+                    )
                     appendLine("    outgoingCookieNames=${hop.outgoingCookies.safeCookieList()}")
                     appendLine(
                         "    outgoingStore075CookieMatch=" +
@@ -260,6 +278,11 @@ class ObiDiagnosticRecorder(
                 record.errorMappingTrace.forEach { appendLine("  $it") }
             }
             appendLine()
+        }
+
+        liveProbeReport?.let { probe ->
+            appendLine()
+            append(probe.render())
         }
     }
 

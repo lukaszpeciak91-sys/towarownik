@@ -19,7 +19,7 @@ fun productBodySignatures(
     requestedObik: String,
 ): DiagnosticBodySignatures {
     val canonical = CANONICAL_LINK.find(html)?.groupValues?.get(1)
-    return commonSignatures(html).copy(
+    return genericBodySignatures(html).copy(
         containsRequestedObik = html.contains(requestedObik),
         containsCanonicalProductUrl = canonical?.contains("/p/", ignoreCase = true) == true,
         canonicalUrl = sanitizeDiagnosticUrl(canonical),
@@ -30,7 +30,7 @@ fun productBodySignatures(
 
 fun searchBodySignatures(html: String): DiagnosticBodySignatures {
     val plain = html.plainText()
-    return commonSignatures(html).copy(
+    return genericBodySignatures(html).copy(
         containsSearchResultsPhrase = plain.contains("Wyniki dla", ignoreCase = true),
         detectedSearchResultCount = RESULT_COUNT.find(plain)?.groupValues?.get(1)?.toIntOrNull(),
         zeroResultPhraseNoResultsFound = plain.contains(ZERO_NO_RESULTS_FOUND, ignoreCase = true),
@@ -40,7 +40,7 @@ fun searchBodySignatures(html: String): DiagnosticBodySignatures {
     )
 }
 
-private fun commonSignatures(html: String): DiagnosticBodySignatures {
+internal fun genericBodySignatures(html: String): DiagnosticBodySignatures {
     val lower = html.lowercase()
     val indicators = listOf(
         "access denied",
