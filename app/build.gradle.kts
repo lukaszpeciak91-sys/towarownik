@@ -10,10 +10,10 @@ val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").o
 val towarownikAppToken = providers.environmentVariable("TOWAROWNIK_APP_TOKEN").orNull.orEmpty()
 
 fun String.asBuildConfigString(): String =
-    """ + replace("\\", "\\\\")
-        .replace(""", "\\"")
+    "\"" + replace("\\", "\\\\")
+        .replace("\"", "\\\"")
         .replace("\n", "\\n")
-        .replace("\r", "\\r") + """
+        .replace("\r", "\\r") + "\""
 
 val releaseSigningConfigured = listOf(
     releaseKeystorePath,
