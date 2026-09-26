@@ -12,7 +12,7 @@ async function responseJson(response) {
 }
 
 test("GET /health returns stable 200 JSON", async () => {
-  const response = worker.fetch(
+  const response = await worker.fetch(
     new Request("https://proxy.example/health", { method: "GET" }),
     secretEnv,
   );
@@ -26,7 +26,7 @@ test("GET /health returns stable 200 JSON", async () => {
 });
 
 test("unknown route returns bounded JSON 404", async () => {
-  const response = worker.fetch(
+  const response = await worker.fetch(
     new Request("https://proxy.example/unknown"),
     secretEnv,
   );
@@ -38,7 +38,7 @@ test("unknown route returns bounded JSON 404", async () => {
 });
 
 test("unsupported method on /health returns 405", async () => {
-  const response = worker.fetch(
+  const response = await worker.fetch(
     new Request("https://proxy.example/health", { method: "POST" }),
     secretEnv,
   );
@@ -51,11 +51,11 @@ test("unsupported method on /health returns 405", async () => {
 });
 
 test("responses never expose environment or secret values", async () => {
-  const health = worker.fetch(
+  const health = await worker.fetch(
     new Request("https://proxy.example/health"),
     secretEnv,
   );
-  const missing = worker.fetch(
+  const missing = await worker.fetch(
     new Request("https://proxy.example/missing"),
     secretEnv,
   );
