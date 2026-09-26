@@ -16,7 +16,7 @@ import pl.lukaszpeciak.towarownik.product.ObiHttpClient
 
 class ObiLiveProbeTest {
     @Test
-    fun `profiles A through E apply only intended header differences`() {
+    fun `profiles A through G apply only intended header differences`() {
         MockWebServer().use { server ->
             val urls = ObiProbeUrls(server.url("/"))
             val nativeUa = "Towarownik/Test (Android test)"
@@ -56,6 +56,16 @@ class ObiLiveProbeTest {
                         assertEquals(HTML_ACCEPT_VALUE, request.getHeader("Accept"))
                         assertEquals(POLISH_LANGUAGE_VALUE, request.getHeader("Accept-Language"))
                     }
+                    ObiProbeProfile.F_BROWSER_UA_ONLY -> {
+                        assertEquals(SYNTHETIC_BROWSER_USER_AGENT, request.getHeader("User-Agent"))
+                        assertNull(request.getHeader("Accept"))
+                        assertNull(request.getHeader("Accept-Language"))
+                    }
+                    ObiProbeProfile.G_BROWSER_HTML -> {
+                        assertEquals(SYNTHETIC_BROWSER_USER_AGENT, request.getHeader("User-Agent"))
+                        assertEquals(HTML_ACCEPT_VALUE, request.getHeader("Accept"))
+                        assertEquals(POLISH_LANGUAGE_VALUE, request.getHeader("Accept-Language"))
+                    }
                 }
 
                 val hopHeaders = step.hops.single().safeRequestHeaders
@@ -86,6 +96,7 @@ class ObiLiveProbeTest {
             val productionRequest = server.takeRequest()
 
             assertEquals(productionRequest.path, probeRequest.path)
+            assertFalse(productionRequest.getHeader("User-Agent") == SYNTHETIC_BROWSER_USER_AGENT)
             listOf("User-Agent", "Accept", "Accept-Language", "Accept-Encoding").forEach { header ->
                 assertEquals(
                     "Header $header",
@@ -164,44 +175,69 @@ class ObiLiveProbeTest {
     }
 
     @Test
-    fun `S1 and S2 style sessions reuse only their own bootstrap cookies`() {
-        MockWebServer().use { server ->
-            val urls = ObiProbeUrls(server.url("/"))
-            val s1 = ObiProbeSession(server.url("/"), ObiProbeProfile.A_BASELINE, "unused")
-            val s2 = ObiProbeSession(server.url("/"), ObiProbeProfile.A_BASELINE, "unused")
+    fun `A E and G sequence sessions remain isolated while bootstrap cookies stay local`() {
+        listOf(
+            ObiProbeProfile.A_BASELINE,
+            ObiProbeProfile.E_COMBINED_HTML,
+            ObiProbeProfile.G_BROWSER_HTML,
+        ).forEach { profile ->
+            MockWebServer().use { server ->
+                val urls = ObiProbeUrls(server.url("/"))
+                val s0 = ObiProbeSession(server.url("/"), profile, "Towarownik/Test")
+                val s1 = ObiProbeSession(server.url("/"), profile, "Towarownik/Test")
+                val s2 = ObiProbeSession(server.url("/"), profile, "Towarownik/Test")
 
-            server.enqueue(
-                MockResponse()
-                    .setResponseCode(200)
-                    .addHeader("Set-Cookie", "s1=ONE; Path=/")
-                    .setBody("<html></html>"),
-            )
-            s1.get("s1-root", urls.root(), ObiProbeBodyKind.GENERIC)
-            server.enqueue(MockResponse().setResponseCode(404).setBody("missing"))
-            val s1Store = s1.get(
-                "s1-store",
-                urls.storeChange(ObiProbeUrls.BARE_PRODUCT_REDIRECT),
-                ObiProbeBodyKind.PRODUCT,
-            )
+                server.enqueue(MockResponse().setResponseCode(404).setBody("missing"))
+                val s0Store = s0.get(
+                    "s0-store",
+                    urls.storeChange(ObiProbeUrls.BARE_PRODUCT_REDIRECT),
+                    ObiProbeBodyKind.PRODUCT,
+                )
 
-            server.enqueue(
-                MockResponse()
-                    .setResponseCode(200)
-                    .addHeader("Set-Cookie", "s2=TWO; Path=/")
-                    .setBody("<html></html>"),
-            )
-            s2.get("s2-product", urls.canonicalProduct(), ObiProbeBodyKind.PRODUCT)
-            server.enqueue(MockResponse().setResponseCode(404).setBody("missing"))
-            val s2Store = s2.get(
-                "s2-store",
-                urls.storeChange(ObiProbeUrls.BARE_PRODUCT_REDIRECT),
-                ObiProbeBodyKind.PRODUCT,
-            )
+                server.enqueue(
+                    MockResponse()
+                        .setResponseCode(200)
+                        .addHeader("Set-Cookie", "s1=SECRET_ONE; Path=/")
+                        .setBody("<html></html>"),
+                )
+                s1.get("s1-root", urls.root(), ObiProbeBodyKind.GENERIC)
+                server.enqueue(MockResponse().setResponseCode(404).setBody("missing"))
+                val s1Store = s1.get(
+                    "s1-store",
+                    urls.storeChange(ObiProbeUrls.BARE_PRODUCT_REDIRECT),
+                    ObiProbeBodyKind.PRODUCT,
+                )
 
-            assertTrue(s1Store.hops.single().outgoingCookies.any { it.name == "s1" })
-            assertTrue(s1Store.hops.single().outgoingCookies.none { it.name == "s2" })
-            assertTrue(s2Store.hops.single().outgoingCookies.any { it.name == "s2" })
-            assertTrue(s2Store.hops.single().outgoingCookies.none { it.name == "s1" })
+                server.enqueue(
+                    MockResponse()
+                        .setResponseCode(200)
+                        .addHeader("Set-Cookie", "s2=SECRET_TWO; Path=/")
+                        .setBody("<html></html>"),
+                )
+                s2.get("s2-product", urls.canonicalProduct(), ObiProbeBodyKind.PRODUCT)
+                server.enqueue(MockResponse().setResponseCode(404).setBody("missing"))
+                val s2Store = s2.get(
+                    "s2-store",
+                    urls.storeChange(ObiProbeUrls.BARE_PRODUCT_REDIRECT),
+                    ObiProbeBodyKind.PRODUCT,
+                )
+
+                assertTrue(s0Store.hops.single().outgoingCookies.isEmpty())
+                assertTrue(s1Store.hops.single().outgoingCookies.any { it.name == "s1" })
+                assertTrue(s1Store.hops.single().outgoingCookies.none { it.name == "s2" })
+                assertTrue(s2Store.hops.single().outgoingCookies.any { it.name == "s2" })
+                assertTrue(s2Store.hops.single().outgoingCookies.none { it.name == "s1" })
+
+                val report = ObiLiveProbeReport(
+                    sections = listOf(
+                        ObiProbeSection("s0", listOf(s0Store)),
+                        ObiProbeSection("s1", listOf(s1Store)),
+                        ObiProbeSection("s2", listOf(s2Store)),
+                    ),
+                ).render()
+                assertFalse(report.contains("SECRET_ONE"))
+                assertFalse(report.contains("SECRET_TWO"))
+            }
         }
     }
 
@@ -287,10 +323,119 @@ class ObiLiveProbeTest {
             assertTrue(rendered.contains("[profile-C]"))
             assertTrue(rendered.contains("[profile-D]"))
             assertTrue(rendered.contains("[profile-E]"))
+            assertTrue(rendered.contains("[profile-F]"))
+            assertTrue(rendered.contains("[profile-G]"))
             assertTrue(rendered.contains("[session-S0-baseline]"))
             assertTrue(rendered.contains("[session-S1-baseline]"))
             assertTrue(rendered.contains("[session-S2-baseline]"))
-            assertEquals(15, server.requestCount)
+            assertTrue(rendered.contains("[session-S0-profile-E]"))
+            assertTrue(rendered.contains("[session-S1-profile-E]"))
+            assertTrue(rendered.contains("[session-S2-profile-E]"))
+            assertTrue(rendered.contains("[session-S0-profile-G]"))
+            assertTrue(rendered.contains("[session-S1-profile-G]"))
+            assertTrue(rendered.contains("[session-S2-profile-G]"))
+            assertTrue(rendered.contains("synthetic-browser-like-android-chrome-ua-only"))
+            assertTrue(rendered.contains("synthetic-browser-like-android-chrome-html-navigation"))
+            assertEquals(27, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `live probe reports bounded preview size and honest truncation semantics`() {
+        MockWebServer().use { server ->
+            val urls = ObiProbeUrls(server.url("/"))
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("a".repeat(70_000)),
+            )
+            val truncated = ObiProbeSession(
+                server.url("/"),
+                ObiProbeProfile.A_BASELINE,
+                "unused",
+            ).get("large", urls.root(), ObiProbeBodyKind.GENERIC)
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("short"),
+            )
+            val complete = ObiProbeSession(
+                server.url("/"),
+                ObiProbeProfile.A_BASELINE,
+                "unused",
+            ).get("short", urls.root(), ObiProbeBodyKind.GENERIC)
+
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("b".repeat(65_536)),
+            )
+            val exactLimit = ObiProbeSession(
+                server.url("/"),
+                ObiProbeProfile.A_BASELINE,
+                "unused",
+            ).get("exact-limit", urls.root(), ObiProbeBodyKind.GENERIC)
+
+            assertEquals(65_536, truncated.bodyPreview!!.previewLimitBytes)
+            assertEquals(true, truncated.bodyPreview!!.previewTruncated)
+            assertTrue(truncated.bodyPreview!!.previewUtf8Bytes <= 65_536)
+
+            assertEquals(false, complete.bodyPreview!!.previewTruncated)
+            assertEquals(5, complete.bodyPreview!!.previewUtf8Bytes)
+
+            assertNull(exactLimit.bodyPreview!!.previewTruncated)
+
+            val report = ObiLiveProbeReport(
+                sections = listOf(
+                    ObiProbeSection("preview", listOf(truncated, complete, exactLimit)),
+                ),
+            ).render()
+            assertTrue(report.contains("body.previewLimitBytes=65536"))
+            assertTrue(report.contains("body.previewTruncated=true"))
+            assertTrue(report.contains("body.previewTruncated=false"))
+            assertTrue(report.contains("body.previewTruncated=unknown"))
+            assertFalse(report.contains("body.decodedBodyUtf8Bytes="))
+        }
+    }
+
+    @Test
+    fun `browser profile G can supply store opportunity for redirect target control`() = runBlocking {
+        MockWebServer().use { server ->
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val isBrowserHtml =
+                        request.getHeader("User-Agent") == SYNTHETIC_BROWSER_USER_AGENT &&
+                            request.getHeader("Accept") == HTML_ACCEPT_VALUE &&
+                            request.getHeader("Accept-Language") == POLISH_LANGUAGE_VALUE
+                    val isStore = request.requestUrl?.encodedPath == "/api/disc/store/change"
+
+                    return if (isStore && isBrowserHtml) {
+                        MockResponse().setResponseCode(200).setBody("<html>store ok</html>")
+                    } else {
+                        MockResponse().setResponseCode(404).setBody("")
+                    }
+                }
+            }
+
+            val report = ObiLiveProbeRunner(
+                baseUrl = server.url("/"),
+                nativeUserAgent = "Towarownik/Test",
+                ioDispatcher = Dispatchers.Unconfined,
+            ).run()
+            val rendered = report.render()
+
+            assertTrue(
+                rendered.contains(
+                    "[store-redirect-target-control-profile-G-bootstrap-none]",
+                ),
+            )
+            assertTrue(rendered.contains("step=redirect-target-bare"))
+            assertTrue(rendered.contains("step=redirect-target-canonical"))
+            assertTrue(rendered.contains("profile=G"))
+            assertTrue(rendered.contains("redirectUrl=REDACTED"))
+            assertEquals(29, server.requestCount)
         }
     }
 
