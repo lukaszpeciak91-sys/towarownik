@@ -129,6 +129,9 @@ private fun TowarownikApp() {
         state = uiState,
         onQueryChange = { value ->
             query = value
+            if (lookupJob?.isActive != true) {
+                uiState = ProductSearchUiState.Idle
+            }
         },
         onSearch = ::submitLookup,
         onSelectResult = ::selectResult,
