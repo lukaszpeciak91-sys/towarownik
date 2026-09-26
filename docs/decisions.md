@@ -97,7 +97,7 @@ These decisions describe the broader intended product behavior. The currently im
 - `POST /v1/agent/start` and `POST /v1/agent/continue` require `Authorization: Bearer <TOWAROWNIK_APP_TOKEN>`. Missing server token configuration fails closed. This shared token is initial Internal-Testing abuse prevention, not strong device identity.
 - `OPENAI_API_KEY` exists only in the Worker environment and is never forwarded to Android. The Android Authorization header is never forwarded to OpenAI.
 - The Worker uses native `fetch` with `POST https://api.openai.com/v1/responses`; no OpenAI SDK runtime dependency is introduced.
-- The current cost-sensitive model is centralized as `gpt-6-luna` with low reasoning effort and a bounded output budget. This model choice may change after real assistant evaluations.
+- The current cost-sensitive model is centralized as `gpt-5.6-luna` with low reasoning effort and a bounded output budget. This model choice may change after real assistant evaluations.
 - OpenAI request parameters are server-controlled. Android cannot choose the model, instructions, tools, reasoning effort, output budget, or upstream URL.
 - No OpenAI built-in tool is enabled. The sole function tool is strict `find_available_obi_075(query, limit)`, with `limit <= 5`.
 - The Worker never executes that OBI tool. It validates the model request and returns it to Android; Android remains authoritative for OBI discovery, OBIK, store `075`, stock, and local price.
