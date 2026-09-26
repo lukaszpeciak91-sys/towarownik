@@ -41,25 +41,44 @@ class ObiSearchParser(
                 "CANDIDATE_COUNT_AFTER_DEDUPE=${diagnosticCandidateLinks.distinct().size}",
             )
 
-            val candidates = LinkedHashMap<String, String?>()
+            val searchResultCount = SEARCH_RESULT_COUNT
+                .find(pageText)
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull()
+            diagnostics.parserStage(
+                diagnosticId,
+                "SEARCH_RESULT_COUNT=${searchResultCount ?: "UNKNOWN"}",
+            )
 
-            allProductLinks.forEach { match ->
-                val href = match.groupValues[2]
-                val obik = PRODUCT_PATH.find(href)?.groupValues?.get(1) ?: return@forEach
-                val name = match.groupValues[3].plainText().takeIf(String::isNotBlank)
+            val zeroResultRule = zeroResultRule(pageText, searchResultCount)
 
-                if (obik !in candidates) {
-                    candidates[obik] = name
-                } else if (candidates[obik] == null && name != null) {
-                    candidates[obik] = name
+            if (searchResultCount != null && searchResultCount > 0) {
+                val candidates = LinkedHashMap<String, String?>()
+
+                allProductLinks.forEach { match ->
+                    val href = match.groupValues[2]
+                    val obik = PRODUCT_PATH.find(href)?.groupValues?.get(1) ?: return@forEach
+                    val name = match.groupValues[3].plainText().takeIf(String::isNotBlank)
+
+                    if (obik !in candidates) {
+                        candidates[obik] = name
+                    } else if (candidates[obik] == null && name != null) {
+                        candidates[obik] = name
+                    }
                 }
-            }
 
-            val zeroResultRule = zeroResultRule(pageText)
-            if (candidates.isNotEmpty()) {
+                if (candidates.isEmpty()) {
+                    diagnostics.parserStage(
+                        diagnosticId,
+                        "ZERO_RESULT_RULE=${zeroResultRule ?: "NONE"}",
+                    )
+                    error("OBI search reports positive results but no recognizable result products")
+                }
+
                 diagnostics.parserStage(
                     diagnosticId,
-                    "ZERO_RESULT_RULE=${zeroResultRule?.let { "IGNORED_${it}_PRODUCTS_PRESENT" } ?: "NONE"}",
+                    "ZERO_RESULT_RULE=${zeroResultRule?.let { "IGNORED_${it}_POSITIVE_RESULT_COUNT" } ?: "NONE"}",
                 )
                 return@runCatching ObiSearchParseResult.Results(
                     candidates.entries
@@ -76,7 +95,7 @@ class ObiSearchParser(
                 return@runCatching ObiSearchParseResult.NoResults
             }
 
-            error("OBI search payload has no recognizable product results or explicit empty state")
+            error("OBI search payload has no reliable positive result count or explicit empty state")
         }
 
         result.onSuccess { parsed ->
@@ -93,16 +112,18 @@ class ObiSearchParser(
         return result
     }
 
-    private fun zeroResultRule(pageText: String): String? = when {
+    private fun zeroResultRule(
+        pageText: String,
+        searchResultCount: Int?,
+    ): String? = when {
+        searchResultCount == 0 ->
+            "WYNIKI_DLA_PLUS_(0)"
         pageText.contains("Nie znaleźliśmy żadnych wyników", ignoreCase = true) ->
             "PHRASE_NIE_ZNALEZLISMY"
         pageText.contains("Nie znaleziono produktów", ignoreCase = true) ->
             "PHRASE_NIE_ZNALEZIONO_PRODUKTOW"
         pageText.contains("Brak wyników", ignoreCase = true) ->
             "PHRASE_BRAK_WYNIKOW"
-        pageText.contains("Wyniki dla", ignoreCase = true) &&
-            ZERO_RESULT_COUNT.containsMatchIn(pageText) ->
-            "WYNIKI_DLA_PLUS_(0)"
         else -> null
     }
 
@@ -121,7 +142,10 @@ class ObiSearchParser(
             """<link\b(?=[^>]*\brel\s*=\s*["']canonical["'])[^>]*\bhref\s*=\s*["'][^"']*/p/(\d{7})(?:/[^"']*)?["'][^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val ZERO_RESULT_COUNT = Regex("""\(\s*0\s*\)""")
+        val SEARCH_RESULT_COUNT = Regex(
+            """Wyniki dla.*?\(\s*(\d+)\s*\)""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        )
         val TAG = Regex("""<[^>]+>""")
         val WHITESPACE = Regex("""\s+""")
         val DECIMAL_ENTITY = Regex("""&#(\d+);""")
