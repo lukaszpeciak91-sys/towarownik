@@ -48,16 +48,18 @@ internal class AdvisorController(
         input: String,
         previousResponseId: String?,
         onState: (AdvisorUiState) -> Unit,
-    ) {
+    ): AdvisorUiState {
         val normalizedInput = input.normalizeWhitespace()
         if (normalizedInput.isBlank()) {
-            onState(AdvisorUiState.Error(ADVISOR_INPUT_ERROR_MESSAGE))
-            return
+            val error = AdvisorUiState.Error(ADVISOR_INPUT_ERROR_MESSAGE)
+            onState(error)
+            return error
         }
 
         if (!isConfigured()) {
-            onState(AdvisorUiState.Error(ADVISOR_NOT_CONFIGURED_MESSAGE))
-            return
+            val error = AdvisorUiState.Error(ADVISOR_NOT_CONFIGURED_MESSAGE)
+            onState(error)
+            return error
         }
 
         onState(AdvisorUiState.LoadingProxy)
@@ -76,8 +78,9 @@ internal class AdvisorController(
         var proxyResult = when (initialCall) {
             is AdvisorProxyCallResult.Success -> initialCall.result
             is AdvisorProxyCallResult.Failure -> {
-                onState(initialCall.toUiError())
-                return
+                val error = initialCall.toUiError()
+                onState(error)
+                return error
             }
         }
 
@@ -86,24 +89,22 @@ internal class AdvisorController(
         while (true) {
             when (proxyResult) {
                 is AdvisorProxyResult.Answer -> {
-                    onState(
-                        AdvisorUiState.Success(
-                            text = proxyResult.text,
-                            responseId = proxyResult.responseId,
-                        ),
+                    val success = AdvisorUiState.Success(
+                        text = proxyResult.text,
+                        responseId = proxyResult.responseId,
                     )
-                    return
+                    onState(success)
+                    return success
                 }
 
                 is AdvisorProxyResult.ToolRequest -> {
                     val toolRequest = proxyResult
                     if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
-                        onState(
-                            AdvisorUiState.Error(
-                                ADVISOR_TOO_MANY_TOOLS_MESSAGE,
-                            ),
+                        val error = AdvisorUiState.Error(
+                            ADVISOR_TOO_MANY_TOOLS_MESSAGE,
                         )
-                        return
+                        onState(error)
+                        return error
                     }
 
                     toolCalls += 1
@@ -120,12 +121,11 @@ internal class AdvisorController(
                     val verifiedResult = when (localResult) {
                         is AdvisorToolExecutionResult.Success -> localResult.result
                         AdvisorToolExecutionResult.Failure -> {
-                            onState(
-                                AdvisorUiState.Error(
-                                    ADVISOR_OBI_ERROR_MESSAGE,
-                                ),
+                            val error = AdvisorUiState.Error(
+                                ADVISOR_OBI_ERROR_MESSAGE,
                             )
-                            return
+                            onState(error)
+                            return error
                         }
                     }
 
@@ -140,8 +140,9 @@ internal class AdvisorController(
                     }) {
                         is AdvisorProxyCallResult.Success -> continued.result
                         is AdvisorProxyCallResult.Failure -> {
-                            onState(continued.toUiError())
-                            return
+                            val error = continued.toUiError()
+                            onState(error)
+                            return error
                         }
                     }
                 }
