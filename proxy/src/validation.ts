@@ -195,7 +195,7 @@ function boundedString(value: unknown, maxChars: number): string {
   return value;
 }
 
-function normalizeWhitespace(value: string): string =
+const normalizeWhitespace = (value: string): string =>
   value.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim();
 
 function isJsonContentType(value: string | null): boolean {
