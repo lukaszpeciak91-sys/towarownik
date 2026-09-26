@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,8 @@ KEY_TERMS = (
 MAX_EXACT_MATCHES = 100
 MAX_KEY_HITS = 250
 MAX_REFERENCE_EDGES = 200
+MAX_REFERENCE_TRACE_DEPTH = 4
+REFERENCE_WRAPPERS = {"Ref", "ShallowRef"}
 
 
 class NuxtScriptExtractor(HTMLParser):
@@ -55,6 +58,29 @@ class NuxtScriptExtractor(HTMLParser):
         return "".join(self.parts).strip()
 
 
+def validate_identifiers(obik: str, store: str) -> None:
+    if re.fullmatch(r"\d{7}", obik) is None:
+        raise ValueError("OBIK must contain exactly 7 digits")
+    if re.fullmatch(r"\d{3}", store) is None:
+        raise ValueError("Store number must contain exactly 3 digits")
+
+
+def extract_nuxt_payload(html: str) -> str:
+    extractor = NuxtScriptExtractor()
+    extractor.feed(html)
+    payload = extractor.payload
+    if not payload:
+        raise ValueError("Missing __NUXT_DATA__ script in downloaded OBI HTML")
+    return payload
+
+
+def parse_nuxt_payload(payload: str) -> Any:
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"__NUXT_DATA__ is not valid JSON: {exc}") from exc
+
+
 def path_join(path: str, part: str) -> str:
     if part.startswith("["):
         return f"{path}{part}"
@@ -75,19 +101,86 @@ def compact(value: Any, limit: int = 180) -> Any:
     if isinstance(value, dict):
         return {"type": "object", "keys": list(value.keys())[:30]}
     if isinstance(value, list):
+        if (
+            len(value) >= 2
+            and isinstance(value[0], str)
+            and value[0] in REFERENCE_WRAPPERS
+            and type(value[1]) is int
+        ):
+            return {"type": "wrapper", "tag": value[0], "nextRef": value[1]}
         return {"type": "array", "length": len(value)}
-    rendered = repr(value)
-    return rendered if len(rendered) <= limit else rendered[: limit - 3] + "..."
+    if isinstance(value, str) and len(value) > limit:
+        return value[: limit - 3] + "..."
+    return value
 
 
 def exact_matches(root: Any, target: str) -> list[dict[str, Any]]:
     matches: list[dict[str, Any]] = []
     for path, value in walk(root):
-        if isinstance(value, (str, int)) and str(value) == target:
+        if isinstance(value, (str, int)) and not isinstance(value, bool) and str(value) == target:
             matches.append({"path": path, "value": value})
             if len(matches) >= MAX_EXACT_MATCHES:
                 break
     return matches
+
+
+def reference_trace(
+    root: Any,
+    value: Any,
+    max_depth: int = MAX_REFERENCE_TRACE_DEPTH,
+) -> dict[str, Any]:
+    if not isinstance(root, list) or type(value) is not int or value not in range(len(root)):
+        return {"kind": "literal", "value": compact(value)}
+
+    chain: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    index = value
+
+    for _ in range(max_depth):
+        if index in seen or index not in range(len(root)):
+            break
+        seen.add(index)
+
+        resolved = root[index]
+        description = compact(resolved)
+        chain.append({"index": index, "resolved": description})
+
+        if (
+            isinstance(resolved, list)
+            and len(resolved) >= 2
+            and isinstance(resolved[0], str)
+            and resolved[0] in REFERENCE_WRAPPERS
+            and type(resolved[1]) is int
+            and resolved[1] in range(len(root))
+        ):
+            index = resolved[1]
+            continue
+        break
+
+    return {"kind": "reference", "chain": chain}
+
+
+def format_compact(value: Any) -> str:
+    if isinstance(value, dict):
+        kind = value.get("type")
+        if kind == "object":
+            return f"object keys={value.get('keys', [])}"
+        if kind == "array":
+            return f"array length={value.get('length')}"
+        if kind == "wrapper":
+            return f"wrapper {value.get('tag')}"
+    return repr(value)
+
+
+def format_reference_trace(trace: dict[str, Any]) -> str:
+    if trace["kind"] == "literal":
+        return format_compact(trace["value"])
+
+    parts: list[str] = []
+    for element in trace["chain"]:
+        parts.append(f"ref top[{element['index']}]")
+        parts.append(format_compact(element["resolved"]))
+    return " -> ".join(parts)
 
 
 def keyword_hits(root: Any) -> list[dict[str, Any]]:
@@ -102,7 +195,7 @@ def keyword_hits(root: Any) -> list[dict[str, Any]]:
                     {
                         "objectPath": path,
                         "key": key,
-                        "value": compact(child),
+                        "referenceTrace": reference_trace(root, child),
                         "objectKeys": list(value.keys())[:40],
                     }
                 )
@@ -117,7 +210,9 @@ def top_level_scalar_indices(root: Any, target: str) -> list[int]:
     return [
         index
         for index, value in enumerate(root)
-        if isinstance(value, (str, int)) and str(value) == target
+        if isinstance(value, (str, int))
+        and not isinstance(value, bool)
+        and str(value) == target
     ]
 
 
@@ -129,7 +224,7 @@ def direct_top_level_references(root: Any, referenced_indices: set[int]) -> list
     for owner_index, value in enumerate(root):
         if isinstance(value, dict):
             for key, child in value.items():
-                if isinstance(child, int) and child in referenced_indices:
+                if type(child) is int and child in referenced_indices:
                     edges.append(
                         {
                             "ownerIndex": owner_index,
@@ -141,7 +236,7 @@ def direct_top_level_references(root: Any, referenced_indices: set[int]) -> list
                     )
         elif isinstance(value, list):
             for child_index, child in enumerate(value):
-                if isinstance(child, int) and child in referenced_indices:
+                if type(child) is int and child in referenced_indices:
                     edges.append(
                         {
                             "ownerIndex": owner_index,
@@ -172,6 +267,39 @@ def reference_layers(root: Any, seed_indices: list[int], depth: int = 4) -> list
         if not frontier:
             break
     return layers
+
+
+def build_summary(
+    html: str,
+    root: Any,
+    payload: str,
+    obik: str,
+    store: str,
+    status: str,
+    final_url: str,
+) -> dict[str, Any]:
+    obik_indices = top_level_scalar_indices(root, obik)
+    store_indices = top_level_scalar_indices(root, store)
+
+    return {
+        "transport": {
+            "status": status,
+            "finalUrl": final_url,
+        },
+        "obik": obik,
+        "store": store,
+        "htmlUtf8Bytes": len(html.encode("utf-8")),
+        "nuxtUtf8Bytes": len(payload.encode("utf-8")),
+        "nuxtRootType": type(root).__name__,
+        "nuxtTopLevelLength": len(root) if isinstance(root, list) else None,
+        "obikTopLevelScalarIndices": obik_indices,
+        "storeTopLevelScalarIndices": store_indices,
+        "obikExactMatches": exact_matches(root, obik),
+        "storeExactMatches": exact_matches(root, store),
+        "obikReferenceLayers": reference_layers(root, obik_indices),
+        "storeReferenceLayers": reference_layers(root, store_indices),
+        "keywordHits": keyword_hits(root),
+    }
 
 
 def write_text_summary(summary: dict[str, Any], destination: Path) -> None:
@@ -223,7 +351,8 @@ def write_text_summary(summary: dict[str, Any], destination: Path) -> None:
     lines.append("RELEVANT KEY HITS")
     for hit in summary["keywordHits"][:120]:
         lines.append(
-            f"- {hit['objectPath']}.{hit['key']} = {hit['value']!r}; "
+            f"- {hit['objectPath']}.{hit['key']} = "
+            f"{format_reference_trace(hit['referenceTrace'])}; "
             f"objectKeys={hit['objectKeys']}"
         )
 
@@ -240,51 +369,37 @@ def main() -> int:
     parser.add_argument("--out-dir", required=True)
     args = parser.parse_args()
 
+    try:
+        validate_identifiers(args.obik, args.store)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
     html_path = Path(args.html)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     html = html_path.read_text(encoding="utf-8", errors="replace")
-    extractor = NuxtScriptExtractor()
-    extractor.feed(html)
-    payload = extractor.payload
-
-    if not payload:
-        raise SystemExit("Missing __NUXT_DATA__ script in downloaded OBI HTML")
 
     try:
-        root = json.loads(payload)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"__NUXT_DATA__ is not valid JSON: {exc}") from exc
+        payload = extract_nuxt_payload(html)
+        root = parse_nuxt_payload(payload)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
-    nuxt_path = out_dir / "nuxt.json"
-    nuxt_path.write_text(
+    (out_dir / "nuxt.json").write_text(
         json.dumps(root, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
 
-    obik_indices = top_level_scalar_indices(root, args.obik)
-    store_indices = top_level_scalar_indices(root, args.store)
-
-    summary = {
-        "transport": {
-            "status": args.status,
-            "finalUrl": args.final_url,
-        },
-        "obik": args.obik,
-        "store": args.store,
-        "htmlUtf8Bytes": len(html.encode("utf-8")),
-        "nuxtUtf8Bytes": len(payload.encode("utf-8")),
-        "nuxtRootType": type(root).__name__,
-        "nuxtTopLevelLength": len(root) if isinstance(root, list) else None,
-        "obikTopLevelScalarIndices": obik_indices,
-        "storeTopLevelScalarIndices": store_indices,
-        "obikExactMatches": exact_matches(root, args.obik),
-        "storeExactMatches": exact_matches(root, args.store),
-        "obikReferenceLayers": reference_layers(root, obik_indices),
-        "storeReferenceLayers": reference_layers(root, store_indices),
-        "keywordHits": keyword_hits(root),
-    }
+    summary = build_summary(
+        html=html,
+        root=root,
+        payload=payload,
+        obik=args.obik,
+        store=args.store,
+        status=args.status,
+        final_url=args.final_url,
+    )
 
     (out_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2),
