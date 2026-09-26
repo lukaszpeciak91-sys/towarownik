@@ -9,6 +9,9 @@ internal class AdvisorRequestGuard {
 
     fun token(): Int = generation
 
+    fun isTokenCurrent(token: Int): Boolean =
+        token == generation
+
     fun isCurrent(
         token: Int,
         expectedConversationId: Long,
