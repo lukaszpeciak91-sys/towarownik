@@ -6,6 +6,8 @@ internal enum class ObiProbeProfile(val reportName: String) {
     C_ACCEPT_ONLY("C"),
     D_LANGUAGE_ONLY("D"),
     E_COMBINED_HTML("E"),
+    F_BROWSER_UA_ONLY("F"),
+    G_BROWSER_HTML("G"),
 }
 
 internal enum class ObiProbeBodyKind {
@@ -13,6 +15,13 @@ internal enum class ObiProbeBodyKind {
     SEARCH,
     PRODUCT,
 }
+
+internal data class ObiProbeBodyPreview(
+    val previewUtf8Bytes: Int,
+    val previewLimitBytes: Int,
+    val previewTruncated: Boolean?,
+    val signatures: DiagnosticBodySignatures,
+)
 
 internal data class ObiProbeStep(
     val label: String,
@@ -22,7 +31,7 @@ internal data class ObiProbeStep(
     val hops: List<DiagnosticHttpHop>,
     val finalStatus: Int?,
     val finalUrl: String?,
-    val bodySignatures: DiagnosticBodySignatures?,
+    val bodyPreview: ObiProbeBodyPreview?,
     val errorType: String?,
 )
 
@@ -79,8 +88,14 @@ internal data class ObiLiveProbeReport(
                     )
                 }
 
-                step.bodySignatures?.let { body ->
-                    appendLine("body.decodedBodyUtf8Bytes=${body.decodedBodyUtf8Bytes}")
+                step.bodyPreview?.let { preview ->
+                    val body = preview.signatures
+                    appendLine("body.previewUtf8Bytes=${preview.previewUtf8Bytes}")
+                    appendLine("body.previewLimitBytes=${preview.previewLimitBytes}")
+                    appendLine(
+                        "body.previewTruncated=" +
+                            (preview.previewTruncated?.toString() ?: "unknown"),
+                    )
                     appendLine("body.looksLikeHtml=${body.looksLikeHtml}")
                     appendLine("body.title=${body.title ?: "(none)"}")
                     appendLine("body.accessDeniedOrChallenge=${body.accessDeniedOrChallenge}")
