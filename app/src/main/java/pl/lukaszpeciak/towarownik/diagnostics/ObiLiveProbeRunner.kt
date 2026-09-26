@@ -418,7 +418,7 @@ private class ProbeCookieJar : CookieJar {
 private fun ObiProbeStep.isNormalHtml(): Boolean =
     finalStatus in 200..299 &&
         bodySignatures?.looksLikeHtml == true &&
-        bodySignatures.accessDeniedOrChallenge.not()
+        bodySignatures?.accessDeniedOrChallenge == false
 
 private const val HTML_ACCEPT =
     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
