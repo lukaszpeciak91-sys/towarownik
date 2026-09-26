@@ -2,6 +2,14 @@
 
 ## Current phase
 
+**V0.1 — OBI text-search false-empty repair**
+
+Live Android diagnostics on app `0.1.5 (6)` confirmed that text-search transport and product-link extraction work: `dedra` produced 76 recognized unique product links while OBI reported 706 results, `pufas` produced 4, and the full Pufas product name produced 1. The failure was a parser precedence bug: a generic embedded “Nie znaleźliśmy żadnych wyników” phrase was treated as authoritative before recognized product links, causing false `NoResults`.
+
+The search parser now treats recognized product links as stronger evidence than generic zero-result phrases. Explicit zero-result wording is used only when no product candidates were extracted.
+
+
+
 **V0.1 — OBI live payload/parser contract repair**
 
 Hardware verification of app `0.1.2 (3)` confirmed that the browser-compatible production transport is working end to end:
