@@ -2,40 +2,36 @@
 
 ## Current phase
 
-**Authenticated OpenAI proxy v0.1**
+**Android advisor integration v0.1**
 
-PR #13 completed the OBI text-search false-empty repair. PR #14 established the isolated Cloudflare Worker boundary while keeping Android authoritative for OBI search, exact store-`075` lookup, local stock, and local price.
+PR #13 completed the OBI text-search false-empty repair. PR #14 established the isolated Cloudflare Worker boundary. PR #15 deployed the authenticated OpenAI proxy contract while keeping Android authoritative for OBI search, exact store-`075` lookup, local stock, and local price.
 
-The Worker now implements the smallest authenticated assistant contract:
+The Android app now has two intentionally separate test paths:
 
-- public `GET /health`;
-- authenticated `POST /v1/agent/start`;
-- authenticated `POST /v1/agent/continue`;
-- server-only `OPENAI_API_KEY`;
-- shared Internal-Testing `TOWAROWNIK_APP_TOKEN`;
-- native Responses API transport using centralized `gpt-5.6-luna`, low reasoning effort, and bounded output;
-- exactly one strict local-tool declaration: `find_available_obi_075(query, limit)`;
-- normalized `answer` / `tool_request` responses;
-- validated compact continuation results using `previous_response_id` and `function_call_output`.
+- **WYSZUKIWARKA** remains the default and preserves the existing OBIK/EAN/text search without any proxy/OpenAI call.
+- **DORADCA** sends one customer need to the authenticated Worker, handles normalized `answer` / `tool_request` responses, executes `find_available_obi_075` locally through the existing OBI repositories, sends back only compact verified product records, and displays the final normalized answer.
 
-The Worker still contains no OBI HTTP/parser implementation and stores no conversation state in Cloudflare storage. If the model needs OBI facts, Android will execute the existing local repositories and return only compact verified product data. OBI HTML/Nuxt never enters the proxy/model path.
+The advisor flow is deliberately bounded: no automatic request retry, at most two local tool calls per customer case, no persistent conversation history, no reused response/call IDs between new cases, and cancellation when leaving an active advisor flow where practical.
 
-Deterministic tests inject a fake OpenAI transport, so CI uses no real API key, no OpenAI network, and no Cloudflare account. No paid OpenAI built-in tool is enabled and no application retry is added.
+The Android app token is build-time injected through `BuildConfig.TOWAROWNIK_APP_TOKEN`. Builds without the variable still compile and run WYSZUKIWARKA normally; DORADCA reports a local not-configured state before network access. The manual signed Play AAB workflow now requires the matching GitHub Actions secret. This static token is only an Internal Testing abuse barrier and is not strong device authentication.
+
+Version prepared for the next Internal Testing AAB: **0.1.6 (7)**.
 
 ## Next implementation milestone
 
-**Android assistant integration**
+**Hardware validation of search and advisor integration**
 
-After the authenticated Worker contract is deployed and validated with a real Worker secret configuration, add the smallest Android conversation controller/UI that can call `/start`, execute a bounded local `find_available_obi_075` request through the existing OBI mechanisms, and send the compact verified result to `/continue`.
+On the next signed AAB, verify ordinary WYSZUKIWARKA first (including text queries such as Dedra, Pufas, and clean) without using assistant tokens, then separately validate DORADCA end-to-end against the already deployed Worker.
 
-The final assistant personality/prompt should be evaluated separately rather than expanded inside this infrastructure milestone.
+After technical validation, tune the final advisor personality/prompt and cost/policy behavior as a separate iteration.
 
 ## Not started
 
-- Android chat UI and interaction controller
+- Final "Justyna" advisor persona/prompt
 - Persistent conversation history
 - Strong per-device/user identity
-- Final assistant persona
+- General chat
+- Additional agent tools
 - OpenAI built-in tools
 - Streaming
 - Cloudflare KV/D1/Durable Objects

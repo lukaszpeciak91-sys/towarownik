@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **authenticated AI proxy v0.1**. Existing OBI search and exact store-`075` product lookup continue to run locally in Android and remain authoritative for product, stock, and price. The `proxy/` Worker now exposes authenticated start/continue endpoints that call the OpenAI Responses API while keeping both the OpenAI credential and the local OBI implementation out of the Android-to-OpenAI boundary.
+The current phase is **Android advisor integration v0.1**. The app now has two deliberately separate paths: **WYSZUKIWARKA** keeps the existing local OBIK/EAN/text search with no proxy or OpenAI dependency, while **DORADCA** uses the authenticated Worker contract and executes the single requested OBI tool locally through the existing Android repositories.
 
 ## Technology
 
@@ -46,7 +46,7 @@ Normal pull-request CI never calls live OBI. It runs deterministic Python tests 
 
 The self-contained Cloudflare Worker project lives under `proxy/`. `GET /health` remains public. `POST /v1/agent/start` and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
 
-Android OBI lookup remains local. The Worker must never scrape OBI or duplicate the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android will execute the existing local OBI flow and return only a compact verified result.
+Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android executes the existing `ProductSearchRepository` + `ProductLookupRepository` flow, returns only compact verified product records, and enforces at most two local tool calls per customer case. There is no persistent assistant history and the final advisor persona remains a later milestone.
 
 Proxy checks require Node.js 22:
 
@@ -66,15 +66,18 @@ A signed release bundle is built only by the manual GitHub Actions workflow **Bu
 - `ANDROID_KEYSTORE_BASE64` — Base64-encoded upload keystore;
 - `ANDROID_KEYSTORE_PASSWORD`;
 - `ANDROID_KEY_ALIAS`;
-- `ANDROID_KEY_PASSWORD`.
+- `ANDROID_KEY_PASSWORD`;
+- `TOWAROWNIK_APP_TOKEN` — the same shared Internal Testing app token configured on the production Worker.
 
-Then open **Actions → Build signed Play AAB → Run workflow**. The workflow runs `./gradlew check bundleRelease`, reconstructs the keystore only under the runner's temporary directory, and removes it after the job. Download the resulting artifact named `towarownik-play-release-aab`; it contains `app-release.aab` built from `app/build/outputs/bundle/release/app-release.aab`.
+Then open **Actions → Build signed Play AAB → Run workflow**. The workflow runs `./gradlew check bundleRelease`, reconstructs the keystore only under the runner's temporary directory, injects `TOWAROWNIK_APP_TOKEN` into Android through BuildConfig for that release build, and removes the transient keystore after the job. Download the resulting artifact named `towarownik-play-release-aab`; it contains `app-release.aab` built from `app/build/outputs/bundle/release/app-release.aab`.
+
+`TOWAROWNIK_APP_TOKEN` is only an Internal Testing abuse barrier. A determined user can extract a static token embedded in an APK/AAB, so it must not be described as strong device or user authentication. Ordinary WYSZUKIWARKA use does not require this token.
 
 Never commit keystores, signing credentials, APKs, or AABs.
 
 ## Scope boundaries
 
-The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. That OBI path remains local and independent from the proxy. The proxy now provides only the minimal authenticated Responses API contract and one application-defined OBI tool declaration; there is still no Android chat UI, persistent conversation store, server-side OBI logic, built-in OpenAI tool, streaming, analytics, or final assistant persona. Dependencies and capabilities must only be introduced with a concrete requirement.
+The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. That WYSZUKIWARKA path remains local and independent from the proxy. DORADCA adds only the minimal technical end-to-end controller/UI required to call the existing authenticated proxy, execute the one known local OBI tool, and display the normalized final answer. There is still no persistent chat/history, generic tool framework, server-side OBI logic, built-in OpenAI tool, streaming, analytics, or final assistant persona. Dependencies and capabilities must only be introduced with a concrete requirement.
 
 ## Documentation
 

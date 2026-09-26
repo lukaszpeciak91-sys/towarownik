@@ -7,6 +7,13 @@ val releaseKeystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH")
 val releaseKeystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+val towarownikAppToken = providers.environmentVariable("TOWAROWNIK_APP_TOKEN").orNull.orEmpty()
+
+fun String.asBuildConfigString(): String =
+    "\"" + replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r") + "\""
 
 val releaseSigningConfigured = listOf(
     releaseKeystorePath,
@@ -23,8 +30,14 @@ android {
         applicationId = "pl.lukaszpeciak.towarownik"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.1.5"
+        versionCode = 7
+        versionName = "0.1.6"
+
+        buildConfigField(
+            "String",
+            "TOWAROWNIK_APP_TOKEN",
+            towarownikAppToken.asBuildConfigString(),
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,6 +74,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -25,12 +25,14 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          TOWAROWNIK_APP_TOKEN: ${{ secrets.TOWAROWNIK_APP_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$ANDROID_KEYSTORE_BASE64" || { echo "::error::Missing ANDROID_KEYSTORE_BASE64"; exit 1; }
           test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "::error::Missing ANDROID_KEYSTORE_PASSWORD"; exit 1; }
           test -n "$ANDROID_KEY_ALIAS" || { echo "::error::Missing ANDROID_KEY_ALIAS"; exit 1; }
           test -n "$ANDROID_KEY_PASSWORD" || { echo "::error::Missing ANDROID_KEY_PASSWORD"; exit 1; }
+          test -n "$TOWAROWNIK_APP_TOKEN" || { echo "::error::Missing TOWAROWNIK_APP_TOKEN"; exit 1; }
 
       - name: Reconstruct upload keystore
         env:
@@ -46,6 +48,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          TOWAROWNIK_APP_TOKEN: ${{ secrets.TOWAROWNIK_APP_TOKEN }}
         run: ./gradlew check bundleRelease
 
       - name: Upload signed release AAB
