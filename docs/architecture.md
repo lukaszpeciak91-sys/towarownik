@@ -81,6 +81,8 @@ For the current contract, the matched product's selected store is `product.store
 
 Input classification is explicit: exactly seven digits are an OBIK; numeric GTIN/EAN lengths 8, 12, 13, or 14 are EAN input; other non-blank input is text; blank or unsupported all-numeric lengths are invalid.
 
+There are now two intentionally separate search-result capacities over the same OBI transport/parser rules. The existing `ProductSearchRepository.search()` path remains capped at five candidates and is the only search path used by the advisor/local AI tool. The human-only `searchManual()` path asks the parser for at most 25 recognized product links from the same already downloaded HTML and also preserves OBI's reported total result count. The UI reveals those parsed candidates in five-item chunks. The reported total may be larger than the parsed candidate list; the UI never invents additional candidates and no OBI pagination HTTP contract is assumed.
+
 OBIK continues to use the direct store-`075` product lookup without a candidate list. EAN and text queries use OBI's public `/search/{query}/` route. `ObiSearchParser` reads product links structurally, preserves their page order, deduplicates by OBIK, and returns at most five candidates. A canonical product URL is also accepted as a single search candidate when OBI redirects a search directly to a product page.
 
 Text search always requires user selection before product lookup. Multiple EAN candidates also require selection. A single EAN candidate is opened automatically only after the existing product payload confirms that its EAN equals the user's query; otherwise the candidate remains selectable instead of being guessed.
@@ -99,7 +101,11 @@ Deterministic fixtures and CI prove code behavior against known inputs; they do 
 
 ## UI and configuration
 
-The application uses a single Compose activity and a small state-based switch between **WYSZUKIWARKA** (default) and **DORADCA**; Navigation Compose is intentionally not introduced. The advisor UI is a technical validation surface only: one customer-need input, bounded progress/error states, one final text answer, and an explicit new-case reset. There is no persistent conversation history.
+The application uses a single Compose activity and state-based top-level surfaces; Navigation Compose is intentionally not introduced. The default surface is the advisor chat shell. Its top bar has a modal drawer action, centered Towarownik title, explicit new-case action, and quick access to the independent full-screen Wyszukiwarka OBI. The drawer currently contains only “Nowa rozmowa”, a local conversation-search field, and an honest empty-history area; no fake or persisted conversations are created.
+
+The advisor remains technically one-shot in this milestone. The submitted user request and final normalized assistant answer are rendered as timestamped chat messages, while progress/error states appear inside the conversation surface. Simple Markdown markers are normalized before display. Starting a new case cancels active work, clears draft/rendered messages, and protects the new case from stale callbacks. Message timestamps use device/system local time only.
+
+The Wyszukiwarka OBI has its own Back surface and keeps advisor UI state intact. Completed manual-search state, typed search query, advisor draft/messages, and selected top-level surface use Compose saved state where practical so rotation does not unnecessarily erase the current screen. A reusable verified-product UI model/card receives only trusted Android-side exact lookup data and opens the existing `LocalProduct.productUrl` through the normal external browser intent.
 
 `TOWAROWNIK_APP_TOKEN` is injected at Android build time through `BuildConfig`. Missing token configuration keeps compilation and ordinary search working; DORADCA fails locally before any network call. The signed Play workflow receives the token only from the matching GitHub Actions secret. The static token is only an Internal Testing abuse barrier and is extractable from an APK/AAB; it is not strong device authentication.
 
