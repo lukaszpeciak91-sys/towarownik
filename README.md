@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **Android advisor integration v0.1**. The app now has two deliberately separate paths: **WYSZUKIWARKA** keeps the existing local OBIK/EAN/text search with no proxy or OpenAI dependency, while **DORADCA** uses the authenticated Worker contract and executes the single requested OBI tool locally through the existing Android repositories.
+The current phase is **chat-style shell + manual OBI search v0.2**. The default surface is now the Towarownik advisor chat shell with a modal conversation drawer, explicit new-case actions, and one-shot advisor messages presented as chat bubbles. Direct OBI search remains a separate full-screen local surface reachable from the top-right search action and does not depend on the proxy/OpenAI path.
 
 ## Technology
 
@@ -46,7 +46,7 @@ Normal pull-request CI never calls live OBI. It runs deterministic Python tests 
 
 The self-contained Cloudflare Worker project lives under `proxy/`. `GET /health` remains public. `POST /v1/agent/start` and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
 
-Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android executes the existing `ProductSearchRepository` + `ProductLookupRepository` flow, returns only compact verified product records, and enforces at most two local tool calls per customer case. There is no persistent assistant history and the final advisor persona remains a later milestone.
+Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android executes the existing `ProductSearchRepository` + `ProductLookupRepository` flow, returns only compact verified product records, and remains capped at five products per tool call. The human-only Wyszukiwarka OBI may parse at most 25 recognized candidates from the already downloaded search HTML and reveals them in chunks of five; this does not add or assume an OBI pagination endpoint. There is still no persistent assistant history and the final advisor persona remains a later milestone.
 
 Proxy checks require Node.js 22:
 
@@ -77,7 +77,7 @@ Never commit keystores, signing credentials, APKs, or AABs.
 
 ## Scope boundaries
 
-The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. That WYSZUKIWARKA path remains local and independent from the proxy. DORADCA adds only the minimal technical end-to-end controller/UI required to call the existing authenticated proxy, execute the one known local OBI tool, and display the normalized final answer. There is still no persistent chat/history, generic tool framework, server-side OBI logic, built-in OpenAI tool, streaming, analytics, or final assistant persona. Dependencies and capabilities must only be introduced with a concrete requirement.
+The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search. Exact product facts still come only from the existing store-`075` lookup. The manual search surface may browse up to 25 recognized candidates from one OBI HTML response in five-item increments; the advisor/local tool remains independently capped at five. Exact results show product name, OBIK, local gross price, local stock, and the trusted `LocalProduct.productUrl` for external browser opening. The chat shell deliberately provides no persisted history, fake conversations, multi-turn OpenAI reuse, generic tool framework, server-side OBI logic, streaming, analytics, or final assistant persona.
 
 ## Documentation
 
