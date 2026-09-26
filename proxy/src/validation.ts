@@ -44,8 +44,11 @@ export async function parseStartRequest(request: Request): Promise<string> {
   }
 
   const message = normalizeWhitespace(object.message);
-  if (!message || message.length > START_MESSAGE_MAX_CHARS) {
+  if (!message) {
     throw new InvalidRequestError();
+  }
+  if (message.length > START_MESSAGE_MAX_CHARS) {
+    throw new RequestTooLargeError();
   }
 
   return message;
@@ -242,5 +245,9 @@ async function readUtf8Body(request: Request, maxBytes: number): Promise<string>
     offset += chunk.byteLength;
   }
 
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new InvalidRequestError();
+  }
 }
