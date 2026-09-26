@@ -41,11 +41,7 @@ class ObiSearchParser(
                 "CANDIDATE_COUNT_AFTER_DEDUPE=${diagnosticCandidateLinks.distinct().size}",
             )
 
-            val searchResultCount = SEARCH_RESULT_COUNT
-                .find(pageText)
-                ?.groupValues
-                ?.get(1)
-                ?.toIntOrNull()
+            val searchResultCount = searchResultCount(pageText)
             diagnostics.parserStage(
                 diagnosticId,
                 "SEARCH_RESULT_COUNT=${searchResultCount ?: "UNKNOWN"}",
@@ -82,7 +78,7 @@ class ObiSearchParser(
                 )
                 return@runCatching ObiSearchParseResult.Results(
                     candidates.entries
-                        .take(MAX_RESULTS)
+                        .take(minOf(MAX_RESULTS, searchResultCount))
                         .map { (obik, name) -> ProductSearchCandidate(obik, name) },
                 )
             }
@@ -112,6 +108,21 @@ class ObiSearchParser(
         return result
     }
 
+    private fun searchResultCount(pageText: String): Int? {
+        val marker = SEARCH_RESULTS_MARKER.find(pageText) ?: return null
+        val count = SEARCH_RESULT_COUNT.find(pageText, marker.range.first) ?: return null
+        val countPosition = count.groups[1]?.range?.first ?: return null
+        if (countPosition - marker.range.last > MAX_RESULT_HEADER_DISTANCE) return null
+
+        val emptyStatePosition = EMPTY_RESULT_PHRASES
+            .map { phrase -> pageText.indexOf(phrase, marker.range.last + 1, ignoreCase = true) }
+            .filter { it >= 0 }
+            .minOrNull()
+        if (emptyStatePosition != null && emptyStatePosition < countPosition) return null
+
+        return count.groupValues[1].toIntOrNull()
+    }
+
     private fun zeroResultRule(
         pageText: String,
         searchResultCount: Int?,
@@ -129,6 +140,7 @@ class ObiSearchParser(
 
     private companion object {
         const val MAX_RESULTS = 5
+        const val MAX_RESULT_HEADER_DISTANCE = 300
 
         val PRODUCT_LINK = Regex(
             """<a\b([^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*)>(.*?)</a>""",
@@ -142,9 +154,12 @@ class ObiSearchParser(
             """<link\b(?=[^>]*\brel\s*=\s*["']canonical["'])[^>]*\bhref\s*=\s*["'][^"']*/p/(\d{7})(?:/[^"']*)?["'][^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val SEARCH_RESULT_COUNT = Regex(
-            """Wyniki dla.*?\(\s*(\d+)\s*\)""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        val SEARCH_RESULTS_MARKER = Regex("""Wyniki dla""", RegexOption.IGNORE_CASE)
+        val SEARCH_RESULT_COUNT = Regex("""\(\s*(\d+)\s*\)""")
+        val EMPTY_RESULT_PHRASES = listOf(
+            "Nie znaleźliśmy żadnych wyników",
+            "Nie znaleziono produktów",
+            "Brak wyników",
         )
         val TAG = Regex("""<[^>]+>""")
         val WHITESPACE = Regex("""\s+""")
