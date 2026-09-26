@@ -41,15 +41,6 @@ class ObiSearchParser(
                 "CANDIDATE_COUNT_AFTER_DEDUPE=${diagnosticCandidateLinks.distinct().size}",
             )
 
-            val zeroResultRule = zeroResultRule(pageText)
-            diagnostics.parserStage(
-                diagnosticId,
-                "ZERO_RESULT_RULE=${zeroResultRule ?: "NONE"}",
-            )
-            if (zeroResultRule != null) {
-                return@runCatching ObiSearchParseResult.NoResults
-            }
-
             val candidates = LinkedHashMap<String, String?>()
 
             allProductLinks.forEach { match ->
@@ -64,12 +55,25 @@ class ObiSearchParser(
                 }
             }
 
+            val zeroResultRule = zeroResultRule(pageText)
             if (candidates.isNotEmpty()) {
+                diagnostics.parserStage(
+                    diagnosticId,
+                    "ZERO_RESULT_RULE=${zeroResultRule?.let { "IGNORED_${it}_PRODUCTS_PRESENT" } ?: "NONE"}",
+                )
                 return@runCatching ObiSearchParseResult.Results(
                     candidates.entries
                         .take(MAX_RESULTS)
                         .map { (obik, name) -> ProductSearchCandidate(obik, name) },
                 )
+            }
+
+            diagnostics.parserStage(
+                diagnosticId,
+                "ZERO_RESULT_RULE=${zeroResultRule ?: "NONE"}",
+            )
+            if (zeroResultRule != null) {
+                return@runCatching ObiSearchParseResult.NoResults
             }
 
             error("OBI search payload has no recognizable product results or explicit empty state")
