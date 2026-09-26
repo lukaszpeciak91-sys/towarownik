@@ -40,6 +40,7 @@ These decisions describe the broader intended product behavior. The currently im
 - Text results are never auto-selected. Ambiguous EAN results also require user selection.
 - A single EAN candidate may proceed directly only when the fetched product payload confirms the queried EAN.
 - Selecting any candidate uses the existing store `075` product lookup for exact local stock and local price.
+- Recognized product links take precedence over generic zero-result phrases embedded elsewhere in the returned HTML. Zero-result wording may classify a search as empty only when no product candidates were extracted.
 - Search parser uncertainty is a data failure, not a not-found guess.
 
 ## In-app OBI diagnostics v0.1
