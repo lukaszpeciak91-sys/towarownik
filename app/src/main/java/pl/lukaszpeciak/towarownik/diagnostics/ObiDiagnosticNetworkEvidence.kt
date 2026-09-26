@@ -72,7 +72,11 @@ internal fun setDiagnosticCookieEvidence(
 internal fun safeDiagnosticRequestHeaders(request: Request): Map<String, String> =
     SAFE_REQUEST_HEADERS.mapNotNull { header ->
         request.header(header)?.let { value ->
-            header to sanitizeDiagnosticHeaderValue(value)
+            header to if (header.equals("Referer", ignoreCase = true)) {
+                sanitizeDiagnosticUrl(value) ?: "[redacted-url]"
+            } else {
+                sanitizeDiagnosticHeaderValue(value)
+            }
         }
     }.toMap()
 
@@ -104,10 +108,26 @@ private fun isRecognizableStoreCookie(name: String): Boolean =
     STORE_COOKIE_NAMES.any { expected -> name.equals(expected, ignoreCase = true) }
 
 private fun sanitizeDiagnosticHeaderValue(value: String): String =
-    value
-        .replace(IPV4, "[redacted-ip]")
-        .replace(IPV6, "[redacted-ip]")
-        .take(MAX_HEADER_VALUE_LENGTH)
+    redactQueryLikeValues(
+        value
+            .replace(IPV4, "[redacted-ip]")
+            .replace(IPV6, "[redacted-ip]"),
+    ).take(MAX_HEADER_VALUE_LENGTH)
+
+private fun redactQueryLikeValues(value: String): String =
+    QUERY_VALUE.replace(value) { match ->
+        val prefix = match.groupValues[1]
+        val name = match.groupValues[2]
+        val rawValue = match.groupValues[3]
+        if (
+            name.equals("storeNumber", ignoreCase = true) &&
+            STORE_NUMBER.matches(rawValue)
+        ) {
+            match.value
+        } else {
+            "$prefix$name=REDACTED"
+        }
+    }
 
 private val SAFE_REQUEST_HEADERS = listOf(
     "User-Agent",
@@ -143,6 +163,8 @@ private val STORE_COOKIE_NAMES = setOf(
 
 private val IPV4 = Regex("""\b(?:\d{1,3}\.){3}\d{1,3}\b""")
 private val IPV6 = Regex("""(?i)\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b""")
+private val QUERY_VALUE = Regex("""([?&])([A-Za-z0-9_.-]+)=([^&\s]+)""")
+private val STORE_NUMBER = Regex("""\d{1,4}""")
 
 private const val EXPECTED_STORE_NUMBER = "075"
 private const val MAX_HEADER_VALUE_LENGTH = 300
