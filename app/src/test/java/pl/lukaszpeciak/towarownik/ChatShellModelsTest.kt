@@ -29,6 +29,68 @@ class ChatShellModelsTest {
         assertTrue(fresh.messages.isEmpty())
     }
 
+
+    @Test
+    fun `completed case survives save and restore unchanged`() {
+        val completed = AdvisorCaseUiState(
+            draft = "",
+            messages = listOf(
+                AdvisorChatMessage(
+                    role = ChatMessageRole.USER,
+                    text = "Szukam kleju do listew.",
+                    createdAt = 100L,
+                ),
+                AdvisorChatMessage(
+                    role = ChatMessageRole.ASSISTANT,
+                    text = "Sprawdź ten produkt.",
+                    createdAt = 200L,
+                ),
+            ),
+        )
+
+        val restored = restoreAdvisorCase(saveAdvisorCase(completed))
+
+        assertEquals(completed, restored)
+    }
+
+    @Test
+    fun `unfinished user only case restores as retryable draft`() {
+        val interrupted = AdvisorCaseUiState(
+            draft = "",
+            messages = listOf(
+                AdvisorChatMessage(
+                    role = ChatMessageRole.USER,
+                    text = "Potrzebuję silikonu do łazienki.",
+                    createdAt = 300L,
+                ),
+            ),
+        )
+
+        val restored = restoreAdvisorCase(saveAdvisorCase(interrupted))
+
+        assertEquals("Potrzebuję silikonu do łazienki.", restored.draft)
+        assertTrue(restored.messages.isEmpty())
+    }
+
+    @Test
+    fun `restoration never creates a submitted advisor case automatically`() {
+        val interrupted = AdvisorCaseUiState(
+            messages = listOf(
+                AdvisorChatMessage(
+                    role = ChatMessageRole.USER,
+                    text = "Znajdź pochłaniacz wilgoci.",
+                    createdAt = 400L,
+                ),
+            ),
+        )
+
+        val restored = restoreAdvisorCase(saveAdvisorCase(interrupted))
+
+        assertEquals("Znajdź pochłaniacz wilgoci.", restored.draft)
+        assertTrue(restored.messages.isEmpty())
+        assertTrue(restored.draft.isNotBlank())
+    }
+
     @Test
     fun `advisor display normalization hides simple markdown markers`() {
         assertEquals(
