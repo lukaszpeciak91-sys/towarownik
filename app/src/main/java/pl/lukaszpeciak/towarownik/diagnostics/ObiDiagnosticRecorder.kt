@@ -86,6 +86,8 @@ class ObiDiagnosticRecorder(
         status: Int,
         url: String,
         location: String?,
+        protocol: String?,
+        safeRequestHeaders: Map<String, String>,
         contentType: String?,
         contentEncoding: String?,
         declaredContentLength: Long?,
@@ -105,6 +107,8 @@ class ObiDiagnosticRecorder(
                 status = status,
                 url = sanitizedUrl,
                 location = sanitizedLocation,
+                protocol = protocol,
+                safeRequestHeaders = safeRequestHeaders,
                 contentType = contentType,
                 contentEncoding = contentEncoding,
                 declaredContentLength = declaredContentLength,
@@ -201,6 +205,12 @@ class ObiDiagnosticRecorder(
                     append("  hop=${hop.number} status=${hop.status} url=${hop.url}")
                     hop.location?.let { append(" location=$it") }
                     appendLine()
+                    appendLine("    protocol=${hop.protocol ?: "(none)"}")
+                    appendLine(
+                        "    requestHeaders=" +
+                            hop.safeRequestHeaders.entries.joinToString { "${it.key}=${it.value}" }
+                                .ifBlank { "(none)" },
+                    )
                     appendLine("    outgoingCookieNames=${hop.outgoingCookies.safeCookieList()}")
                     appendLine(
                         "    outgoingStore075CookieMatch=" +
