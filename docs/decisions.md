@@ -89,3 +89,19 @@ These decisions describe the broader intended product behavior. The currently im
 - OBI HTML and Nuxt payloads are not sent to OpenAI.
 - The initial Worker surface is only `GET /health`; unknown routes return bounded JSON 404 and unsupported health methods return 405.
 - No paid Cloudflare services, storage products, schedules, custom domains, or automatic deployments are introduced by this foundation.
+
+
+## Authenticated OpenAI proxy v0.1
+
+- `GET /health` remains public and independent of Worker secrets.
+- `POST /v1/agent/start` and `POST /v1/agent/continue` require `Authorization: Bearer <TOWAROWNIK_APP_TOKEN>`. Missing server token configuration fails closed. This shared token is initial Internal-Testing abuse prevention, not strong device identity.
+- `OPENAI_API_KEY` exists only in the Worker environment and is never forwarded to Android. The Android Authorization header is never forwarded to OpenAI.
+- The Worker uses native `fetch` with `POST https://api.openai.com/v1/responses`; no OpenAI SDK runtime dependency is introduced.
+- The current cost-sensitive model is centralized as `gpt-6-luna` with low reasoning effort and a bounded output budget. This model choice may change after real assistant evaluations.
+- OpenAI request parameters are server-controlled. Android cannot choose the model, instructions, tools, reasoning effort, output budget, or upstream URL.
+- No OpenAI built-in tool is enabled. The sole function tool is strict `find_available_obi_075(query, limit)`, with `limit <= 5`.
+- The Worker never executes that OBI tool. It validates the model request and returns it to Android; Android remains authoritative for OBI discovery, OBIK, store `075`, stock, and local price.
+- Continuation uses `previous_response_id` plus one matching `function_call_output`. Stable instructions and the single tool definition are resent. No Cloudflare persistence is added.
+- Android tool results are strict, compact, and bounded: at most five products; seven-digit OBIK; bounded names; stock is non-negative integer or null; price is finite non-negative number or null. Arbitrary extra structures such as OBI HTML/Nuxt are rejected.
+- Raw OpenAI responses/errors are not forwarded. Client errors map to bounded 400/413, app auth to 401, missing server configuration to 503, and upstream/protocol failures to 502.
+- No application-level OpenAI retry, streaming, web search, file search, computer use, hosted shell, image generation, MCP, analytics, or server-side OBI implementation is introduced.
