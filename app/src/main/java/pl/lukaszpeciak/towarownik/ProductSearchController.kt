@@ -13,6 +13,7 @@ import pl.lukaszpeciak.towarownik.product.ProductSearchInput
 import pl.lukaszpeciak.towarownik.product.ProductSearchRepository
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 import pl.lukaszpeciak.towarownik.product.classifyProductSearchInput
+import pl.lukaszpeciak.towarownik.product.normalizeProductSearchInput
 
 internal const val INVALID_SEARCH_MESSAGE = "Wpisz 7-cyfrowy OBIK, EAN lub nazwę produktu."
 internal const val NETWORK_ERROR_MESSAGE = "Nie udało się połączyć z OBI. Sprawdź internet i spróbuj ponownie."
@@ -52,7 +53,8 @@ internal class ProductSearchController(
         input: String,
         onState: (ProductSearchUiState) -> Unit,
     ) {
-        val classified = classifyProductSearchInput(input)
+        val normalizedInput = normalizeProductSearchInput(input)
+        val classified = classifyProductSearchInput(normalizedInput)
         if (classified is ProductSearchInput.Invalid) {
             onState(ProductSearchUiState.Error(INVALID_SEARCH_MESSAGE))
             return
