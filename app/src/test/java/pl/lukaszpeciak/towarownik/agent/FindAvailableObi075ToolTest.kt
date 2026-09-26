@@ -109,6 +109,31 @@ class FindAvailableObi075ToolTest {
     }
 
     @Test
+    fun `advisor tool remains capped at five even when more candidates are supplied`() = runBlocking {
+        val lookedUp = mutableListOf<String>()
+        val candidates = (1..25).map { index ->
+            ProductSearchCandidate(
+                obik = (5_000_000 + index).toString(),
+                name = "Synthetic $index",
+            )
+        }
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(candidates)
+            },
+            lookup = { obik ->
+                lookedUp += obik
+                ProductLookupResult.Found(product(obik = obik))
+            },
+        )
+
+        val result = tool.execute(arguments(limit = 5)) as AdvisorToolExecutionResult.Success
+
+        assertEquals(5, lookedUp.size)
+        assertEquals(5, result.result.products.size)
+    }
+
+    @Test
     fun `stock zero remains zero and unknown stock and price remain null`() = runBlocking {
         val products = mapOf(
             "1234567" to product(
