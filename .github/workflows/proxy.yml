@@ -1,0 +1,39 @@
+name: Proxy checks
+
+on:
+  pull_request:
+    paths:
+      - "proxy/**"
+      - ".github/workflows/proxy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "proxy/**"
+      - ".github/workflows/proxy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proxy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: proxy/package-lock.json
+
+      - name: Install proxy dependencies
+        run: npm ci
+
+      - name: Typecheck proxy
+        run: npm run typecheck
+
+      - name: Test proxy
+        run: npm test

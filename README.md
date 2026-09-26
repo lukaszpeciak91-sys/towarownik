@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **V0.1 — unified OBI product search**. See [the progress log](docs/progress.md) for the next milestone and [the decision record](docs/decisions.md) for the approved scope.
+The current phase is **AI assistant / proxy foundation**. Existing OBI search and exact store-`075` product lookup continue to run locally in Android and remain authoritative for product, stock, and price. The new `proxy/` project is only the server-side foundation for a future assistant path; it does not call OpenAI yet.
 
 ## Technology
 
@@ -22,6 +22,7 @@ The current phase is **V0.1 — unified OBI product search**. See [the progress 
 - OkHttp: 4.12.0
 - kotlinx.serialization JSON: 1.9.0
 - Kotlin coroutines: 1.10.2
+- Optional future assistant proxy: Cloudflare Worker + TypeScript under `proxy/`
 
 ## Local bootstrap and build
 
@@ -41,6 +42,23 @@ The workflow is manual-only. It always emits a bounded safe summary, but raw HTM
 
 Normal pull-request CI never calls live OBI. It runs deterministic Python tests for the inspector alongside the Android checks. Use the manual probe only to refresh contract evidence when OBI changes, then convert confirmed structure into sanitized deterministic fixtures for parser tests.
 
+## AI assistant proxy foundation
+
+The self-contained Cloudflare Worker project lives under `proxy/`. It currently exposes only `GET /health`; there are no AI endpoints, OpenAI calls, OBI requests, authentication flows, or persistence yet.
+
+Android OBI lookup remains local. The Worker must never scrape OBI or duplicate the Android OBI parsers/repositories.
+
+Proxy checks require Node.js 22:
+
+```bash
+cd proxy
+npm ci
+npm run typecheck
+npm test
+```
+
+For later Cloudflare repository setup, use `proxy` as the root directory and `towarownik-proxy` as the Worker name. Future secret names are documented in `proxy/README.md`; no secret is required for `/health`.
+
 ## Signed Google Play AAB
 
 A signed release bundle is built only by the manual GitHub Actions workflow **Build signed Play AAB**. Configure these repository Actions secrets first:
@@ -56,7 +74,7 @@ Never commit keystores, signing credentials, APKs, or AABs.
 
 ## Scope boundaries
 
-This milestone supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. It has no nearby-store fallback, barcode or OCR support, persistence, dependency injection, navigation framework, analytics, accounts, ads, product images, Firebase, or AI. Dependencies and capabilities must only be introduced with a concrete requirement.
+The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. That OBI path remains local and independent from the new proxy foundation. The proxy currently provides infrastructure only: no model selection, prompts, conversation history, tool calling, Android chat UI, OpenAI traffic, or server-side OBI logic. Dependencies and capabilities must only be introduced with a concrete requirement.
 
 ## Documentation
 

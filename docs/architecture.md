@@ -25,6 +25,40 @@ The product lookup core implements repository, HTTP/session transport, and OBI-s
 
 Transport and parsing must remain isolated from the UI. An OBI website change should require changes in its transport/parser boundary and tests, not a UI rewrite.
 
+## Future AI assistant boundary
+
+The assistant path is separate from the local OBI data path:
+
+```text
+User / Compose
+    ↓
+AI interaction controller
+    ↓
+Cloudflare proxy
+    ↓
+OpenAI
+```
+
+The Cloudflare Worker exists to protect server-side API credentials and, in a later milestone, mediate assistant requests. The OpenAI API key exists only on the proxy side. The Android app must never embed it.
+
+When the future model requests a high-level local OBI tool, the direction is:
+
+```text
+AI requests local OBI tool
+    ↓
+existing Android OBI repository/search/lookup
+    ↓
+store 075 verified structured result
+    ↓
+compact result returned to AI
+```
+
+For example, a future tool intent such as `find_available_obi_075(query, limit)` is executed by Android using the existing OBI mechanisms. The proxy does not scrape OBI, does not contain an OBI parser, and does not become authoritative for OBI data. Existing Android OBI search, OBIK extraction, exact lookup, store `075`, stock, and local price remain the source of truth.
+
+OpenAI must receive only compact structured results produced by the app. OBI HTML, Nuxt payloads, cookies, and parser internals must not be forwarded to OpenAI or moved into the proxy.
+
+The current proxy foundation exposes only a public health endpoint. Agent endpoints, prompts, conversation history, tool calling, and app-to-proxy authentication are not implemented yet.
+
 ## OBIK lookup flow
 
 `ProductLookupRepository` accepts only a seven-digit OBIK and always requests store number `075` (OBI Nowy Sącz). `ObiHttpClient` calls `/api/disc/store/change?storeNumber=075&redirectUrl=/p/{OBIK}` with an in-memory cookie jar. OkHttp follows the normal redirect to the product route on that same client, so the response page was produced in the selected-store session. Live Android probing confirmed that this existing URL/redirect/session flow is valid, but OBI/CloudFront rejects the default native/non-browser User-Agent with synthetic empty 404 responses. Production OBI requests therefore apply one centralized browser-compatible HTML navigation profile: a fixed synthetic Android Chrome-style User-Agent, HTML Accept, and Polish Accept-Language. The UA is a compatibility string and does not represent the user's installed Chrome. No bootstrap request or canonical-product prelookup is performed. Non-2xx, empty, and transport responses become explicit unavailable results; the client does not retry.
