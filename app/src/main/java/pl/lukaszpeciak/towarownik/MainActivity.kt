@@ -244,12 +244,7 @@ private fun TowarownikApp() {
                 text = submitted,
             )
 
-            if (!advisorRequestGuard.isCurrent(
-                    token = generation,
-                    expectedConversationId = turn.conversationId,
-                    activeConversationId = activeConversationId,
-                )
-            ) {
+            if (!advisorRequestGuard.isTokenCurrent(generation)) {
                 conversationRepository.recoverInterruptedTurn(
                     turn.conversationId,
                 )
@@ -287,8 +282,11 @@ private fun TowarownikApp() {
                         finalResponseId = finalState.responseId,
                     )
                     if (
-                        generation == advisorGeneration &&
-                        activeConversationId == turn.conversationId
+                        advisorRequestGuard.isCurrent(
+                            token = generation,
+                            expectedConversationId = turn.conversationId,
+                            activeConversationId = activeConversationId,
+                        )
                     ) {
                         conversationRepository.load(turn.conversationId)
                             ?.let(::applyConversation)
@@ -300,8 +298,11 @@ private fun TowarownikApp() {
                     val recovered = conversationRepository
                         .recoverInterruptedTurn(turn.conversationId)
                     if (
-                        generation == advisorGeneration &&
-                        activeConversationId == turn.conversationId
+                        advisorRequestGuard.isCurrent(
+                            token = generation,
+                            expectedConversationId = turn.conversationId,
+                            activeConversationId = activeConversationId,
+                        )
                     ) {
                         applyConversation(recovered)
                         advisorState = finalState
