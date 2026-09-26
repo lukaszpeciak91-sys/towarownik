@@ -336,7 +336,7 @@ class ObiDiagnosticsIntegrationTest {
             assertTrue(operation.parserStages.contains("SEARCH_RESULT_COUNT=2"))
             assertTrue(operation.parserStages.contains("ZERO_RESULT_RULE=NONE"))
             assertTrue(operation.parserStages.contains("FINAL_PARSE_RESULT=RESULTS"))
-            assertTrue(operation.errorMappingTrace.isEmpty())
+            assertEquals(listOf("HTTP 200"), operation.errorMappingTrace)
         }
     }
 
