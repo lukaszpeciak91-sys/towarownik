@@ -136,3 +136,19 @@ These decisions describe the broader intended product behavior. The currently im
 - Candidate selection still performs the existing exact store-`075` product lookup before exact facts or external links are shown.
 - Verified product presentation uses the exact `LocalProduct.productUrl`; Android does not reconstruct or guess product URLs.
 - Stock `0` is displayed explicitly as zero/unavailable; unknown stock and price remain “brak danych”.
+
+
+## Persistent advisor conversations + multi-turn v0.3
+
+- Room 2.8.5 is introduced for the concrete conversation-history requirement; no generic persistence abstraction is added.
+- Schema v1 has `conversations(id,title,createdAt,updatedAt,lastResponseId,draft)` and `messages(id,conversationId,role,text,createdAt)`; message rows use a CASCADE foreign key.
+- Empty untouched chats do not create database rows. The first send creates the conversation and a title derived locally from the normalized first USER message, bounded to 50 characters; no OpenAI title request is made.
+- Drawer history is ordered by `updatedAt DESC`. Phrase search is local SQL substring matching against title and USER/ASSISTANT text, with no embeddings/network/AI.
+- Only a final ASSISTANT answer response ID is persisted as `lastResponseId`. Tool response IDs/call IDs are transient. New conversations start with null context.
+- The Worker adds authenticated `POST /v1/agent/message`; it accepts only `previousResponseId` and the new message, while model/instructions/tools/reasoning/output budget remain server-controlled.
+- `previous_response_id` is used for normal follow-up turns instead of replaying the entire local transcript. This does not make prior context free; previous chain input tokens remain billable.
+- `MAX_LOCAL_TOOL_CALLS_PER_TURN = 2`. Every USER message starts with a fresh allowance; the product limit remains 5. Manual human search remains independently bounded at 25 parsed candidates.
+- Current OBI stock/price/availability questions must refresh through `find_available_obi_075`; historical conversation values are not current truth.
+- Interrupted trailing USER messages are transactionally recovered into editable draft text without advancing `lastResponseId` and without automatic network retry.
+- Completing a turn commits the ASSISTANT message and replacement final `lastResponseId` in one Room transaction.
+- Local history remains readable even if the corresponding OpenAI chain later cannot continue. This milestone does not silently replay the transcript or start a replacement context chain.
