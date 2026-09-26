@@ -2,6 +2,7 @@ package pl.lukaszpeciak.towarownik.diagnostics
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -97,7 +98,7 @@ class ObiLiveProbeTest {
 
     @Test
     fun `endpoint probe URLs preserve exact control paths`() {
-        val urls = ObiProbeUrls("https://www.obi.pl/".toHttpUrlForTest())
+        val urls = ObiProbeUrls("https://www.obi.pl/".toHttpUrl())
 
         assertEquals("/", urls.root().encodedPath)
         assertEquals("/search/dedra/", urls.search().encodedPath)
@@ -292,9 +293,6 @@ class ObiLiveProbeTest {
             assertEquals(15, server.requestCount)
         }
     }
-
-    private fun String.toHttpUrlForTest(): okhttp3.HttpUrl =
-        okhttp3.HttpUrl.Companion.toHttpUrl(this)
 
     private companion object {
         const val HTML_ACCEPT_VALUE =
