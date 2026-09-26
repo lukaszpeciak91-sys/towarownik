@@ -120,3 +120,19 @@ These decisions describe the broader intended product behavior. The currently im
 - The shared static app token is only an Internal Testing abuse barrier and can be extracted from a distributed APK/AAB; it is not treated as strong device/user authentication.
 - The manual signed AAB workflow requires the GitHub Actions secret `TOWAROWNIK_APP_TOKEN` and passes it to Gradle only for the release build.
 - The final advisor personality/prompt, persistent chat, general chat, additional tools, and cost/policy tuning remain later milestones.
+
+
+## Chat-style shell and manual OBI search v0.2
+
+- DORADCA becomes the default application surface and is presented as the first real Towarownik chat shell rather than the previous validation form.
+- The shell uses a modal left drawer with “Nowa rozmowa”, a local placeholder conversation-search field, and an empty-history area. Persistent conversation history, fake history rows, date grouping, and a conversation index remain out of scope.
+- The top bar provides hamburger, centered Towarownik title, explicit new-case action, and direct OBI-search access. Navigation Compose is still unnecessary; state-based surfaces remain sufficient.
+- Advisor behavior remains one-shot. UI messages have `createdAt` timestamps and are saveable across configuration changes where practical. Simple Markdown markers are removed rather than introducing a Markdown framework.
+- Starting a new advisor case cancels active work, clears rendered case state, and ignores stale callbacks from the previous generation. No response/call IDs are reused across cases.
+- Direct Wyszukiwarka OBI is a full-screen local surface independent from proxy/OpenAI configuration. OBIK, EAN verification, text selection, diagnostics, store `075`, and exact lookup semantics remain unchanged.
+- Human manual text search uses a separate bounded parser/repository view: up to **25** recognized candidates from the current HTML response, displayed incrementally in chunks of five. The bound is intentionally five UI pages: enough to browse beyond the old first five without unbounded parsing/memory or inventing an OBI pagination contract.
+- OBI's reported total result count is preserved separately from the parsed candidate list. “Pokaż więcej” is shown only while additional parsed candidates actually exist.
+- The advisor/local `find_available_obi_075` tool remains capped at **5** products and does not use the 25-candidate human browsing capacity.
+- Candidate selection still performs the existing exact store-`075` product lookup before exact facts or external links are shown.
+- Verified product presentation uses the exact `LocalProduct.productUrl`; Android does not reconstruct or guess product URLs.
+- Stock `0` is displayed explicitly as zero/unavailable; unknown stock and price remain “brak danych”.
