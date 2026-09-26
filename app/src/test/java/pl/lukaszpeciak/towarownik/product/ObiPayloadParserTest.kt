@@ -23,6 +23,83 @@ class ObiPayloadParserTest {
     }
 
     @Test
+    fun `current live OBI shape resolves shallow ref and selected store article data`() {
+        val product = parser.parse(
+            fixture("live-3496072-store-075.html"),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals(LIVE_OBIK, product.obik)
+        assertEquals("Dragon Klej uniwersalny Butapren 50 ml", product.name)
+        assertEquals(25, product.stock)
+        assertEquals(BigDecimal("12.99"), product.grossPrice)
+        assertEquals(
+            "https://www.obi.pl/p/3496072/dragon-klej-uniwersalny-butapren-50-ml",
+            product.productUrl,
+        )
+        assertEquals("5903649001412", product.ean)
+        assertEquals(STORE, product.storeNumber)
+    }
+
+    @Test
+    fun `current live OBI EAN comes from singleton Nuxt array without JSON-LD fallback`() {
+        val product = parser.parse(
+            fixture("live-3496072-store-075.html"),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals("5903649001412", product.ean)
+    }
+
+    @Test
+    fun `multiple live OBI EAN values are not guessed`() {
+        val html = fixture("live-3496072-store-075.html")
+            .replace(",[27],{\"product\":24}", ",[27,27],{\"product\":24}")
+
+        val product = parser.parse(html, LIVE_OBIK, STORE).getOrThrow()
+
+        assertNull(product.ean)
+    }
+
+    @Test
+    fun `non-string live OBI EAN array value is not guessed`() {
+        val html = fixture("live-3496072-store-075.html")
+            .replace(",[27],{\"product\":24}", ",[13],{\"product\":24}")
+
+        val product = parser.parse(html, LIVE_OBIK, STORE).getOrThrow()
+
+        assertNull(product.ean)
+    }
+
+    @Test
+    fun `current live OBI shape never substitutes seller or fallback values for local store data`() {
+        val product = parser.parse(
+            fixture("live-3496072-store-075.html"),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals(25, product.stock)
+        assertTrue(product.stock != 9)
+        assertEquals(BigDecimal("12.99"), product.grossPrice)
+        assertTrue(product.grossPrice != BigDecimal("11.11"))
+        assertTrue(product.grossPrice != BigDecimal("99.99"))
+    }
+
+    @Test
+    fun `current live OBI shape rejects a different store`() {
+        assertTrue(
+            parser.parse(
+                fixture("live-3496072-store-075.html"),
+                LIVE_OBIK,
+                "999",
+            ).isFailure,
+        )
+    }
+
+    @Test
     fun `real OBI structure ties identity local stock and gross price to store 075`() {
         val product = parser.parse(fixture("real-7313810-store-075.html"), OBIK, STORE).getOrThrow()
 
@@ -93,6 +170,7 @@ class ObiPayloadParserTest {
 
     private companion object {
         const val OBIK = "7313810"
+        const val LIVE_OBIK = "3496072"
         const val STORE = "075"
     }
 }

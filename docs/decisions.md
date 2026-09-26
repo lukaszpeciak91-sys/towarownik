@@ -25,8 +25,10 @@ These decisions describe the broader intended product behavior. The currently im
 
 - A seven-digit OBIK remains a direct product lookup and does not pass through a candidate list.
 - Store `075` is selected through OBI's store-change endpoint, using one cookie-preserving OkHttp session through its redirect to `/p/{OBIK}`.
-- The selected-store Nuxt payload is authoritative for `stock` and `pricing.grossPrice`. Online price and shipping cost are not substitutes for local gross price.
+- The selected-store Nuxt payload is authoritative for local availability and price. In the current live contract the product is identified by `skuId`, store binding is `product.store.information.storeId`, and local values come only from `product.store.articleData.stock` and `product.store.articleData.pricing.grossPrice`. Seller values and `fallbackPricing` are not substitutes.
 - Confirmed numeric stock `0` means zero. Missing, negative, or malformed stock means unknown and must not be converted to zero.
+- Nuxt `Ref` and `ShallowRef` wrappers are dereferenced as part of the confirmed flattened payload contract.
+- Legacy `selectedStore` fixtures remain supported as a compatibility path, but current live store-bound product data takes precedence.
 - Missing local price remains unknown. Retrieval and required product-identity failures produce an unavailable result rather than invented data.
 - No generic retailer abstraction is introduced; transport and structured parsing are OBI-specific and remain outside Compose.
 

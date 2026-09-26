@@ -12,15 +12,17 @@ Hardware verification of app `0.1.2 (3)` confirmed that the browser-compatible p
 - the production request uses the proven browser-compatible User-Agent, HTML Accept, Polish Accept-Language, redirect handling, and cookie session;
 - the full response contains valid `__NUXT_DATA__`, the requested OBIK, store `075`, and the canonical product URL.
 
-The remaining failure is parser-side. `ObiPayloadParser` successfully parses the Nuxt JSON but its historical object-shape assumption no longer finds the expected product/store context, producing `PRODUCT_ID_MATCH_FAILED`, `STORE_075_MATCH_FAILED`, and a DATA error.
+Hardware verification of app `0.1.3 (4)` reproduced the parser failure after transport success: `NUXT_JSON_PARSE_OK` followed by `PRODUCT_ID_MATCH_FAILED` and `STORE_075_MATCH_FAILED`. The live contract probe established the concrete mismatch: current payloads use `Ref`/`ShallowRef`, `skuId`, `product.store.information.storeId`, and `product.store.articleData` for local stock/pricing.
 
 A developer-only GitHub Actions live contract probe is being added so current public OBI HTML and Nuxt structure can be inspected without rebuilding the Android app for every diagnostic iteration. It is manual-only; pull-request CI remains deterministic. The probe validates OBIK/store inputs, sanitizes the final URL, uploads raw payloads only after HTTP 200 from the expected OBI host, deletes its cookie jar before artifact handling, and labels raw captures as short-lived sensitive diagnostics. Its inspector now resolves flattened Nuxt references explicitly so fields such as local stock and gross price cannot be confused with reference indices. Deterministic Python tests run in normal CI.
 
-## Next implementation milestone
+## Current implementation milestone
 
-**Map the current live Nuxt structure and repair `ObiPayloadParser`**
+**Repair `ObiPayloadParser` against the confirmed live Nuxt contract**
 
-Use the live contract artifact to identify the current product, store, local stock, and local gross-price relationships. Update the parser only from confirmed evidence, add sanitized fixtures/tests for the new structure, then perform one final Android hardware verification.
+The parser fix adds confirmed `Ref`/`ShallowRef` unwrapping, `skuId` identity, store binding through `product.store.information`, and local stock/price through `product.store.articleData`. A sanitized deterministic fixture preserves the observed distinction between local stock `25` / gross price `12.99` and unrelated seller stock `9` / seller or fallback prices.
+
+After this PR passes review and CI, perform one final Android verification before the next Play AAB.
 
 ## Not started
 
