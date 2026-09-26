@@ -13,6 +13,7 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import pl.lukaszpeciak.towarownik.product.ObiBrowserCompatibilityProfile
 
 internal class ObiLiveProbeRunner(
     private val baseUrl: HttpUrl = "https://www.obi.pl/".toHttpUrl(),
@@ -371,20 +372,20 @@ internal fun ObiProbeProfile.applyHeaders(
     when (this) {
         ObiProbeProfile.A_BASELINE -> Unit
         ObiProbeProfile.B_UA_ONLY -> builder.header("User-Agent", nativeUserAgent)
-        ObiProbeProfile.C_ACCEPT_ONLY -> builder.header("Accept", HTML_ACCEPT)
-        ObiProbeProfile.D_LANGUAGE_ONLY -> builder.header("Accept-Language", POLISH_ACCEPT_LANGUAGE)
+        ObiProbeProfile.C_ACCEPT_ONLY -> builder.header("Accept", ObiBrowserCompatibilityProfile.ACCEPT)
+        ObiProbeProfile.D_LANGUAGE_ONLY -> builder.header("Accept-Language", ObiBrowserCompatibilityProfile.ACCEPT_LANGUAGE)
         ObiProbeProfile.E_COMBINED_HTML -> {
             builder.header("User-Agent", nativeUserAgent)
-            builder.header("Accept", HTML_ACCEPT)
-            builder.header("Accept-Language", POLISH_ACCEPT_LANGUAGE)
+            builder.header("Accept", ObiBrowserCompatibilityProfile.ACCEPT)
+            builder.header("Accept-Language", ObiBrowserCompatibilityProfile.ACCEPT_LANGUAGE)
         }
         ObiProbeProfile.F_BROWSER_UA_ONLY -> {
-            builder.header("User-Agent", SYNTHETIC_BROWSER_USER_AGENT)
+            builder.header("User-Agent", ObiBrowserCompatibilityProfile.USER_AGENT)
         }
         ObiProbeProfile.G_BROWSER_HTML -> {
-            builder.header("User-Agent", SYNTHETIC_BROWSER_USER_AGENT)
-            builder.header("Accept", HTML_ACCEPT)
-            builder.header("Accept-Language", POLISH_ACCEPT_LANGUAGE)
+            builder.header("User-Agent", ObiBrowserCompatibilityProfile.USER_AGENT)
+            builder.header("Accept", ObiBrowserCompatibilityProfile.ACCEPT)
+            builder.header("Accept-Language", ObiBrowserCompatibilityProfile.ACCEPT_LANGUAGE)
         }
     }
 }
@@ -443,9 +444,3 @@ private class ProbeCookieJar : CookieJar {
         cookies.values.filter { it.matches(url) }
 }
 
-internal const val SYNTHETIC_BROWSER_USER_AGENT =
-    "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
-
-private const val HTML_ACCEPT =
-    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-private const val POLISH_ACCEPT_LANGUAGE = "pl-PL,pl;q=0.9"

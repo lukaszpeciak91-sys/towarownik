@@ -103,7 +103,9 @@ class ObiHttpClient(
     }
 
     private fun taggedGet(url: HttpUrl, diagnosticId: Long?): Request {
-        val builder = Request.Builder().url(url).get()
+        val builder = ObiBrowserCompatibilityProfile.apply(
+            Request.Builder().url(url).get(),
+        )
         if (diagnosticId != null) {
             builder.tag(
                 ObiDiagnosticRequestTag::class.java,
@@ -136,10 +138,13 @@ class ObiHttpClient(
                         }
                     }
 
-                    val kind = if (response.code == 404) {
-                        ObiHttpFailureKind.NOT_FOUND
-                    } else {
-                        ObiHttpFailureKind.SERVER
+                    val kind = when {
+                        response.code == 404 && isConfirmedCloudFrontEdgeFailure(response) ->
+                            ObiHttpFailureKind.SERVER
+                        response.code == 404 ->
+                            ObiHttpFailureKind.NOT_FOUND
+                        else ->
+                            ObiHttpFailureKind.SERVER
                     }
                     diagnostics.mappingTrace(diagnosticId, "ObiHttpFailureKind.$kind")
                     ObiHttpResult.Failure(
@@ -188,6 +193,21 @@ class ObiHttpClient(
         }
     }
 
+    private fun isConfirmedCloudFrontEdgeFailure(response: okhttp3.Response): Boolean {
+        if (response.code != 404) return false
+        if (!response.header("Server").equals("CloudFront", ignoreCase = true)) return false
+        if (
+            response.header("x-cache")
+                ?.contains("Error from cloudfront", ignoreCase = true) != true
+        ) {
+            return false
+        }
+
+        return runCatching {
+            response.peekBody(CLOUDFRONT_EDGE_BODY_PROBE_BYTES).bytes().isEmpty()
+        }.getOrDefault(false)
+    }
+
     private fun recordDiagnosticBodySignatures(
         diagnosticId: Long,
         body: String,
@@ -213,5 +233,6 @@ class ObiHttpClient(
 
     private companion object {
         const val DIAGNOSTIC_ERROR_BODY_PREVIEW_BYTES = 64L * 1024L
+        const val CLOUDFRONT_EDGE_BODY_PROBE_BYTES = 1L
     }
 }

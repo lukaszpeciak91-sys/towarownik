@@ -2,29 +2,32 @@
 
 ## Current phase
 
-**V0.1 — OBI live contract probe v0.2**
+**V0.1 — OBI browser-compatible transport fix**
 
-Hardware diagnostics confirmed that the current native OBI requests fail before parsing:
+The live hardware probe resolved the transport uncertainty:
 
-- search `GET https://www.obi.pl/search/dedra/` returns HTTP 404 from CloudFront with `x-cache=Error from cloudfront`, an empty body, no redirect, and no cookies;
-- product lookup starts with `/api/disc/store/change?storeNumber=075&redirectUrl=...` and receives the same class of CloudFront 404 with an empty body, no redirect, and no cookies;
-- the product/search parsers are therefore not reached in these failing live cases.
+- profiles A–E (default OkHttp, native Towarownik UA, Accept-only, language-only, and native combined HTML profile) received empty HTTP 404 responses from CloudFront;
+- profile F, changing only the User-Agent to the fixed synthetic browser-like Android Chrome test UA, returned HTTP 200;
+- profile G, using the same browser-like UA plus HTML Accept and Polish Accept-Language, also returned HTTP 200;
+- `/search/dedra/` returned real OBI HTML with populated search results;
+- product lookup using the browser-compatible profile successfully followed the existing `/api/disc/store/change` → bare `/p/{OBIK}` → canonical slug → product-page flow;
+- a fresh session works, so no session bootstrap is required;
+- the bare `/p/{OBIK}` redirect target is valid and no canonical slug needs to be discovered in advance.
 
-The next diagnostic build does not assume a replacement OBI contract. It adds a user-triggered hidden live probe that compares baseline endpoint paths, request-profile A/B/C/D/E variants plus diagnostic-only synthetic browser-like F/G profiles. Session-bootstrap S0/S1/S2 now runs unconditionally for baseline A, native HTML E, and browser-like HTML G so search and store-selection behavior are tested independently. If any of those store flows reaches a non-404 response, the probe also compares bare versus canonical-slug redirect targets. Probe output remains sanitized and separate from the normal bounded operation history. Live-probe body evidence is explicitly a 65,536-byte preview with `previewUtf8Bytes`, `previewLimitBytes`, and `previewTruncated=true|false|unknown`; it is not reported as a complete response-body size.
+Production OBI requests now use the proven browser-compatible HTML navigation profile centrally. URLs, redirect following, cookie handling, parsers, repositories, and search/product orchestration remain otherwise unchanged.
 
-The search field was also hardened after hardware testing exposed retained multiline/control input. Submission now snapshots a normalized immutable query, clears the visible field immediately, and lets the submitted lookup continue independently. CR/LF and other control/whitespace runs are normalized to a single space before classification or URL construction, so `3496072\n` becomes OBIK `3496072` and `qbrick\nsystem` becomes text `qbrick system`.
+The live probe also proved that an empty CloudFront 404 can describe an infrastructure compatibility failure for an existing resource. A narrow safeguard now maps only the confirmed signature—HTTP 404 + empty body + `Server: CloudFront` + `x-cache` containing `Error from cloudfront`—to the existing server/network failure path. Ordinary 404 responses retain the existing business not-found behavior.
 
-The signed Google Play AAB workflow remains available so this probe and input hardening can be exercised in one next Internal Testing build.
+The diagnostic system and live probe remain available for verification. The diagnostic keyword heuristic for words such as "robot" or "captcha" is not treated as evidence of a real access challenge in this transport decision.
 
 ## Next implementation milestone
 
-**Run the live probe on the Android device**
+**Validate the fixed production transport on hardware**
 
-From the hidden diagnostics screen, enable diagnostics and run **Uruchom test OBI**. Compare endpoint behavior, profiles A–G, the complete A/E/G session-bootstrap matrix, bounded preview evidence, and the same-device browser controls before changing any production OBI URL, header, redirect, parser, or not-found assumption.
+Build the next Internal Testing AAB and verify normal OBIK, EAN, and text searches through the production UI while keeping diagnostics available for evidence if OBI changes again.
 
 ## Not started
 
-- Production OBI integration repair based on live probe evidence
 - Camera barcode scanning
 - Local and nearby-store fallback behavior
 - External product-link behavior

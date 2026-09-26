@@ -37,7 +37,7 @@ class ObiDiagnosticsIntegrationTest {
             assertEquals(listOf(200), operation.hops.map { it.status })
             assertEquals(200, operation.finalStatus)
             assertTrue(operation.finalUrl!!.contains("/search/qbrick/"))
-            assertEquals("okhttp/4.12.0", operation.userAgent)
+            assertEquals(ObiBrowserCompatibilityProfile.USER_AGENT, operation.userAgent)
             assertTrue(operation.bodySignatures!!.looksLikeHtml)
         }
     }
