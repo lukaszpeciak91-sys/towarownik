@@ -6,7 +6,7 @@ internal const val ADVISOR_PROXY_BASE_URL =
     "https://towarownik-proxy.lukaszpeciak91.workers.dev"
 
 internal const val FIND_AVAILABLE_OBI_075 = "find_available_obi_075"
-internal const val MAX_LOCAL_TOOL_CALLS_PER_CASE = 2
+internal const val MAX_LOCAL_TOOL_CALLS_PER_TURN = 2
 internal const val MAX_TOOL_PRODUCTS = 5
 
 internal data class AdvisorToolArguments(
