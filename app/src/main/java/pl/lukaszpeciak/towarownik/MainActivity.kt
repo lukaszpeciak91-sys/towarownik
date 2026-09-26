@@ -43,7 +43,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -150,7 +149,7 @@ private fun TowarownikApp() {
     }
     var advisorJob by remember { mutableStateOf<Job?>(null) }
     var draftPersistJob by remember { mutableStateOf<Job?>(null) }
-    var advisorGeneration by remember { mutableIntStateOf(0) }
+    val advisorRequestGuard = remember { AdvisorRequestGuard() }
 
     var manualQuery by rememberSaveable { mutableStateOf("") }
     var manualState by rememberSaveable(
@@ -182,7 +181,7 @@ private fun TowarownikApp() {
     }
 
     suspend fun cancelAndRecoverActiveTurn() {
-        advisorGeneration += 1
+        advisorRequestGuard.invalidate()
         advisorJob?.cancelAndJoin()
         advisorJob = null
         draftPersistJob?.cancelAndJoin()
@@ -235,7 +234,7 @@ private fun TowarownikApp() {
         val submitted = advisorCase.draft.trim()
         if (submitted.isBlank()) return
 
-        val generation = advisorGeneration
+        val generation = advisorRequestGuard.token()
         advisorJob = scope.launch {
             draftPersistJob?.cancelAndJoin()
             draftPersistJob = null
@@ -245,7 +244,12 @@ private fun TowarownikApp() {
                 text = submitted,
             )
 
-            if (generation != advisorGeneration) {
+            if (!advisorRequestGuard.isCurrent(
+                    token = generation,
+                    expectedConversationId = turn.conversationId,
+                    activeConversationId = activeConversationId,
+                )
+            ) {
                 conversationRepository.recoverInterruptedTurn(
                     turn.conversationId,
                 )
@@ -262,8 +266,11 @@ private fun TowarownikApp() {
                 previousResponseId = turn.previousResponseId,
             ) { state ->
                 if (
-                    generation == advisorGeneration &&
-                    activeConversationId == turn.conversationId
+                    advisorRequestGuard.isCurrent(
+                        token = generation,
+                        expectedConversationId = turn.conversationId,
+                        activeConversationId = activeConversationId,
+                    )
                 ) {
                     advisorState = state
                 }
