@@ -294,7 +294,7 @@ class ObiDiagnosticsIntegrationTest {
     }
 
     @Test
-    fun `search diagnostics expose candidates and unrelated zero token before current no result decision`() {
+    fun `search diagnostics use positive result count and ignore unrelated zero token`() {
         MockWebServer().use { server ->
             val recorder = enabledRecorder()
             server.enqueue(
@@ -322,16 +322,21 @@ class ObiDiagnosticsIntegrationTest {
 
             val result = repository.search("dedra")
 
-            assertEquals(ProductSearchResult.NotFound, result)
+            assertTrue(result is ProductSearchResult.Candidates)
+            assertEquals(
+                listOf("1234567", "2345678"),
+                (result as ProductSearchResult.Candidates).items.map { it.obik },
+            )
             val operation = recorder.snapshots().single()
             assertEquals(true, operation.bodySignatures!!.containsSearchResultsPhrase)
+            assertEquals(2, operation.bodySignatures!!.detectedSearchResultCount)
             assertEquals(true, operation.bodySignatures!!.containsZeroCountToken)
             assertTrue(operation.parserStages.contains("CANDIDATE_LINK_COUNT=2"))
             assertTrue(operation.parserStages.contains("CANDIDATE_COUNT_AFTER_DEDUPE=2"))
-            assertTrue(operation.parserStages.contains("ZERO_RESULT_RULE=WYNIKI_DLA_PLUS_(0)"))
-            assertTrue(operation.parserStages.contains("FINAL_PARSE_RESULT=NO_RESULTS"))
-            assertTrue(operation.errorMappingTrace.contains("SearchParseResult.NoResults"))
-            assertTrue(operation.errorMappingTrace.contains("UI NOT_FOUND"))
+            assertTrue(operation.parserStages.contains("SEARCH_RESULT_COUNT=2"))
+            assertTrue(operation.parserStages.contains("ZERO_RESULT_RULE=NONE"))
+            assertTrue(operation.parserStages.contains("FINAL_PARSE_RESULT=RESULTS"))
+            assertEquals(listOf("HTTP 200"), operation.errorMappingTrace)
         }
     }
 

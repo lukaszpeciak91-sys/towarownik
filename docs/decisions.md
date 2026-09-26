@@ -40,6 +40,7 @@ These decisions describe the broader intended product behavior. The currently im
 - Text results are never auto-selected. Ambiguous EAN results also require user selection.
 - A single EAN candidate may proceed directly only when the fetched product payload confirms the queried EAN.
 - Selecting any candidate uses the existing store `075` product lookup for exact local stock and local price.
+- Product links alone are not sufficient evidence of search results because OBI may include recommendation/cross-sell product links on a true empty-search page. A positive `Wyniki dla … (N)` count is required before product links are accepted as search results. With a positive count, recognized product links are returned even if generic hidden empty-state wording is also embedded in the HTML. With no positive count, explicit empty-state wording produces `NotFound`; otherwise ambiguity is a data failure.
 - Search parser uncertainty is a data failure, not a not-found guess.
 
 ## In-app OBI diagnostics v0.1
