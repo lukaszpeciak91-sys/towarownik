@@ -36,8 +36,8 @@ internal data class AdvisorCaseUiState(
 }
 
 internal val AdvisorCaseUiStateSaver = Saver<AdvisorCaseUiState, String>(
-    save = ::encodeAdvisorCase,
-    restore = ::decodeAdvisorCase,
+    save = { state -> encodeAdvisorCase(state) },
+    restore = { raw -> decodeAdvisorCase(raw) },
 )
 
 internal fun normalizeAdvisorDisplayText(raw: String): String =
