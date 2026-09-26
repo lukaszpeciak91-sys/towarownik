@@ -13,6 +13,7 @@ import kotlinx.serialization.json.put
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 
 internal enum class ChatMessageRole {
     USER,
@@ -61,6 +62,13 @@ internal val AdvisorCaseUiStateSaver = Saver<AdvisorCaseUiState, String>(
     save = { state -> saveAdvisorCase(state) },
     restore = { raw -> restoreAdvisorCase(raw) },
 )
+
+internal fun isAdvisorComposerEnabled(
+    state: AdvisorUiState,
+): Boolean =
+    state !is AdvisorUiState.LoadingProxy &&
+        state !is AdvisorUiState.RunningLocalTool &&
+        state !is AdvisorUiState.WaitingForFinalAnswer
 
 internal fun normalizeAdvisorDisplayText(raw: String): String =
     raw
