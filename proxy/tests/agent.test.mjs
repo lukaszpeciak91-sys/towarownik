@@ -462,6 +462,60 @@ test("valid message chains previous response with server-controlled configuratio
   assert.equal(capture.body.tools[0].name, LOCAL_TOOL_NAME);
 });
 
+test("message rejects extra fields and oversized inputs", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+
+  const extra = await worker.fetch(
+    jsonRequest("/v1/agent/message", {
+      previousResponseId: "resp_previous",
+      message: "hello",
+      model: "client-model",
+    }),
+    configuredEnv,
+  );
+  assert.equal(extra.status, 400);
+
+  const longId = await worker.fetch(
+    jsonRequest("/v1/agent/message", {
+      previousResponseId: "r".repeat(257),
+      message: "hello",
+    }),
+    configuredEnv,
+  );
+  assert.equal(longId.status, 400);
+
+  const longMessage = await worker.fetch(
+    jsonRequest("/v1/agent/message", {
+      previousResponseId: "resp_previous",
+      message: "x".repeat(2_001),
+    }),
+    configuredEnv,
+  );
+  assert.equal(longMessage.status, 413);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("message upstream failure is bounded and not retried", async () => {
+  const fake = fakeOpenAI(
+    { error: { message: "synthetic upstream detail" } },
+    { status: 500 },
+  );
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/message", {
+      previousResponseId: "resp_previous",
+      message: "hello",
+    }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
+  assert.equal(fake.captures.length, 1);
+});
+
 test("valid continue sends previous_response_id and function_call_output", async () => {
   const fake = fakeOpenAI(answerPayload("Final synthetic answer"));
   const worker = createWorker(fake.fetch);
