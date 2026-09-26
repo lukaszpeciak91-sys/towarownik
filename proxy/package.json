@@ -1,0 +1,17 @@
+{
+  "name": "towarownik-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit false --outDir .test-dist && node --test tests/*.test.mjs",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
