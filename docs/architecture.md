@@ -59,7 +59,7 @@ OpenAI must receive only compact structured results produced by the app. OBI HTM
 
 The proxy now exposes a public `GET /health` plus authenticated `POST /v1/agent/start` and `POST /v1/agent/continue`. The AI endpoints require the shared Internal-Testing `TOWAROWNIK_APP_TOKEN`; the OpenAI credential remains Worker-only as `OPENAI_API_KEY`.
 
-The Worker calls the OpenAI Responses API with a centralized `gpt-6-luna` configuration, low reasoning effort, concise temporary developer instructions, a bounded output budget, and exactly one strict application-defined function: `find_available_obi_075(query, limit)`. No OpenAI built-in tools are enabled.
+The Worker calls the OpenAI Responses API with a centralized `gpt-5.6-luna` configuration, low reasoning effort, concise temporary developer instructions, a bounded output budget, and exactly one strict application-defined function: `find_available_obi_075(query, limit)`. No OpenAI built-in tools are enabled.
 
 When the model returns that function call, the Worker validates the tool name and arguments and returns a normalized `tool_request` envelope to Android. Android executes the existing OBI search/exact store-`075` lookup and later sends only the compact verified result to `/v1/agent/continue`. The Worker continues with `previous_response_id` and a matching `function_call_output`, resending the stable server-controlled instructions/tool declaration. It does not store conversation state in Cloudflare storage.
 
