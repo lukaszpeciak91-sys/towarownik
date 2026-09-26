@@ -75,3 +75,17 @@ These decisions describe the broader intended product behavior. The currently im
 - The inspector must distinguish flattened Nuxt reference indices from resolved values. Raw scalar values are exposed only for an exact allowlist of parser-contract identifiers and values (for example `skuId`, `storeId`, `stock`, `grossPrice`, EAN/GTIN). Other keyword hits expose only reference indices plus type/length/shape metadata, never arbitrary live scalar strings. Relevant allowlisted fields are reported as explicit chains such as `stock -> ref top[793] -> 25`, not as the misleading pseudo-value `stock=793`.
 - Deterministic tests cover Nuxt extraction, malformed/missing payloads, reverse-reference traversal, bounded collectors, wrapper dereferencing, value-vs-reference semantics, and identifier validation.
 - Parser fixes must still be converted into deterministic sanitized fixtures and tests before merge; the live workflow is evidence gathering, not a replacement for CI fixtures.
+
+
+## AI assistant / proxy foundation v0.1
+
+- The original V0.1 decisions “Use no backend” and “Do not include AI in V0.1” describe the initial product-lookup milestone and remain part of the project history.
+- The assistant phase intentionally introduces one minimal Cloudflare Worker under `proxy/` solely as the future server-side boundary for protecting API credentials and communicating with OpenAI.
+- This foundation does not call OpenAI, select a model, implement prompts, expose agent start/continue endpoints, implement tool calling, or consume API credits.
+- Future Worker secrets are reserved as `OPENAI_API_KEY` and `TOWAROWNIK_APP_TOKEN`; neither value belongs in the repository or Android application.
+- The Worker does not scrape OBI and must not duplicate or move Android OBI transport/parser/repository logic.
+- Existing Android OBI search and exact store-`075` lookup remain authoritative for product identity, local stock, and local price.
+- A future model may request a high-level local tool such as `find_available_obi_075(query, limit)`, but Android executes that tool and returns only compact structured results.
+- OBI HTML and Nuxt payloads are not sent to OpenAI.
+- The initial Worker surface is only `GET /health`; unknown routes return bounded JSON 404 and unsupported health methods return 405.
+- No paid Cloudflare services, storage products, schedules, custom domains, or automatic deployments are introduced by this foundation.
