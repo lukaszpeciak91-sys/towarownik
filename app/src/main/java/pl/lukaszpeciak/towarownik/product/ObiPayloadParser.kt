@@ -102,7 +102,7 @@ class ObiPayloadParser(
             val pricing = localArticleData["pricing"] as? JsonObject
             val grossPrice = pricing?.decimal("grossPrice")
             val stock = localArticleData.nonNegativeInt("stock")
-            val ean = EAN_KEYS.firstNotNullOfOrNull(product::string)
+            val ean = EAN_KEYS.firstNotNullOfOrNull(product::stringOrSingletonString)
                 ?: jsonLdProduct(html, expectedObik)?.let { EAN_KEYS.firstNotNullOfOrNull(it::string) }
 
             diagnostics.parserStage(
@@ -232,6 +232,16 @@ private fun JsonElement.objects(): Sequence<JsonObject> = sequence {
 
 private fun JsonObject.string(key: String): String? =
     (get(key) as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+
+private fun JsonObject.stringOrSingletonString(key: String): String? =
+    when (val value = get(key)) {
+        is JsonPrimitive -> value.contentOrNull?.takeIf(String::isNotBlank)
+        is JsonArray -> value.singleOrNull()
+            ?.let { it as? JsonPrimitive }
+            ?.contentOrNull
+            ?.takeIf(String::isNotBlank)
+        else -> null
+    }
 
 private fun JsonObject.nonNegativeInt(key: String): Int? =
     (get(key) as? JsonPrimitive)?.intOrNull?.takeIf { it >= 0 }
