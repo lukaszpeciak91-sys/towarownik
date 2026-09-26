@@ -125,7 +125,7 @@ internal class ObiLiveProbeRunner(
                 label = "redirect-target-canonical",
             )
             sections += ObiProbeSection(
-                "store-redirect-target-control-profile-${storeOpportunity.profile.reportName}",
+                "store-redirect-target-control-profile-${storeOpportunity.profile.reportName}-bootstrap-${storeOpportunity.bootstrap.name.lowercase()}",
                 targetSteps,
             )
         }
