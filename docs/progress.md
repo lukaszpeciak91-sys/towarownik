@@ -2,29 +2,25 @@
 
 ## Current phase
 
-**V0.1 — OBI browser-compatible transport fix**
+**V0.1 — OBI live payload/parser contract repair**
 
-The live hardware probe resolved the transport uncertainty:
+Hardware verification of app `0.1.2 (3)` confirmed that the browser-compatible production transport is working end to end:
 
-- profiles A–E (default OkHttp, native Towarownik UA, Accept-only, language-only, and native combined HTML profile) received empty HTTP 404 responses from CloudFront;
-- profile F, changing only the User-Agent to the fixed synthetic browser-like Android Chrome test UA, returned HTTP 200;
-- profile G, using the same browser-like UA plus HTML Accept and Polish Accept-Language, also returned HTTP 200;
-- `/search/dedra/` returned real OBI HTML with populated search results;
-- product lookup using the browser-compatible profile successfully followed the existing `/api/disc/store/change` → bare `/p/{OBIK}` → canonical slug → product-page flow;
-- a fresh session works, so no session bootstrap is required;
-- the bare `/p/{OBIK}` redirect target is valid and no canonical slug needs to be discovered in advance.
+- the store-change request for `075` returns HTTP 302 to the bare product path;
+- OBI redirects the bare product path to the canonical slug;
+- the final product response is HTTP 200 and contains real OBI HTML;
+- the production request uses the proven browser-compatible User-Agent, HTML Accept, Polish Accept-Language, redirect handling, and cookie session;
+- the full response contains valid `__NUXT_DATA__`, the requested OBIK, store `075`, and the canonical product URL.
 
-Production OBI requests now use the proven browser-compatible HTML navigation profile centrally. URLs, redirect following, cookie handling, parsers, repositories, and search/product orchestration remain otherwise unchanged.
+The remaining failure is parser-side. `ObiPayloadParser` successfully parses the Nuxt JSON but its historical object-shape assumption no longer finds the expected product/store context, producing `PRODUCT_ID_MATCH_FAILED`, `STORE_075_MATCH_FAILED`, and a DATA error.
 
-The live probe also proved that an empty CloudFront 404 can describe an infrastructure compatibility failure for an existing resource. A narrow safeguard now maps only the confirmed signature—HTTP 404 + empty body + `Server: CloudFront` + `x-cache` containing `Error from cloudfront`—to the existing server/network failure path. Ordinary 404 responses retain the existing business not-found behavior.
-
-The diagnostic system and live probe remain available for verification. The diagnostic keyword heuristic for words such as "robot" or "captcha" is not treated as evidence of a real access challenge in this transport decision.
+A developer-only GitHub Actions live contract probe is being added so current public OBI HTML and Nuxt structure can be inspected without rebuilding the Android app for every diagnostic iteration. It is manual-only; pull-request CI remains deterministic. The probe validates OBIK/store inputs, sanitizes the final URL, uploads raw payloads only after HTTP 200 from the expected OBI host, deletes its cookie jar before artifact handling, and labels raw captures as short-lived sensitive diagnostics. Its inspector now resolves flattened Nuxt references explicitly so fields such as local stock and gross price cannot be confused with reference indices. Deterministic Python tests run in normal CI.
 
 ## Next implementation milestone
 
-**Validate the fixed production transport on hardware**
+**Map the current live Nuxt structure and repair `ObiPayloadParser`**
 
-Build the next Internal Testing AAB and verify normal OBIK, EAN, and text searches through the production UI while keeping diagnostics available for evidence if OBI changes again.
+Use the live contract artifact to identify the current product, store, local stock, and local gross-price relationships. Update the parser only from confirmed evidence, add sanitized fixtures/tests for the new structure, then perform one final Android hardware verification.
 
 ## Not started
 

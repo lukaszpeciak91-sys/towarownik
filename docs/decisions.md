@@ -40,7 +40,6 @@ These decisions describe the broader intended product behavior. The currently im
 - Selecting any candidate uses the existing store `075` product lookup for exact local stock and local price.
 - Search parser uncertainty is a data failure, not a not-found guess.
 
-
 ## In-app OBI diagnostics v0.1
 
 - Diagnostics are temporary engineering infrastructure and are OFF by default.
@@ -50,8 +49,7 @@ These decisions describe the broader intended product behavior. The currently im
 - Cookie values may be inspected transiently only to determine whether recognizable store context matches `075`; only `true`/`false`/`unknown` evidence and cookie names may be retained. Cookie and Set-Cookie values, full response bodies, tokens, device identifiers, account data, IP addresses, and precise location must never be included.
 - Final 4xx/5xx responses may use a bounded in-memory preview to derive the same safe body signatures. `decodedBodyUtf8Bytes` describes decoded diagnostic text re-encoded as UTF-8 and is not a raw HTTP byte count.
 - Diagnostic instrumentation must not modify OBI request URLs, request headers, redirect following, cookie/session behavior, parser rules, or not-found semantics.
-- Deterministic CI is not evidence that the live OBI contract still matches fixtures; live phone diagnostics are required before revising integration assumptions.
-
+- Deterministic CI is not evidence that the live OBI contract still matches fixtures; live evidence must be reviewed before revising integration assumptions.
 
 ## OBI browser-compatible transport v0.1
 
@@ -62,3 +60,15 @@ These decisions describe the broader intended product behavior. The currently im
 - Session bootstrap is unnecessary. Product lookup does not pre-request `/` or a product page.
 - The bare `/p/{OBIK}` redirect target is valid; OBI may redirect it to the canonical slug itself, so no slug prelookup is added.
 - Only the confirmed empty CloudFront edge 404 signature (empty body + `Server: CloudFront` + `x-cache: Error from cloudfront`) is classified as infrastructure/server failure rather than business not-found. Other HTTP 404 behavior remains unchanged.
+
+## OBI live contract tooling v0.1
+
+- Live Android verification remains authoritative for end-to-end app behavior, but parser-contract discovery does not require a new AAB for every iteration.
+- The GitHub Actions live probe is manual-only (`workflow_dispatch`) and is never part of pull-request checks. Normal CI must remain deterministic and must not depend on live OBI.
+- The manual probe may request the same public OBI product flow with the proven browser-compatible headers and store selection.
+- Inputs are restricted to a seven-digit OBIK and a three-digit store number before any request is made.
+- The cookie jar is deleted before artifact upload and captured live payloads are never committed.
+- A safe summary artifact contains only sanitized transport metadata and bounded structural evidence. Raw HTML and extracted `__NUXT_DATA__` may be uploaded only after HTTP 200 from the expected `www.obi.pl` host and are treated as short-lived sensitive diagnostic artifacts.
+- The inspector must distinguish flattened Nuxt reference indices from resolved values. Raw scalar values are exposed only for an exact allowlist of parser-contract identifiers and values (for example `skuId`, `storeId`, `stock`, `grossPrice`, EAN/GTIN). Other keyword hits expose only reference indices plus type/length/shape metadata, never arbitrary live scalar strings. Relevant allowlisted fields are reported as explicit chains such as `stock -> ref top[793] -> 25`, not as the misleading pseudo-value `stock=793`.
+- Deterministic tests cover Nuxt extraction, malformed/missing payloads, reverse-reference traversal, bounded collectors, wrapper dereferencing, value-vs-reference semantics, and identifier validation.
+- Parser fixes must still be converted into deterministic sanitized fixtures and tests before merge; the live workflow is evidence gathering, not a replacement for CI fixtures.

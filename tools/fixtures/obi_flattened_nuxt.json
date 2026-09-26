@@ -1,0 +1,39 @@
+[
+  {"data": 1},
+  {"product": 2},
+  ["ShallowRef", 3],
+  {
+    "skuId": 4,
+    "productTitle": 5,
+    "store": 6,
+    "sellers": 13,
+    "articleEanEcms": 16
+  },
+  "3496072",
+  "Dragon Klej test fixture",
+  {
+    "information": 7,
+    "articleData": 10
+  },
+  {
+    "storeId": 8,
+    "name": 9
+  },
+  "075",
+  "OBI Nowy Sącz",
+  {
+    "stock": 11,
+    "pricing": 12
+  },
+  25,
+  {
+    "grossPrice": 15
+  },
+  [14],
+  {
+    "stock": 17
+  },
+  12.99,
+  "5903649001412",
+  9
+]
