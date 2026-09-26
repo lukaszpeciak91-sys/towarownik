@@ -11,6 +11,7 @@ export const MAX_PRODUCT_NAME_CHARS = 200;
 export const START_BODY_MAX_BYTES = 4 * 1024;
 export const START_MESSAGE_MAX_CHARS = 2_000;
 export const CONTINUE_BODY_MAX_BYTES = 16 * 1024;
+export const MESSAGE_BODY_MAX_BYTES = 4 * 1024;
 export const MAX_RESPONSE_ID_CHARS = 256;
 export const MAX_CALL_ID_CHARS = 256;
 export const MAX_ANSWER_CHARS = 4_000;
@@ -19,7 +20,10 @@ export const AGENT_INSTRUCTIONS =
   "You are a concise retail-product assistant. Ask at most one concise clarification when needed. " +
   "OBI store availability, price, OBIK, and stock are factual only when supplied by the local " +
   "find_available_obi_075 tool. Never invent those values. When an OBI product lookup is required, " +
-  "call find_available_obi_075.";
+  "call find_available_obi_075. For every current question that depends on store 075 availability, " +
+  "stock, price, or choosing products that are currently available, call find_available_obi_075 again " +
+  "instead of relying only on older conversation facts. Stock 0 means unavailable; null stock means " +
+  "unknown; null price means unknown.";
 
 export const OBI_TOOL = {
   type: "function",
