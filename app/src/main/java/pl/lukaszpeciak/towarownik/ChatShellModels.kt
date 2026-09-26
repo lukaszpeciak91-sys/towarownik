@@ -10,6 +10,9 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
+import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
+import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
 
 internal enum class ChatMessageRole {
     USER,
@@ -34,6 +37,25 @@ internal data class AdvisorCaseUiState(
     fun withMessage(message: AdvisorChatMessage): AdvisorCaseUiState =
         copy(messages = messages + message)
 }
+
+
+internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
+    AdvisorCaseUiState(
+        draft = draft,
+        messages = messages.mapNotNull { message ->
+            val role = when (message.role) {
+                MESSAGE_ROLE_USER -> ChatMessageRole.USER
+                MESSAGE_ROLE_ASSISTANT -> ChatMessageRole.ASSISTANT
+                else -> null
+            } ?: return@mapNotNull null
+
+            AdvisorChatMessage(
+                role = role,
+                text = message.text,
+                createdAt = message.createdAt,
+            )
+        },
+    )
 
 internal val AdvisorCaseUiStateSaver = Saver<AdvisorCaseUiState, String>(
     save = { state -> saveAdvisorCase(state) },
