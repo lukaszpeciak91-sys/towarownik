@@ -9,6 +9,7 @@ Live Android diagnostics on app `0.1.5 (6)` confirmed that text-search transport
 The search parser now treats recognized product links as stronger evidence than generic zero-result phrases. Explicit zero-result wording is used only when no product candidates were extracted.
 
 
+## Previous completed context
 
 **V0.1 — OBI live payload/parser contract repair**
 
