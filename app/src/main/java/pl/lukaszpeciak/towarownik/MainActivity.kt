@@ -98,9 +98,11 @@ private fun TowarownikApp() {
     }
 
     fun submitLookup() {
+        val submission = prepareSearchSubmission(query)
         lookupJob?.cancel()
+        query = submission.nextVisibleQuery
         lookupJob = scope.launch {
-            controller.submit(query) { state ->
+            controller.submit(submission.submittedQuery) { state ->
                 uiState = state
             }
         }
@@ -126,10 +128,7 @@ private fun TowarownikApp() {
         query = query,
         state = uiState,
         onQueryChange = { value ->
-            lookupJob?.cancel()
-            lookupJob = null
             query = value
-            uiState = ProductSearchUiState.Idle
         },
         onSearch = ::submitLookup,
         onSelectResult = ::selectResult,
