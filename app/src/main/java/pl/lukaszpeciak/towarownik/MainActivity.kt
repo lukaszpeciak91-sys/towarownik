@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -163,8 +164,12 @@ private fun TowarownikApp() {
     }
 
     fun openAdvisor() {
+        val wasRunning = lookupJob?.isActive == true
         lookupJob?.cancel()
         lookupJob = null
+        if (wasRunning) {
+            searchState = ProductSearchUiState.Idle
+        }
         mode = AppMode.ADVISOR
     }
 
@@ -204,7 +209,14 @@ private fun TowarownikApp() {
             onSubmit = ::submitAdvisorCase,
             onNewCase = ::resetAdvisorCase,
             onOpenSearch = ::openSearch,
-            onOpenDiagnostics = { diagnosticsOpen = true },
+            onOpenDiagnostics = {
+                advisorJob?.cancel()
+                advisorJob = null
+                if (advisorState.isRunning()) {
+                    advisorState = AdvisorUiState.Idle
+                }
+                diagnosticsOpen = true
+            },
         )
     }
 }
