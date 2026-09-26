@@ -31,6 +31,20 @@ MAX_KEY_HITS = 250
 MAX_REFERENCE_EDGES = 200
 MAX_REFERENCE_TRACE_DEPTH = 4
 REFERENCE_WRAPPERS = {"Ref", "ShallowRef"}
+SAFE_SCALAR_VALUE_KEYS = {
+    "sku",
+    "skuid",
+    "obik",
+    "articlenumber",
+    "productnumber",
+    "storeid",
+    "storenumber",
+    "stock",
+    "grossprice",
+    "ean",
+    "gtin",
+    "articleeanecms",
+}
 
 
 class NuxtScriptExtractor(HTMLParser):
@@ -135,6 +149,32 @@ def compact(value: Any, limit: int = 180) -> Any:
     return value
 
 
+def safe_scalar_shape(value: Any) -> dict[str, Any]:
+    if isinstance(value, str):
+        return {"type": "string", "length": len(value)}
+    if value is None:
+        return {"type": "null"}
+    if isinstance(value, bool):
+        return {"type": "boolean"}
+    if isinstance(value, int):
+        return {"type": "integer"}
+    if isinstance(value, float):
+        return {"type": "number"}
+    return {"type": type(value).__name__}
+
+
+def safe_compact(value: Any, reveal_scalar: bool) -> Any:
+    if isinstance(value, (dict, list)):
+        return compact(value)
+    if reveal_scalar:
+        return compact(value)
+    return safe_scalar_shape(value)
+
+
+def allows_scalar_value(key: Any) -> bool:
+    return str(key).lower() in SAFE_SCALAR_VALUE_KEYS
+
+
 def exact_matches(root: Any, target: str) -> list[dict[str, Any]]:
     matches: list[dict[str, Any]] = []
     for path, value in walk(root):
@@ -148,10 +188,12 @@ def exact_matches(root: Any, target: str) -> list[dict[str, Any]]:
 def reference_trace(
     root: Any,
     value: Any,
+    *,
+    reveal_scalar: bool = False,
     max_depth: int = MAX_REFERENCE_TRACE_DEPTH,
 ) -> dict[str, Any]:
     if not isinstance(root, list) or type(value) is not int or value not in range(len(root)):
-        return {"kind": "literal", "value": compact(value)}
+        return {"kind": "literal", "value": safe_compact(value, reveal_scalar)}
 
     chain: list[dict[str, Any]] = []
     seen: set[int] = set()
@@ -163,7 +205,7 @@ def reference_trace(
         seen.add(index)
 
         resolved = root[index]
-        description = compact(resolved)
+        description = safe_compact(resolved, reveal_scalar)
         chain.append({"index": index, "resolved": description})
 
         if (
@@ -190,6 +232,10 @@ def format_compact(value: Any) -> str:
             return f"array length={value.get('length')}"
         if kind == "wrapper":
             return f"wrapper {value.get('tag')}"
+        if kind == "string":
+            return f"string length={value.get('length')}"
+        if kind in {"integer", "number", "boolean", "null"}:
+            return kind
     return repr(value)
 
 
@@ -216,7 +262,11 @@ def keyword_hits(root: Any) -> list[dict[str, Any]]:
                     {
                         "objectPath": path,
                         "key": key,
-                        "referenceTrace": reference_trace(root, child),
+                        "referenceTrace": reference_trace(
+                            root,
+                            child,
+                            reveal_scalar=allows_scalar_value(key),
+                        ),
                         "objectKeys": list(value.keys())[:40],
                     }
                 )
