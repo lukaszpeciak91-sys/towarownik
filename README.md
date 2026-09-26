@@ -33,6 +33,12 @@ The committed Gradle wrapper is the canonical build entry point. With JDK 17 and
 
 The debug APK is generated under `app/build/outputs/apk/debug/` and must not be committed.
 
+## OBI live contract probe
+
+The manual GitHub Actions workflow **OBI live contract probe** inspects the current public OBI product payload without changing or rebuilding the Android app. By default it requests OBIK `3496072` for store `075` through the same browser-compatible request profile used by production.
+
+The workflow stores a short-lived Actions artifact containing the downloaded public product HTML, extracted `__NUXT_DATA__`, and bounded schema summaries. Its temporary cookie jar is deleted before artifact upload and is never committed. Use this workflow to refresh parser evidence when OBI changes, then keep deterministic sanitized fixtures in the repository for normal tests.
+
 ## Signed Google Play AAB
 
 A signed release bundle is built only by the manual GitHub Actions workflow **Build signed Play AAB**. Configure these repository Actions secrets first:
