@@ -41,6 +41,30 @@ class ProductLookupRepositoryTest {
     }
 
     @Test
+    fun `confirmed CloudFront edge 404 maps to network failure`() {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(404)
+                    .addHeader("Server", "CloudFront")
+                    .addHeader("x-cache", "Error from cloudfront")
+                    .setBody(""),
+            )
+            val repository = ProductLookupRepository(
+                httpClient = ObiHttpClient(server.url("/")),
+            )
+
+            val result = repository.lookupObik(OBIK)
+
+            assertTrue(result is ProductLookupResult.Unavailable)
+            assertEquals(
+                ProductLookupFailure.NETWORK,
+                (result as ProductLookupResult.Unavailable).failure,
+            )
+        }
+    }
+
+    @Test
     fun `server failure maps to network failure`() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(503))
