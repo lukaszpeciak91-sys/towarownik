@@ -7,9 +7,9 @@ import {
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
   OBI_TOOL,
-} from "./config";
-import { InvalidRequestError, parseToolArguments } from "./validation";
-import type { AgentResult, UpstreamFetch, VerifiedToolResult } from "./types";
+} from "./config.js";
+import { InvalidRequestError, parseToolArguments } from "./validation.js";
+import type { AgentResult, UpstreamFetch, VerifiedToolResult } from "./types.js";
 
 export class UpstreamFailureError extends Error {}
 
