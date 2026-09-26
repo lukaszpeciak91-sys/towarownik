@@ -58,6 +58,27 @@ internal class AdvisorProxyClient(
         )
     }
 
+    suspend fun message(
+        previousResponseId: String,
+        message: String,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.NOT_CONFIGURED,
+            )
+        }
+
+        val body = buildJsonObject {
+            put("previousResponseId", previousResponseId)
+            put("message", message)
+        }
+
+        return execute(
+            endpoint = "v1/agent/message",
+            body = body,
+        )
+    }
+
     suspend fun continueTurn(
         responseId: String,
         callId: String,
