@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **AI assistant / proxy foundation**. Existing OBI search and exact store-`075` product lookup continue to run locally in Android and remain authoritative for product, stock, and price. The new `proxy/` project is only the server-side foundation for a future assistant path; it does not call OpenAI yet.
+The current phase is **authenticated AI proxy v0.1**. Existing OBI search and exact store-`075` product lookup continue to run locally in Android and remain authoritative for product, stock, and price. The `proxy/` Worker now exposes authenticated start/continue endpoints that call the OpenAI Responses API while keeping both the OpenAI credential and the local OBI implementation out of the Android-to-OpenAI boundary.
 
 ## Technology
 
@@ -44,9 +44,9 @@ Normal pull-request CI never calls live OBI. It runs deterministic Python tests 
 
 ## AI assistant proxy foundation
 
-The self-contained Cloudflare Worker project lives under `proxy/`. It currently exposes only `GET /health`; there are no AI endpoints, OpenAI calls, OBI requests, authentication flows, or persistence yet.
+The self-contained Cloudflare Worker project lives under `proxy/`. `GET /health` remains public. `POST /v1/agent/start` and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
 
-Android OBI lookup remains local. The Worker must never scrape OBI or duplicate the Android OBI parsers/repositories.
+Android OBI lookup remains local. The Worker must never scrape OBI or duplicate the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android will execute the existing local OBI flow and return only a compact verified result.
 
 Proxy checks require Node.js 22:
 
@@ -74,7 +74,7 @@ Never commit keystores, signing credentials, APKs, or AABs.
 
 ## Scope boundaries
 
-The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. That OBI path remains local and independent from the new proxy foundation. The proxy currently provides infrastructure only: no model selection, prompts, conversation history, tool calling, Android chat UI, OpenAI traffic, or server-side OBI logic. Dependencies and capabilities must only be introduced with a concrete requirement.
+The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search with at most five selectable candidates. That OBI path remains local and independent from the proxy. The proxy now provides only the minimal authenticated Responses API contract and one application-defined OBI tool declaration; there is still no Android chat UI, persistent conversation store, server-side OBI logic, built-in OpenAI tool, streaming, analytics, or final assistant persona. Dependencies and capabilities must only be introduced with a concrete requirement.
 
 ## Documentation
 
