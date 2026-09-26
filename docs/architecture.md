@@ -27,7 +27,7 @@ Transport and parsing must remain isolated from the UI. An OBI website change sh
 
 ## Future AI assistant boundary
 
-The assistant path is separate from the local OBI data path:
+The Android app now exposes two separate top-level paths. WYSZUKIWARKA continues to use the existing local OBI flow directly and never invokes the proxy. DORADCA uses this assistant path:
 
 ```text
 User / Compose
@@ -41,7 +41,7 @@ OpenAI
 
 The Cloudflare Worker exists to protect server-side API credentials and, in a later milestone, mediate assistant requests. The OpenAI API key exists only on the proxy side. The Android app must never embed it.
 
-When the future model requests a high-level local OBI tool, the direction is:
+When the model requests the single high-level local OBI tool, Android owns execution:
 
 ```text
 AI requests local OBI tool
@@ -53,7 +53,7 @@ store 075 verified structured result
 compact result returned to AI
 ```
 
-For example, a future tool intent such as `find_available_obi_075(query, limit)` is executed by Android using the existing OBI mechanisms. The proxy does not scrape OBI, does not contain an OBI parser, and does not become authoritative for OBI data. Existing Android OBI search, OBIK extraction, exact lookup, store `075`, stock, and local price remain the source of truth.
+`find_available_obi_075(query, limit)` is executed by Android using the existing `ProductSearchRepository` and sequential exact `ProductLookupRepository` lookups. `NotFound` is a verified empty result; repository/transport/parser failure is not converted to an empty result. Only verified records `{obik,name,stock,price}` are sent back to the proxy. The proxy does not scrape OBI, does not contain an OBI parser, and does not become authoritative for OBI data. Existing Android OBI search, OBIK extraction, exact lookup, store `075`, stock, and local price remain the source of truth.
 
 OpenAI must receive only compact structured results produced by the app. OBI HTML, Nuxt payloads, cookies, and parser internals must not be forwarded to OpenAI or moved into the proxy.
 
@@ -64,6 +64,8 @@ The Worker calls the OpenAI Responses API with a centralized `gpt-5.6-luna` conf
 When the model returns that function call, the Worker validates the tool name and arguments and returns a normalized `tool_request` envelope to Android. Android executes the existing OBI search/exact store-`075` lookup and later sends only the compact verified result to `/v1/agent/continue`. The Worker continues with `previous_response_id` and a matching `function_call_output`, resending the stable server-controlled instructions/tool declaration. It does not store conversation state in Cloudflare storage.
 
 The proxy normalizes OpenAI output to either `answer` or `tool_request`. Raw Responses payloads, reasoning items, token/usage metadata, internal instructions, and upstream error bodies do not cross into Android.
+
+On Android, `AdvisorProxyClient` is the isolated authenticated transport boundary. `AdvisorController` owns one stateless customer case and may execute at most two local tool calls before terminating with a bounded error. It never automatically retries a completed proxy request. `FindAvailableObi075Tool` is the only Android tool adapter; there is no generic agent/plugin framework. Leaving an active advisor flow cancels its coroutine/OkHttp call where practical. Separate customer cases never reuse prior response/call IDs.
 
 ## OBIK lookup flow
 
@@ -97,4 +99,8 @@ Deterministic fixtures and CI prove code behavior against known inputs; they do 
 
 ## UI and configuration
 
-The application uses a single Compose activity and the normal Android resource system. No orientation is locked, so the UI must continue to adapt cleanly to portrait and landscape sizes. Navigation, dependency injection, persistence, and other frameworks should be added only if a concrete feature requires them.
+The application uses a single Compose activity and a small state-based switch between **WYSZUKIWARKA** (default) and **DORADCA**; Navigation Compose is intentionally not introduced. The advisor UI is a technical validation surface only: one customer-need input, bounded progress/error states, one final text answer, and an explicit new-case reset. There is no persistent conversation history.
+
+`TOWAROWNIK_APP_TOKEN` is injected at Android build time through `BuildConfig`. Missing token configuration keeps compilation and ordinary search working; DORADCA fails locally before any network call. The signed Play workflow receives the token only from the matching GitHub Actions secret. The static token is only an Internal Testing abuse barrier and is extractable from an APK/AAB; it is not strong device authentication.
+
+The application uses the normal Android resource system. No orientation is locked, so the UI must continue to adapt cleanly to portrait and landscape sizes. Navigation, dependency injection, persistence, and other frameworks should be added only if a concrete feature requires them.
