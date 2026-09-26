@@ -238,6 +238,7 @@ private fun JsonObject.stringOrSingletonString(key: String): String? =
         is JsonPrimitive -> value.contentOrNull?.takeIf(String::isNotBlank)
         is JsonArray -> value.singleOrNull()
             ?.let { it as? JsonPrimitive }
+            ?.takeIf { it.isString }
             ?.contentOrNull
             ?.takeIf(String::isNotBlank)
         else -> null
