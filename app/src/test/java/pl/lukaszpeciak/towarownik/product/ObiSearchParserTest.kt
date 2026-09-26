@@ -132,6 +132,48 @@ class ObiSearchParserTest {
         assertTrue(parser.parse(fixture("search-malformed.html")).isFailure)
     }
 
+    @Test
+    fun `manual search preserves reported total and caps parsed candidates at twenty five`() {
+        val links = (1..30).joinToString("\n") { index ->
+            val obik = (1_000_000 + index).toString()
+            """<a href="/p/$obik/product-$index">Synthetic product $index</a>"""
+        }
+        val html = """
+            <html><body>
+            <h1>Wyniki dla synthetic (706)</h1>
+            $links
+            </body></html>
+        """.trimIndent()
+
+        val result = parser.parseManual(html).getOrThrow()
+
+        assertTrue(result is ObiManualSearchParseResult.Results)
+        result as ObiManualSearchParseResult.Results
+        assertEquals(706, result.reportedTotalCount)
+        assertEquals(MANUAL_SEARCH_CANDIDATE_LIMIT, result.items.size)
+        assertEquals("1000001", result.items.first().obik)
+        assertEquals("1000025", result.items.last().obik)
+    }
+
+    @Test
+    fun `manual search exposes only product links actually present in html`() {
+        val links = (1..8).joinToString("\n") { index ->
+            val obik = (2_000_000 + index).toString()
+            """<a href="/p/$obik/product-$index">Synthetic product $index</a>"""
+        }
+        val html = """
+            <html><body>
+            <h1>Wyniki dla synthetic (706)</h1>
+            $links
+            </body></html>
+        """.trimIndent()
+
+        val result = parser.parseManual(html).getOrThrow() as ObiManualSearchParseResult.Results
+
+        assertEquals(706, result.reportedTotalCount)
+        assertEquals(8, result.items.size)
+    }
+
     private fun fixture(name: String): String =
         checkNotNull(javaClass.getResource("/obi/$name")).readText()
 }

@@ -29,6 +29,20 @@ sealed interface ProductSearchResult {
     ) : ProductSearchResult
 }
 
+sealed interface ManualProductSearchResult {
+    data class Candidates(
+        val items: List<ProductSearchCandidate>,
+        val reportedTotalCount: Int,
+    ) : ManualProductSearchResult
+
+    data object NotFound : ManualProductSearchResult
+
+    data class Unavailable(
+        val failure: ProductLookupFailure,
+        internal val reason: String,
+    ) : ManualProductSearchResult
+}
+
 fun normalizeProductSearchInput(rawInput: String): String =
     rawInput
         .replace(CONTROL_OR_WHITESPACE, " ")
@@ -54,6 +68,121 @@ class ProductSearchRepository(
     private val parser: ObiSearchParser = ObiSearchParser(),
     private val diagnostics: ObiDiagnosticRecorder = ObiDiagnostics.recorder,
 ) {
+    fun searchManual(query: String): ManualProductSearchResult {
+        val normalizedQuery = normalizeProductSearchInput(query)
+        val diagnosticInputType = when (classifyProductSearchInput(normalizedQuery)) {
+            is ProductSearchInput.Ean -> ObiDiagnosticInputType.EAN
+            is ProductSearchInput.Text -> ObiDiagnosticInputType.TEXT
+            is ProductSearchInput.Obik -> ObiDiagnosticInputType.OBIK
+            ProductSearchInput.Invalid -> ObiDiagnosticInputType.UNKNOWN
+        }
+
+        return when (
+            val response = httpClient.fetchSearch(
+                query = normalizedQuery,
+                inputType = diagnosticInputType,
+            )
+        ) {
+            is ObiHttpResult.Success -> {
+                val parsed = parser.parseManual(
+                    html = response.html,
+                    diagnosticId = response.diagnosticId,
+                )
+                parsed.fold(
+                    onSuccess = { parsedSearch ->
+                        when (parsedSearch) {
+                            is ObiManualSearchParseResult.Results -> {
+                                diagnostics.finish(response.diagnosticId)
+                                ManualProductSearchResult.Candidates(
+                                    items = parsedSearch.items,
+                                    reportedTotalCount = parsedSearch.reportedTotalCount,
+                                )
+                            }
+
+                            ObiManualSearchParseResult.NoResults -> {
+                                diagnostics.mappingTrace(
+                                    response.diagnosticId,
+                                    "ManualProductSearchResult.NotFound",
+                                )
+                                diagnostics.mappingTrace(
+                                    response.diagnosticId,
+                                    "UI NOT_FOUND",
+                                )
+                                diagnostics.finish(response.diagnosticId)
+                                ManualProductSearchResult.NotFound
+                            }
+                        }
+                    },
+                    onFailure = { exception ->
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ProductLookupFailure.DATA",
+                        )
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "UI DATA_ERROR",
+                        )
+                        diagnostics.finish(response.diagnosticId)
+                        ManualProductSearchResult.Unavailable(
+                            failure = ProductLookupFailure.DATA,
+                            reason = exception.message
+                                ?: "OBI manual search payload could not be parsed",
+                        )
+                    },
+                )
+            }
+
+            is ObiHttpResult.Failure -> {
+                val result = when (response.kind) {
+                    ObiHttpFailureKind.NOT_FOUND -> {
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ManualProductSearchResult.NotFound",
+                        )
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "UI NOT_FOUND",
+                        )
+                        ManualProductSearchResult.NotFound
+                    }
+
+                    ObiHttpFailureKind.TRANSPORT,
+                    ObiHttpFailureKind.SERVER -> {
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ProductLookupFailure.NETWORK",
+                        )
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "UI NETWORK_ERROR",
+                        )
+                        ManualProductSearchResult.Unavailable(
+                            failure = ProductLookupFailure.NETWORK,
+                            reason = response.reason,
+                        )
+                    }
+
+                    ObiHttpFailureKind.DATA -> {
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ProductLookupFailure.DATA",
+                        )
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "UI DATA_ERROR",
+                        )
+                        ManualProductSearchResult.Unavailable(
+                            failure = ProductLookupFailure.DATA,
+                            reason = response.reason,
+                        )
+                    }
+                }
+                diagnostics.finish(response.diagnosticId)
+                result
+            }
+        }
+    }
+
     fun search(query: String): ProductSearchResult {
         val normalizedQuery = normalizeProductSearchInput(query)
         val diagnosticInputType = when (classifyProductSearchInput(normalizedQuery)) {

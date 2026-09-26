@@ -91,6 +91,63 @@ class ProductSearchRepositoryTest {
         }
     }
 
+    @Test
+    fun `manual search preserves reported count and more than five parsed candidates`() {
+        val links = (1..12).joinToString("\n") { index ->
+            val obik = (3_000_000 + index).toString()
+            """<a href="/p/$obik/product-$index">Synthetic product $index</a>"""
+        }
+        val html = """
+            <html><body>
+            <h1>Wyniki dla synthetic (706)</h1>
+            $links
+            </body></html>
+        """.trimIndent()
+
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(html))
+            val repository = ProductSearchRepository(
+                httpClient = ObiHttpClient(server.url("/")),
+            )
+
+            val result = repository.searchManual("synthetic")
+
+            assertTrue(result is ManualProductSearchResult.Candidates)
+            result as ManualProductSearchResult.Candidates
+            assertEquals(706, result.reportedTotalCount)
+            assertEquals(12, result.items.size)
+        }
+    }
+
+    @Test
+    fun `advisor search path remains capped at five when manual capacity is larger`() {
+        val links = (1..12).joinToString("\n") { index ->
+            val obik = (4_000_000 + index).toString()
+            """<a href="/p/$obik/product-$index">Synthetic product $index</a>"""
+        }
+        val html = """
+            <html><body>
+            <h1>Wyniki dla synthetic (706)</h1>
+            $links
+            </body></html>
+        """.trimIndent()
+
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(html))
+            val repository = ProductSearchRepository(
+                httpClient = ObiHttpClient(server.url("/")),
+            )
+
+            val result = repository.search("synthetic")
+
+            assertTrue(result is ProductSearchResult.Candidates)
+            assertEquals(
+                5,
+                (result as ProductSearchResult.Candidates).items.size,
+            )
+        }
+    }
+
     private fun fixture(name: String): String =
         checkNotNull(javaClass.getResource("/obi/$name")).readText()
 }
