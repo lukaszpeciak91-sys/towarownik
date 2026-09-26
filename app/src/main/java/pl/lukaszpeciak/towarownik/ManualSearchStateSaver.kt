@@ -15,8 +15,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 internal val ManualSearchUiStateSaver = Saver<ManualSearchUiState, String>(
-    save = ::encodeManualSearchState,
-    restore = ::decodeManualSearchState,
+    save = { state -> encodeManualSearchState(state) },
+    restore = { raw -> decodeManualSearchState(raw) },
 )
 
 private fun encodeManualSearchState(state: ManualSearchUiState): String {
