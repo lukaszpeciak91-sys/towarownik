@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -129,6 +130,7 @@ private fun TowarownikApp() {
         mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
     }
     var advisorJob by remember { mutableStateOf<Job?>(null) }
+    var advisorGeneration by remember { mutableIntStateOf(0) }
 
     var manualQuery by rememberSaveable { mutableStateOf("") }
     var manualState by rememberSaveable(
@@ -140,6 +142,7 @@ private fun TowarownikApp() {
     var drawerQuery by rememberSaveable { mutableStateOf("") }
 
     fun newAdvisorCase() {
+        advisorGeneration += 1
         advisorJob?.cancel()
         advisorJob = null
         advisorState = AdvisorUiState.Idle
@@ -167,18 +170,21 @@ private fun TowarownikApp() {
                 ),
             )
 
+        val generation = advisorGeneration
         advisorJob = scope.launch {
             advisorController.runCase(submitted) { state ->
-                advisorState = state
-                if (state is AdvisorUiState.Success) {
-                    val displayText = normalizeAdvisorDisplayText(state.text)
-                    advisorCase = advisorCase.withMessage(
-                        AdvisorChatMessage(
-                            role = ChatMessageRole.ASSISTANT,
-                            text = displayText,
-                            createdAt = System.currentTimeMillis(),
-                        ),
-                    )
+                if (generation == advisorGeneration) {
+                    advisorState = state
+                    if (state is AdvisorUiState.Success) {
+                        val displayText = normalizeAdvisorDisplayText(state.text)
+                        advisorCase = advisorCase.withMessage(
+                            AdvisorChatMessage(
+                                role = ChatMessageRole.ASSISTANT,
+                                text = displayText,
+                                createdAt = System.currentTimeMillis(),
+                            ),
+                        )
+                    }
                 }
             }
         }
