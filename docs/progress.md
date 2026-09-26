@@ -13,7 +13,7 @@ The Worker now implements the smallest authenticated assistant contract:
 - authenticated `POST /v1/agent/continue`;
 - server-only `OPENAI_API_KEY`;
 - shared Internal-Testing `TOWAROWNIK_APP_TOKEN`;
-- native Responses API transport using centralized `gpt-6-luna`, low reasoning effort, and bounded output;
+- native Responses API transport using centralized `gpt-5.6-luna`, low reasoning effort, and bounded output;
 - exactly one strict local-tool declaration: `find_available_obi_075(query, limit)`;
 - normalized `answer` / `tool_request` responses;
 - validated compact continuation results using `previous_response_id` and `function_call_output`.
