@@ -244,6 +244,36 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `completed follow up replaces previous conversation response id`() = runBlocking {
+        val started = repository.beginUserTurn(null, "Pierwszy turn", 100L)
+        repository.completeAssistantTurn(
+            started.conversationId,
+            "Pierwsza odpowiedź",
+            "resp_first",
+            200L,
+        )
+
+        val followUp = repository.beginUserTurn(
+            started.conversationId,
+            "Drugi turn",
+            300L,
+        )
+        assertEquals("resp_first", followUp.previousResponseId)
+
+        repository.completeAssistantTurn(
+            started.conversationId,
+            "Druga odpowiedź",
+            "resp_second",
+            400L,
+        )
+
+        assertEquals(
+            "resp_second",
+            repository.load(started.conversationId)?.lastResponseId,
+        )
+    }
+
+    @Test
     fun `new conversation starts with no previous response id`() = runBlocking {
         val first = repository.beginUserTurn(null, "Pierwsza", 100L)
         repository.completeAssistantTurn(
