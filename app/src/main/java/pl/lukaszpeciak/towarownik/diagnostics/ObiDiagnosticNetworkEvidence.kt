@@ -75,7 +75,7 @@ internal fun safeDiagnosticRequestHeaders(request: Request): Map<String, String>
             header to if (header.equals("Referer", ignoreCase = true)) {
                 sanitizeDiagnosticUrl(value) ?: "[redacted-url]"
             } else {
-                sanitizeDiagnosticHeaderValue(value)
+                value.take(MAX_HEADER_VALUE_LENGTH)
             }
         }
     }.toMap()
