@@ -490,51 +490,58 @@ private fun AdvisorComposer(
     onSend: () -> Unit,
 ) {
     Surface(shadowElevation = 4.dp) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .imePadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Bottom,
+                .imePadding(),
+            contentAlignment = Alignment.Center,
         ) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                modifier = Modifier.weight(1f),
-                enabled = enabled,
-                minLines = 1,
-                maxLines = 4,
-                placeholder = {
-                    Text(
-                        if (hasSubmittedMessage) {
-                            "Nowa rozmowa, aby zadać kolejne pytanie"
-                        } else {
-                            "Opisz czego potrzebuje klient…"
-                        },
-                    )
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Send,
-                ),
-                keyboardActions = KeyboardActions(
-                    onSend = {
-                        if (enabled && value.isNotBlank()) {
-                            onSend()
-                        }
-                    },
-                ),
-            )
-
-            IconButton(
-                onClick = onSend,
-                enabled = enabled && value.isNotBlank(),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 720.dp)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Bottom,
             ) {
-                Text(
-                    text = "➤",
-                    style = MaterialTheme.typography.titleLarge,
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier.weight(1f),
+                    enabled = enabled,
+                    minLines = 1,
+                    maxLines = 4,
+                    placeholder = {
+                        Text(
+                            if (hasSubmittedMessage) {
+                                "Nowa rozmowa, aby zadać kolejne pytanie"
+                            } else {
+                                "Opisz czego potrzebuje klient…"
+                            },
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Send,
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (enabled && value.isNotBlank()) {
+                                onSend()
+                            }
+                        },
+                    ),
                 )
+
+                IconButton(
+                    onClick = onSend,
+                    enabled = enabled && value.isNotBlank(),
+                ) {
+                    Text(
+                        text = "➤",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
             }
         }
     }
