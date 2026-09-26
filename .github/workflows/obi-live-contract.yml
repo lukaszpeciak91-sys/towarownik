@@ -50,32 +50,13 @@ jobs:
           final_url="${curl_meta[1]:-}"
 
           mapfile -t url_meta < <(
-            python3 - "$final_url" <<'PY'
-          from urllib.parse import urlsplit, urlunsplit
+            PYTHONPATH=tools python3 - "$final_url" <<'PY'
           import sys
+          from obi_live_contract_probe import sanitize_obi_final_url
 
-          raw = sys.argv[1]
-          try:
-              parsed = urlsplit(raw)
-              port = parsed.port
-          except ValueError:
-              parsed = None
-              port = None
-
-          expected = bool(
-              parsed
-              and parsed.scheme == "https"
-              and parsed.hostname == "www.obi.pl"
-              and port in (None, 443)
-              and parsed.username is None
-              and parsed.password is None
-          )
-
+          expected, safe_url = sanitize_obi_final_url(sys.argv[1])
           print("true" if expected else "false")
-          if expected:
-              print(urlunsplit(("https", "www.obi.pl", parsed.path or "/", "", "")))
-          else:
-              print("REDACTED_UNEXPECTED_HOST")
+          print(safe_url)
           PY
           )
 
