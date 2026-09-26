@@ -39,6 +39,8 @@ data class DiagnosticHttpHop(
     val status: Int,
     val url: String,
     val location: String?,
+    val protocol: String?,
+    val safeRequestHeaders: Map<String, String>,
     val contentType: String?,
     val contentEncoding: String?,
     val declaredContentLength: Long?,
