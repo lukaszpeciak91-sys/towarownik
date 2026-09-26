@@ -32,15 +32,14 @@ class AdvisorProxyClientTest {
                     ?.startsWith("application/json") == true,
             )
 
-            val body = Json.parseToJsonElement(
-                request.body.readUtf8(),
-            ).jsonObject
+            val raw = request.body.readUtf8()
+            val body = Json.parseToJsonElement(raw).jsonObject
             assertEquals(setOf("message"), body.keys)
             assertEquals(
                 "potrzebuję kleju",
                 body["message"]?.jsonPrimitive?.content,
             )
-            assertFalse(request.body.readUtf8().contains(FAKE_TOKEN))
+            assertFalse(raw.contains(FAKE_TOKEN))
         }
     }
 
@@ -216,7 +215,8 @@ class AdvisorProxyClientTest {
             assertTrue(result is AdvisorProxyCallResult.Success)
             val request = server.takeRequest()
             assertEquals("/v1/agent/continue", request.path)
-            val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+            val raw = request.body.readUtf8()
+            val body = Json.parseToJsonElement(raw).jsonObject
             assertEquals(
                 setOf("responseId", "callId", "tool", "result"),
                 body.keys,
@@ -227,7 +227,12 @@ class AdvisorProxyClientTest {
 
             val resultBody = body["result"] as JsonObject
             assertEquals(setOf("query", "products"), resultBody.keys)
-            val raw = request.body.readUtf8()
+            val products = resultBody["products"] as kotlinx.serialization.json.JsonArray
+            val product = products.single() as JsonObject
+            assertEquals(
+                setOf("obik", "name", "stock", "price"),
+                product.keys,
+            )
             assertFalse(raw.contains("html", ignoreCase = true))
             assertFalse(raw.contains("cookie", ignoreCase = true))
             assertFalse(raw.contains(FAKE_TOKEN))
