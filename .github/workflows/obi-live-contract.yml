@@ -8,13 +8,9 @@ on:
         required: true
         default: "3496072"
       store:
-        description: OBI store number
+        description: Three-digit OBI store number
         required: true
         default: "075"
-  pull_request:
-    paths:
-      - ".github/workflows/obi-live-contract.yml"
-      - "tools/obi_live_contract_probe.py"
 
 permissions:
   contents: read
@@ -23,12 +19,20 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     env:
-      OBIK: ${{ inputs.obik || '3496072' }}
-      STORE: ${{ inputs.store || '075' }}
+      OBIK: ${{ inputs.obik }}
+      STORE: ${{ inputs.store }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate probe inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$OBIK" =~ ^[0-9]{7}$ ]] || { echo "OBIK must contain exactly 7 digits"; exit 2; }
+          [[ "$STORE" =~ ^[0-9]{3}$ ]] || { echo "Store number must contain exactly 3 digits"; exit 2; }
+
       - name: Fetch live OBI product page
+        id: fetch
         shell: bash
         run: |
           set -euo pipefail
@@ -45,16 +49,63 @@ jobs:
           status="${curl_meta[0]:-}"
           final_url="${curl_meta[1]:-}"
 
-          printf 'status=%s\nfinalUrl=%s\nobik=%s\nstore=%s\n'             "$status" "$final_url" "$OBIK" "$STORE" > "$out/transport.txt"
+          mapfile -t url_meta < <(
+            python3 - "$final_url" <<'PY'
+          from urllib.parse import urlsplit, urlunsplit
+          import sys
+
+          raw = sys.argv[1]
+          try:
+              parsed = urlsplit(raw)
+              port = parsed.port
+          except ValueError:
+              parsed = None
+              port = None
+
+          expected = bool(
+              parsed
+              and parsed.scheme == "https"
+              and parsed.hostname == "www.obi.pl"
+              and port in (None, 443)
+              and parsed.username is None
+              and parsed.password is None
+          )
+
+          print("true" if expected else "false")
+          if expected:
+              print(urlunsplit(("https", "www.obi.pl", parsed.path or "/", "", "")))
+          else:
+              print("REDACTED_UNEXPECTED_HOST")
+          PY
+          )
+
+          expected_host="${url_meta[0]:-false}"
+          safe_final_url="${url_meta[1]:-REDACTED_INVALID_URL}"
+
+          printf 'status=%s\nfinalUrl=%s\nexpectedHost=%s\nobik=%s\nstore=%s\n'             "$status" "$safe_final_url" "$expected_host" "$OBIK" "$STORE" > "$out/transport.txt"
 
           rm -f "$cookie_jar"
 
-          if [[ "$status" != "200" ]]; then
-            echo "OBI probe ended with HTTP $status at $final_url"
+          if [[ "$status" == "200" && "$expected_host" == "true" ]]; then
+            echo "raw_safe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "raw_safe=false" >> "$GITHUB_OUTPUT"
+            rm -f "$out/product.html"
+            echo "OBI probe rejected raw capture: HTTP $status, expectedHost=$expected_host"
             exit 1
           fi
 
-          python3 tools/obi_live_contract_probe.py             --html "$out/product.html"             --obik "$OBIK"             --store "$STORE"             --status "$status"             --final-url "$final_url"             --out-dir "$out"
+          printf '%s\n' "$safe_final_url" > "$out/final-url.txt"
+
+      - name: Inspect live Nuxt contract
+        if: steps.fetch.outputs.raw_safe == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe_final_url="$(cat build/obi-live-contract/final-url.txt)"
+          rm -f build/obi-live-contract/final-url.txt
+
+          python3 tools/obi_live_contract_probe.py             --html build/obi-live-contract/product.html             --obik "$OBIK"             --store "$STORE"             --status "200"             --final-url "$safe_final_url"             --out-dir build/obi-live-contract
 
       - name: Print contract summary
         if: always()
@@ -65,16 +116,25 @@ jobs:
             cat build/obi-live-contract/transport.txt
           fi
 
-      - name: Upload live contract artifact
+      - name: Upload safe contract summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: obi-live-contract-${{ env.OBIK }}-store-${{ env.STORE }}
+          name: obi-live-contract-summary-${{ env.OBIK }}-store-${{ env.STORE }}
           path: |
-            build/obi-live-contract/product.html
-            build/obi-live-contract/nuxt.json
             build/obi-live-contract/summary.json
             build/obi-live-contract/summary.txt
             build/obi-live-contract/transport.txt
           if-no-files-found: warn
           retention-days: 3
+
+      - name: Upload sensitive raw contract capture
+        if: always() && steps.fetch.outputs.raw_safe == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: obi-live-contract-raw-${{ env.OBIK }}-store-${{ env.STORE }}
+          path: |
+            build/obi-live-contract/product.html
+            build/obi-live-contract/nuxt.json
+          if-no-files-found: warn
+          retention-days: 1
