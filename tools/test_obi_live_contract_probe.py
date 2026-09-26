@@ -35,7 +35,7 @@ class FlattenedReferenceTest(unittest.TestCase):
         root[3] = 25
         root[25] = "must-not-be-followed"
 
-        trace = probe.reference_trace(root, 3)
+        trace = probe.reference_trace(root, 3, reveal_scalar=True)
 
         self.assertEqual(
             {
@@ -49,7 +49,7 @@ class FlattenedReferenceTest(unittest.TestCase):
     def test_reference_trace_follows_known_nuxt_wrapper(self):
         root = [None, ["ShallowRef", 2], {"skuId": 3}, "3496072"]
 
-        trace = probe.reference_trace(root, 1)
+        trace = probe.reference_trace(root, 1, reveal_scalar=True)
 
         self.assertEqual("reference", trace["kind"])
         self.assertEqual([1, 2], [item["index"] for item in trace["chain"]])
@@ -81,6 +81,53 @@ class FlattenedReferenceTest(unittest.TestCase):
             "ref top[17] -> 9",
             probe.format_reference_trace(seller["referenceTrace"]),
         )
+
+    def test_safe_summary_does_not_expose_non_allowlisted_scalar_values(self):
+        secret = "VERY_SECRET_TOKEN"
+        root = [
+            {"productAuthToken": 1, "storeSessionToken": 2, "articleRequestId": 3},
+            secret,
+            "SESSION_SECRET_123",
+            "REQUEST_UUID_SECRET",
+        ]
+        payload = json.dumps(root)
+        html = (
+            '<html><script id="__NUXT_DATA__" type="application/json">'
+            + payload
+            + '</script></html>'
+        )
+
+        hits = probe.keyword_hits(root)
+        serialized_hits = json.dumps(hits, ensure_ascii=False)
+        self.assertNotIn(secret, serialized_hits)
+        self.assertNotIn("SESSION_SECRET_123", serialized_hits)
+        self.assertNotIn("REQUEST_UUID_SECRET", serialized_hits)
+
+        for hit in hits:
+            formatted = probe.format_reference_trace(hit["referenceTrace"])
+            self.assertIn("string length=", formatted)
+
+        summary = probe.build_summary(
+            html=html,
+            root=root + ["3496072", "075"],
+            payload=payload,
+            obik="3496072",
+            store="075",
+            status="200",
+            final_url="https://www.obi.pl/p/3496072/example",
+        )
+
+        temp_path = Path(self._testMethodName + ".txt")
+        try:
+            probe.write_text_summary(summary, temp_path)
+            text_summary = temp_path.read_text(encoding="utf-8")
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        json_summary = json.dumps(summary, ensure_ascii=False)
+        for forbidden in (secret, "SESSION_SECRET_123", "REQUEST_UUID_SECRET"):
+            self.assertNotIn(forbidden, json_summary)
+            self.assertNotIn(forbidden, text_summary)
 
     def test_reverse_reference_layers_walk_from_value_to_owner(self):
         root = [
