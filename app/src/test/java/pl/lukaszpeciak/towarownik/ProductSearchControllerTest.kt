@@ -12,6 +12,7 @@ import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
 import pl.lukaszpeciak.towarownik.product.ProductSearchInput
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 import pl.lukaszpeciak.towarownik.product.classifyProductSearchInput
+import pl.lukaszpeciak.towarownik.product.normalizeProductSearchInput
 
 class ProductSearchControllerTest {
     @Test
@@ -202,6 +203,54 @@ class ProductSearchControllerTest {
         assertEquals(listOf("7014053"), lookedUp)
         assertEquals(ProductSearchUiState.Loading, states.first())
         assertTrue(states.last() is ProductSearchUiState.Success)
+    }
+
+    @Test
+    fun `normalizes newline OBIK before classification`() {
+        assertEquals("3496072", normalizeProductSearchInput("3496072\n"))
+        assertEquals(
+            ProductSearchInput.Obik("3496072"),
+            classifyProductSearchInput("3496072\n"),
+        )
+    }
+
+    @Test
+    fun `normalizes newline text to one space without concatenating words`() {
+        assertEquals("qbrick system", normalizeProductSearchInput("qbrick\nsystem"))
+        assertEquals(
+            ProductSearchInput.Text("qbrick system"),
+            classifyProductSearchInput("qbrick\nsystem"),
+        )
+    }
+
+    @Test
+    fun `controller submits normalized immutable query`() = runBlocking {
+        val submitted = mutableListOf<String>()
+        val controller = ProductSearchController(
+            lookupObik = { error("Text query must use search") },
+            searchProducts = { query ->
+                submitted += query
+                ProductSearchResult.NotFound
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        controller.submit("  qbrick\nsystem  ") { }
+
+        assertEquals(listOf("qbrick system"), submitted)
+    }
+
+    @Test
+    fun `submission snapshot clears next visible query without changing submitted value`() {
+        var visibleQuery = "dedra\n"
+        val submission = prepareSearchSubmission(visibleQuery)
+
+        visibleQuery = submission.nextVisibleQuery
+        visibleQuery = "qbrick system"
+
+        assertEquals("dedra", submission.submittedQuery)
+        assertEquals("qbrick system", visibleQuery)
+        assertEquals("", submission.nextVisibleQuery)
     }
 
     private fun product(obik: String, ean: String?) = LocalProduct(
