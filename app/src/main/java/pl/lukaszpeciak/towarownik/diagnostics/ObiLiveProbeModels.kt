@@ -1,13 +1,16 @@
 package pl.lukaszpeciak.towarownik.diagnostics
 
-internal enum class ObiProbeProfile(val reportName: String) {
-    A_BASELINE("A"),
-    B_UA_ONLY("B"),
-    C_ACCEPT_ONLY("C"),
-    D_LANGUAGE_ONLY("D"),
-    E_COMBINED_HTML("E"),
-    F_BROWSER_UA_ONLY("F"),
-    G_BROWSER_HTML("G"),
+internal enum class ObiProbeProfile(
+    val reportName: String,
+    val description: String,
+) {
+    A_BASELINE("A", "baseline-current-production-profile"),
+    B_UA_ONLY("B", "native-towarownik-ua-only"),
+    C_ACCEPT_ONLY("C", "baseline-plus-html-accept"),
+    D_LANGUAGE_ONLY("D", "baseline-plus-polish-language"),
+    E_COMBINED_HTML("E", "native-towarownik-html-navigation"),
+    F_BROWSER_UA_ONLY("F", "synthetic-browser-like-android-chrome-ua-only"),
+    G_BROWSER_HTML("G", "synthetic-browser-like-android-chrome-html-navigation"),
 }
 
 internal enum class ObiProbeBodyKind {
@@ -58,6 +61,7 @@ internal data class ObiLiveProbeReport(
             section.steps.forEach { step ->
                 appendLine("step=${step.label}")
                 appendLine("profile=${step.profile.reportName}")
+                appendLine("profileDescription=${step.profile.description}")
                 appendLine("request=${step.requestedUrl}")
                 appendLine("durationMs=${step.durationMillis}")
                 appendLine("finalStatus=${step.finalStatus ?: -1}")
