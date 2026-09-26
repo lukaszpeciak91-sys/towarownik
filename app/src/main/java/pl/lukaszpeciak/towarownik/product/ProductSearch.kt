@@ -6,6 +6,7 @@ import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 
 private const val OBIK_LENGTH = 7
 private val EAN_LENGTHS = setOf(8, 12, 13, 14)
+private val CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
 
 sealed interface ProductSearchInput {
     data class Obik(val value: String) : ProductSearchInput
@@ -28,8 +29,13 @@ sealed interface ProductSearchResult {
     ) : ProductSearchResult
 }
 
+fun normalizeProductSearchInput(rawInput: String): String =
+    rawInput
+        .replace(CONTROL_OR_WHITESPACE, " ")
+        .trim()
+
 fun classifyProductSearchInput(rawInput: String): ProductSearchInput {
-    val input = rawInput.trim()
+    val input = normalizeProductSearchInput(rawInput)
     if (input.isEmpty()) return ProductSearchInput.Invalid
 
     if (input.all(Char::isDigit)) {
