@@ -36,6 +36,16 @@ class LocalizationResourcesTest {
             "OBI search",
             english.getValue("manual_search_title"),
         )
+        assertEquals("Zgłoś", polish.getValue("report_action"))
+        assertEquals("Report", english.getValue("report_action"))
+        assertEquals(
+            "Błędna / zmyślona odpowiedź",
+            polish.getValue("report_category_incorrect_fabricated"),
+        )
+        assertEquals(
+            "Incorrect / fabricated answer",
+            english.getValue("report_category_incorrect_fabricated"),
+        )
     }
 
     @Test

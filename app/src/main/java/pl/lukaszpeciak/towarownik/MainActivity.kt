@@ -1,5 +1,6 @@
 package pl.lukaszpeciak.towarownik
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
@@ -129,6 +130,7 @@ internal enum class AppSurface {
     MANUAL_SEARCH,
     SETTINGS,
     DIAGNOSTICS,
+    REPORT,
 }
 
 internal fun backSurface(surface: AppSurface): AppSurface =
@@ -137,6 +139,7 @@ internal fun backSurface(surface: AppSurface): AppSurface =
         AppSurface.MANUAL_SEARCH -> AppSurface.ADVISOR
         AppSurface.SETTINGS -> AppSurface.ADVISOR
         AppSurface.DIAGNOSTICS -> AppSurface.SETTINGS
+        AppSurface.REPORT -> AppSurface.ADVISOR
     }
 
 internal fun freshAdvisorCaseAfterDelete(
@@ -151,7 +154,8 @@ internal fun freshAdvisorCaseAfterDelete(
 
 @Composable
 private fun TowarownikApp() {
-    val context = LocalContext.current.applicationContext
+    val uiContext = LocalContext.current
+    val context = uiContext.applicationContext
     val advisorController = remember { AdvisorController.production() }
     val manualSearchController = remember { ManualSearchController() }
     val conversationRepository = remember {
@@ -167,6 +171,25 @@ private fun TowarownikApp() {
     }
     val surface = runCatching { AppSurface.valueOf(surfaceName) }
         .getOrDefault(AppSurface.ADVISOR)
+
+    var reportTypeName by rememberSaveable {
+        mutableStateOf(ProblemReportType.GENERAL.name)
+    }
+    var reportOriginName by rememberSaveable {
+        mutableStateOf(ProblemReportOrigin.SETTINGS.name)
+    }
+    var reportConversationId by rememberSaveable {
+        mutableStateOf<Long?>(null)
+    }
+    var reportMessageId by rememberSaveable {
+        mutableStateOf<Long?>(null)
+    }
+    val reportType = runCatching {
+        ProblemReportType.valueOf(reportTypeName)
+    }.getOrDefault(ProblemReportType.GENERAL)
+    val reportOrigin = runCatching {
+        ProblemReportOrigin.valueOf(reportOriginName)
+    }.getOrDefault(ProblemReportOrigin.SETTINGS)
 
     var activeConversationId by rememberSaveable {
         mutableStateOf<Long?>(null)
@@ -426,6 +449,30 @@ private fun TowarownikApp() {
         surfaceName = AppSurface.DIAGNOSTICS.name
     }
 
+    fun openGeneralReport() {
+        reportTypeName = ProblemReportType.GENERAL.name
+        reportOriginName = ProblemReportOrigin.SETTINGS.name
+        reportConversationId = activeConversationId
+        reportMessageId = null
+        surfaceName = AppSurface.REPORT.name
+    }
+
+    fun openAssistantReport(messageId: Long) {
+        val conversationId = activeConversationId ?: return
+        reportTypeName = ProblemReportType.ASSISTANT_RESPONSE.name
+        reportOriginName = ProblemReportOrigin.ADVISOR.name
+        reportConversationId = conversationId
+        reportMessageId = messageId
+        surfaceName = AppSurface.REPORT.name
+    }
+
+    fun closeReport() {
+        surfaceName = when (reportOrigin) {
+            ProblemReportOrigin.ADVISOR -> AppSurface.ADVISOR.name
+            ProblemReportOrigin.SETTINGS -> AppSurface.SETTINGS.name
+        }
+    }
+
     fun navigateBackFrom(currentSurface: AppSurface) {
         surfaceName = backSurface(currentSurface).name
     }
@@ -489,6 +536,7 @@ private fun TowarownikApp() {
                     },
                     onNewCase = ::newAdvisorCase,
                     onOpenSearch = ::openManualSearch,
+                    onReportAssistantMessage = ::openAssistantReport,
                 )
             }
         }
@@ -534,6 +582,7 @@ private fun TowarownikApp() {
                     navigateBackFrom(AppSurface.SETTINGS)
                 },
                 onOpenDiagnostics = ::openDiagnostics,
+                onReportProblem = ::openGeneralReport,
             )
         }
 
@@ -541,6 +590,68 @@ private fun TowarownikApp() {
             ObiDiagnosticsScreen(
                 onBack = {
                     navigateBackFrom(AppSurface.DIAGNOSTICS)
+                },
+            )
+        }
+
+        AppSurface.REPORT -> {
+            val subject = stringResource(
+                if (reportType == ProblemReportType.ASSISTANT_RESPONSE) {
+                    R.string.report_share_subject_assistant
+                } else {
+                    R.string.report_share_subject_general
+                },
+            )
+            val body = stringResource(R.string.report_share_body)
+            val chooserTitle = stringResource(R.string.report_share_chooser)
+
+            ProblemReportScreen(
+                type = reportType,
+                canIncludeConversation =
+                    reportConversationId != null,
+                onBack = ::closeReport,
+                onCreateAndShare = { submission ->
+                    if (
+                        reportType == ProblemReportType.GENERAL &&
+                        submission.description.isBlank()
+                    ) {
+                        ProblemReportUiError.DESCRIPTION_REQUIRED
+                    } else {
+                        val request = ProblemReportRequest(
+                            type = reportType,
+                            category = submission.category,
+                            description = submission.description,
+                            includeConversation =
+                                submission.includeConversation,
+                            conversationId = reportConversationId,
+                            reportedMessageId = reportMessageId,
+                        )
+                        val result = createProblemReportShareIntent(
+                            context = uiContext,
+                            repository = conversationRepository,
+                            request = request,
+                            subject = subject,
+                            body = body,
+                            recorder = ObiDiagnostics.recorder,
+                        )
+                        val shareIntent = result.getOrNull()
+                        if (shareIntent != null) {
+                            uiContext.startActivity(
+                                Intent.createChooser(
+                                    shareIntent,
+                                    chooserTitle,
+                                ),
+                            )
+                            null
+                        } else {
+                            when (result.exceptionOrNull()) {
+                                is ProblemReportTargetUnavailableException ->
+                                    ProblemReportUiError.TARGET_UNAVAILABLE
+                                else ->
+                                    ProblemReportUiError.GENERATION_FAILED
+                            }
+                        }
+                    }
                 },
             )
         }
@@ -830,6 +941,7 @@ private fun AdvisorChatScreen(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
+    onReportAssistantMessage: (Long) -> Unit,
 ) {
     val isRunning = state.isRunning()
     val composerEnabled = isAdvisorComposerEnabled(state)
@@ -875,7 +987,11 @@ private fun AdvisorChatScreen(
                 }
 
                 items(advisorCase.messages) { message ->
-                    AdvisorMessageBubble(message)
+                    AdvisorMessageBubble(
+                        message = message,
+                        onReportAssistantMessage =
+                            onReportAssistantMessage,
+                    )
                 }
 
                 when (state) {
@@ -1096,7 +1212,10 @@ private fun EmptyAdvisorState() {
 }
 
 @Composable
-private fun AdvisorMessageBubble(message: AdvisorChatMessage) {
+private fun AdvisorMessageBubble(
+    message: AdvisorChatMessage,
+    onReportAssistantMessage: (Long) -> Unit,
+) {
     val isUser = message.role == ChatMessageRole.USER
     val warmColors = MaterialTheme.towarownikColors
 
@@ -1148,6 +1267,35 @@ private fun AdvisorMessageBubble(message: AdvisorChatMessage) {
             message.products.forEach { product ->
                 Spacer(modifier = Modifier.height(8.dp))
                 VerifiedProductCard(product)
+            }
+
+            message.persistedMessageId?.let { messageId ->
+                TextButton(
+                    onClick = {
+                        onReportAssistantMessage(messageId)
+                    },
+                    contentPadding = PaddingValues(
+                        horizontal = 6.dp,
+                        vertical = 2.dp,
+                    ),
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor =
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            R.drawable.ic_report_problem_24,
+                        ),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.report_action),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
             }
         }
     }
@@ -1589,6 +1737,7 @@ private fun AdvisorChatPreview() {
             onOpenDrawer = {},
             onNewCase = {},
             onOpenSearch = {},
+            onReportAssistantMessage = {},
         )
     }
 }

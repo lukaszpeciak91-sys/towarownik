@@ -28,6 +28,7 @@ internal data class AdvisorChatMessage(
     val text: String,
     val createdAt: Long,
     val products: List<VerifiedProductUiModel> = emptyList(),
+    val persistedMessageId: Long? = null,
 )
 
 internal data class AdvisorCaseUiState(
@@ -61,6 +62,7 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                 products = message.products.map { product ->
                     product.toVerifiedProductUiModel()
                 },
+                persistedMessageId = message.id,
             )
         },
     )
@@ -97,6 +99,12 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                             put("role", message.role.name)
                             put("text", message.text)
                             put("createdAt", message.createdAt)
+                            put(
+                                "persistedMessageId",
+                                message.persistedMessageId
+                                    ?.let(::JsonPrimitive)
+                                    ?: JsonNull,
+                            )
                             put(
                                 "products",
                                 buildJsonArray {
@@ -195,6 +203,9 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                     text = text,
                     createdAt = createdAt,
                     products = products,
+                    persistedMessageId = objectValue["persistedMessageId"]
+                        ?.jsonPrimitive
+                        ?.longOrNull,
                 )
             }
             .orEmpty()
