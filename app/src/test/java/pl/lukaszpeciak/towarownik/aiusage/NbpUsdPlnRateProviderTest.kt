@@ -9,8 +9,13 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import pl.lukaszpeciak.towarownik.convertUsdToPln
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class NbpUsdPlnRateProviderTest {
     @Test
     fun `valid NBP payload parses and converts cost exactly`() {
