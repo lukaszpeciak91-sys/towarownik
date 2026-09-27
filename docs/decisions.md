@@ -283,6 +283,6 @@ These decisions describe the broader intended product behavior. The currently im
 - Do not create a separate `applications` field in this iteration: live proof did not show one stable structured applications section. Uses and explicit limitations stated by OBI remain available through the bounded product description.
 - Preserve current stock/price authority and multi-store rules. Rich product facts do not authorize stores, replace selected-store stock/price, or alter composite verified identity.
 - Keep rich facts transient and model-facing. Do not migrate Room or expand visible product cards/reports merely to persist advisor-only context.
-- Preserve the existing continuation transport budget with bounds: brand 80, description 300, at most six facts, label 60, value 120.
+- Preserve the existing continuation transport budget with bounds: brand 80, description 220, at most six facts, label 60, value 100.
 - Minimal instruction change only: OBI-supplied rich facts are verified product-page facts; absent properties remain unknown, not false.
 - Next stages remain final Taksula advisor instructions/persona, then optional OpenAI `web_search`.
