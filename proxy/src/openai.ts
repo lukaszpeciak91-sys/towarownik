@@ -1,7 +1,9 @@
 import {
   AGENT_INSTRUCTIONS,
+  FINAL_ANSWER_FORMAT,
   LOCAL_TOOL_NAME,
   MAX_ANSWER_CHARS,
+  MAX_SELECTED_PRODUCT_OBIKS,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
@@ -29,6 +31,9 @@ export async function startAgent(
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
       store: true,
+      text: {
+        format: FINAL_ANSWER_FORMAT,
+      },
       tools: [OBI_TOOL],
     },
     apiKey,
@@ -54,6 +59,9 @@ export async function messageAgent(
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
       store: true,
+      text: {
+        format: FINAL_ANSWER_FORMAT,
+      },
       tools: [OBI_TOOL],
     },
     apiKey,
@@ -86,6 +94,9 @@ export async function continueAgent(
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
       store: true,
+      text: {
+        format: FINAL_ANSWER_FORMAT,
+      },
       tools: [OBI_TOOL],
     },
     apiKey,
@@ -178,15 +189,76 @@ export function normalizeOpenAIResponse(payload: unknown): AgentResult {
     };
   }
 
-  const text = extractAnswerText(payload);
-  if (!text || text.length > MAX_ANSWER_CHARS) {
-    throw new UpstreamFailureError();
-  }
+  const answer = parseStructuredAnswer(extractAnswerText(payload));
 
   return {
     type: "answer",
     responseId,
+    text: answer.text,
+    productObiks: answer.productObiks,
+  };
+}
+
+function parseStructuredAnswer(
+  raw: string | null,
+): {
+  text: string;
+  productObiks: string[];
+} {
+  if (!raw) {
+    throw new UpstreamFailureError();
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    throw new UpstreamFailureError();
+  }
+
+  if (!isRecord(parsed)) {
+    throw new UpstreamFailureError();
+  }
+
+  const keys = Object.keys(parsed);
+  if (
+    keys.length !== 2 ||
+    !keys.includes("text") ||
+    !keys.includes("productObiks")
+  ) {
+    throw new UpstreamFailureError();
+  }
+
+  if (typeof parsed.text !== "string") {
+    throw new UpstreamFailureError();
+  }
+  const text = parsed.text.trim();
+  if (!text || text.length > MAX_ANSWER_CHARS) {
+    throw new UpstreamFailureError();
+  }
+
+  if (
+    !Array.isArray(parsed.productObiks) ||
+    parsed.productObiks.length > MAX_SELECTED_PRODUCT_OBIKS
+  ) {
+    throw new UpstreamFailureError();
+  }
+
+  const deduplicated: string[] = [];
+  const seen = new Set<string>();
+  for (const value of parsed.productObiks) {
+    if (typeof value !== "string" || !/^\d{7}$/.test(value)) {
+      throw new UpstreamFailureError();
+    }
+    if (!seen.has(value)) {
+      seen.add(value);
+      deduplicated.push(value);
+    }
+  }
+
+  return {
     text,
+    productObiks: deduplicated,
   };
 }
 

@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import java.math.BigDecimal
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 internal const val ADVISOR_PROXY_BASE_URL =
     "https://towarownik-proxy.lukaszpeciak91.workers.dev"
@@ -30,6 +31,7 @@ internal sealed interface AdvisorProxyResult {
     data class Answer(
         val responseId: String,
         val text: String,
+        val productObiks: List<String>,
     ) : AdvisorProxyResult
 
     data class ToolRequest(
@@ -53,6 +55,10 @@ internal sealed interface AdvisorProxyCallResult {
 }
 
 internal sealed interface AdvisorToolExecutionResult {
-    data class Success(val result: AdvisorVerifiedToolResult) : AdvisorToolExecutionResult
+    data class Success(
+        val result: AdvisorVerifiedToolResult,
+        val snapshots: List<VerifiedProductSnapshot>,
+    ) : AdvisorToolExecutionResult
+
     data object Failure : AdvisorToolExecutionResult
 }

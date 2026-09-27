@@ -23,14 +23,6 @@ internal data class ManualSearchResultItem(
     val name: String?,
 )
 
-internal data class VerifiedProductUiModel(
-    val name: String,
-    val obik: String,
-    val grossPrice: BigDecimal?,
-    val stock: Int?,
-    val productUrl: String,
-)
-
 internal sealed interface ManualSearchUiState {
     data object Idle : ManualSearchUiState
     data object Loading : ManualSearchUiState

@@ -24,10 +24,11 @@ class FindAvailableObi075ToolTest {
 
         assertEquals(
             AdvisorToolExecutionResult.Success(
-                AdvisorVerifiedToolResult(
+                result = AdvisorVerifiedToolResult(
                     query = "klej",
                     products = emptyList(),
                 ),
+                snapshots = emptyList(),
             ),
             result,
         )
@@ -245,6 +246,39 @@ class FindAvailableObi075ToolTest {
     }
 
     @Test
+    fun `exact lookup also retains trusted local snapshot with product url`() = runBlocking {
+        val trustedUrl = "https://www.obi.pl/p/1234567/trusted-canonical"
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    listOf(ProductSearchCandidate("1234567", "Candidate")),
+                )
+            },
+            lookup = {
+                ProductLookupResult.Found(
+                    product(
+                        obik = "1234567",
+                        name = "Verified exact",
+                        stock = 2,
+                        price = BigDecimal("12.30"),
+                        productUrl = trustedUrl,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(arguments()) as AdvisorToolExecutionResult.Success
+        val snapshot = result.snapshots.single()
+
+        assertEquals("1234567", snapshot.obik)
+        assertEquals("Verified exact", snapshot.name)
+        assertEquals(2, snapshot.stock)
+        assertEquals(BigDecimal("12.30"), snapshot.grossPrice)
+        assertEquals(trustedUrl, snapshot.productUrl)
+        assertEquals(1_234_567L, snapshot.verifiedAt)
+    }
+
+    @Test
     fun `compact result exposes only verified product fields`() = runBlocking {
         val tool = tool(
             search = {
@@ -282,6 +316,7 @@ class FindAvailableObi075ToolTest {
             searchProducts = search,
             lookupObik = lookup,
             ioDispatcher = Dispatchers.Unconfined,
+            now = { 1_234_567L },
         )
 
     private fun arguments(
@@ -297,12 +332,13 @@ class FindAvailableObi075ToolTest {
         name: String = "Synthetic exact product",
         stock: Int? = 3,
         price: BigDecimal? = BigDecimal("10.00"),
+        productUrl: String = "https://example.invalid/p/$obik",
     ) = LocalProduct(
         obik = obik,
         name = name,
         stock = stock,
         grossPrice = price,
-        productUrl = "https://example.invalid/p/$obik",
+        productUrl = productUrl,
         ean = null,
     )
 }

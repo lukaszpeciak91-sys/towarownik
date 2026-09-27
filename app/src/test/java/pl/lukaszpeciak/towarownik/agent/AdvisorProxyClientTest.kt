@@ -89,9 +89,94 @@ class AdvisorProxyClientTest {
                     AdvisorProxyResult.Answer(
                         responseId = "resp_1",
                         text = "Synthetic answer",
+                        productObiks = emptyList(),
                     ),
                 ),
                 result,
+            )
+        }
+    }
+
+    @Test
+    fun `answer response parses selected product obiks and removes duplicates`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        """
+                        {
+                          "type":"answer",
+                          "responseId":"resp_cards",
+                          "text":"Synthetic answer",
+                          "productObiks":["1234567","1234567","7654321"]
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val result = client(server, FAKE_TOKEN).start("test")
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_cards",
+                        text = "Synthetic answer",
+                        productObiks = listOf("1234567", "7654321"),
+                    ),
+                ),
+                result,
+            )
+        }
+    }
+
+    @Test
+    fun `answer cannot inject model supplied product facts`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_bad",
+                      "text":"Synthetic",
+                      "productObiks":["1234567"],
+                      "price":0.01
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.PROTOCOL,
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `more than five selected product obiks fails closed`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_bad",
+                      "text":"Synthetic",
+                      "productObiks":["1000001","1000002","1000003","1000004","1000005","1000006"]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.PROTOCOL,
+                ),
+                client(server, FAKE_TOKEN).start("test"),
             )
         }
     }
@@ -270,6 +355,8 @@ class AdvisorProxyClientTest {
             )
             assertFalse(raw.contains("html", ignoreCase = true))
             assertFalse(raw.contains("cookie", ignoreCase = true))
+            assertFalse(raw.contains("productUrl", ignoreCase = true))
+            assertFalse(raw.contains("verifiedAt", ignoreCase = true))
             assertFalse(raw.contains(FAKE_TOKEN))
         }
     }
@@ -291,7 +378,8 @@ class AdvisorProxyClientTest {
                 {
                   "type":"answer",
                   "responseId":"resp_1",
-                  "text":"Synthetic answer"
+                  "text":"Synthetic answer",
+                  "productObiks":[]
                 }
                 """.trimIndent(),
             )

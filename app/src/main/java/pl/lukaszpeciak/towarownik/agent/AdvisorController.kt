@@ -2,6 +2,7 @@ package pl.lukaszpeciak.towarownik.agent
 
 import kotlinx.coroutines.CancellationException
 import pl.lukaszpeciak.towarownik.BuildConfig
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 internal const val ADVISOR_NOT_CONFIGURED_MESSAGE =
     "Doradca nie jest skonfigurowany w tej wersji aplikacji."
@@ -26,6 +27,7 @@ internal sealed interface AdvisorUiState {
     data class Success(
         val text: String,
         val responseId: String,
+        val products: List<VerifiedProductSnapshot> = emptyList(),
     ) : AdvisorUiState
     data class Error(val message: String) : AdvisorUiState
 }
@@ -85,13 +87,19 @@ internal class AdvisorController(
         }
 
         var toolCalls = 0
+        val verifiedByObik = linkedMapOf<String, VerifiedProductSnapshot>()
 
         while (true) {
             when (proxyResult) {
                 is AdvisorProxyResult.Answer -> {
+                    val selectedProducts = proxyResult.productObiks
+                        .distinct()
+                        .mapNotNull(verifiedByObik::get)
+                        .take(MAX_TOOL_PRODUCTS)
                     val success = AdvisorUiState.Success(
                         text = proxyResult.text,
                         responseId = proxyResult.responseId,
+                        products = selectedProducts,
                     )
                     onState(success)
                     return success
@@ -119,7 +127,12 @@ internal class AdvisorController(
                     }
 
                     val verifiedResult = when (localResult) {
-                        is AdvisorToolExecutionResult.Success -> localResult.result
+                        is AdvisorToolExecutionResult.Success -> {
+                            localResult.snapshots.forEach { snapshot ->
+                                verifiedByObik[snapshot.obik] = snapshot
+                            }
+                            localResult.result
+                        }
                         AdvisorToolExecutionResult.Failure -> {
                             val error = AdvisorUiState.Error(
                                 ADVISOR_OBI_ERROR_MESSAGE,

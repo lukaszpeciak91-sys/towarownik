@@ -332,6 +332,7 @@ private fun TowarownikApp() {
                         conversationId = turn.conversationId,
                         text = displayText,
                         finalResponseId = finalState.responseId,
+                        products = finalState.products,
                     )
                     if (
                         advisorRequestGuard.isCurrent(
@@ -912,6 +913,12 @@ private fun AdvisorMessageBubble(message: AdvisorChatMessage) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (!isUser) {
+            message.products.forEach { product ->
+                Spacer(modifier = Modifier.height(8.dp))
+                VerifiedProductCard(product)
+            }
+        }
     }
 }
 

@@ -156,6 +156,7 @@ class ManualSearchControllerTest {
 
         val exact = (states.last() as ManualSearchUiState.Product).item
         assertEquals(expectedUrl, exact.productUrl)
+        assertEquals(expectedUrl, verifiedProductOpenUrl(exact))
         assertEquals("1234567", exact.obik)
     }
 

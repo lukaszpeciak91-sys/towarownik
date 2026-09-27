@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   AGENT_INSTRUCTIONS,
+  FINAL_ANSWER_FORMAT,
   LOCAL_TOOL_NAME,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
@@ -35,14 +36,15 @@ function jsonRequest(path, body, options = {}) {
   });
 }
 
-function answerPayload(text = "Synthetic answer") {
+function answerPayload(text = "Synthetic answer", productObiks = []) {
+  const structured = JSON.stringify({ text, productObiks });
   return {
     id: "resp_test_answer",
-    output_text: text,
+    output_text: structured,
     output: [
       {
         type: "message",
-        content: [{ type: "output_text", text }],
+        content: [{ type: "output_text", text: structured }],
       },
     ],
   };
@@ -233,6 +235,7 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
     type: "answer",
     responseId: "resp_test_answer",
     text: "Use a verified local lookup.",
+    productObiks: [],
   });
   assert.equal(fake.captures.length, 1);
 
@@ -252,6 +255,9 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
   assert.equal(capture.body.max_output_tokens, OPENAI_MAX_OUTPUT_TOKENS);
   assert.equal(capture.body.parallel_tool_calls, false);
   assert.equal(capture.body.store, true);
+  assert.deepEqual(capture.body.text, { format: FINAL_ANSWER_FORMAT });
+  assert.equal(capture.body.text.format.type, "json_schema");
+  assert.equal(capture.body.text.format.strict, true);
   assert.equal(capture.body.tools.length, 1);
   assert.equal(capture.body.tools[0].type, "function");
   assert.equal(capture.body.tools[0].name, LOCAL_TOOL_NAME);
@@ -339,14 +345,18 @@ test("client cannot inject model tools instructions or reasoning", async () => {
   assert.equal(fake.captures.length, 0);
 });
 
-test("direct OpenAI answer is normalized and raw response is not forwarded", async () => {
+test("structured OpenAI answer is normalized and raw response is not forwarded", async () => {
+  const structured = JSON.stringify({
+    text: " concise answer ",
+    productObiks: ["1234567", "1234567", "7654321"],
+  });
   const fake = fakeOpenAI({
     id: "resp_direct",
-    output_text: " concise answer ",
+    output_text: structured,
     output: [
       {
         type: "message",
-        content: [{ type: "output_text", text: " concise answer " }],
+        content: [{ type: "output_text", text: structured }],
       },
       { type: "reasoning", summary: [{ text: "internal" }] },
     ],
@@ -366,9 +376,45 @@ test("direct OpenAI answer is normalized and raw response is not forwarded", asy
     type: "answer",
     responseId: "resp_direct",
     text: "concise answer",
+    productObiks: ["1234567", "7654321"],
   });
   assert.equal(JSON.stringify(body).includes("usage"), false);
   assert.equal(JSON.stringify(body).includes("internal"), false);
+});
+
+test("malformed structured final output fails closed", async () => {
+  const fake = fakeOpenAI({
+    id: "resp_bad_structured",
+    output_text: JSON.stringify({ text: "missing product selection" }),
+    output: [],
+  });
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", { message: "hello" }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
+});
+
+test("structured final output rejects more than five selected products", async () => {
+  const fake = fakeOpenAI(
+    answerPayload(
+      "Too many",
+      ["1000001", "1000002", "1000003", "1000004", "1000005", "1000006"],
+    ),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", { message: "hello" }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
 });
 
 test("valid known function call becomes normalized tool_request", async () => {
@@ -460,6 +506,7 @@ test("valid message chains previous response with server-controlled configuratio
   assert.equal(capture.body.reasoning.effort, "low");
   assert.equal(capture.body.tools.length, 1);
   assert.equal(capture.body.tools[0].name, LOCAL_TOOL_NAME);
+  assert.deepEqual(capture.body.text, { format: FINAL_ANSWER_FORMAT });
 });
 
 test("message rejects extra fields and oversized inputs", async () => {
@@ -530,6 +577,7 @@ test("valid continue sends previous_response_id and function_call_output", async
     type: "answer",
     responseId: "resp_test_answer",
     text: "Final synthetic answer",
+    productObiks: [],
   });
 
   const capture = fake.captures[0];
@@ -539,10 +587,31 @@ test("valid continue sends previous_response_id and function_call_output", async
   assert.deepEqual(capture.body.reasoning, { effort: "low" });
   assert.equal(capture.body.tools.length, 1);
   assert.equal(capture.body.tools[0].name, LOCAL_TOOL_NAME);
+  assert.deepEqual(capture.body.text, { format: FINAL_ANSWER_FORMAT });
   assert.equal(capture.body.input.length, 1);
   assert.equal(capture.body.input[0].type, "function_call_output");
   assert.equal(capture.body.input[0].call_id, "call_previous");
   assert.deepEqual(JSON.parse(capture.body.input[0].output), validContinueBody().result);
+});
+
+test("tool assisted structured answer exposes selected obiks only", async () => {
+  const fake = fakeOpenAI(
+    answerPayload("Use first and second.", ["1234567", "7654321"]),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", validContinueBody()),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await responseJson(response), {
+    type: "answer",
+    responseId: "resp_test_answer",
+    text: "Use first and second.",
+    productObiks: ["1234567", "7654321"],
+  });
 });
 
 test("continue can return another normalized local tool request", async () => {
