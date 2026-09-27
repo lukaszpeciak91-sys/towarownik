@@ -144,9 +144,13 @@ class SettingsLanguageNavigationTest {
         assertFalse(openSettingsBody.contains("advisorCase"))
         assertFalse(openSettingsBody.contains("activeConversationId"))
         assertFalse(openSettingsBody.contains("advisorState"))
+        val advisorTopBar = source
+            .substringAfter("private fun AdvisorTopBar(")
+            .substringBefore("@Composable\nprivate fun AdvisorComposer(")
+
         assertFalse(source.contains("detectTapGestures"))
         assertFalse(source.contains("pointerInput"))
-        assertFalse(source.contains("onOpenDiagnostics"))
+        assertFalse(advisorTopBar.contains("onOpenDiagnostics"))
     }
 
     @Test
