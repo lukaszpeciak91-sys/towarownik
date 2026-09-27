@@ -37,11 +37,11 @@ internal data class AdvisorTechnicalFact(
 internal data class AdvisorVerifiedProduct(
     val obik: String,
     val name: String,
-    val brand: String?,
-    val shortDescription: String?,
-    val technicalFacts: List<AdvisorTechnicalFact>,
     val stock: Int?,
     val price: BigDecimal?,
+    val brand: String? = null,
+    val shortDescription: String? = null,
+    val technicalFacts: List<AdvisorTechnicalFact> = emptyList(),
 )
 
 internal data class AdvisorVerifiedToolResult(
