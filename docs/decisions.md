@@ -236,3 +236,20 @@ These decisions describe the broader intended product behavior. The currently im
 - Existing launcher icon PNG assets and their technical filenames remain unchanged; no binary asset is modified.
 - The approved **Warm Modular Utility** visual system remains unchanged.
 - Google Play public title should be changed manually to **Taksula**; developer remains **Nepahu Studio**. The optional marketing line is **“Sojusznik doradcy”**.
+
+
+## OBI multi-store v0.1
+
+- Android owns one canonical static allowlist of confirmed OBI Poland three-digit market numbers. Default conversation store remains `075`; arbitrary syntactically valid numbers are rejected before OBI HTTP.
+- One conversation has one explicit selected/default store. The UI selector is the only action that mutates this persisted default; chat text does not mutate it, and alternate tool queries never change it.
+- A new unsaved conversation may hold a transient store choice without creating an empty Room row; the selected store is persisted with the first USER message.
+- Room schema advances v2→v3 by adding `conversations.storeNumber` and `message_products.storeNumber`, both defaulting historical rows to `075`. No destructive migration is allowed.
+- Verified snapshot identity is `(storeNumber, obik)`, not OBIK alone. Historical snapshots retain their original store even if the conversation selector changes later.
+- The advisor has one generic tool: `find_obi_products(query, storeNumber, limit)`. There are no per-store tools or repositories. Existing limits stay at five products per call and two local tool calls per USER turn.
+- Android captures an immutable turn-store snapshot and exact supported three-digit store tokens literally present in the current USER message. A tool store is authorized only when it equals the conversation store or is both allowlisted and literally present in that current message. Previous turns, city/region/store names, unsupported numbers, and digits embedded in longer numbers do not authorize it.
+- Rejected store tool calls fail closed before OBI and return bounded `store_not_authorized` continuation data; no silent fallback or fabricated empty result exists.
+- The proxy receives the selected conversation store on START/MESSAGE/CONTINUE, validates only exact three-digit syntax, and adds the current store as small dynamic instruction context without receiving the full allowlist.
+- Final structured output is `{text, productRefs:[{storeNumber,obik}]}`. Android resolves references only against current-turn verified snapshots; unknown references never trigger a lookup.
+- Product cards, reports, and persisted message products include the snapshot store. Current price/stock questions still require fresh verification.
+- Store `075` remains the deterministic regression baseline, including the manual live-contract probe. Search discovery remains store-independent; exact verification is store-aware.
+- Richer product facts, descriptions/specifications, OpenAI web research, final advisor persona/domain policy, token telemetry/compaction, other retailers, and location-based store selection remain separate future iterations.

@@ -1,10 +1,10 @@
 # Taksula
 
-Taksula is a small native Android utility for fast retail product lookup. The V0.1 flow uses one search field for a seven-digit OBIK, EAN/GTIN, or product name, then presents the selected product for OBI store 075.
+Taksula is a small native Android utility for fast retail product lookup. The current OBI flow uses one search field for a seven-digit OBIK, EAN/GTIN, or product name, with exact price/stock verification against the conversation-selected supported OBI Poland store.
 
 ## Project status
 
-The current phase is **Taksula branding rename v0.1**. The public-facing product name is now **Taksula** while the Android technical identity, repository, persistence contracts, proxy identifiers, signing continuity, and approved launcher icon remain unchanged.
+The current phase is **OBI multi-store v0.1**. Each conversation has one explicit supported OBI store (default `075`), exact verification is store-aware, and the advisor uses one generic `find_obi_products` tool with a hard Android authorization boundary.
 
 ## Technology
 
@@ -61,7 +61,7 @@ Normal pull-request CI never calls live OBI. It runs deterministic Python tests 
 
 The self-contained Cloudflare Worker project lives under `proxy/` and is an active part of the advisor architecture. `GET /health` remains public. The authenticated agent endpoints `POST /v1/agent/start`, `POST /v1/agent/message`, and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
 
-Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android executes the existing `ProductSearchRepository` + `ProductLookupRepository` flow, returns only compact verified product records, and remains capped at five products per tool call. The compact OpenAI tool payload remains exactly product OBIK, name, stock, and price; trusted product URLs and verification timestamps never leave Android. The human-only Wyszukiwarka OBI may parse at most 25 recognized candidates from the already downloaded search HTML and reveals them in chunks of five; this does not add or assume an OBI pagination endpoint. The final advisor persona, summarization/compaction, and strong user/device identity remain later milestones.
+Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. The advisor has exactly one generic local tool, `find_obi_products(query, storeNumber, limit)`, capped at five products per call and two local calls per USER turn. Android validates `storeNumber` against one canonical static allowlist before any OBI request. The compact OpenAI tool payload contains one store context plus only product OBIK, name, stock, and price; trusted product URLs and verification timestamps remain Android-local. The human-only Wyszukiwarka OBI still parses at most 25 recognized candidates from one search response and exact-verifies a selected candidate against the active conversation store. The final advisor persona, richer product facts, web research, summarization/compaction, and token telemetry remain later milestones.
 
 Proxy checks require Node.js 22:
 
@@ -92,7 +92,7 @@ Never commit keystores, signing credentials, APKs, or AABs.
 
 ## Scope boundaries
 
-The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search. Exact product facts still come only from the existing store-`075` lookup. The manual search surface may browse up to 25 recognized candidates from one OBI HTML response in five-item increments; the advisor/local tool remains independently capped at five. Exact results show product name, OBIK, local gross price, local stock, and the trusted `LocalProduct.productUrl` for external browser opening. The chat shell now persists conversations/messages locally and uses `previous_response_id` for normal follow-up turns. It still has no transcript replay fallback, compaction/summarization, generic tool framework, server-side OBI logic, streaming, analytics, or final assistant persona.
+The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search. Name/EAN discovery remains store-independent; every exact product verification uses the selected supported OBI store. New conversations default to `075`, while the explicit selector persists one store per conversation without creating an empty conversation row. Alternate stores requested by the advisor are temporary turn-local queries and never mutate the conversation default. The manual search surface may browse up to 25 recognized candidates from one OBI HTML response in five-item increments; the advisor/local tool remains independently capped at five. The app still has no location-based store inference, server-side OBI logic, OpenAI web search, streaming, analytics, or final assistant persona.
 
 ## Documentation
 
@@ -104,14 +104,14 @@ The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-n
 
 ## Local conversation persistence
 
-Room schema v2 stores local conversation metadata, rendered USER/ASSISTANT messages, and verified product snapshots attached to ASSISTANT messages:
+Room schema v3 stores local conversation metadata, rendered USER/ASSISTANT messages, and store-aware verified product snapshots attached to ASSISTANT messages:
 
-- conversation: id, title, createdAt, updatedAt, nullable lastResponseId, draft;
+- conversation: id, title, createdAt, updatedAt, nullable lastResponseId, draft, storeNumber;
 - message: id, conversationId, role, text, createdAt;
-- message product: messageId, position, OBIK, name, nullable stock, lossless decimal price text, trusted productUrl, verifiedAt;
+- message product: messageId, position, storeNumber, OBIK, name, nullable stock, lossless decimal price text, trusted productUrl, verifiedAt;
 - message rows cascade with conversation deletion; product snapshots cascade with their message.
 
-Schema v1 upgrades through an explicit 1→2 migration that creates the message-product table and index; there is no destructive fallback.
+Schema v1 upgrades through the existing 1→2 migration and then an explicit 2→3 migration. The 2→3 step adds `Conversation.storeNumber` and `message_products.storeNumber` with deterministic default `075` for historical rows; there is no destructive fallback.
 
 No API keys, app bearer tokens, OBI HTML/cookies, parser internals, raw OpenAI responses, or reasoning data are persisted.
 
@@ -133,19 +133,35 @@ Each history row also exposes **Usuń rozmowę** with explicit confirmation. Del
 
 ## Advisor verified product cards
 
-Final model answers use a strict structured shape:
+Final model answers use a strict store-aware structured shape:
 
 ```json
 {
   "text": "Krótka odpowiedź dla użytkownika.",
-  "productObiks": ["1234567", "7654321"]
+  "productRefs": [
+    {"storeNumber": "074", "obik": "3496072"},
+    {"storeNumber": "075", "obik": "3496072"}
+  ]
 }
 ```
 
-`productObiks` is only a selection/order hint. During one USER turn Android retains successful exact store-075 `LocalProduct` snapshots from the local tool, combines up to two tool calls by OBIK with the latest exact lookup winning, and resolves final OBIKs only against that current-turn local set. Unknown model OBIKs are ignored and never trigger a lookup.
+`productRefs` is only a selection/order hint. During one USER turn Android retains successful exact `LocalProduct` snapshots keyed by `(storeNumber, obik)`, so the same OBIK in two stores remains two distinct verified facts. Android resolves final references only against snapshots verified during that current USER turn. Unknown model references are ignored and never trigger a lookup.
 
-Card name, OBIK, stock, gross price, URL, and verification time all come from the retained local snapshot. OpenAI never supplies or overrides card facts, never receives `productUrl` or `verifiedAt`, and never receives OBI HTML, Nuxt data, cookies, diagnostics, or parser internals. The selected snapshots are committed atomically with the ASSISTANT message and final response ID, then displayed as historical point-in-time facts with a “Sprawdzono …” timestamp. Reopening history does not refresh them.
+Card name, store number, OBIK, stock, gross price, URL, and verification time all come from the retained local snapshot. OpenAI never supplies or overrides card facts, never receives `productUrl` or `verifiedAt`, and never receives OBI HTML, Nuxt data, cookies, diagnostics, or parser internals. The selected snapshots are committed atomically with the ASSISTANT message and final response ID, then displayed as historical point-in-time facts with a “Sprawdzono …” timestamp. Reopening history does not refresh them.
 
+
+
+
+## OBI multi-store
+
+- One canonical Android allowlist contains only confirmed OBI Poland three-digit store numbers; the default remains `075`.
+- The app never generates arbitrary store numbers and never scrapes the store catalog at runtime.
+- The conversation selector is the only source that mutates the persisted conversation default store. A transient selection on an unsaved new conversation is persisted only when the first USER message creates the conversation.
+- At the start of each USER turn Android captures an immutable conversation-store snapshot plus supported exact three-digit store tokens literally present in that current USER message.
+- A requested tool store is authorized only when it equals the conversation store or is both allowlisted and literally present in the current USER message. Prior turns, city/store names, regions, and embedded longer numbers do not authorize a store.
+- Unauthorized/unsupported tool calls fail closed before OBI and are returned to the advisor as bounded `store_not_authorized` continuation data; there is no fallback/substitution to `075`.
+- `/start`, `/message`, and `/continue` all carry the immutable conversation-store context. The Worker validates only exact three-digit shape; Android owns allowlist membership.
+- Store `075` remains the deterministic regression baseline and manual live-contract probe default.
 
 ## Android localization
 
