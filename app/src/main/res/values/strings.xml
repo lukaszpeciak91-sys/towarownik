@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Towarownik</string>
 
-    <string name="new_conversation">+ Nowa rozmowa</string>
+    <string name="new_conversation">Nowa rozmowa</string>
     <string name="search_conversations">Przeszukaj rozmowy…</string>
     <string name="no_saved_conversations">Brak zapisanych rozmów.</string>
     <string name="no_matching_conversations">Brak rozmów zawierających tę frazę.</string>

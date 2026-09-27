@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Towarownik</string>
 
-    <string name="new_conversation">+ New conversation</string>
+    <string name="new_conversation">New conversation</string>
     <string name="search_conversations">Search conversations…</string>
     <string name="no_saved_conversations">No saved conversations.</string>
     <string name="no_matching_conversations">No conversations contain this phrase.</string>

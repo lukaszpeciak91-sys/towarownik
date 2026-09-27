@@ -2,18 +2,27 @@ package pl.lukaszpeciak.towarownik
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import java.math.BigDecimal
@@ -21,6 +30,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
 internal data class VerifiedProductUiModel(
     val name: String,
@@ -99,32 +109,68 @@ internal fun VerifiedProductCard(
     product: VerifiedProductUiModel,
 ) {
     val context = LocalContext.current
+    val warmColors = MaterialTheme.towarownikColors
+    val accentColor = MaterialTheme.colorScheme.primary
+    val stockColor = when {
+        product.stock == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        product.stock == 0 -> MaterialTheme.colorScheme.error
+        else -> warmColors.success
+    }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        tonalElevation = 2.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    color = accentColor,
+                    size = Size(3.dp.toPx(), size.height),
+                )
+            },
+        shape = RoundedCornerShape(18.dp),
+        color = warmColors.surfaceRaised,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline,
+        ),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(
+                start = 18.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = product.name,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
             )
             Text(
                 text = stringResource(R.string.product_obik, product.obik),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(
+                    alpha = 0.65f,
+                ),
+            )
+
             Text(
                 text = formatStore075Price(product.grossPrice),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
             )
             Text(
                 text = formatStore075Stock(product.stock),
                 style = MaterialTheme.typography.bodyLarge,
+                color = stockColor,
             )
+
             product.verifiedAt?.let { verifiedAt ->
                 Text(
                     text = formatVerifiedProductTimestamp(verifiedAt),
@@ -132,6 +178,7 @@ internal fun VerifiedProductCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+
             OutlinedButton(
                 onClick = {
                     runCatching {
@@ -144,13 +191,25 @@ internal fun VerifiedProductCard(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline,
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
             ) {
                 Text(stringResource(R.string.open_in_obi))
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_open_in_new_24),
+                    contentDescription = null,
+                )
             }
         }
     }
 }
-
 
 private val VERIFIED_AT_FORMATTER =
     DateTimeFormatter.ofPattern("dd.MM, HH:mm")

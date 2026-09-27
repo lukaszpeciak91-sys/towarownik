@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,16 +32,22 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,9 +66,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -82,6 +91,7 @@ import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.ui.theme.TowarownikTheme
+import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -517,23 +527,46 @@ private fun ConversationDrawer(
     var pendingDelete by remember {
         mutableStateOf<ConversationSummary?>(null)
     }
+    val warmColors = MaterialTheme.towarownikColors
 
-    ModalDrawerSheet {
+    ModalDrawerSheet(
+        drawerContainerColor = MaterialTheme.colorScheme.surface,
+        drawerContentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge,
             )
 
-            Button(
+            OutlinedButton(
                 onClick = onNewConversation,
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.72f),
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = warmColors.surfaceRaised,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
+                contentPadding = PaddingValues(
+                    horizontal = 14.dp,
+                    vertical = 10.dp,
+                ),
             ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_add_24),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(stringResource(R.string.new_conversation))
             }
 
@@ -542,7 +575,24 @@ private fun ConversationDrawer(
                 onValueChange = onQueryChange,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
                 label = { Text(stringResource(R.string.search_conversations)) },
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_search_24),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = warmColors.surfaceRaised,
+                    unfocusedContainerColor = warmColors.surfaceRaised,
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                ),
             )
 
             if (conversations.isEmpty()) {
@@ -560,7 +610,7 @@ private fun ConversationDrawer(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     items(
                         items = conversations,
@@ -579,10 +629,21 @@ private fun ConversationDrawer(
                                     onOpenConversation(conversation.id)
                                 },
                                 modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                                border = null,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = warmColors.surfaceRaised,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                ),
+                                contentPadding = PaddingValues(
+                                    horizontal = 12.dp,
+                                    vertical = 10.dp,
+                                ),
                             ) {
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalAlignment = Alignment.Start,
+                                    verticalArrangement = Arrangement.spacedBy(3.dp),
                                 ) {
                                     Text(
                                         text = conversation.title,
@@ -599,26 +660,44 @@ private fun ConversationDrawer(
                             }
 
                             Box {
-                                val conversationOptionsDescription =
-                                    stringResource(R.string.cd_conversation_options)
                                 IconButton(
                                     onClick = {
                                         menuExpanded = true
                                     },
-                                    modifier = Modifier.semantics {
-                                        contentDescription = conversationOptionsDescription
-                                    },
                                 ) {
-                                    Text("⋮")
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_more_vert_24),
+                                        contentDescription = stringResource(
+                                            R.string.cd_conversation_options,
+                                        ),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                                 DropdownMenu(
                                     expanded = menuExpanded,
                                     onDismissRequest = {
                                         menuExpanded = false
                                     },
+                                    containerColor = warmColors.surfaceRaised,
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.delete_conversation)) },
+                                        text = {
+                                            Text(
+                                                text = stringResource(
+                                                    R.string.delete_conversation,
+                                                ),
+                                                color = MaterialTheme.colorScheme.error,
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                painter = painterResource(
+                                                    R.drawable.ic_delete_24,
+                                                ),
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error,
+                                            )
+                                        },
                                         onClick = {
                                             menuExpanded = false
                                             pendingDelete = conversation
@@ -639,6 +718,9 @@ private fun ConversationDrawer(
             onDismissRequest = {
                 pendingDelete = null
             },
+            containerColor = warmColors.surfaceRaised,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = {
                 Text(stringResource(R.string.delete_conversation_confirm))
             },
@@ -648,6 +730,9 @@ private fun ConversationDrawer(
                         pendingDelete = null
                         onDeleteConversation(conversationToDelete.id)
                     },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
                 ) {
                     Text(stringResource(R.string.delete))
                 }
@@ -680,6 +765,7 @@ private fun AdvisorChatScreen(
     val composerEnabled = isAdvisorComposerEnabled(state)
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             AdvisorTopBar(
                 onOpenDrawer = onOpenDrawer,
@@ -755,68 +841,71 @@ private fun AdvisorTopBar(
     onOpenSearch: () -> Unit,
     onOpenDiagnostics: () -> Unit,
 ) {
-    val openNavigationDescription = stringResource(R.string.cd_open_navigation)
-    val newConversationDescription = stringResource(R.string.cd_new_conversation)
-    val openSearchDescription = stringResource(R.string.cd_open_obi_search)
-
-    Surface(shadowElevation = 2.dp) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp),
-        ) {
-            IconButton(
-                onClick = onOpenDrawer,
+    Surface(
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+    ) {
+        Column {
+            Box(
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .semantics {
-                        contentDescription = openNavigationDescription
-                    },
+                    .fillMaxWidth()
+                    .height(60.dp),
             ) {
+                IconButton(
+                    onClick = onOpenDrawer,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_menu_24),
+                        contentDescription = stringResource(
+                            R.string.cd_open_navigation,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
                 Text(
-                    text = "☰",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = stringResource(R.string.app_name),
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .pointerInput(onOpenDiagnostics) {
+                            detectTapGestures(
+                                onLongPress = { onOpenDiagnostics() },
+                            )
+                        },
+                    style = MaterialTheme.typography.titleMedium,
                 )
-            }
 
-            Text(
-                text = stringResource(R.string.app_name),
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .pointerInput(onOpenDiagnostics) {
-                        detectTapGestures(
-                            onLongPress = { onOpenDiagnostics() },
+                Row(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                ) {
+                    IconButton(
+                        onClick = onNewCase,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_add_24),
+                            contentDescription = stringResource(
+                                R.string.cd_new_conversation,
+                            ),
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
-                    },
-                style = MaterialTheme.typography.titleLarge,
-            )
-
-            Row(
-                modifier = Modifier.align(Alignment.CenterEnd),
-            ) {
-                IconButton(
-                    onClick = onNewCase,
-                    modifier = Modifier.semantics {
-                        contentDescription = newConversationDescription
-                    },
-                ) {
-                    Text(
-                        text = "+",
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                }
-                IconButton(
-                    onClick = onOpenSearch,
-                    modifier = Modifier.semantics {
-                        contentDescription = openSearchDescription
-                    },
-                ) {
-                    Text(
-                        text = "🔍",
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
+                    }
+                    IconButton(
+                        onClick = onOpenSearch,
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_search_24),
+                            contentDescription = stringResource(
+                                R.string.cd_open_obi_search,
+                            ),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
             }
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+            )
         }
     }
 }
@@ -828,19 +917,21 @@ private fun AdvisorComposer(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
-    val sendDescription = stringResource(R.string.cd_send_message)
+    val warmColors = MaterialTheme.towarownikColors
 
-    Surface(shadowElevation = 4.dp) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding(),
-            contentAlignment = Alignment.Center,
-        ) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 720.dp)
+                    .imePadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Bottom,
@@ -852,9 +943,26 @@ private fun AdvisorComposer(
                     enabled = enabled,
                     minLines = 1,
                     maxLines = 4,
+                    shape = RoundedCornerShape(18.dp),
                     placeholder = {
-                        Text(stringResource(R.string.advisor_composer_placeholder))
+                        Text(
+                            text = stringResource(
+                                R.string.advisor_composer_placeholder,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = warmColors.surfaceRaised,
+                        unfocusedContainerColor = warmColors.surfaceRaised,
+                        disabledContainerColor = warmColors.surfaceRaised,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline.copy(
+                            alpha = 0.55f,
+                        ),
+                        cursorColor = MaterialTheme.colorScheme.primary,
+                    ),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Send,
@@ -868,16 +976,25 @@ private fun AdvisorComposer(
                     ),
                 )
 
-                IconButton(
+                FilledIconButton(
                     onClick = onSend,
                     enabled = enabled && value.isNotBlank(),
-                    modifier = Modifier.semantics {
-                        contentDescription = sendDescription
-                    },
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        disabledContainerColor = MaterialTheme.colorScheme.outline.copy(
+                            alpha = 0.45f,
+                        ),
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
                 ) {
-                    Text(
-                        text = "➤",
-                        style = MaterialTheme.typography.titleLarge,
+                    Icon(
+                        painter = painterResource(R.drawable.ic_send_24),
+                        contentDescription = stringResource(
+                            R.string.cd_send_message,
+                        ),
+                        modifier = Modifier.size(22.dp),
                     )
                 }
             }
@@ -890,13 +1007,22 @@ private fun EmptyAdvisorState() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 48.dp),
+            .padding(top = 72.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
             text = stringResource(R.string.advisor_title),
             style = MaterialTheme.typography.headlineSmall,
+        )
+        Box(
+            modifier = Modifier
+                .width(36.dp)
+                .height(2.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(2.dp),
+                ),
         )
         Text(
             text = stringResource(R.string.advisor_empty_body),
@@ -910,6 +1036,7 @@ private fun EmptyAdvisorState() {
 @Composable
 private fun AdvisorMessageBubble(message: AdvisorChatMessage) {
     val isUser = message.role == ChatMessageRole.USER
+    val warmColors = MaterialTheme.towarownikColors
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -920,11 +1047,21 @@ private fun AdvisorMessageBubble(message: AdvisorChatMessage) {
         },
     ) {
         Surface(
+            modifier = Modifier.widthIn(max = 600.dp),
             shape = RoundedCornerShape(18.dp),
             color = if (isUser) {
-                MaterialTheme.colorScheme.primaryContainer
+                warmColors.surfaceHighlight
             } else {
-                MaterialTheme.colorScheme.surfaceVariant
+                warmColors.surfaceRaised
+            },
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = if (isUser) {
+                BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.65f),
+                )
+            } else {
+                null
             },
         ) {
             Text(
@@ -940,7 +1077,7 @@ private fun AdvisorMessageBubble(message: AdvisorChatMessage) {
             text = formatLocalTime(message.createdAt),
             modifier = Modifier.padding(
                 horizontal = 6.dp,
-                vertical = 2.dp,
+                vertical = 3.dp,
             ),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -956,24 +1093,34 @@ private fun AdvisorMessageBubble(message: AdvisorChatMessage) {
 
 @Composable
 private fun AdvisorProgressBubble(text: String) {
+    val warmColors = MaterialTheme.towarownikColors
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start,
     ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = warmColors.surfaceRaised,
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
             Row(
                 modifier = Modifier.padding(
                     horizontal = 14.dp,
-                    vertical = 10.dp,
+                    vertical = 9.dp,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CircularProgressIndicator()
-                Text(text)
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
@@ -981,9 +1128,16 @@ private fun AdvisorProgressBubble(text: String) {
 
 @Composable
 private fun AdvisorErrorBubble(message: String) {
+    val warmColors = MaterialTheme.towarownikColors
+
     Surface(
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.errorContainer,
+        color = warmColors.errorMuted,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.error.copy(alpha = 0.45f),
+        ),
     ) {
         Text(
             text = message,
@@ -991,7 +1145,8 @@ private fun AdvisorErrorBubble(message: String) {
                 horizontal = 14.dp,
                 vertical = 10.dp,
             ),
-            color = MaterialTheme.colorScheme.onErrorContainer,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyMedium,
         )
     }
 }
@@ -1008,8 +1163,10 @@ private fun ManualObiSearchScreen(
     onBack: () -> Unit,
 ) {
     val isLoading = state is ManualSearchUiState.Loading
+    val warmColors = MaterialTheme.towarownikColors
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             ManualSearchTopBar(onBack = onBack)
         },
@@ -1035,8 +1192,27 @@ private fun ManualObiSearchScreen(
                     value = query,
                     onValueChange = onQueryChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.manual_search_input_label)) },
+                    label = {
+                        Text(stringResource(R.string.manual_search_input_label))
+                    },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_search_24),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    },
                     singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = warmColors.surfaceRaised,
+                        unfocusedContainerColor = warmColors.surfaceRaised,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        focusedLabelColor = MaterialTheme.colorScheme.primary,
+                        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        cursorColor = MaterialTheme.colorScheme.primary,
+                    ),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Search,
@@ -1048,16 +1224,16 @@ private fun ManualObiSearchScreen(
                     ),
                     trailingIcon = if (query.isNotEmpty()) {
                         {
-                            val clearDescription = stringResource(R.string.cd_clear_search)
                             IconButton(
                                 onClick = onClear,
-                                modifier = Modifier.semantics {
-                                    contentDescription = clearDescription
-                                },
                             ) {
-                                Text(
-                                    text = "×",
-                                    style = MaterialTheme.typography.titleLarge,
+                                Icon(
+                                    painter = painterResource(
+                                        R.drawable.ic_close_24,
+                                    ),
+                                    contentDescription = stringResource(
+                                        R.string.cd_clear_search,
+                                    ),
                                 )
                             }
                         }
@@ -1070,7 +1246,18 @@ private fun ManualObiSearchScreen(
                     onClick = onSearch,
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !isLoading,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
                 ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_search_24),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(R.string.search))
                 }
 
@@ -1104,31 +1291,33 @@ private fun ManualObiSearchScreen(
 private fun ManualSearchTopBar(
     onBack: () -> Unit,
 ) {
-    val backDescription = stringResource(R.string.cd_back)
-
-    Surface(shadowElevation = 2.dp) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp),
-        ) {
-            IconButton(
-                onClick = onBack,
+    Surface(
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+    ) {
+        Column {
+            Box(
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .semantics {
-                        contentDescription = backDescription
-                    },
+                    .fillMaxWidth()
+                    .height(60.dp),
             ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_arrow_back_24),
+                        contentDescription = stringResource(R.string.cd_back),
+                    )
+                }
                 Text(
-                    text = "←",
-                    style = MaterialTheme.typography.headlineSmall,
+                    text = stringResource(R.string.manual_search_title),
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.titleMedium,
                 )
             }
-            Text(
-                text = stringResource(R.string.manual_search_title),
-                modifier = Modifier.align(Alignment.Center),
-                style = MaterialTheme.typography.titleLarge,
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
             )
         }
     }
@@ -1136,12 +1325,30 @@ private fun ManualSearchTopBar(
 
 @Composable
 private fun ManualSearchProgress() {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val warmColors = MaterialTheme.towarownikColors
+
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = warmColors.surfaceRaised,
     ) {
-        CircularProgressIndicator()
-        Text(stringResource(R.string.manual_search_progress))
+        Row(
+            modifier = Modifier.padding(
+                horizontal = 14.dp,
+                vertical = 9.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 2.dp,
+            )
+            Text(
+                text = stringResource(R.string.manual_search_progress),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 
@@ -1151,15 +1358,23 @@ private fun ManualSearchResults(
     onSelectResult: (ManualSearchResultItem) -> Unit,
     onShowMore: () -> Unit,
 ) {
+    val warmColors = MaterialTheme.towarownikColors
+
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = stringResource(R.string.manual_search_results_range, state.visibleItems.size),
+            text = stringResource(
+                R.string.manual_search_results_range,
+                state.visibleItems.size,
+            ),
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
-            text = stringResource(R.string.manual_search_reported_total, state.reportedTotalCount),
+            text = stringResource(
+                R.string.manual_search_reported_total,
+                state.reportedTotalCount,
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1168,20 +1383,35 @@ private fun ManualSearchResults(
             OutlinedButton(
                 onClick = { onSelectResult(item) },
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline,
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = warmColors.surfaceRaised,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                contentPadding = PaddingValues(
+                    horizontal = 14.dp,
+                    vertical = 12.dp,
+                ),
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.Start,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     item.name?.let { name ->
                         Text(
                             text = name,
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.titleMedium,
                         )
                     }
                     Text(
                         text = stringResource(R.string.product_obik, item.obik),
                         style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -1191,6 +1421,14 @@ private fun ManualSearchResults(
             OutlinedButton(
                 onClick = onShowMore,
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline,
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
             ) {
                 Text(stringResource(R.string.show_more))
             }
@@ -1200,11 +1438,23 @@ private fun ManualSearchResults(
 
 @Composable
 private fun ErrorText(message: String) {
-    Text(
-        text = message,
-        color = MaterialTheme.colorScheme.error,
-        style = MaterialTheme.typography.bodyLarge,
-    )
+    val warmColors = MaterialTheme.towarownikColors
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = warmColors.errorMuted,
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.error.copy(alpha = 0.45f),
+        ),
+    ) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(12.dp),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 }
 
 private fun formatHistoryTimestamp(updatedAt: Long): String =

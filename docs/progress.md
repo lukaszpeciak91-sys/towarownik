@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Android localization foundation PL/EN v0.1**
+**Warm Modular Utility visual system v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. The current iteration prepares the Android UI for Polish/English localization without changing product or advisor behavior.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. The localization foundation is complete. The current iteration applies the approved dark “Warm Modular Utility” visual identity without changing product, advisor, navigation, persistence, or OBI behavior.
 
 Implemented direction:
 
@@ -40,7 +40,13 @@ Implemented direction:
 - Compose resolves user-visible chrome through Android string resources and formatted placeholders;
 - advisor/search errors use stable language-neutral enum state and are translated only in UI;
 - saved manual-search errors no longer persist rendered language-dependent sentences;
-- Android continues to choose resources from the current system/app locale; no in-app selector exists yet.
+- Android continues to choose resources from the current system/app locale; no in-app selector exists yet;
+- production UI uses the approved warm dark palette and centralized semantic Compose colors;
+- automatic Material light/dark switching and dynamic-color-style defaults are replaced by the approved dark-first scheme;
+- top bars, conversation drawer, chat bubbles, persistent composer, progress/error states, verified product card, and manual OBI search share one visual hierarchy;
+- strong amber is reserved for primary/verified/active emphasis rather than ordinary buttons and cards;
+- character/emoji action controls are replaced by local vector drawable icons with accessible descriptions;
+- no launcher PNG or other binary asset is created or modified by the visual-system work.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
@@ -48,7 +54,7 @@ Android test version: **0.1.8 (9)**.
 
 ## Next implementation milestone
 
-Add the Settings surface and expose explicit **Polski / English** language selection using the localization foundation from this iteration.
+Add the Settings surface and expose explicit **Polski / English** language selection using the existing localization foundation, without weakening the dark visual-system boundary.
 
 The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 
