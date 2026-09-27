@@ -34,6 +34,22 @@ Request:
 
 The message is trimmed/whitespace-normalized and bounded. Model, instructions, tools, reasoning effort, output budget, and OpenAI URL are server-controlled.
 
+### Authenticated AI message
+
+```text
+POST /v1/agent/message
+Authorization: Bearer <app token>
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{"previousResponseId":"...","message":"..."}
+```
+
+This endpoint handles a new USER turn in an existing customer conversation. It passes the stored prior final response as `previous_response_id` and sends only the new normalized user message. Model, instructions, tool definition, reasoning effort, and output budget remain server-controlled.
+
 ### Authenticated AI continue
 
 ```text
@@ -107,11 +123,11 @@ Android remains authoritative for:
 
 When OpenAI requests `find_available_obi_075`, Android uses its existing OBI repositories and returns only a compact verified result containing the query and up to five products. OBI HTML, Nuxt payloads, cookies, and parser internals are never accepted as the tool result or forwarded to OpenAI.
 
-The Worker stores no conversation state in Cloudflare storage. Continuation uses the OpenAI response identifier supplied by the previous normalized result.
+The Worker stores no conversation state in Cloudflare storage. Android persists only the final answer response ID for a conversation. New USER turns call `/v1/agent/message`; tool outputs inside that turn continue through `/v1/agent/continue`. Using `previous_response_id` avoids manually replaying the local transcript, but earlier chain input tokens remain billable.
 
 ## Limits and failure mapping
 
-The start request body is bounded to 4 KiB and the normalized message to 2,000 characters. The continue request body is bounded to 16 KiB, product count to 5, tool query/product-name strings to 200 characters, and OBIK to exactly seven digits.
+The start and message request bodies are bounded to 4 KiB and each normalized user message to 2,000 characters. Message continuation also bounds the previous response ID. The continue request body is bounded to 16 KiB, product count to 5, tool query/product-name strings to 200 characters, and OBIK to exactly seven digits.
 
 Client validation failures return bounded `400` or `413` JSON. Authentication failures return `401`. Missing Worker configuration returns `503`. OpenAI transport, non-success status, unknown tool output, or malformed OpenAI JSON returns bounded `502`. Raw upstream response bodies are not exposed and the Worker adds no application retry.
 
@@ -138,3 +154,8 @@ Worker name: towarownik-proxy
 ```
 
 `wrangler.jsonc` requires no paid Cloudflare service binding. Deployment remains Cloudflare-managed; GitHub Actions only validates the proxy.
+
+
+## Current OBI-fact freshness rule
+
+Conversation history may mention older stock or price values. The server-controlled advisor instructions require a new `find_available_obi_075` call whenever the current user question depends on current store-`075` availability, stock, price, or choosing currently available products. Historical facts are not current authority. Stock `0` means unavailable; null stock or null price means unknown.

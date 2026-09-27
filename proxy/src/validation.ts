@@ -1,6 +1,7 @@
 import {
   CONTINUE_BODY_MAX_BYTES,
   MAX_CALL_ID_CHARS,
+  MESSAGE_BODY_MAX_BYTES,
   MAX_PRODUCT_NAME_CHARS,
   MAX_RESPONSE_ID_CHARS,
   MAX_TOOL_PRODUCTS,
@@ -52,6 +53,37 @@ export async function parseStartRequest(request: Request): Promise<string> {
   }
 
   return message;
+}
+
+export async function parseMessageRequest(
+  request: Request,
+): Promise<{
+  previousResponseId: string;
+  message: string;
+}> {
+  const value = await readJsonBody(request, MESSAGE_BODY_MAX_BYTES);
+  const object = exactObject(value, ["previousResponseId", "message"]);
+
+  const previousResponseId = boundedString(
+    object.previousResponseId,
+    MAX_RESPONSE_ID_CHARS,
+  );
+  if (typeof object.message !== "string") {
+    throw new InvalidRequestError();
+  }
+
+  const message = normalizeWhitespace(object.message);
+  if (!message) {
+    throw new InvalidRequestError();
+  }
+  if (message.length > START_MESSAGE_MAX_CHARS) {
+    throw new RequestTooLargeError();
+  }
+
+  return {
+    previousResponseId,
+    message,
+  };
 }
 
 export async function parseContinueRequest(

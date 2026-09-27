@@ -44,6 +44,41 @@ class AdvisorProxyClientTest {
     }
 
     @Test
+    fun `message sends previous response id and only new user message`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(answerResponse())
+            val client = client(server, FAKE_TOKEN)
+
+            val result = client.message(
+                previousResponseId = "resp_previous",
+                message = "A coś tańszego?",
+            )
+
+            assertTrue(result is AdvisorProxyCallResult.Success)
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/v1/agent/message", request.path)
+            assertEquals("Bearer $FAKE_TOKEN", request.getHeader("Authorization"))
+
+            val raw = request.body.readUtf8()
+            val body = Json.parseToJsonElement(raw).jsonObject
+            assertEquals(
+                setOf("previousResponseId", "message"),
+                body.keys,
+            )
+            assertEquals(
+                "resp_previous",
+                body["previousResponseId"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                "A coś tańszego?",
+                body["message"]?.jsonPrimitive?.content,
+            )
+            assertFalse(raw.contains(FAKE_TOKEN))
+        }
+    }
+
+    @Test
     fun `answer response parses to normalized answer`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(answerResponse())

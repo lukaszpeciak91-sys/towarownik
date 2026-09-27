@@ -2,46 +2,52 @@
 
 ## Current phase
 
-**Chat-style shell + manual OBI search v0.2**
+**Persistent advisor conversations + lifecycle polish v0.3.1**
 
-PR #16 completed the first Android advisor end-to-end integration. This iteration replaces the temporary WYSZUKIWARKA/DORADCA validation selector with the first production-shaped Towarownik shell.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 now combines real local conversation state and Responses continuation with the agreed conversation lifecycle polish.
 
-The default surface is now DORADCA in a chat-style layout:
+Implemented direction:
 
-- hamburger opens a modal left drawer;
-- centered Towarownik title retains the long-press diagnostics entry;
-- “+” starts a fresh case;
-- the top-right search action opens the independent full-screen Wyszukiwarka OBI;
-- submitted user text and the normalized one-shot advisor reply render as timestamped chat messages;
-- progress and errors appear in the conversation surface;
-- no persistent history or fake conversations are created.
+- Room schema v1 for conversations/messages;
+- real drawer history sorted newest-updated first;
+- fully local phrase search across title plus USER/ASSISTANT text;
+- first USER send creates the conversation and local bounded title;
+- completed messages, timestamps, drafts, and final response ID survive database recreation;
+- recent useful conversation restores on app restart where practical;
+- composer re-enables after a completed answer for real follow-up turns;
+- first turn uses `/v1/agent/start`;
+- follow-up turns use authenticated `/v1/agent/message` with the stored final `lastResponseId`;
+- tool responses still use `/v1/agent/continue`;
+- only the final answer response ID replaces the persisted conversation context;
+- local tool allowance is two calls per USER turn and resets on every new USER message;
+- interrupted USER-only tails recover to editable draft without automatic resend;
+- switching/new conversation cancels active work and stale callbacks are rejected;
+- current OBI facts continue to be refreshed through the existing Android local tool;
+- conversations are treated as individual customer cases, with “Nowa rozmowa” recommended for a new customer/problem;
+- startup-only local retention removes conversations strictly older than 30 days by `updatedAt`;
+- the exact 30-day cutoff remains retained and message rows cascade on deletion;
+- each history row can be deleted manually after explicit confirmation;
+- deleting the active conversation cancels its request, invalidates stale callbacks, and opens a fresh empty chat.
 
-The drawer contains “Nowa rozmowa”, a local “Przeszukaj rozmowy...” field, and an honest empty history area ready for the later persistence iteration without committing to a database now.
+No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
-Direct manual OBI search remains local and independent from proxy/OpenAI. OBIK and EAN verification behavior is preserved. Text search now has a separate bounded human-browsing capacity: the parser may expose at most **25** recognized candidate links from the current OBI HTML while preserving OBI's reported total count. The UI initially shows five candidates and reveals additional parsed candidates in chunks of five. No OBI pagination HTTP contract is added, and “Pokaż więcej” disappears when the locally parsed candidate list is exhausted even if OBI reports a larger total.
-
-The advisor/local tool remains capped at **5** products. Candidate selection still runs the existing exact store-`075` lookup. Exact product presentation now includes name, OBIK, local gross price, local stock, and “Otwórz w OBI” using the canonical/trusted `LocalProduct.productUrl`.
-
-Advisor draft/messages, manual-search query/completed result state, and selected top-level surface are preserved across rotation where practical using Compose saved state. Phone landscape keeps bounded content widths and the conversation drawer remains modal.
+Android test version: **0.1.7 (8)**.
 
 ## Next implementation milestone
 
-**Persistent conversation history and real multi-turn context**
+**Advisor product cards / verified product snapshots**
 
-The next dedicated iteration may connect the prepared drawer/message model to persisted conversations, conversation search, and controlled multi-turn OpenAI continuation. That work should define retention/resume rules explicitly rather than being hidden inside this shell PR.
+Keep the reusable Android `VerifiedProductCard` boundary and add structured advisor product presentation without making model-generated URLs/facts authoritative.
 
-The final advisor persona/prompt remains a separate product iteration.
+The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 
 ## Not started
 
-- Persistent conversation history
-- Room/database
-- Today/yesterday grouping
-- Conversation search index/backend
-- Real multi-turn user conversation
-- Resume after app restart
-- Context summarization
-- Final "Justyna" advisor persona/prompt
+- Final advisor persona/prompt
+- Advisor structured product-card proxy output
+- Locally persisted verified product snapshots
+- Context summarization/compaction
+- Explicit continue-as-new-context fallback
 - Strong per-device/user identity
 - General chat
 - Additional agent tools

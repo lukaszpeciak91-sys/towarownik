@@ -57,7 +57,7 @@ compact result returned to AI
 
 OpenAI must receive only compact structured results produced by the app. OBI HTML, Nuxt payloads, cookies, and parser internals must not be forwarded to OpenAI or moved into the proxy.
 
-The proxy now exposes a public `GET /health` plus authenticated `POST /v1/agent/start` and `POST /v1/agent/continue`. The AI endpoints require the shared Internal-Testing `TOWAROWNIK_APP_TOKEN`; the OpenAI credential remains Worker-only as `OPENAI_API_KEY`.
+The proxy now exposes a public `GET /health` plus authenticated `POST /v1/agent/start`, `POST /v1/agent/message`, and `POST /v1/agent/continue`. The AI endpoints require the shared Internal-Testing `TOWAROWNIK_APP_TOKEN`; the OpenAI credential remains Worker-only as `OPENAI_API_KEY`.
 
 The Worker calls the OpenAI Responses API with a centralized `gpt-5.6-luna` configuration, low reasoning effort, concise temporary developer instructions, a bounded output budget, and exactly one strict application-defined function: `find_available_obi_075(query, limit)`. No OpenAI built-in tools are enabled.
 
@@ -65,7 +65,37 @@ When the model returns that function call, the Worker validates the tool name an
 
 The proxy normalizes OpenAI output to either `answer` or `tool_request`. Raw Responses payloads, reasoning items, token/usage metadata, internal instructions, and upstream error bodies do not cross into Android.
 
-On Android, `AdvisorProxyClient` is the isolated authenticated transport boundary. `AdvisorController` owns one stateless customer case and may execute at most two local tool calls before terminating with a bounded error. It never automatically retries a completed proxy request. `FindAvailableObi075Tool` is the only Android tool adapter; there is no generic agent/plugin framework. Leaving an active advisor flow cancels its coroutine/OkHttp call where practical. Separate customer cases never reuse prior response/call IDs.
+On Android, `AdvisorProxyClient` is the isolated authenticated transport boundary. `AdvisorController` owns one USER turn and may execute at most two local tool calls during that turn before terminating with a bounded error. The allowance resets for every new USER message. It never automatically retries a completed proxy request. `FindAvailableObi075Tool` remains the only Android tool adapter; there is no generic agent/plugin framework.
+
+Conversation continuity is local-first:
+
+```text
+Room conversation.lastResponseId
+        ↓
+POST /v1/agent/message
+        ↓
+Responses API previous_response_id
+        ↓
+tool loop if requested
+        ↓
+FINAL answer responseId
+        ↓
+transaction: ASSISTANT message + replace lastResponseId
+```
+
+The first USER turn has no previous response and uses `/v1/agent/start`. Later turns use the last successfully completed final answer response ID. Tool request response IDs are used only transiently for `/continue`; call IDs are never persisted. A new conversation starts with no response ID.
+
+Room schema v1 contains `conversations` and `messages` with a CASCADE foreign key. Room stores rendered USER/ASSISTANT text, timestamps, local title, draft, and nullable final `lastResponseId`; it does not store secrets, OBI payloads, raw OpenAI responses, or reasoning data.
+
+A trailing USER without a committed ASSISTANT means the turn was interrupted. Recovery removes only that trailing USER, restores its text to `draft`, and leaves the prior final `lastResponseId` unchanged. No proxy/OpenAI request runs during recovery. Completed assistant text and its final response ID are committed in one Room transaction.
+
+Conversation history search is local SQL substring matching over title and message text. It has no AI/network dependency. Conversations are ordered by `updatedAt` descending. A conversation represents one customer case: a new customer or new problem should normally start with “Nowa rozmowa”, while follow-up questions for the same case continue in place; this is not enforced as a hard conversation-length limit.
+
+On normal app startup, Room deletes conversations whose `updatedAt` is strictly older than `now - 30 days`; rows exactly at the cutoff are retained and message rows disappear through the existing CASCADE foreign key. Cleanup is local-only and has no WorkManager, proxy, OpenAI, OBI, or other network dependency. If a remembered active conversation was removed by retention, the app opens a fresh empty chat instead of restoring stale saved UI state.
+
+Each history entry can also be deleted manually after confirmation. Deleting the active conversation first invalidates the advisor generation token and cancels/joins its active request, then removes the Room row and returns to a fresh empty chat. Final callback handling checks the generation/conversation guard before database mutation, and the DAO completion transaction requires the conversation row to still exist, so a stale completion cannot recreate a deleted conversation.
+
+On cold start the most recently updated useful retained conversation is restored when practical. Switching/new conversation cancels active work and generation-guards stale UI callbacks.
 
 ## OBIK lookup flow
 
@@ -101,12 +131,21 @@ Deterministic fixtures and CI prove code behavior against known inputs; they do 
 
 ## UI and configuration
 
-The application uses a single Compose activity and state-based top-level surfaces; Navigation Compose is intentionally not introduced. The default surface is the advisor chat shell. Its top bar has a modal drawer action, centered Towarownik title, explicit new-case action, and quick access to the independent full-screen Wyszukiwarka OBI. The drawer currently contains only “Nowa rozmowa”, a local conversation-search field, and an honest empty-history area; no fake or persisted conversations are created.
+The application uses a single Compose activity and state-based top-level surfaces; Navigation Compose is intentionally not introduced. The default surface is the advisor chat shell. Its top bar has a modal drawer action, centered Towarownik title, explicit new-case action, and quick access to the independent full-screen Wyszukiwarka OBI. The drawer contains “Nowa rozmowa”, local persisted history/search, and a per-conversation overflow action for confirmed deletion. No fake conversations are created.
 
-The advisor remains technically one-shot in this milestone. The submitted user request and final normalized assistant answer are rendered as timestamped chat messages, while progress/error states appear inside the conversation surface. Simple Markdown markers are normalized before display. Starting a new case cancels active work, clears draft/rendered messages, and protects the new case from stale callbacks. Message timestamps use device/system local time only.
+The advisor is now genuinely multi-turn within one local customer conversation. After a completed ASSISTANT answer the composer is enabled again; the next USER message continues from that conversation's stored final response ID. Submitted/completed messages persist with createdAt timestamps and keep the existing local HH:mm presentation. Simple Markdown markers are still normalized before storage/display. Starting or opening another conversation cancels active work, recovers any interrupted trailing USER to the old conversation's draft, and protects the new selection from stale callbacks.
 
 The Wyszukiwarka OBI has its own Back surface and keeps advisor UI state intact. Completed manual-search state, typed search query, advisor draft/messages, and selected top-level surface use Compose saved state where practical so rotation does not unnecessarily erase the current screen. A reusable verified-product UI model/card receives only trusted Android-side exact lookup data and opens the existing `LocalProduct.productUrl` through the normal external browser intent.
 
 `TOWAROWNIK_APP_TOKEN` is injected at Android build time through `BuildConfig`. Missing token configuration keeps compilation and ordinary search working; DORADCA fails locally before any network call. The signed Play workflow receives the token only from the matching GitHub Actions secret. The static token is only an Internal Testing abuse barrier and is extractable from an APK/AAB; it is not strong device authentication.
 
 The application uses the normal Android resource system. No orientation is locked, so the UI must continue to adapt cleanly to portrait and landscape sizes. Navigation, dependency injection, persistence, and other frameworks should be added only if a concrete feature requires them.
+
+
+## Multi-turn proxy continuation
+
+The Worker additionally exposes authenticated `POST /v1/agent/message` with exact input `{previousResponseId,message}`. Android cannot override model, instructions, tools, reasoning effort, token budget, or OpenAI URL. The Worker resends the stable server-controlled instructions/tool declaration and passes `previous_response_id` plus only the new user message to the Responses API.
+
+Using `previous_response_id` avoids manually sending the complete local transcript on each turn, but previous context tokens in that chain are still billed as input tokens. No summarization or compaction is implemented yet.
+
+Server-side instructions explicitly require a fresh `find_available_obi_075` call when the current question depends on current store-075 availability, stock, price, or selecting currently available products. Historical stock/price statements are context only, never current authority.

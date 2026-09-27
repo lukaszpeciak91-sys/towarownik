@@ -10,6 +10,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
+import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
+import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 
 internal enum class ChatMessageRole {
     USER,
@@ -35,10 +39,36 @@ internal data class AdvisorCaseUiState(
         copy(messages = messages + message)
 }
 
+
+internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
+    AdvisorCaseUiState(
+        draft = draft,
+        messages = messages.mapNotNull { message ->
+            val role = when (message.role) {
+                MESSAGE_ROLE_USER -> ChatMessageRole.USER
+                MESSAGE_ROLE_ASSISTANT -> ChatMessageRole.ASSISTANT
+                else -> null
+            } ?: return@mapNotNull null
+
+            AdvisorChatMessage(
+                role = role,
+                text = message.text,
+                createdAt = message.createdAt,
+            )
+        },
+    )
+
 internal val AdvisorCaseUiStateSaver = Saver<AdvisorCaseUiState, String>(
     save = { state -> saveAdvisorCase(state) },
     restore = { raw -> restoreAdvisorCase(raw) },
 )
+
+internal fun isAdvisorComposerEnabled(
+    state: AdvisorUiState,
+): Boolean =
+    state !is AdvisorUiState.LoadingProxy &&
+        state !is AdvisorUiState.RunningLocalTool &&
+        state !is AdvisorUiState.WaitingForFinalAnswer
 
 internal fun normalizeAdvisorDisplayText(raw: String): String =
     raw
@@ -107,11 +137,11 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
 internal fun recoverInterruptedAdvisorCase(
     state: AdvisorCaseUiState,
 ): AdvisorCaseUiState {
-    val onlyMessage = state.messages.singleOrNull()
-    return if (onlyMessage?.role == ChatMessageRole.USER) {
-        AdvisorCaseUiState(
-            draft = onlyMessage.text,
-            messages = emptyList(),
+    val lastMessage = state.messages.lastOrNull()
+    return if (lastMessage?.role == ChatMessageRole.USER) {
+        state.copy(
+            draft = lastMessage.text,
+            messages = state.messages.dropLast(1),
         )
     } else {
         state

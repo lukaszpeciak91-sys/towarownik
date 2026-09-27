@@ -1,9 +1,15 @@
 import { authorizeApp } from "./auth.js";
-import { continueAgent, startAgent, UpstreamFailureError } from "./openai.js";
+import {
+  continueAgent,
+  messageAgent,
+  startAgent,
+  UpstreamFailureError,
+} from "./openai.js";
 import type { Env, UpstreamFetch } from "./types.js";
 import {
   InvalidRequestError,
   parseContinueRequest,
+  parseMessageRequest,
   parseStartRequest,
   RequestTooLargeError,
 } from "./validation.js";
@@ -48,7 +54,7 @@ async function handleProtectedAgentRequest(
   request: Request,
   env: Env,
   upstreamFetch: UpstreamFetch,
-  endpoint: "start" | "continue",
+  endpoint: "start" | "message" | "continue",
 ): Promise<Response> {
   const auth = authorizeApp(request, env);
   if (!auth.ok) {
@@ -78,16 +84,26 @@ async function handleProtectedAgentRequest(
           apiKey,
           upstreamFetch,
         )
-      : await (async () => {
-          const input = await parseContinueRequest(request);
-          return continueAgent(
-            input.responseId,
-            input.callId,
-            input.result,
-            apiKey,
-            upstreamFetch,
-          );
-        })();
+      : endpoint === "message"
+        ? await (async () => {
+            const input = await parseMessageRequest(request);
+            return messageAgent(
+              input.previousResponseId,
+              input.message,
+              apiKey,
+              upstreamFetch,
+            );
+          })()
+        : await (async () => {
+            const input = await parseContinueRequest(request);
+            return continueAgent(
+              input.responseId,
+              input.callId,
+              input.result,
+              apiKey,
+              upstreamFetch,
+            );
+          })();
 
     return jsonResponse(result, 200);
   } catch (error) {
@@ -117,6 +133,10 @@ export async function handleRequest(
 
   if (url.pathname === "/v1/agent/start") {
     return handleProtectedAgentRequest(request, env, upstreamFetch, "start");
+  }
+
+  if (url.pathname === "/v1/agent/message") {
+    return handleProtectedAgentRequest(request, env, upstreamFetch, "message");
   }
 
   if (url.pathname === "/v1/agent/continue") {

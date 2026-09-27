@@ -36,6 +36,31 @@ export async function startAgent(
   );
 }
 
+export async function messageAgent(
+  previousResponseId: string,
+  message: string,
+  apiKey: string,
+  upstreamFetch: UpstreamFetch,
+): Promise<AgentResult> {
+  return requestOpenAI(
+    {
+      model: OPENAI_MODEL,
+      instructions: AGENT_INSTRUCTIONS,
+      previous_response_id: previousResponseId,
+      input: message,
+      reasoning: {
+        effort: OPENAI_REASONING_EFFORT,
+      },
+      max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+      parallel_tool_calls: false,
+      store: true,
+      tools: [OBI_TOOL],
+    },
+    apiKey,
+    upstreamFetch,
+  );
+}
+
 export async function continueAgent(
   responseId: string,
   callId: string,
