@@ -66,9 +66,6 @@ class ObiPayloadParserTest {
                 TechnicalFact("Pojemność", "50 ml"),
                 TechnicalFact("rodzaj", "Kleje specjalistyczne"),
                 TechnicalFact("Waga", "44 g"),
-                TechnicalFact("Wysokość", "15,0 cm"),
-                TechnicalFact("Szerokość", "4,0 cm"),
-                TechnicalFact("Głębokość", "2,0 cm"),
             ),
             product.technicalFacts,
         )
@@ -155,11 +152,11 @@ class ObiPayloadParserTest {
         ).getOrThrow()
 
         assertEquals(80, product.brand?.length)
-        assertEquals(300, product.shortDescription?.length)
+        assertEquals(220, product.shortDescription?.length)
         assertEquals(6, product.technicalFacts.size)
         assertEquals(1, product.technicalFacts.count { it.label == "Fakt 1" })
         assertTrue(product.technicalFacts.all { it.label.length <= 60 })
-        assertTrue(product.technicalFacts.all { it.value.length <= 120 })
+        assertTrue(product.technicalFacts.all { it.value.length <= 100 })
     }
 
     @Test
