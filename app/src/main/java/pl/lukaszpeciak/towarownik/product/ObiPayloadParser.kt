@@ -337,10 +337,10 @@ class ObiPayloadParser(
         val PRODUCT_NAME_KEYS = listOf("productTitle", "productTitleTab", "name", "productName")
         val EAN_KEYS = listOf("articleEanEcms", "ean", "gtin13", "gtin")
         const val MAX_BRAND_CHARS = 80
-        const val MAX_DESCRIPTION_CHARS = 600
-        const val MAX_TECHNICAL_FACTS = 12
-        const val MAX_FACT_LABEL_CHARS = 80
-        const val MAX_FACT_VALUE_CHARS = 180
+        const val MAX_DESCRIPTION_CHARS = 300
+        const val MAX_TECHNICAL_FACTS = 6
+        const val MAX_FACT_LABEL_CHARS = 60
+        const val MAX_FACT_VALUE_CHARS = 120
         const val MAX_FACT_LINE_CHARS =
             MAX_FACT_LABEL_CHARS + MAX_FACT_VALUE_CHARS + 2
     }
