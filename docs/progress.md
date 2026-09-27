@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Warm Modular Utility visual system v0.1**
+**Settings + PL/EN language selection + diagnostics relocation v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. The localization foundation is complete. The current iteration applies the approved dark “Warm Modular Utility” visual identity without changing product, advisor, navigation, persistence, or OBI behavior.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. The localization foundation and Warm Modular Utility visual system are complete. The current iteration adds the first real Settings surface, platform-supported Polish/English UI selection, and moves diagnostics into Settings without changing product, advisor, persistence, or OBI behavior.
 
 Implemented direction:
 
@@ -46,15 +46,23 @@ Implemented direction:
 - top bars, conversation drawer, chat bubbles, persistent composer, progress/error states, verified product card, and manual OBI search share one visual hierarchy;
 - strong amber is reserved for primary/verified/active emphasis rather than ordinary buttons and cards;
 - character/emoji action controls are replaced by local vector drawable icons with accessible descriptions;
-- no launcher PNG or other binary asset is created or modified by the visual-system work.
+- no launcher PNG or other binary asset is created or modified by the visual-system work;
+- Settings is pinned to the bottom of the conversation drawer independently of history length/search state;
+- Settings exposes exactly Polski / English through AndroidX AppCompat per-app locales;
+- AppCompat auto-stores the selected locale below API 33, while Android 13+ uses the platform per-app locale path with declared `pl` and `en` support;
+- switching UI locale recreates the normal Android UI but does not send locale to the proxy/model or translate persisted conversation text;
+- diagnostics is reached through Settings and the old hidden title long-press entry is removed;
+- Diagnostics returns to Settings, while Settings returns to Advisor;
+- Report problem and Privacy policy are visible disabled future rows with no fake destination/content;
+- About uses `app_name` plus the current BuildConfig version, keeping later naming work cheap.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
-Android test version: **0.1.8 (9)**.
+Android test version: **0.1.9 (10)**.
 
 ## Next implementation milestone
 
-Add the Settings surface and expose explicit **Polski / English** language selection using the existing localization foundation, without weakening the dark visual-system boundary.
+Implement the dedicated **Report problem** workflow without coupling reporting to advisor/model behavior or inventing privacy-policy content.
 
 The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 

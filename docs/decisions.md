@@ -192,3 +192,17 @@ These decisions describe the broader intended product behavior. The currently im
 - Surface hierarchy, soft modular rounding, system typography, restrained metadata, and vector action icons define the visual language.
 - Verified product cards use a raised warm surface plus subtle amber extraction rail; assistant messages are not amber.
 - A dedicated light theme is intentionally deferred instead of being inferred from the dark palette.
+
+
+## Settings + per-app language selection + diagnostics relocation v0.1
+
+- The conversation drawer has one Settings action pinned below the scrollable/empty history area; opening it preserves the active conversation, draft, and advisor request state.
+- Settings is a real top-level state-based Compose surface. Navigation Compose is still unnecessary for the current Advisor / manual search / Settings / Diagnostics graph.
+- UI language selection offers exactly `pl` and `en` and uses `AppCompatDelegate.setApplicationLocales(LocaleListCompat...)`; no custom Context wrapper or SharedPreferences language store is introduced.
+- `MainActivity` uses `AppCompatActivity`, and the XML host theme becomes the smallest AppCompat-compatible dark theme. The Compose Warm Modular Utility theme remains authoritative for app visuals.
+- AppCompat `autoStoreLocales` supplies supported persistence on API 32 and lower. The application manifest declares `android:localeConfig` with only `pl` and `en` for Android 13+ platform per-app language support.
+- UI locale is presentation-only. It is not forwarded to the Worker/OpenAI, does not alter advisor request bodies/instructions/context, and never translates or rewrites persisted conversation messages.
+- OBI diagnostics moves from the hidden Towarownik-title long press to Settings. Diagnostics behavior, recorder bounds, probe, copy/share, and privacy rules remain unchanged.
+- Report problem and Privacy policy are visible but disabled future rows; this iteration deliberately adds no fake report action, privacy URL, or legal content.
+- About renders `app_name` and build version data rather than freezing a future public product name.
+- No OBI, Room schema, verified-product trust boundary, or proxy behavior changes are part of this settings iteration.
