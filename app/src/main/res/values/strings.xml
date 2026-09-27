@@ -110,6 +110,7 @@
     <string name="ai_usage_budget_clear">Usuń budżet</string>
     <string name="ai_budget_warning_title">Budżet AI jest bliski wyczerpania</string>
     <string name="ai_budget_warning_message">Szacunkowo pozostało mniej niż 1 USD.</string>
+    <string name="ai_budget_warning_ack">OK</string>
     <string name="language_polish">Polski</string>
     <string name="language_english">English</string>
     <string name="settings_section_help">POMOC</string>
