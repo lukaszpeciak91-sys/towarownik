@@ -623,6 +623,25 @@ test("missing cache-write detail leaves cost unpriced instead of guessing", asyn
   assert.equal(body.usage.pricingVersion, null);
 });
 
+test("unknown model usage is preserved but not priced", async () => {
+  const fake = fakeOpenAI({
+    ...withUsage(answerPayload()),
+    model: "unknown-model",
+  });
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.model, "unknown-model");
+  assert.equal(body.usage.estimatedCostUsd, null);
+  assert.equal(body.usage.pricingVersion, null);
+});
+
 test("usage request type identifies MESSAGE and CONTINUE", async () => {
   const messageFake = fakeOpenAI(withUsage(answerPayload()));
   const messageWorker = createWorker(messageFake.fetch);
