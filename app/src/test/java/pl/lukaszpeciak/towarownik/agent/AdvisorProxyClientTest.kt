@@ -304,7 +304,7 @@ class AdvisorProxyClientTest {
                         "reasoningTokens":50,
                         "totalTokens":1100,
                         "estimatedCostUsd":0.000253,
-                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v2"
+                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v1"
                       }
                     }
                     """.trimIndent(),
@@ -331,7 +331,7 @@ class AdvisorProxyClientTest {
                             estimatedCostUsd =
                                 BigDecimal("0.000253"),
                             pricingVersion =
-                                "openai-gpt-6-luna-2026-09-27-v2",
+                                "openai-gpt-6-luna-2026-09-27-v1",
                         ),
                     ),
                 ),
@@ -361,7 +361,7 @@ class AdvisorProxyClientTest {
                         "reasoningTokens":0,
                         "totalTokens":1,
                         "estimatedCostUsd":0.0000012,
-                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v2"
+                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v1"
                       }
                     }
                     """.trimIndent(),
