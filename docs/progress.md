@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**AI usage metrics + budget visibility v0.1**
+**Advisor model swap to GPT-6 Luna v0.1**
 
 PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, and the Taksula public rename are complete. The current iteration generalizes the proven OBI store-075 integration into explicit conversation-selected multi-store support without changing the underlying transport/search parser design.
 
@@ -85,7 +85,7 @@ No local transcript is replayed as a hidden fallback if an old OpenAI response c
 Android test version: **0.1.10 (11)**.
 
 - every successful OpenAI START/MESSAGE/CONTINUE response can carry bounded usage metadata without making telemetry a correctness dependency;
-- current gpt-5.6-luna pricing is versioned and estimated cost separates uncached input, cached input, and output without double-charging reasoning;
+- GPT-5.6 Luna remains historical baseline data, while production now uses GPT-6 Luna with versioned pricing and the same usage accounting boundaries;
 - local cumulative requests, USER turns, tool-assisted turns, tokens, model-grouped totals, known USD cost, and unpriced-request count are persisted without conversation content;
 - Settings exposes AI Usage with adaptive sub-cent cost formatting;
 - NBP USD/PLN is fetched only from the usage UI, cached for 24 hours, and fails soft to a dated stale rate or unavailable PLN;
@@ -94,7 +94,7 @@ Android test version: **0.1.10 (11)**.
 
 ## Next implementation milestone
 
-After establishing the AI usage baseline, compare/swap the advisor model in a separate measured PR. Then proceed independently with richer verified OBI product facts, final advisor instructions/persona, and optional OpenAI web_search. Context compaction and privacy-policy content remain separate work.
+After this measured GPT-6 Luna swap, proceed independently with richer verified OBI product facts, final advisor instructions/persona, and optional OpenAI web_search. Context compaction and privacy-policy content remain separate work.
 
 The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 
