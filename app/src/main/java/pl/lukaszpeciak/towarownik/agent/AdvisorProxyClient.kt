@@ -364,6 +364,24 @@ internal class AdvisorProxyClient(
         buildJsonObject {
             put("obik", obik)
             put("name", name)
+            put("brand", brand?.let(::JsonPrimitive) ?: JsonNull)
+            put(
+                "shortDescription",
+                shortDescription?.let(::JsonPrimitive) ?: JsonNull,
+            )
+            put(
+                "technicalFacts",
+                buildJsonArray {
+                    technicalFacts.forEach { fact ->
+                        add(
+                            buildJsonObject {
+                                put("label", fact.label)
+                                put("value", fact.value)
+                            },
+                        )
+                    }
+                },
+            )
             put("stock", stock?.let(::JsonPrimitive) ?: JsonNull)
             put("price", price?.let(::JsonPrimitive) ?: JsonNull)
         }
