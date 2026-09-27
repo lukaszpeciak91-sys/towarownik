@@ -285,7 +285,7 @@ function priceUsage(
   inputTokens: number,
   cachedInputTokens: number | null,
   outputTokens: number,
-): { estimatedCostUsd: string; pricingVersion: string } | null {
+): { estimatedCostUsd: number; pricingVersion: string } | null {
   if (
     model !== CURRENT_MODEL_PRICING.model ||
     cachedInputTokens === null
@@ -303,7 +303,7 @@ function priceUsage(
       CURRENT_MODEL_PRICING.nanoUsdPerToken.output;
 
   return {
-    estimatedCostUsd: formatNanoUsd(nanoUsd),
+    estimatedCostUsd: Number(formatNanoUsd(nanoUsd)),
     pricingVersion: CURRENT_MODEL_PRICING.pricingVersion,
   };
 }
