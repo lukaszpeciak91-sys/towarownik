@@ -104,7 +104,7 @@
     <string name="ai_usage_budget_explanation">To lokalny szacunek Taksuli, nie saldo ani środki na koncie OpenAI.</string>
     <string name="ai_usage_budget_configured">Ustawiony budżet początkowy</string>
     <string name="ai_usage_budget_remaining">Szacunkowo pozostało</string>
-    <string name="ai_usage_budget_input">Remaining AI budget</string>
+    <string name="ai_usage_budget_input">Pozostały budżet AI</string>
     <string name="ai_usage_budget_invalid">Wpisz poprawną kwotę USD od 0 do 1 000 000.</string>
     <string name="ai_usage_budget_save">Ustaw budżet</string>
     <string name="ai_usage_budget_clear">Usuń budżet</string>
