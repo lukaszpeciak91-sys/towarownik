@@ -239,9 +239,14 @@ function parseUsage(
       rawUsage.input_tokens_details,
       "cached_tokens",
     );
+    const cacheWriteTokens = optionalNestedTokenCount(
+      rawUsage.input_tokens_details,
+      "cache_write_tokens",
+    );
     if (
       cachedInputTokens !== null &&
-      cachedInputTokens > inputTokens
+      cacheWriteTokens !== null &&
+      cachedInputTokens + cacheWriteTokens > inputTokens
     ) {
       return undefined;
     }
@@ -261,6 +266,7 @@ function parseUsage(
       model,
       inputTokens,
       cachedInputTokens,
+      cacheWriteTokens,
       outputTokens,
     );
 
@@ -269,6 +275,7 @@ function parseUsage(
       requestType,
       inputTokens,
       cachedInputTokens,
+      cacheWriteTokens,
       outputTokens,
       reasoningTokens,
       totalTokens,
@@ -284,23 +291,29 @@ function priceUsage(
   model: string,
   inputTokens: number,
   cachedInputTokens: number | null,
+  cacheWriteTokens: number | null,
   outputTokens: number,
 ): { estimatedCostUsd: number; pricingVersion: string } | null {
   if (
     model !== CURRENT_MODEL_PRICING.model ||
-    cachedInputTokens === null
+    cachedInputTokens === null ||
+    cacheWriteTokens === null ||
+    cachedInputTokens + cacheWriteTokens > inputTokens
   ) {
     return null;
   }
 
-  const uncachedInputTokens = inputTokens - cachedInputTokens;
+  const ordinaryInputTokens =
+    inputTokens - cachedInputTokens - cacheWriteTokens;
+  const rates =
+    inputTokens > CURRENT_MODEL_PRICING.longContextInputThreshold
+      ? CURRENT_MODEL_PRICING.longContextNanoUsdPerToken
+      : CURRENT_MODEL_PRICING.nanoUsdPerToken;
   const nanoUsd =
-    BigInt(uncachedInputTokens) *
-      CURRENT_MODEL_PRICING.nanoUsdPerToken.uncachedInput +
-    BigInt(cachedInputTokens) *
-      CURRENT_MODEL_PRICING.nanoUsdPerToken.cachedInput +
-    BigInt(outputTokens) *
-      CURRENT_MODEL_PRICING.nanoUsdPerToken.output;
+    BigInt(ordinaryInputTokens) * rates.uncachedInput +
+    BigInt(cachedInputTokens) * rates.cachedInput +
+    BigInt(cacheWriteTokens) * rates.cacheWriteInput +
+    BigInt(outputTokens) * rates.output;
 
   return {
     estimatedCostUsd: Number(formatNanoUsd(nanoUsd)),
