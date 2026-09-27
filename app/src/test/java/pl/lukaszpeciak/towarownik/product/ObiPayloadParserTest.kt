@@ -155,11 +155,11 @@ class ObiPayloadParserTest {
         ).getOrThrow()
 
         assertEquals(80, product.brand?.length)
-        assertEquals(600, product.shortDescription?.length)
-        assertEquals(12, product.technicalFacts.size)
+        assertEquals(300, product.shortDescription?.length)
+        assertEquals(6, product.technicalFacts.size)
         assertEquals(1, product.technicalFacts.count { it.label == "Fakt 1" })
-        assertTrue(product.technicalFacts.all { it.label.length <= 80 })
-        assertTrue(product.technicalFacts.all { it.value.length <= 180 })
+        assertTrue(product.technicalFacts.all { it.label.length <= 60 })
+        assertTrue(product.technicalFacts.all { it.value.length <= 120 })
     }
 
     @Test
