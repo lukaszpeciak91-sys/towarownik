@@ -119,11 +119,16 @@ class SettingsLanguageNavigationTest {
     @Test
     fun `Settings and diagnostics use the expected back stack`() {
         assertTrue(AppSurface.entries.contains(AppSurface.SETTINGS))
+        assertTrue(AppSurface.entries.contains(AppSurface.AI_USAGE))
         assertTrue(AppSurface.entries.contains(AppSurface.DIAGNOSTICS))
         assertTrue(AppSurface.entries.contains(AppSurface.REPORT))
         assertEquals(
             AppSurface.ADVISOR,
             backSurface(AppSurface.SETTINGS),
+        )
+        assertEquals(
+            AppSurface.SETTINGS,
+            backSurface(AppSurface.AI_USAGE),
         )
         assertEquals(
             AppSurface.SETTINGS,
