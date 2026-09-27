@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **Settings + PL/EN language selection + diagnostics relocation v0.1**. The app now has a dedicated Settings surface pinned to the bottom of the conversation drawer. Settings provides real Polish / English UI selection through AndroidX AppCompat per-app locales, links to the existing OBI diagnostics surface, and shows app identity/version without changing advisor, OBI, Room, or product behavior.
+The current phase is **Problem reporting + assistant response reports v0.1**. Users can report either one exact persisted ASSISTANT response or a general app problem. Reports are created locally as bounded UTF-8 TXT files only after explicit user action and are handed to the Android system share chooser; Towarownik never sends a report automatically.
 
 ## Technology
 
@@ -141,4 +141,17 @@ On API 32 and lower AppCompat persists the chosen app locale through its support
 
 The UI locale is presentation-only. It is not sent to the Cloudflare proxy or OpenAI, does not change `/start`, `/message`, or `/continue`, does not translate persisted USER/ASSISTANT text, and does not restart an OpenAI response chain.
 
-Settings also owns navigation to the existing OBI diagnostics screen; the previous hidden long-press on the centered app title has been removed. **Zgłoś problem / Report problem** and **Polityka prywatności / Privacy policy** are visible disabled future rows only: no fake action, report flow, URL, or legal copy is implemented. The About area renders the current `app_name` resource plus BuildConfig version information so future naming remains cheap.
+Settings also owns navigation to the existing OBI diagnostics screen; the previous hidden long-press on the centered app title has been removed. **Zgłoś problem / Report problem** is now a real user-controlled reporting entry point. **Polityka prywatności / Privacy policy** remains a disabled future row with no invented URL or legal copy. The About area renders the current `app_name` resource plus BuildConfig version information so future naming remains cheap.
+
+
+## Problem reporting
+
+Towarownik exposes two local reporting entry points: a quiet **Zgłoś / Report** action under persisted ASSISTANT responses and **Settings → Zgłoś problem / Report problem** for general issues.
+
+Contextual reports always include the exact reported persisted ASSISTANT response and its persisted verified-product snapshots. Broader conversation content is opt-in and the checkbox defaults **OFF**. When enabled, assistant-response context includes persisted messages only from the beginning of that conversation through the reported response; later messages and the unsent draft are excluded. General reporting similarly includes the current persisted conversation only after explicit opt-in.
+
+Every report includes bounded app/device/UI-locale metadata. Existing OBI diagnostics are optional evidence only when diagnostics were already enabled and already contain sanitized recorder output. When such data exists, the report form exposes a separate **Dołącz diagnostykę OBI / Include OBI diagnostics** checkbox that defaults **OFF**; diagnostic data is included only after that explicit opt-in. Reporting never enables diagnostics, starts the live probe, replays an OBI operation, calls OpenAI, or refreshes products.
+
+Generated reports live temporarily under `cacheDir/reports/` and are shared through a non-exported FileProvider exposing only that cache subdirectory. The final action creates the TXT, attaches it to an Android `ACTION_SEND` intent, pre-fills the Nepahu Studio recipient, and opens the system chooser. Towarownik does not send email itself. If the system chooser cannot be opened, the fresh report file is deleted and the UI shows a bounded share-unavailable error. Screenshots are intentionally left to the user's mail/share app.
+
+Reports never include OpenAI response IDs, tool-call IDs, `lastResponseId`, API/app tokens, Authorization headers, cookie values, raw OpenAI responses/reasoning, OBI HTML/Nuxt payloads, account identifiers, IP address, or precise location. Reports are not stored in Room and there is no report backend.

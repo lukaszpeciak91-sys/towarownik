@@ -88,4 +88,39 @@
     <string name="settings_version">Wersja %1$s (%2$d)</string>
     <string name="cd_open_settings">Otwórz ustawienia</string>
 
+
+    <string name="report_action">Zgłoś</string>
+    <string name="report_screen_title">Zgłoś problem</string>
+    <string name="report_category_label">Kategoria</string>
+    <string name="report_category_incorrect_fabricated">Błędna / zmyślona odpowiedź</string>
+    <string name="report_category_unexpected_behavior">Nieprzewidywalne zachowanie</string>
+    <string name="report_category_wrong_product_selection">Zły dobór produktu</string>
+    <string name="report_category_app_problem">Problem z aplikacją</string>
+    <string name="report_category_obi_search_product_data">Wyszukiwarka / dane OBI</string>
+    <string name="report_category_other">Inne</string>
+    <string name="report_description_optional">Opisz krótko, co było nie tak</string>
+    <string name="report_description_required">Opisz krótko problem</string>
+    <string name="report_description_count">%1$d / %2$d</string>
+    <string name="report_include_conversation">Dołącz treść rozmowy</string>
+    <string name="report_include_current_conversation">Dołącz bieżącą rozmowę</string>
+    <string name="report_include_obi_diagnostics">Dołącz diagnostykę OBI</string>
+    <string name="report_include_obi_diagnostics_hint">Dostępne są bezpieczne dane diagnostyczne z tej sesji.</string>
+    <string name="report_privacy_assistant_without_conversation">Raport zawiera zgłaszaną odpowiedź oraz jej dane produktów. Pozostała treść rozmowy nie zostanie dołączona.</string>
+    <string name="report_privacy_assistant_with_conversation">Raport zawiera zgłaszaną odpowiedź, wcześniejszą treść tej rozmowy oraz dane produktów pokazane w rozmowie.</string>
+    <string name="report_privacy_general_without_conversation">Raport zawiera opis problemu oraz techniczne dane aplikacji i urządzenia. Treść rozmowy nie zostanie dołączona.</string>
+    <string name="report_privacy_general_with_conversation">Raport zawiera opis problemu, bieżącą zapisaną rozmowę oraz dane produktów pokazane w tej rozmowie.</string>
+    <string name="report_privacy_obi_diagnostics_included">Raport zawiera również istniejące dane diagnostyczne OBI z tej sesji.</string>
+    <string name="report_privacy_obi_diagnostics_not_included">Dane diagnostyczne OBI nie zostaną dołączone.</string>
+    <string name="report_screenshot_hint">Po otwarciu wiadomości możesz dodać zrzuty ekranu przed wysłaniem.</string>
+    <string name="report_create_and_share">Utwórz i udostępnij raport</string>
+    <string name="report_creating">Tworzę raport…</string>
+    <string name="report_error_target_unavailable">Nie można już odczytać zgłaszanej wiadomości lub rozmowy.</string>
+    <string name="report_error_description_required">Dodaj krótki opis problemu.</string>
+    <string name="report_error_generation_failed">Nie udało się utworzyć raportu.</string>
+    <string name="report_error_share_unavailable">Nie udało się otworzyć systemowego udostępniania raportu.</string>
+    <string name="report_share_subject_assistant">Towarownik — zgłoszenie odpowiedzi</string>
+    <string name="report_share_subject_general">Towarownik — zgłoszenie problemu</string>
+    <string name="report_share_body">W załączniku znajduje się raport utworzony w aplikacji Towarownik.</string>
+    <string name="report_share_chooser">Udostępnij raport</string>
+
 </resources>

@@ -120,6 +120,7 @@ class SettingsLanguageNavigationTest {
     fun `Settings and diagnostics use the expected back stack`() {
         assertTrue(AppSurface.entries.contains(AppSurface.SETTINGS))
         assertTrue(AppSurface.entries.contains(AppSurface.DIAGNOSTICS))
+        assertTrue(AppSurface.entries.contains(AppSurface.REPORT))
         assertEquals(
             AppSurface.ADVISOR,
             backSurface(AppSurface.SETTINGS),
@@ -154,8 +155,8 @@ class SettingsLanguageNavigationTest {
     }
 
     @Test
-    fun `future Settings actions remain explicitly unavailable`() {
-        assertFalse(REPORT_PROBLEM_AVAILABLE)
+    fun `report problem is active while privacy policy remains future work`() {
+        assertTrue(REPORT_PROBLEM_AVAILABLE)
         assertFalse(PRIVACY_POLICY_AVAILABLE)
     }
 

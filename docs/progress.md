@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Settings + PL/EN language selection + diagnostics relocation v0.1**
+**Problem reporting + assistant response reports v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. The localization foundation and Warm Modular Utility visual system are complete. The current iteration adds the first real Settings surface, platform-supported Polish/English UI selection, and moves diagnostics into Settings without changing product, advisor, persistence, or OBI behavior.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. The localization, Warm Modular Utility, Settings, PL/EN selection, and diagnostics relocation are complete. The current iteration adds the first user-controlled problem-reporting workflow without adding a backend or changing advisor, OBI, Room schema, or product behavior.
 
 Implemented direction:
 
@@ -40,7 +40,7 @@ Implemented direction:
 - Compose resolves user-visible chrome through Android string resources and formatted placeholders;
 - advisor/search errors use stable language-neutral enum state and are translated only in UI;
 - saved manual-search errors no longer persist rendered language-dependent sentences;
-- Android continues to choose resources from the current system/app locale; no in-app selector exists yet;
+- Android UI uses the complete PL/EN resource sets and Settings controls the supported per-app locale through AppCompat;
 - production UI uses the approved warm dark palette and centralized semantic Compose colors;
 - automatic Material light/dark switching and dynamic-color-style defaults are replaced by the approved dark-first scheme;
 - top bars, conversation drawer, chat bubbles, persistent composer, progress/error states, verified product card, and manual OBI search share one visual hierarchy;
@@ -54,15 +54,27 @@ Implemented direction:
 - diagnostics is reached through Settings and the old hidden title long-press entry is removed;
 - Diagnostics returns to Settings, while Settings returns to Advisor;
 - Report problem and Privacy policy are visible disabled future rows with no fake destination/content;
-- About uses `app_name` plus the current BuildConfig version, keeping later naming work cheap.
+- About uses `app_name` plus the current BuildConfig version, keeping later naming work cheap;
+- each persisted ASSISTANT response has a quiet contextual Report/Zgłoś action backed by its persisted message ID;
+- Settings Report problem is now active while Privacy policy remains future work;
+- assistant/general report categories use stable technical enums with localized labels;
+- transcript inclusion defaults OFF and is always user-controlled;
+- assistant reports always include the exact persisted response and its persisted product snapshots, while optional context stops at that response;
+- general reports require a description and may include the current persisted conversation only after opt-in;
+- unsent drafts are excluded from report evidence;
+- existing sanitized OBI diagnostics are offered only when already enabled and populated, through a separate checkbox that defaults OFF; reporting never starts diagnostics/probes/network work;
+- reports are temporary UTF-8 TXT files under `cacheDir/reports/` and are not stored in Room;
+- a non-exported FileProvider exposes only the report cache path and Android ACTION_SEND opens the system chooser with the centralized Nepahu Studio recipient;
+- Towarownik never sends the report automatically; chooser launch failure is handled with a bounded UI error and deletion of the fresh TXT; screenshots are added manually in the chosen mail/share client;
+- report contents exclude OpenAI/tool IDs, response-chain IDs, secrets/auth headers, cookie values, raw model data, OBI HTML/Nuxt, account/network/location identifiers.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
-Android test version: **0.1.9 (10)**.
+Android test version: **0.1.10 (11)**.
 
 ## Next implementation milestone
 
-Implement the dedicated **Report problem** workflow without coupling reporting to advisor/model behavior or inventing privacy-policy content.
+Evaluate reporting and Settings on-device, then continue with the next measured advisor/product iteration. Privacy-policy content/URL remains intentionally unimplemented until a real policy destination exists.
 
 The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 

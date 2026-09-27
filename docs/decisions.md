@@ -206,3 +206,19 @@ These decisions describe the broader intended product behavior. The currently im
 - Report problem and Privacy policy are visible but disabled future rows; this iteration deliberately adds no fake report action, privacy URL, or legal content.
 - About renders `app_name` and build version data rather than freezing a future public product name.
 - No OBI, Room schema, verified-product trust boundary, or proxy behavior changes are part of this settings iteration.
+
+
+## Problem reporting + assistant response reports v0.1
+
+- Reporting has exactly two initial entry points: one persisted ASSISTANT response or a general Settings report.
+- Report categories are stable enums; localized PL/EN labels are presentation only.
+- Contextual message identity is the persisted Room message ID carried through the UI/saveable state. Before generation the report resolver re-reads Room, verifies conversation ownership and `ASSISTANT` role, and fails closed if the target disappeared.
+- The reported response and its persisted verified-product snapshots are always included. Broader transcript inclusion is explicit opt-in and defaults OFF; assistant context stops at the reported response and never includes later messages or the unsent draft.
+- General reports require a short description. Current conversation inclusion is offered only when a persisted active conversation exists and also defaults OFF.
+- Product evidence is historical persisted snapshot data only; reporting never refreshes OBI or asks the model for product facts.
+- Existing sanitized OBI diagnostic output is optional evidence only if diagnostics were already enabled and populated. Even then it is exposed behind a separate checkbox that defaults OFF and is included only after explicit user opt-in. Reporting never auto-enables diagnostics or runs the live probe.
+- Reports are deterministic UTF-8 plain text created on demand under `cacheDir/reports/`; no Room report table/history exists.
+- Sharing uses a non-exported, read-granting FileProvider restricted to the report cache subdirectory and the Android system `ACTION_SEND` chooser. If the chooser cannot be launched (`ActivityNotFoundException`), the newly created TXT is deleted and the UI receives a controlled share-unavailable error. Towarownik never sends email automatically.
+- The Nepahu Studio recipient is centralized in one reporting constant. Screenshots remain a manual mail/share-client action.
+- Sensitive/internal exclusions include OpenAI response/tool IDs, `lastResponseId`, API/app tokens, Authorization headers, cookie values, raw model output/reasoning, OBI HTML/Nuxt, account IDs, IP address, and precise location.
+- There is no report backend. Proxy, OBI parser/transport, Room schema, advisor context behavior, and verified-product trust boundary remain unchanged.

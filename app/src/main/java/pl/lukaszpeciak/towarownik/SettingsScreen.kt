@@ -40,13 +40,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
-internal const val REPORT_PROBLEM_AVAILABLE = false
+internal const val REPORT_PROBLEM_AVAILABLE = true
 internal const val PRIVACY_POLICY_AVAILABLE = false
 
 @Composable
 internal fun SettingsScreen(
     onBack: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onReportProblem: () -> Unit,
 ) {
     val configuration = LocalConfiguration.current
     val currentLanguage = appLanguageForTag(
@@ -94,8 +95,8 @@ internal fun SettingsScreen(
             SettingsRow(
                 iconRes = R.drawable.ic_report_problem_24,
                 title = stringResource(R.string.settings_report_problem),
-                value = stringResource(R.string.settings_coming_soon),
                 enabled = REPORT_PROBLEM_AVAILABLE,
+                onClick = onReportProblem,
             )
 
             SettingsSectionTitle(

@@ -73,6 +73,7 @@ class ChatShellModelsTest {
                     text = "Use this.",
                     createdAt = 200L,
                     products = listOf(card),
+                    persistedMessageId = 77L,
                 ),
             ),
         )
@@ -80,6 +81,7 @@ class ChatShellModelsTest {
         val restored = restoreAdvisorCase(saveAdvisorCase(completed))
 
         assertEquals(completed, restored)
+        assertEquals(77L, restored.messages.single().persistedMessageId)
         assertEquals(
             "https://www.obi.pl/p/1234567/trusted-exact",
             verifiedProductOpenUrl(restored.messages.single().products.single()),
