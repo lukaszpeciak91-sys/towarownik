@@ -11,6 +11,7 @@ import pl.lukaszpeciak.towarownik.product.ProductLookupFailure
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
+import pl.lukaszpeciak.towarownik.product.TechnicalFact
 
 class FindObiProductsToolTest {
     @Test
@@ -80,6 +81,57 @@ class FindObiProductsToolTest {
 
         assertEquals(listOf("1234567"), lookedUp)
         assertEquals("Exact product name", result.result.products.single().name)
+    }
+
+    @Test
+    fun `rich verified facts propagate from exact LocalProduct into model context`() = runBlocking {
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    listOf(
+                        ProductSearchCandidate("1234567", "Candidate"),
+                    ),
+                )
+            },
+            lookup = { obik, _ ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        name = "Exact product",
+                        brand = "Bosch",
+                        shortDescription =
+                            "Verified product-page description.",
+                        technicalFacts = listOf(
+                            TechnicalFact("Moc", "600 W"),
+                            TechnicalFact(
+                                "Maks. prędkość",
+                                "3000 obr./min",
+                            ),
+                        ),
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(arguments()) as
+            AdvisorToolExecutionResult.Success
+        val verified = result.result.products.single()
+
+        assertEquals("Bosch", verified.brand)
+        assertEquals(
+            "Verified product-page description.",
+            verified.shortDescription,
+        )
+        assertEquals(
+            listOf(
+                AdvisorTechnicalFact("Moc", "600 W"),
+                AdvisorTechnicalFact(
+                    "Maks. prędkość",
+                    "3000 obr./min",
+                ),
+            ),
+            verified.technicalFacts,
+        )
     }
 
     @Test
@@ -276,6 +328,12 @@ class FindObiProductsToolTest {
         assertEquals(BigDecimal("12.30"), snapshot.grossPrice)
         assertEquals(trustedUrl, snapshot.productUrl)
         assertEquals(1_234_567L, snapshot.verifiedAt)
+        assertTrue(
+            snapshot.toString().contains("shortDescription").not(),
+        )
+        assertTrue(
+            snapshot.toString().contains("technicalFacts").not(),
+        )
     }
 
     @Test
@@ -362,7 +420,11 @@ class FindObiProductsToolTest {
         assertEquals("Verified", verified.name)
         assertEquals(7, verified.stock)
         assertEquals(BigDecimal("12.34"), verified.price)
+        assertEquals(null, verified.brand)
+        assertEquals(null, verified.shortDescription)
+        assertTrue(verified.technicalFacts.isEmpty())
         assertTrue(verified.toString().contains("productUrl").not())
+        assertTrue(verified.toString().contains("verifiedAt").not())
     }
 
     private fun tool(
@@ -393,6 +455,9 @@ class FindObiProductsToolTest {
         price: BigDecimal? = BigDecimal("10.00"),
         productUrl: String = "https://example.invalid/p/$obik",
         storeNumber: String = "075",
+        brand: String? = null,
+        shortDescription: String? = null,
+        technicalFacts: List<TechnicalFact> = emptyList(),
     ) = LocalProduct(
         obik = obik,
         name = name,
@@ -401,5 +466,8 @@ class FindObiProductsToolTest {
         productUrl = productUrl,
         ean = null,
         storeNumber = storeNumber,
+        brand = brand,
+        shortDescription = shortDescription,
+        technicalFacts = technicalFacts,
     )
 }
