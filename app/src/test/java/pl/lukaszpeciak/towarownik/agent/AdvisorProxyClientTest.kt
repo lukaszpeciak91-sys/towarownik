@@ -543,6 +543,15 @@ class AdvisorProxyClientTest {
                     AdvisorVerifiedProduct(
                         obik = "1234567",
                         name = "Synthetic product",
+                        brand = "Synthetic Brand",
+                        shortDescription =
+                            "Verified compact description.",
+                        technicalFacts = listOf(
+                            AdvisorTechnicalFact(
+                                label = "Moc",
+                                value = "600 W",
+                            ),
+                        ),
                         stock = 0,
                         price = BigDecimal("14.99"),
                     ),
@@ -588,13 +597,33 @@ class AdvisorProxyClientTest {
             val products = resultBody["products"] as kotlinx.serialization.json.JsonArray
             val product = products.single() as JsonObject
             assertEquals(
-                setOf("obik", "name", "stock", "price"),
+                setOf(
+                    "obik",
+                    "name",
+                    "brand",
+                    "shortDescription",
+                    "technicalFacts",
+                    "stock",
+                    "price",
+                ),
                 product.keys,
             )
             assertFalse(raw.contains("html", ignoreCase = true))
             assertFalse(raw.contains("cookie", ignoreCase = true))
+            assertEquals(
+                "Synthetic Brand",
+                product["brand"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                "Verified compact description.",
+                product["shortDescription"]
+                    ?.jsonPrimitive
+                    ?.content,
+            )
             assertFalse(raw.contains("productUrl", ignoreCase = true))
             assertFalse(raw.contains("verifiedAt", ignoreCase = true))
+            assertFalse(raw.contains("articleEanEcms", ignoreCase = true))
+            assertFalse(raw.contains("__NUXT_DATA__", ignoreCase = true))
             assertFalse(raw.contains(FAKE_TOKEN))
         }
     }
