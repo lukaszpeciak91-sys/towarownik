@@ -22,7 +22,7 @@ The current phase is **persistent advisor conversations + lifecycle polish v0.3.
 - OkHttp: 4.12.0
 - kotlinx.serialization JSON: 1.9.0
 - Kotlin coroutines: 1.10.2
-- Optional future assistant proxy: Cloudflare Worker + TypeScript under `proxy/`
+- Active assistant proxy: Cloudflare Worker + TypeScript under `proxy/`
 
 ## Local bootstrap and build
 
@@ -44,7 +44,7 @@ Normal pull-request CI never calls live OBI. It runs deterministic Python tests 
 
 ## AI assistant proxy foundation
 
-The self-contained Cloudflare Worker project lives under `proxy/`. `GET /health` remains public. `POST /v1/agent/start` and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
+The self-contained Cloudflare Worker project lives under `proxy/` and is an active part of the advisor architecture. `GET /health` remains public. The authenticated agent endpoints `POST /v1/agent/start`, `POST /v1/agent/message`, and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
 
 Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. If the model asks for `find_available_obi_075`, Android executes the existing `ProductSearchRepository` + `ProductLookupRepository` flow, returns only compact verified product records, and remains capped at five products per tool call. The human-only Wyszukiwarka OBI may parse at most 25 recognized candidates from the already downloaded search HTML and reveals them in chunks of five; this does not add or assume an OBI pagination endpoint. Conversation history is now local and persistent, but the final advisor persona, structured advisor product cards, summarization/compaction, and strong user/device identity remain later milestones.
 
