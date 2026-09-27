@@ -135,7 +135,11 @@ class AiUsageRepositoryTest {
         assertNull(repository.snapshot().latestModel)
 
         repository.recordOpenAiResponse(
-            usage(model = "gpt-5.6-luna"),
+            usage(
+                model = "gpt-5.6-luna",
+                pricingVersion =
+                    "openai-gpt-5.6-luna-2026-09-27-v2",
+            ),
         )
         assertEquals(
             "gpt-5.6-luna",
@@ -143,10 +147,10 @@ class AiUsageRepositoryTest {
         )
 
         repository.recordOpenAiResponse(
-            usage(model = "future-model"),
+            usage(model = "gpt-6-luna"),
         )
         assertEquals(
-            "future-model",
+            "gpt-6-luna",
             repository.snapshot().latestModel,
         )
     }
@@ -174,10 +178,15 @@ class AiUsageRepositoryTest {
     @Test
     fun `per model totals remain distinguishable`() {
         repository.recordOpenAiResponse(
-            usage(model = "gpt-5.6-luna", cost = "0.1"),
+            usage(
+                model = "gpt-5.6-luna",
+                cost = "0.1",
+                pricingVersion =
+                    "openai-gpt-5.6-luna-2026-09-27-v2",
+            ),
         )
         repository.recordOpenAiResponse(
-            usage(model = "future-model", cost = "0.2"),
+            usage(model = "gpt-6-luna", cost = "0.2"),
         )
 
         val models = repository.snapshot().models
@@ -189,7 +198,7 @@ class AiUsageRepositoryTest {
         )
         assertEquals(
             BigDecimal("0.2"),
-            models.getValue("future-model").estimatedCostUsd,
+            models.getValue("gpt-6-luna").estimatedCostUsd,
         )
     }
 
@@ -265,7 +274,7 @@ class AiUsageRepositoryTest {
     }
 
     private fun usage(
-        model: String = "gpt-5.6-luna",
+        model: String = "gpt-6-luna",
         requestType: AdvisorRequestType = AdvisorRequestType.START,
         input: Long = 100,
         cached: Long? = 0,
@@ -274,6 +283,8 @@ class AiUsageRepositoryTest {
         reasoning: Long? = 0,
         total: Long = 110,
         cost: String? = "0.0001",
+        pricingVersion: String =
+            "openai-gpt-6-luna-2026-09-27-v1",
     ): AdvisorUsage =
         AdvisorUsage(
             model = model,
@@ -285,7 +296,6 @@ class AiUsageRepositoryTest {
             reasoningTokens = reasoning,
             totalTokens = total,
             estimatedCostUsd = cost?.let(::BigDecimal),
-            pricingVersion =
-                "openai-gpt-5.6-luna-2026-09-27-v2",
+            pricingVersion = pricingVersion,
         )
 }
