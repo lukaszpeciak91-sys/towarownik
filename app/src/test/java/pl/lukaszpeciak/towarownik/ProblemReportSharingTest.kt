@@ -133,7 +133,7 @@ class ProblemReportSharingTest {
             }
 
         assertEquals(
-            "${applicationId}.fileprovider",
+            "\${applicationId}.fileprovider",
             provider.getAttributeNS(ANDROID_NS, "authorities"),
         )
         assertEquals(
