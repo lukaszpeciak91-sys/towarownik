@@ -688,7 +688,7 @@ class AdvisorProxyClientTest {
                 )
                 assertEquals(
                     index + 1,
-                    product["stock"]?.jsonPrimitive?.intOrNull,
+                    product["stock"]?.jsonPrimitive?.content?.toIntOrNull(),
                 )
                 assertEquals(
                     (index + 1).toString() + ".99",
