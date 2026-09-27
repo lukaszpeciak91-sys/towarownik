@@ -117,8 +117,8 @@ internal class ProductSearchController(
                             }
                         }
                         is ProductLookupResult.InvalidObik -> ProductSearchUiState.Error(SearchUiError.INVALID_INPUT)
-                        is ProductLookupResult.InvalidStore -> ProductSearchUiState.Error(SearchUiError.LOOKUP)
-    is ProductLookupResult.InvalidStore -> ProductSearchUiState.Error(SearchUiError.LOOKUP)
+                        is ProductLookupResult.InvalidStore ->
+                            ProductSearchUiState.Error(SearchUiError.LOOKUP)
                         is ProductLookupResult.Unavailable -> lookup.toUiState()
                     }
                 }

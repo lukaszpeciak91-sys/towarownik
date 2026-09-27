@@ -222,6 +222,7 @@ private fun TowarownikApp() {
         mutableStateOf<ManualSearchUiState>(ManualSearchUiState.Idle)
     }
     var manualJob by remember { mutableStateOf<Job?>(null) }
+    val manualRequestGuard = remember { AdvisorRequestGuard() }
     var drawerQuery by rememberSaveable { mutableStateOf("") }
 
     val historyFlow = remember(drawerQuery) {
@@ -231,9 +232,26 @@ private fun TowarownikApp() {
         initial = emptyList(),
     )
 
+    fun clearManualStoreContext() {
+        manualRequestGuard.invalidate()
+        manualJob?.cancel()
+        manualJob = null
+        manualState = ManualSearchUiState.Idle
+    }
+
     fun applyConversation(
         conversation: PersistedConversation?,
     ) {
+        val nextConversationId = conversation?.id
+        val nextStoreNumber =
+            conversation?.storeNumber ?: DEFAULT_OBI_STORE_NUMBER
+        if (
+            activeConversationId != nextConversationId ||
+            selectedStoreNumber != nextStoreNumber
+        ) {
+            clearManualStoreContext()
+        }
+
         if (conversation == null) {
             activeConversationId = null
             selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
@@ -254,7 +272,7 @@ private fun TowarownikApp() {
         advisorJob = null
         draftPersistJob?.cancelAndJoin()
         draftPersistJob = null
-        storePersistJob?.cancelAndJoin()
+        storePersistJob?.join()
         storePersistJob = null
 
         if (recoverInterrupted) {
@@ -267,6 +285,7 @@ private fun TowarownikApp() {
     fun newAdvisorCase() {
         scope.launch {
             cancelAndRecoverActiveTurn()
+            clearManualStoreContext()
             freshCaseSelected = true
             activeConversationId = null
             selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
@@ -278,6 +297,7 @@ private fun TowarownikApp() {
     fun openConversation(conversationId: Long) {
         scope.launch {
             cancelAndRecoverActiveTurn()
+            clearManualStoreContext()
             val loaded = conversationRepository
                 .loadRecoveringInterrupted(conversationId)
             if (loaded != null) {
@@ -304,6 +324,7 @@ private fun TowarownikApp() {
             conversationRepository.deleteConversation(conversationId)
 
             if (freshCase != null) {
+                clearManualStoreContext()
                 activeConversationId = null
                 selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
                 freshCaseSelected = true
@@ -317,13 +338,14 @@ private fun TowarownikApp() {
     fun selectConversationStore(storeNumber: String) {
         if (
             advisorJob?.isActive == true ||
-            !isSupportedObiStoreNumber(storeNumber)
+            !isSupportedObiStoreNumber(storeNumber) ||
+            storeNumber == selectedStoreNumber
         ) {
             return
         }
 
+        clearManualStoreContext()
         selectedStoreNumber = storeNumber
-        manualState = ManualSearchUiState.Idle
         val conversationId = activeConversationId ?: return
         storePersistJob?.cancel()
         storePersistJob = scope.launch {
@@ -454,6 +476,8 @@ private fun TowarownikApp() {
     fun submitManualSearch() {
         val storeNumber = selectedStoreNumber
         val submission = prepareSearchSubmission(manualQuery)
+        manualRequestGuard.invalidate()
+        val generation = manualRequestGuard.token()
         manualJob?.cancel()
         manualQuery = submission.nextVisibleQuery
         manualJob = scope.launch {
@@ -461,20 +485,32 @@ private fun TowarownikApp() {
                 input = submission.submittedQuery,
                 storeNumber = storeNumber,
             ) { state ->
-                manualState = state
+                if (
+                    manualRequestGuard.isTokenCurrent(generation) &&
+                    selectedStoreNumber == storeNumber
+                ) {
+                    manualState = state
+                }
             }
         }
     }
 
     fun selectManualResult(item: ManualSearchResultItem) {
         val storeNumber = selectedStoreNumber
+        manualRequestGuard.invalidate()
+        val generation = manualRequestGuard.token()
         manualJob?.cancel()
         manualJob = scope.launch {
             manualSearchController.select(
                 item = item,
                 storeNumber = storeNumber,
             ) { state ->
-                manualState = state
+                if (
+                    manualRequestGuard.isTokenCurrent(generation) &&
+                    selectedStoreNumber == storeNumber
+                ) {
+                    manualState = state
+                }
             }
         }
     }
