@@ -29,9 +29,17 @@ internal data class AdvisorProductRef(
         )
 }
 
+internal data class AdvisorTechnicalFact(
+    val label: String,
+    val value: String,
+)
+
 internal data class AdvisorVerifiedProduct(
     val obik: String,
     val name: String,
+    val brand: String?,
+    val shortDescription: String?,
+    val technicalFacts: List<AdvisorTechnicalFact>,
     val stock: Int?,
     val price: BigDecimal?,
 )
