@@ -142,6 +142,11 @@ function validContinueBody(overrides = {}) {
         {
           obik: "1234567",
           name: "Synthetic product",
+          brand: "Synthetic Brand",
+          shortDescription: "Compact verified description.",
+          technicalFacts: [
+            { label: "Moc", value: "600 W" },
+          ],
           stock: 3,
           price: 19.99,
         },
@@ -1132,6 +1137,100 @@ test("continue rejects unknown tool name", async () => {
 
   assert.equal(response.status, 400);
   assert.equal(fake.captures.length, 0);
+});
+
+test("continue accepts enriched verified product facts and forwards them unchanged", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const output = JSON.parse(
+    fake.captures[0].body.input[0].output,
+  );
+  assert.deepEqual(output.products[0], body.result.products[0]);
+});
+
+test("continue accepts null and empty optional rich product facts", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.result.products[0].brand = null;
+  body.result.products[0].shortDescription = null;
+  body.result.products[0].technicalFacts = [];
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(fake.captures.length, 1);
+});
+
+test("continue rejects unexpected raw product payload structures", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.result.products[0].rawNuxt = { secret: "raw" };
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("continue enforces compact rich product bounds", async () => {
+  const cases = [
+    (product) => { product.brand = "b".repeat(81); },
+    (product) => {
+      product.shortDescription = "d".repeat(301);
+    },
+    (product) => {
+      product.technicalFacts = Array.from(
+        { length: 7 },
+        (_, index) => ({
+          label: `Fact ${index}`,
+          value: "value",
+        }),
+      );
+    },
+    (product) => {
+      product.technicalFacts = [{
+        label: "l".repeat(61),
+        value: "value",
+      }];
+    },
+    (product) => {
+      product.technicalFacts = [{
+        label: "Fact",
+        value: "v".repeat(121),
+      }];
+    },
+  ];
+
+  for (const mutate of cases) {
+    const fake = fakeOpenAI(answerPayload());
+    const worker = createWorker(fake.fetch);
+    const body = validContinueBody();
+    mutate(body.result.products[0]);
+
+    const response = await worker.fetch(
+      jsonRequest("/v1/agent/continue", body),
+      configuredEnv,
+    );
+
+    assert.equal(response.status, 400);
+    assert.equal(fake.captures.length, 0);
+  }
 });
 
 test("continue rejects more than five products", async () => {
