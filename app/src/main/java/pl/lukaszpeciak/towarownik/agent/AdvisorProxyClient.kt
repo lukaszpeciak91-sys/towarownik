@@ -118,31 +118,34 @@ internal class AdvisorProxyClient(
             )
         }
 
-        val body = buildJsonObject {
-            put("responseId", responseId)
-            put("callId", callId)
-            put("storeNumber", storeNumber)
-            put("tool", FIND_OBI_PRODUCTS)
-            put(
-                "result",
-                when (continuation) {
-                    is AdvisorToolContinuation.Verified ->
-                        continuation.result.toJson()
-                    is AdvisorToolContinuation.RejectedStore ->
-                        buildJsonObject {
-                            put("query", continuation.query)
-                            put(
-                                "storeNumber",
-                                continuation.storeNumber,
-                            )
-                            put(
-                                "rejection",
-                                "store_not_authorized",
-                            )
-                        }
-                },
-            )
-        }
+        val body = when (continuation) {
+            is AdvisorToolContinuation.Verified ->
+                buildBudgetedVerifiedContinueBody(
+                    responseId = responseId,
+                    callId = callId,
+                    storeNumber = storeNumber,
+                    result = continuation.result,
+                )
+            is AdvisorToolContinuation.RejectedStore ->
+                buildContinueBody(
+                    responseId = responseId,
+                    callId = callId,
+                    storeNumber = storeNumber,
+                    result = buildJsonObject {
+                        put("query", continuation.query)
+                        put(
+                            "storeNumber",
+                            continuation.storeNumber,
+                        )
+                        put(
+                            "rejection",
+                            "store_not_authorized",
+                        )
+                    },
+                ).takeIf(::fitsContinueByteBudget)
+        } ?: return AdvisorProxyCallResult.Failure(
+            AdvisorProxyFailureKind.PROTOCOL,
+        )
 
         return execute(
             endpoint = "v1/agent/continue",
@@ -346,6 +349,94 @@ internal class AdvisorProxyClient(
         }
     }
 
+    private fun buildBudgetedVerifiedContinueBody(
+        responseId: String,
+        callId: String,
+        storeNumber: String,
+        result: AdvisorVerifiedToolResult,
+    ): JsonObject? {
+        var products = result.products
+        fun currentBody(): JsonObject =
+            buildContinueBody(
+                responseId = responseId,
+                callId = callId,
+                storeNumber = storeNumber,
+                result = result.copy(products = products).toJson(),
+            )
+
+        var body = currentBody()
+        if (fitsContinueByteBudget(body)) {
+            return body
+        }
+
+        for (index in products.indices.reversed()) {
+            while (products[index].technicalFacts.isNotEmpty()) {
+                products = products.toMutableList().also { mutable ->
+                    val product = mutable[index]
+                    mutable[index] = product.copy(
+                        technicalFacts =
+                            product.technicalFacts.dropLast(1),
+                    )
+                }
+                body = currentBody()
+                if (fitsContinueByteBudget(body)) {
+                    return body
+                }
+            }
+        }
+
+        for (index in products.indices.reversed()) {
+            if (products[index].shortDescription != null) {
+                products = products.toMutableList().also { mutable ->
+                    mutable[index] = mutable[index].copy(
+                        shortDescription = null,
+                    )
+                }
+                body = currentBody()
+                if (fitsContinueByteBudget(body)) {
+                    return body
+                }
+            }
+        }
+
+        for (index in products.indices.reversed()) {
+            if (products[index].brand != null) {
+                products = products.toMutableList().also { mutable ->
+                    mutable[index] = mutable[index].copy(
+                        brand = null,
+                    )
+                }
+                body = currentBody()
+                if (fitsContinueByteBudget(body)) {
+                    return body
+                }
+            }
+        }
+
+        return body.takeIf(::fitsContinueByteBudget)
+    }
+
+    private fun buildContinueBody(
+        responseId: String,
+        callId: String,
+        storeNumber: String,
+        result: JsonObject,
+    ): JsonObject =
+        buildJsonObject {
+            put("responseId", responseId)
+            put("callId", callId)
+            put("storeNumber", storeNumber)
+            put("tool", FIND_OBI_PRODUCTS)
+            put("result", result)
+        }
+
+    private fun fitsContinueByteBudget(
+        body: JsonObject,
+    ): Boolean =
+        body.toString()
+            .toByteArray(Charsets.UTF_8)
+            .size <= MAX_CONTINUE_REQUEST_BYTES
+
     private fun AdvisorVerifiedToolResult.toJson(): JsonObject =
         buildJsonObject {
             put("query", query)
@@ -526,6 +617,7 @@ internal class AdvisorProxyClient(
         val STORE_NUMBER_PATTERN = Regex("""\d{3}""")
         val MODEL_PATTERN = Regex("""[A-Za-z0-9._-]+""")
         const val MAX_PROXY_RESPONSE_BYTES = 64 * 1024
+        const val MAX_CONTINUE_REQUEST_BYTES = 16 * 1024 - 1
         const val MAX_ID_CHARS = 256
         const val MAX_QUERY_CHARS = 200
         const val MAX_ANSWER_CHARS = 4_000
