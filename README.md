@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **advisor verified product cards v0.4**. Advisor conversations remain local customer cases with 30-day retention and multi-turn Responses continuation. Product recommendations can now include persistent verified cards: the model selects only seven-digit OBIKs, while every displayed card field comes exclusively from Android's exact OBI store-075 `LocalProduct` lookup captured during that USER turn. Historical cards reopen from local snapshots without network refresh.
+The current phase is **Android localization foundation PL/EN v0.1**. The existing advisor, verified product cards, local conversation lifecycle, and OBI behavior remain unchanged while current Android UI chrome is moved into standard Android string resources. Polish is the default resource set and a complete English resource set is available through normal Android locale selection. In-app language selection is intentionally deferred to the next Settings iteration.
 
 ## Technology
 
@@ -22,6 +22,7 @@ The current phase is **advisor verified product cards v0.4**. Advisor conversati
 - OkHttp: 4.12.0
 - kotlinx.serialization JSON: 1.9.0
 - Kotlin coroutines: 1.10.2
+- Android resource localization: Polish default (`values/`) + English (`values-en/`)
 - Active assistant proxy: Cloudflare Worker + TypeScript under `proxy/`
 
 ## Local bootstrap and build
@@ -130,3 +131,10 @@ Final model answers use a strict structured shape:
 `productObiks` is only a selection/order hint. During one USER turn Android retains successful exact store-075 `LocalProduct` snapshots from the local tool, combines up to two tool calls by OBIK with the latest exact lookup winning, and resolves final OBIKs only against that current-turn local set. Unknown model OBIKs are ignored and never trigger a lookup.
 
 Card name, OBIK, stock, gross price, URL, and verification time all come from the retained local snapshot. OpenAI never supplies or overrides card facts, never receives `productUrl` or `verifiedAt`, and never receives OBI HTML, Nuxt data, cookies, diagnostics, or parser internals. The selected snapshots are committed atomically with the ASSISTANT message and final response ID, then displayed as historical point-in-time facts with a “Sprawdzono …” timestamp. Reopening history does not refresh them.
+
+
+## Android localization
+
+User-facing Android UI text is resource-based rather than embedded in Compose/controllers. Polish is the default `values/strings.xml` resource set and English is provided completely in `values-en/strings.xml`. Runtime selection currently follows the device/app locale chosen by Android.
+
+Controller and saved-state values remain language-neutral: technical roles, JSON/API/tool contracts, OBI identifiers, database values, URLs, and diagnostic traces are not localized. Manual Polish/English selection inside Towarownik is not implemented in this iteration; it is reserved for the Settings screen.

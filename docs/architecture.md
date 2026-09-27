@@ -25,6 +25,14 @@ The product lookup core implements repository, HTTP/session transport, and OBI-s
 
 Transport and parsing must remain isolated from the UI. An OBI website change should require changes in its transport/parser boundary and tests, not a UI rewrite.
 
+## UI localization boundary
+
+Android presentation text uses normal platform resources: Polish is the default `app/src/main/res/values/strings.xml` set and English lives in `app/src/main/res/values-en/strings.xml`. Compose resolves current UI chrome through `stringResource(...)` and formatted resource placeholders.
+
+Application/controller state remains locale-independent. Advisor and product-search failures are represented by stable error enums and are translated only at the Compose boundary; the manual-search saver stores the enum value rather than rendered localized text. Persisted conversations, USER/ASSISTANT role constants, product facts, OBIK/store identifiers, URLs, API paths, JSON fields, tool names, OpenAI schema, database schema, and diagnostic internal traces remain technical contract data and are not localized.
+
+Locale selection in this iteration is standard Android resource selection only. There is no Settings language control, LocaleManager/AppCompat switch, or stored language preference yet.
+
 ## AI assistant boundary
 
 The Android app now exposes two separate top-level paths. WYSZUKIWARKA continues to use the existing local OBI flow directly and never invokes the proxy. DORADCA uses this assistant path:

@@ -170,3 +170,15 @@ These decisions describe the broader intended product behavior. The currently im
 - Persisted cards are historical snapshots. Reopening history never refreshes them; current stock/price/availability questions must use the local tool again.
 - Advisor product cards reuse the existing verified product-card UI boundary and open only the trusted persisted exact `productUrl`; URLs are never reconstructed from OBIK or model output.
 - This iteration does not change OBI parser, transport, exact store-`075` lookup, manual search limit 25, advisor product limit 5, tool count limit 2, history phrase-search semantics, or retry behavior.
+
+
+## Android localization foundation PL/EN v0.1
+
+- Current Android UI chrome is sourced from Android string resources instead of Kotlin/Compose literals.
+- Polish is the default resource set under `values/`; English under `values-en/` must define the same UI string keys.
+- Formatting with runtime values uses Android resource placeholders while existing stock/price semantics stay unchanged.
+- Controller error state is locale-independent: advisor/search controllers expose stable enums, and Compose maps them to localized strings.
+- Saved/manual-search error state stores the stable error enum, not a rendered sentence, so persisted/saved state does not become language-dependent.
+- Technical and persisted contracts are not localization targets: USER/ASSISTANT roles, JSON/API/tool identifiers, OBIK/store 075, HTTP details, database schema/values, URLs, OpenAI schema, and diagnostic internal traces remain stable.
+- This iteration relies only on Android resource locale selection. In-app Polish/English selection and a Settings UI are explicitly deferred.
+- No localization framework or new dependency is introduced.
