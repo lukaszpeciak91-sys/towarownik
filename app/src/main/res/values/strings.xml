@@ -73,4 +73,19 @@
     <string name="cd_clear_search">Wyczyść wyszukiwanie</string>
     <string name="cd_back">Wróć</string>
     <string name="cd_conversation_options">Opcje rozmowy</string>
+
+    <string name="settings">Ustawienia</string>
+    <string name="settings_section_general">OGÓLNE</string>
+    <string name="settings_language">Język</string>
+    <string name="language_polish">Polski</string>
+    <string name="language_english">English</string>
+    <string name="settings_section_help">POMOC</string>
+    <string name="settings_diagnostics">Diagnostyka</string>
+    <string name="settings_report_problem">Zgłoś problem</string>
+    <string name="settings_coming_soon">Wkrótce</string>
+    <string name="settings_section_about">O APLIKACJI</string>
+    <string name="settings_privacy_policy">Polityka prywatności</string>
+    <string name="settings_version">Wersja %1$s (%2$d)</string>
+    <string name="cd_open_settings">Otwórz ustawienia</string>
+
 </resources>
