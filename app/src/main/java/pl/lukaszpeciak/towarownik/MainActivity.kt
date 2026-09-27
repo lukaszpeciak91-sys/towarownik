@@ -2,13 +2,12 @@ package pl.lukaszpeciak.towarownik
 
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,7 +63,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -93,7 +91,7 @@ import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.ui.theme.TowarownikTheme
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -126,10 +124,20 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppSurface {
+internal enum class AppSurface {
     ADVISOR,
     MANUAL_SEARCH,
+    SETTINGS,
+    DIAGNOSTICS,
 }
+
+internal fun backSurface(surface: AppSurface): AppSurface =
+    when (surface) {
+        AppSurface.ADVISOR -> AppSurface.ADVISOR
+        AppSurface.MANUAL_SEARCH -> AppSurface.ADVISOR
+        AppSurface.SETTINGS -> AppSurface.ADVISOR
+        AppSurface.DIAGNOSTICS -> AppSurface.SETTINGS
+    }
 
 internal fun freshAdvisorCaseAfterDelete(
     deletedConversationId: Long,
@@ -154,7 +162,6 @@ private fun TowarownikApp() {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    var diagnosticsOpen by rememberSaveable { mutableStateOf(false) }
     var surfaceName by rememberSaveable {
         mutableStateOf(AppSurface.ADVISOR.name)
     }
@@ -408,8 +415,19 @@ private fun TowarownikApp() {
         surfaceName = AppSurface.MANUAL_SEARCH.name
     }
 
-    fun closeManualSearch() {
-        surfaceName = AppSurface.ADVISOR.name
+    fun openSettings() {
+        surfaceName = AppSurface.SETTINGS.name
+        scope.launch {
+            drawerState.close()
+        }
+    }
+
+    fun openDiagnostics() {
+        surfaceName = AppSurface.DIAGNOSTICS.name
+    }
+
+    fun navigateBackFrom(currentSurface: AppSurface) {
+        surfaceName = backSurface(currentSurface).name
     }
 
     LaunchedEffect(Unit) {
@@ -442,13 +460,6 @@ private fun TowarownikApp() {
         }
     }
 
-    if (diagnosticsOpen) {
-        ObiDiagnosticsScreen(
-            onBack = { diagnosticsOpen = false },
-        )
-        return
-    }
-
     when (surface) {
         AppSurface.ADVISOR -> {
             ModalNavigationDrawer(
@@ -464,6 +475,7 @@ private fun TowarownikApp() {
                         },
                         onOpenConversation = ::openConversation,
                         onDeleteConversation = ::deleteConversation,
+                        onOpenSettings = ::openSettings,
                     )
                 },
             ) {
@@ -477,15 +489,16 @@ private fun TowarownikApp() {
                     },
                     onNewCase = ::newAdvisorCase,
                     onOpenSearch = ::openManualSearch,
-                    onOpenDiagnostics = {
-                        diagnosticsOpen = true
-                    },
                 )
             }
         }
 
         AppSurface.MANUAL_SEARCH -> {
-            BackHandler(onBack = ::closeManualSearch)
+            BackHandler(
+                onBack = {
+                    navigateBackFrom(AppSurface.MANUAL_SEARCH)
+                },
+            )
             ManualObiSearchScreen(
                 query = manualQuery,
                 state = manualState,
@@ -509,7 +522,26 @@ private fun TowarownikApp() {
                         manualState = current.showMore()
                     }
                 },
-                onBack = ::closeManualSearch,
+                onBack = {
+                    navigateBackFrom(AppSurface.MANUAL_SEARCH)
+                },
+            )
+        }
+
+        AppSurface.SETTINGS -> {
+            SettingsScreen(
+                onBack = {
+                    navigateBackFrom(AppSurface.SETTINGS)
+                },
+                onOpenDiagnostics = ::openDiagnostics,
+            )
+        }
+
+        AppSurface.DIAGNOSTICS -> {
+            ObiDiagnosticsScreen(
+                onBack = {
+                    navigateBackFrom(AppSurface.DIAGNOSTICS)
+                },
             )
         }
     }
@@ -523,6 +555,7 @@ private fun ConversationDrawer(
     onNewConversation: () -> Unit,
     onOpenConversation: (Long) -> Unit,
     onDeleteConversation: (Long) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var pendingDelete by remember {
         mutableStateOf<ConversationSummary?>(null)
@@ -595,119 +628,157 @@ private fun ConversationDrawer(
                 ),
             )
 
-            if (conversations.isEmpty()) {
-                Text(
-                    text = if (query.isBlank()) {
-                        stringResource(R.string.no_saved_conversations)
-                    } else {
-                        stringResource(R.string.no_matching_conversations)
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(
-                        items = conversations,
-                        key = { conversation -> conversation.id },
-                    ) { conversation ->
-                        var menuExpanded by remember(conversation.id) {
-                            mutableStateOf(false)
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    onOpenConversation(conversation.id)
-                                },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(14.dp),
-                                border = null,
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = warmColors.surfaceRaised,
-                                    contentColor = MaterialTheme.colorScheme.onSurface,
-                                ),
-                                contentPadding = PaddingValues(
-                                    horizontal = 12.dp,
-                                    vertical = 10.dp,
-                                ),
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalAlignment = Alignment.Start,
-                                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                                ) {
-                                    Text(
-                                        text = conversation.title,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                    )
-                                    Text(
-                                        text = formatHistoryTimestamp(
-                                            conversation.updatedAt,
-                                        ),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                if (conversations.isEmpty()) {
+                    Text(
+                        text = if (query.isBlank()) {
+                            stringResource(R.string.no_saved_conversations)
+                        } else {
+                            stringResource(R.string.no_matching_conversations)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(
+                            items = conversations,
+                            key = { conversation -> conversation.id },
+                        ) { conversation ->
+                            var menuExpanded by remember(conversation.id) {
+                                mutableStateOf(false)
                             }
 
-                            Box {
-                                IconButton(
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                OutlinedButton(
                                     onClick = {
-                                        menuExpanded = true
+                                        onOpenConversation(conversation.id)
                                     },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = null,
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = warmColors.surfaceRaised,
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                    contentPadding = PaddingValues(
+                                        horizontal = 12.dp,
+                                        vertical = 10.dp,
+                                    ),
                                 ) {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_more_vert_24),
-                                        contentDescription = stringResource(
-                                            R.string.cd_conversation_options,
-                                        ),
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.Start,
+                                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                                    ) {
+                                        Text(
+                                            text = conversation.title,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                        )
+                                        Text(
+                                            text = formatHistoryTimestamp(
+                                                conversation.updatedAt,
+                                            ),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
-                                DropdownMenu(
-                                    expanded = menuExpanded,
-                                    onDismissRequest = {
-                                        menuExpanded = false
-                                    },
-                                    containerColor = warmColors.surfaceRaised,
-                                ) {
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = stringResource(
-                                                    R.string.delete_conversation,
-                                                ),
-                                                color = MaterialTheme.colorScheme.error,
-                                            )
-                                        },
-                                        leadingIcon = {
-                                            Icon(
-                                                painter = painterResource(
-                                                    R.drawable.ic_delete_24,
-                                                ),
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.error,
-                                            )
-                                        },
+
+                                Box {
+                                    IconButton(
                                         onClick = {
-                                            menuExpanded = false
-                                            pendingDelete = conversation
+                                            menuExpanded = true
                                         },
-                                    )
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(
+                                                R.drawable.ic_more_vert_24,
+                                            ),
+                                            contentDescription = stringResource(
+                                                R.string.cd_conversation_options,
+                                            ),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    DropdownMenu(
+                                        expanded = menuExpanded,
+                                        onDismissRequest = {
+                                            menuExpanded = false
+                                        },
+                                        containerColor = warmColors.surfaceRaised,
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = stringResource(
+                                                        R.string.delete_conversation,
+                                                    ),
+                                                    color = MaterialTheme.colorScheme.error,
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    painter = painterResource(
+                                                        R.drawable.ic_delete_24,
+                                                    ),
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                )
+                                            },
+                                            onClick = {
+                                                menuExpanded = false
+                                                pendingDelete = conversation
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+            )
+
+            OutlinedButton(
+                onClick = onOpenSettings,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                border = null,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = warmColors.surfaceRaised,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                contentPadding = PaddingValues(
+                    horizontal = 14.dp,
+                    vertical = 10.dp,
+                ),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_settings_24),
+                    contentDescription = stringResource(R.string.cd_open_settings),
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = stringResource(R.string.settings),
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Start,
+                )
             }
         }
     }
@@ -759,7 +830,6 @@ private fun AdvisorChatScreen(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
-    onOpenDiagnostics: () -> Unit,
 ) {
     val isRunning = state.isRunning()
     val composerEnabled = isAdvisorComposerEnabled(state)
@@ -771,7 +841,6 @@ private fun AdvisorChatScreen(
                 onOpenDrawer = onOpenDrawer,
                 onNewCase = onNewCase,
                 onOpenSearch = onOpenSearch,
-                onOpenDiagnostics = onOpenDiagnostics,
             )
         },
         bottomBar = {
@@ -839,7 +908,6 @@ private fun AdvisorTopBar(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
-    onOpenDiagnostics: () -> Unit,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.background,
@@ -866,13 +934,7 @@ private fun AdvisorTopBar(
 
                 Text(
                     text = stringResource(R.string.app_name),
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .pointerInput(onOpenDiagnostics) {
-                            detectTapGestures(
-                                onLongPress = { onOpenDiagnostics() },
-                            )
-                        },
+                    modifier = Modifier.align(Alignment.Center),
                     style = MaterialTheme.typography.titleMedium,
                 )
 
@@ -1527,7 +1589,6 @@ private fun AdvisorChatPreview() {
             onOpenDrawer = {},
             onNewCase = {},
             onOpenSearch = {},
-            onOpenDiagnostics = {},
         )
     }
 }

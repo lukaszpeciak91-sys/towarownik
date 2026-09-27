@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **Android localization foundation PL/EN v0.1**. The existing advisor, verified product cards, local conversation lifecycle, and OBI behavior remain unchanged while current Android UI chrome is moved into standard Android string resources. Polish is the default resource set and a complete English resource set is available through normal Android locale selection. In-app language selection is intentionally deferred to the next Settings iteration.
+The current phase is **Settings + PL/EN language selection + diagnostics relocation v0.1**. The app now has a dedicated Settings surface pinned to the bottom of the conversation drawer. Settings provides real Polish / English UI selection through AndroidX AppCompat per-app locales, links to the existing OBI diagnostics surface, and shows app identity/version without changing advisor, OBI, Room, or product behavior.
 
 ## Technology
 
@@ -135,6 +135,10 @@ Card name, OBIK, stock, gross price, URL, and verification time all come from th
 
 ## Android localization
 
-User-facing Android UI text is resource-based rather than embedded in Compose/controllers. Polish is the default `values/strings.xml` resource set and English is provided completely in `values-en/strings.xml`. Runtime selection currently follows the device/app locale chosen by Android.
+User-facing Android UI text is resource-based rather than embedded in Compose/controllers. Polish is the default `values/strings.xml` resource set and English is provided completely in `values-en/strings.xml`. Settings exposes exactly **Polski** and **English** using `AppCompatDelegate.setApplicationLocales(...)`.
 
-Controller and saved-state values remain language-neutral: technical roles, JSON/API/tool contracts, OBI identifiers, database values, URLs, and diagnostic traces are not localized. Manual Polish/English selection inside Towarownik is not implemented in this iteration; it is reserved for the Settings screen.
+On API 32 and lower AppCompat persists the chosen app locale through its supported `autoStoreLocales` metadata service. On API 33+ AppCompat delegates to the platform per-app locale mechanism; `android:localeConfig` points to a locale configuration containing only `pl` and `en`. The activity uses `AppCompatActivity` with the smallest AppCompat-compatible host theme change; the Compose Warm Modular Utility theme remains the visual source of truth.
+
+The UI locale is presentation-only. It is not sent to the Cloudflare proxy or OpenAI, does not change `/start`, `/message`, or `/continue`, does not translate persisted USER/ASSISTANT text, and does not restart an OpenAI response chain.
+
+Settings also owns navigation to the existing OBI diagnostics screen; the previous hidden long-press on the centered app title has been removed. **Zgłoś problem / Report problem** and **Polityka prywatności / Privacy policy** are visible disabled future rows only: no fake action, report flow, URL, or legal copy is implemented. The About area renders the current `app_name` resource plus BuildConfig version information so future naming remains cheap.

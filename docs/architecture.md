@@ -31,7 +31,9 @@ Android presentation text uses normal platform resources: Polish is the default 
 
 Application/controller state remains locale-independent. Advisor and product-search failures are represented by stable error enums and are translated only at the Compose boundary; the manual-search saver stores the enum value rather than rendered localized text. Persisted conversations, USER/ASSISTANT role constants, product facts, OBIK/store identifiers, URLs, API paths, JSON fields, tool names, OpenAI schema, database schema, and diagnostic internal traces remain technical contract data and are not localized.
 
-Locale selection in this iteration is standard Android resource selection only. There is no Settings language control, LocaleManager/AppCompat switch, or stored language preference yet.
+Locale selection uses AndroidX AppCompat per-app locales. `MainActivity` is an `AppCompatActivity`; selecting Polski or English calls `AppCompatDelegate.setApplicationLocales(LocaleListCompat...)`. AppCompat's `autoStoreLocales` metadata provides supported persistence below Android 13, while Android 13+ uses the platform per-app locale service and the manifest `localeConfig` advertises only `pl` and `en`. No custom locale Context wrapper or SharedPreferences language store exists.
+
+The UI locale remains independent from advisor/model language. No locale field is added to proxy requests or persisted conversations, and existing USER/ASSISTANT text is never translated as a side effect of changing Settings.
 
 ## AI assistant boundary
 
@@ -133,7 +135,7 @@ An explicit empty-search state or ordinary HTTP 404 maps to not found. A narrow 
 
 ## Temporary OBI diagnostics
 
-A temporary in-app engineering diagnostic mode observes the existing OBI integration without changing its URLs, headers, redirect policy, cookie behavior, or parsing decisions. It is OFF by default and is opened by long-pressing the Towarownik title. State and history are process-session only; no persistence dependency is used.
+A temporary in-app engineering diagnostic mode observes the existing OBI integration without changing its URLs, headers, redirect policy, cookie behavior, or parsing decisions. It is OFF by default and is opened from **Drawer → Settings → Diagnostics**. The former hidden long-press on the Towarownik title has been removed. State and history are process-session only; no persistence dependency is used.
 
 `ObiDiagnosticRecorder` is bounded to the last 10 operations. An OkHttp network interceptor observes actual request headers, redirect hops, safe response metadata, and cookie names. All recorded URLs are sanitized: scheme/host/path are retained, only explicitly safe query values such as `storeNumber=075` remain visible, and other query values are replaced with `REDACTED`. Cookie values are inspected only transiently to classify per-hop store evidence as `true`, `false`, or `unknown`, then discarded; they are never stored or printed. Response bodies are never persisted. Successful responses are reduced immediately to safe signatures, while final 4xx/5xx responses use a bounded diagnostic preview for the same signatures. The reported body-size field is `decodedBodyUtf8Bytes`, meaning UTF-8 bytes of the decoded diagnostic text, not raw HTTP payload bytes.
 
@@ -143,7 +145,9 @@ Deterministic fixtures and CI prove code behavior against known inputs; they do 
 
 ## UI and configuration
 
-The application uses a single Compose activity and state-based top-level surfaces; Navigation Compose is intentionally not introduced. The default surface is the advisor chat shell. Its top bar has a modal drawer action, centered Towarownik title, explicit new-case action, and quick access to the independent full-screen Wyszukiwarka OBI. The drawer contains “Nowa rozmowa”, local persisted history/search, and a per-conversation overflow action for confirmed deletion. No fake conversations are created.
+The application uses one AppCompat-backed Compose activity and state-based top-level surfaces; Navigation Compose is intentionally not introduced. The surfaces are Advisor, manual OBI search, Settings, and Diagnostics. The default surface is the advisor chat shell. Its top bar has a modal drawer action, centered Towarownik title, explicit new-case action, and quick access to the independent full-screen Wyszukiwarka OBI. The drawer contains “Nowa rozmowa”, local persisted history/search, per-conversation confirmed deletion, and a visually separated Settings action pinned at the bottom regardless of history/search state. Opening Settings changes only the surface and closes the drawer; it does not reset the active conversation/draft or initiate proxy/OBI work.
+
+Settings returns directly to Advisor. Diagnostics is entered only from Settings and returns to Settings. Settings contains General/Language, Help/Diagnostics plus disabled future Report problem, and About with resource-based `app_name`, current versionName/versionCode, plus a disabled future Privacy policy row. The placeholders are deliberately non-functional and contain no invented endpoint, URL, or legal text.
 
 The advisor is now genuinely multi-turn within one local customer conversation. After a completed ASSISTANT answer the composer is enabled again; the next USER message continues from that conversation's stored final response ID. Submitted/completed messages persist with createdAt timestamps and keep the existing local HH:mm presentation. Simple Markdown markers are still normalized before storage/display. Starting or opening another conversation cancels active work, recovers any interrupted trailing USER to the old conversation's draft, and protects the new selection from stale callbacks.
 
