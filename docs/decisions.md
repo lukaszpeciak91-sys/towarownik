@@ -99,7 +99,7 @@ These decisions describe the broader intended product behavior. The currently im
 - `POST /v1/agent/start` and `POST /v1/agent/continue` require `Authorization: Bearer <TOWAROWNIK_APP_TOKEN>`. Missing server token configuration fails closed. This shared token is initial Internal-Testing abuse prevention, not strong device identity.
 - `OPENAI_API_KEY` exists only in the Worker environment and is never forwarded to Android. The Android Authorization header is never forwarded to OpenAI.
 - The Worker uses native `fetch` with `POST https://api.openai.com/v1/responses`; no OpenAI SDK runtime dependency is introduced.
-- The current cost-sensitive model is centralized as `gpt-5.6-luna` with low reasoning effort and a bounded output budget. This model choice may change after real assistant evaluations.
+- The current cost-sensitive model is centralized as `gpt-6-luna` with low reasoning effort and a bounded output budget.
 - OpenAI request parameters are server-controlled. Android cannot choose the model, instructions, tools, reasoning effort, output budget, or upstream URL.
 - No OpenAI built-in tool is enabled. The sole function tool is strict `find_available_obi_075(query, limit)`, with `limit <= 5`.
 - The Worker never executes that OBI tool. It validates the model request and returns it to Android; Android remains authoritative for OBI discovery, OBIK, store `075`, stock, and local price.
@@ -265,3 +265,12 @@ These decisions describe the broader intended product behavior. The currently im
 - A configured “remaining AI budget” is a Taksula-local estimate with a spend baseline, not OpenAI credit/balance. Unknown/unpriced spend makes the remaining estimate unavailable rather than guessed.
 - Warn once when the known estimate crosses below USD 1; reset/increasing the budget to at least USD 1 re-arms the warning.
 - Measured future sequence: baseline → model comparison/swap PR → richer OBI facts → final advisor instructions/persona → optional OpenAI web_search.
+
+
+## Advisor model swap to GPT-6 Luna v0.1
+
+- Production advisor model changes from `gpt-5.6-luna` to `gpt-6-luna` only; reasoning remains low and the existing Responses API, instructions, structured output, tool contract, trust boundary, tool-call limit, and `previous_response_id` strategy are unchanged.
+- Current GPT-6 Luna pricing version is `openai-gpt-6-luna-2026-09-27-v1`: USD 0.10/M ordinary input, USD 0.01/M cached input, USD 0.125/M cache-write input, and USD 0.50/M output. Above 272,000 input tokens, all input-side rates are doubled and output is multiplied by 1.5 for the full request.
+- Existing GPT-5.6 Luna usage remains historical per-model baseline data. Global totals and configured local Taksula budget continue without reset; the latest measured model changes only when measured GPT-6 usage arrives.
+- No fallback to GPT-5.6 is introduced. Unknown model pricing remains unpriced rather than inferred.
+- Next measured product work remains richer OBI facts → final advisor instructions/persona → optional OpenAI `web_search`.

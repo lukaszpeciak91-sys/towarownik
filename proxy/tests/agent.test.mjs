@@ -283,7 +283,7 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
   assert.equal(capture.headers.get("Content-Type"), "application/json");
 
   assert.equal(capture.body.model, OPENAI_MODEL);
-  assert.equal(capture.body.model, "gpt-5.6-luna");
+  assert.equal(capture.body.model, "gpt-6-luna");
   assert.equal(capture.body.instructions, agentInstructionsForStore("075"));
   assert.equal(capture.body.input, "find a product please");
   assert.deepEqual(capture.body.reasoning, { effort: OPENAI_REASONING_EFFORT });
@@ -445,7 +445,7 @@ test("valid OpenAI usage is normalized with cached and reasoning detail", async 
     outputTokens: 100,
     reasoningTokens: 50,
     totalTokens: 1_100,
-    estimatedCostUsd: 0.000248,
+    estimatedCostUsd: 0.000114,
     pricingVersion: CURRENT_MODEL_PRICING.pricingVersion,
   });
 });
@@ -463,21 +463,24 @@ test("reasoning tokens are output detail and are not double charged", async () =
 
   assert.equal(body.usage.outputTokens, 100);
   assert.equal(body.usage.reasoningTokens, 50);
-  assert.equal(body.usage.estimatedCostUsd, 0.000248);
+  assert.equal(body.usage.estimatedCostUsd, 0.000114);
 });
 
-test("current gpt-5.6-luna pricing is explicit and versioned", () => {
-  assert.equal(CURRENT_MODEL_PRICING.model, "gpt-5.6-luna");
+test("current gpt-6-luna pricing is explicit and versioned", () => {
+  assert.equal(CURRENT_MODEL_PRICING.model, "gpt-6-luna");
   assert.deepEqual(CURRENT_MODEL_PRICING.usdPerMillionTokens, {
-    uncachedInput: "0.20",
-    cachedInput: "0.02",
-    cacheWriteInput: "0.25",
-    output: "1.20",
+    uncachedInput: "0.10",
+    cachedInput: "0.01",
+    cacheWriteInput: "0.125",
+    output: "0.50",
   });
-  assert.match(CURRENT_MODEL_PRICING.pricingVersion, /2026-09-27/);
+  assert.equal(
+    CURRENT_MODEL_PRICING.pricingVersion,
+    "openai-gpt-6-luna-2026-09-27-v1",
+  );
 });
 
-test("cache-write tokens are parsed and charged at USD 0.25 per million", async () => {
+test("cache-write tokens are parsed and charged at USD 0.125 per million", async () => {
   const fake = fakeOpenAI(
     withUsage(answerPayload(), {
       input_tokens: 1_000,
@@ -500,7 +503,133 @@ test("cache-write tokens are parsed and charged at USD 0.25 per million", async 
   );
 
   assert.equal(body.usage.cacheWriteTokens, 100);
-  assert.equal(body.usage.estimatedCostUsd, 0.000253);
+  assert.equal(body.usage.estimatedCostUsd, 0.0001165);
+});
+
+test("GPT-6 ordinary input uses the USD 0.10 per million standard rate", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 100_000,
+      input_tokens_details: {
+        cached_tokens: 0,
+        cache_write_tokens: 0,
+      },
+      output_tokens: 0,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 100_000,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.01);
+});
+
+test("GPT-6 cached input uses the USD 0.01 per million standard rate", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 100_000,
+      input_tokens_details: {
+        cached_tokens: 100_000,
+        cache_write_tokens: 0,
+      },
+      output_tokens: 0,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 100_000,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.001);
+});
+
+test("GPT-6 cache-write input uses the USD 0.125 per million standard rate", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 100_000,
+      input_tokens_details: {
+        cached_tokens: 0,
+        cache_write_tokens: 100_000,
+      },
+      output_tokens: 0,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 100_000,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.0125);
+});
+
+test("GPT-6 output pricing is USD 0.50 per million", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 0,
+      input_tokens_details: {
+        cached_tokens: 0,
+        cache_write_tokens: 0,
+      },
+      output_tokens: 1_000_000,
+      output_tokens_details: { reasoning_tokens: 500_000 },
+      total_tokens: 1_000_000,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.5);
+  assert.equal(body.usage.reasoningTokens, 500_000);
+});
+
+test("GPT-6 combined short-context request cost is exact", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 1_000,
+      input_tokens_details: {
+        cached_tokens: 400,
+        cache_write_tokens: 100,
+      },
+      output_tokens: 100,
+      output_tokens_details: { reasoning_tokens: 50 },
+      total_tokens: 1_100,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.0001165);
 });
 
 test("cached plus cache-write tokens cannot exceed input tokens", async () => {
@@ -550,7 +679,7 @@ test("272000 input tokens use short-context pricing", async () => {
     ),
   );
 
-  assert.equal(body.usage.estimatedCostUsd, 0.05452);
+  assert.equal(body.usage.estimatedCostUsd, 0.02725);
 });
 
 test("272001 input tokens use long-context pricing for the full request", async () => {
@@ -575,7 +704,7 @@ test("272001 input tokens use long-context pricing for the full request", async 
     ),
   );
 
-  assert.equal(body.usage.estimatedCostUsd, 0.1089804);
+  assert.equal(body.usage.estimatedCostUsd, 0.0544752);
 });
 
 test("long-context pricing doubles cache writes and other input-side rates", async () => {
@@ -600,7 +729,7 @@ test("long-context pricing doubles cache writes and other input-side rates", asy
     ),
   );
 
-  assert.equal(body.usage.estimatedCostUsd, 0.0829804);
+  assert.equal(body.usage.estimatedCostUsd, 0.0414752);
 });
 
 test("missing cache-write detail leaves cost unpriced instead of guessing", async () => {

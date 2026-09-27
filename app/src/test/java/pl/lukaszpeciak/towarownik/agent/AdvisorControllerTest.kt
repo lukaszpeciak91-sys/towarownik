@@ -732,7 +732,7 @@ class AdvisorControllerTest {
         val observed = mutableListOf<AdvisorUsage?>()
         var toolAssistedSignals = 0
         val paidUsage = AdvisorUsage(
-            model = "gpt-5.6-luna",
+            model = "gpt-6-luna",
             requestType = AdvisorRequestType.START,
             inputTokens = 100,
             cachedInputTokens = 0,
@@ -741,7 +741,7 @@ class AdvisorControllerTest {
             totalTokens = 110,
             estimatedCostUsd = BigDecimal("0.000032"),
             pricingVersion =
-                "openai-gpt-5.6-luna-2026-09-27",
+                "openai-gpt-6-luna-2026-09-27-v1",
         )
         val controller = controller(
             start = {

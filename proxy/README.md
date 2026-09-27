@@ -86,7 +86,7 @@ Raw OpenAI responses, reasoning content/items, internal instructions, and upstre
 
 ## OpenAI contract
 
-The current cost-sensitive validation model is `gpt-5.6-luna` with low reasoning effort and a bounded output budget. Model choice is centralized and may be revisited after real evaluations.
+The current cost-sensitive validation model is `gpt-6-luna` with low reasoning effort and a bounded output budget. Model choice is centralized and may be revisited after real evaluations.
 
 The Worker uses native `fetch` against the Responses API. It enables no OpenAI built-in tools: no web search, file search, computer use, hosted shell, image generation, MCP, or other paid built-in tool.
 
@@ -102,12 +102,12 @@ find_obi_products(query, limit)
 
 For every successful Responses API result, the Worker independently attempts to validate OpenAI `usage`. START, MESSAGE, and CONTINUE are explicit request types. Missing or malformed usage is dropped while the normalized answer/tool request remains valid.
 
-Current pricing is server-controlled and versioned as `openai-gpt-5.6-luna-2026-09-27-v2` for `gpt-5.6-luna`:
+Current pricing is server-controlled and versioned as `openai-gpt-6-luna-2026-09-27-v1` for `gpt-6-luna`:
 
-- ordinary input: USD 0.20 / 1M tokens;
-- cached input: USD 0.02 / 1M tokens;
-- cache-write input: USD 0.25 / 1M tokens;
-- output: USD 1.20 / 1M tokens.
+- ordinary input: USD 0.10 / 1M tokens;
+- cached input: USD 0.01 / 1M tokens;
+- cache-write input: USD 0.125 / 1M tokens;
+- output: USD 0.50 / 1M tokens.
 
 For requests with more than 272,000 input tokens, pricing switches for the full request to 2× every input-side rate and 1.5× the output rate.
 
@@ -118,7 +118,7 @@ The successful envelope may therefore include:
 ```json
 {
   "usage": {
-    "model": "gpt-5.6-luna",
+    "model": "gpt-6-luna",
     "requestType": "START",
     "inputTokens": 1000,
     "cachedInputTokens": 400,
@@ -126,8 +126,8 @@ The successful envelope may therefore include:
     "outputTokens": 100,
     "reasoningTokens": 50,
     "totalTokens": 1100,
-    "estimatedCostUsd": 0.000253,
-    "pricingVersion": "openai-gpt-5.6-luna-2026-09-27-v2"
+    "estimatedCostUsd": 0.0001165,
+    "pricingVersion": "openai-gpt-6-luna-2026-09-27-v1"
   }
 }
 ```

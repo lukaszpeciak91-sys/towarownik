@@ -1,29 +1,29 @@
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
-export const OPENAI_MODEL = "gpt-5.6-luna";
+export const OPENAI_MODEL = "gpt-6-luna";
 export const OPENAI_REASONING_EFFORT = "low";
 export const OPENAI_MAX_OUTPUT_TOKENS = 384;
 
 export const CURRENT_MODEL_PRICING = {
   model: OPENAI_MODEL,
-  pricingVersion: "openai-gpt-5.6-luna-2026-09-27-v2",
+  pricingVersion: "openai-gpt-6-luna-2026-09-27-v1",
   longContextInputThreshold: 272_000,
   usdPerMillionTokens: {
-    uncachedInput: "0.20",
-    cachedInput: "0.02",
-    cacheWriteInput: "0.25",
-    output: "1.20",
+    uncachedInput: "0.10",
+    cachedInput: "0.01",
+    cacheWriteInput: "0.125",
+    output: "0.50",
   },
   nanoUsdPerToken: {
+    uncachedInput: 100n,
+    cachedInput: 10n,
+    cacheWriteInput: 125n,
+    output: 500n,
+  },
+  longContextNanoUsdPerToken: {
     uncachedInput: 200n,
     cachedInput: 20n,
     cacheWriteInput: 250n,
-    output: 1_200n,
-  },
-  longContextNanoUsdPerToken: {
-    uncachedInput: 400n,
-    cachedInput: 40n,
-    cacheWriteInput: 500n,
-    output: 1_800n,
+    output: 750n,
   },
 } as const;
 
