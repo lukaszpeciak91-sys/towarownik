@@ -16,7 +16,6 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import pl.lukaszpeciak.towarownik.agent.AdvisorUsage
 
-internal const val CURRENT_AI_MODEL_LABEL = "gpt-5.6-luna"
 internal val AI_BUDGET_WARNING_THRESHOLD_USD = BigDecimal("1.00")
 
 internal data class AiUsageModelTotals(
@@ -24,6 +23,7 @@ internal data class AiUsageModelTotals(
     val requests: Long,
     val inputTokens: Long,
     val cachedInputTokens: Long?,
+    val cacheWriteTokens: Long?,
     val outputTokens: Long,
     val reasoningTokens: Long?,
     val totalTokens: Long,
@@ -37,11 +37,13 @@ internal data class AiBudgetSnapshot(
 
 internal data class AiUsageSnapshot(
     val trackingStartedAt: Long?,
+    val latestModel: String?,
     val requests: Long,
     val turns: Long,
     val toolAssistedTurns: Long,
     val inputTokens: Long,
     val cachedInputTokens: Long?,
+    val cacheWriteTokens: Long?,
     val outputTokens: Long,
     val reasoningTokens: Long?,
     val totalTokens: Long,
@@ -155,6 +157,18 @@ internal class AiUsageRepository(
                 } else {
                     existingModel.cachedReportedRequests
                 },
+            cacheWriteTokens = usage.cacheWriteTokens?.let {
+                Math.addExact(existingModel.cacheWriteTokens, it)
+            } ?: existingModel.cacheWriteTokens,
+            cacheWriteReportedRequests =
+                if (usage.cacheWriteTokens != null) {
+                    Math.addExact(
+                        existingModel.cacheWriteReportedRequests,
+                        1L,
+                    )
+                } else {
+                    existingModel.cacheWriteReportedRequests
+                },
             outputTokens =
                 Math.addExact(existingModel.outputTokens, usage.outputTokens),
             reasoningTokens = usage.reasoningTokens?.let {
@@ -177,6 +191,7 @@ internal class AiUsageRepository(
         )
 
         return copy(
+            latestModel = usage.model,
             inputTokens = Math.addExact(inputTokens, usage.inputTokens),
             cachedInputTokens = usage.cachedInputTokens?.let {
                 Math.addExact(cachedInputTokens, it)
@@ -186,6 +201,15 @@ internal class AiUsageRepository(
                     Math.addExact(cachedReportedRequests, 1L)
                 } else {
                     cachedReportedRequests
+                },
+            cacheWriteTokens = usage.cacheWriteTokens?.let {
+                Math.addExact(cacheWriteTokens, it)
+            } ?: cacheWriteTokens,
+            cacheWriteReportedRequests =
+                if (usage.cacheWriteTokens != null) {
+                    Math.addExact(cacheWriteReportedRequests, 1L)
+                } else {
+                    cacheWriteReportedRequests
                 },
             outputTokens = Math.addExact(outputTokens, usage.outputTokens),
             reasoningTokens = usage.reasoningTokens?.let {
@@ -251,6 +275,7 @@ internal class AiUsageRepository(
     private fun UsageState.toSnapshot(): AiUsageSnapshot =
         AiUsageSnapshot(
             trackingStartedAt = trackingStartedAt,
+            latestModel = latestModel,
             requests = requests,
             turns = turns,
             toolAssistedTurns = toolAssistedTurns,
@@ -258,6 +283,10 @@ internal class AiUsageRepository(
             cachedInputTokens =
                 cachedInputTokens.takeIf {
                     cachedReportedRequests > 0
+                },
+            cacheWriteTokens =
+                cacheWriteTokens.takeIf {
+                    cacheWriteReportedRequests > 0
                 },
             outputTokens = outputTokens,
             reasoningTokens =
@@ -277,6 +306,10 @@ internal class AiUsageRepository(
                         cachedInputTokens =
                             model.cachedInputTokens.takeIf {
                                 model.cachedReportedRequests > 0
+                            },
+                        cacheWriteTokens =
+                            model.cacheWriteTokens.takeIf {
+                                model.cacheWriteReportedRequests > 0
                             },
                         outputTokens = model.outputTokens,
                         reasoningTokens =
@@ -333,12 +366,15 @@ internal class AiUsageRepository(
 
 private data class UsageState(
     val trackingStartedAt: Long? = null,
+    val latestModel: String? = null,
     val requests: Long = 0,
     val turns: Long = 0,
     val toolAssistedTurns: Long = 0,
     val inputTokens: Long = 0,
     val cachedInputTokens: Long = 0,
     val cachedReportedRequests: Long = 0,
+    val cacheWriteTokens: Long = 0,
+    val cacheWriteReportedRequests: Long = 0,
     val outputTokens: Long = 0,
     val reasoningTokens: Long = 0,
     val reasoningReportedRequests: Long = 0,
@@ -355,6 +391,8 @@ private data class ModelState(
     val inputTokens: Long = 0,
     val cachedInputTokens: Long = 0,
     val cachedReportedRequests: Long = 0,
+    val cacheWriteTokens: Long = 0,
+    val cacheWriteReportedRequests: Long = 0,
     val outputTokens: Long = 0,
     val reasoningTokens: Long = 0,
     val reasoningReportedRequests: Long = 0,
@@ -373,12 +411,21 @@ private data class BudgetState(
 private fun encodeState(state: UsageState): String =
     buildJsonObject {
         putNullableLong("trackingStartedAt", state.trackingStartedAt)
+        put(
+            "latestModel",
+            state.latestModel?.let(::JsonPrimitive) ?: JsonNull,
+        )
         put("requests", state.requests)
         put("turns", state.turns)
         put("toolAssistedTurns", state.toolAssistedTurns)
         put("inputTokens", state.inputTokens)
         put("cachedInputTokens", state.cachedInputTokens)
         put("cachedReportedRequests", state.cachedReportedRequests)
+        put("cacheWriteTokens", state.cacheWriteTokens)
+        put(
+            "cacheWriteReportedRequests",
+            state.cacheWriteReportedRequests,
+        )
         put("outputTokens", state.outputTokens)
         put("reasoningTokens", state.reasoningTokens)
         put(
@@ -406,6 +453,14 @@ private fun encodeState(state: UsageState): String =
                                 put(
                                     "cachedReportedRequests",
                                     model.cachedReportedRequests,
+                                )
+                                put(
+                                    "cacheWriteTokens",
+                                    model.cacheWriteTokens,
+                                )
+                                put(
+                                    "cacheWriteReportedRequests",
+                                    model.cacheWriteReportedRequests,
                                 )
                                 put("outputTokens", model.outputTokens)
                                 put(
@@ -469,6 +524,12 @@ private fun decodeState(raw: String): UsageState? =
                         model.requireLong("cachedInputTokens"),
                     cachedReportedRequests =
                         model.requireLong("cachedReportedRequests"),
+                    cacheWriteTokens =
+                        model.optionalNonNegativeLong("cacheWriteTokens"),
+                    cacheWriteReportedRequests =
+                        model.optionalNonNegativeLong(
+                            "cacheWriteReportedRequests",
+                        ),
                     outputTokens = model.requireLong("outputTokens"),
                     reasoningTokens =
                         model.requireLong("reasoningTokens"),
@@ -485,6 +546,11 @@ private fun decodeState(raw: String): UsageState? =
 
         UsageState(
             trackingStartedAt = root.optionalLong("trackingStartedAt"),
+            latestModel = root["latestModel"]
+                ?.let { value ->
+                    if (value is JsonNull) null
+                    else value.jsonPrimitive.contentOrNull
+                },
             requests = root.requireLong("requests"),
             turns = root.requireLong("turns"),
             toolAssistedTurns =
@@ -494,6 +560,12 @@ private fun decodeState(raw: String): UsageState? =
                 root.requireLong("cachedInputTokens"),
             cachedReportedRequests =
                 root.requireLong("cachedReportedRequests"),
+            cacheWriteTokens =
+                root.optionalNonNegativeLong("cacheWriteTokens"),
+            cacheWriteReportedRequests =
+                root.optionalNonNegativeLong(
+                    "cacheWriteReportedRequests",
+                ),
             outputTokens = root.requireLong("outputTokens"),
             reasoningTokens =
                 root.requireLong("reasoningTokens"),
@@ -530,6 +602,13 @@ private fun JsonObject.requireLong(key: String): Long =
     get(key)?.jsonPrimitive?.longOrNull
         ?.takeIf { it >= 0 }
         ?: error("Invalid long")
+
+private fun JsonObject.optionalNonNegativeLong(
+    key: String,
+): Long =
+    get(key)?.jsonPrimitive?.longOrNull
+        ?.takeIf { it >= 0 }
+        ?: 0L
 
 private fun JsonObject.optionalLong(key: String): Long? {
     val value = get(key) ?: return null
