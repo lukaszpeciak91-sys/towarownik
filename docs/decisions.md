@@ -259,7 +259,7 @@ These decisions describe the broader intended product behavior. The currently im
 
 - Keep advisor behavior frozen while measuring it: model remains `gpt-5.6-luna`, reasoning remains low, current instructions/tools/context chain are unchanged.
 - Treat OpenAI usage telemetry as optional evidence attached to each successful response, never as a prerequisite for a usable answer.
-- Version current pricing as `openai-gpt-5.6-luna-2026-09-27`: USD 0.20/M uncached input, USD 0.02/M cached input, USD 1.20/M output. Do not add reasoning tokens separately to output cost.
+- Version corrected current pricing as `openai-gpt-5.6-luna-2026-09-27-v2`: USD 0.20/M ordinary input, USD 0.02/M cached input, USD 0.25/M cache-write input, USD 1.20/M output. Above 272,000 input tokens apply 2× to every input-side class and 1.5× to output for the full request. Do not add reasoning tokens separately to output cost, and do not price unknown models or incomplete usage by inference.
 - Keep cumulative telemetry local to the installation and grouped by model; do not introduce backend analytics or persist conversation content in usage state.
 - Use official NBP USD/PLN only on demand from the usage UI with a 24-hour cache. FX/network failure cannot affect advisor execution.
 - A configured “remaining AI budget” is a Taksula-local estimate with a spend baseline, not OpenAI credit/balance. Unknown/unpriced spend makes the remaining estimate unavailable rather than guessed.
