@@ -62,10 +62,10 @@ Implemented direction:
 - assistant reports always include the exact persisted response and its persisted product snapshots, while optional context stops at that response;
 - general reports require a description and may include the current persisted conversation only after opt-in;
 - unsent drafts are excluded from report evidence;
-- existing sanitized OBI diagnostics may be appended only when already enabled and populated; reporting never starts diagnostics/probes/network work;
+- existing sanitized OBI diagnostics are offered only when already enabled and populated, through a separate checkbox that defaults OFF; reporting never starts diagnostics/probes/network work;
 - reports are temporary UTF-8 TXT files under `cacheDir/reports/` and are not stored in Room;
 - a non-exported FileProvider exposes only the report cache path and Android ACTION_SEND opens the system chooser with the centralized Nepahu Studio recipient;
-- Towarownik never sends the report automatically; screenshots are added manually in the chosen mail/share client;
+- Towarownik never sends the report automatically; chooser launch failure is handled with a bounded UI error and deletion of the fresh TXT; screenshots are added manually in the chosen mail/share client;
 - report contents exclude OpenAI/tool IDs, response-chain IDs, secrets/auth headers, cookie values, raw model data, OBI HTML/Nuxt, account/network/location identifiers.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.

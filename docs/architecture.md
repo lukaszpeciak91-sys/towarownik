@@ -41,11 +41,11 @@ Problem reporting is local and user-controlled. There are two entry points: an e
 
 A contextual report resolves the requested conversation/message from `ConversationRepository`, confirms that the message belongs to that conversation and has role `ASSISTANT`, and reads its persisted verified-product snapshots. With conversation inclusion OFF (the default), no unrelated transcript is included. With inclusion ON, context is sliced from the beginning through the reported response only. General reports include the current persisted conversation only after explicit opt-in. Draft text is not part of report evidence.
 
-Report generation never calls the proxy, OpenAI, OBI repositories, or the live diagnostic probe. If the existing OBI recorder is already enabled and has sanitized captured operations, its existing public `report()` output may be appended; otherwise the report records that diagnostics were not included.
+Report generation never calls the proxy, OpenAI, OBI repositories, or the live diagnostic probe. If the existing OBI recorder is already enabled and has sanitized captured operations, the form may expose those diagnostics as a separate opt-in checkbox. The checkbox defaults OFF, and the existing public `report()` output is appended only when the user explicitly selects it. Otherwise the report records that diagnostics were not included.
 
 The report formatter receives only bounded technical metadata, persisted message/product evidence, the stable report category, and the user's description. It deliberately has no access to `lastResponseId`, OpenAI/tool IDs, secrets, raw responses, cookies, HTML/Nuxt, accounts, network address, or location.
 
-TXT files are UTF-8 and temporary under `cacheDir/reports/`. Before creating a new file, previous files in that dedicated directory are removed. A non-exported `FileProvider` exposes only `reports/`; sharing uses `ACTION_SEND` + `EXTRA_STREAM` + temporary read permission and the Android chooser. No report is auto-sent, persisted in Room, or uploaded to a report backend.
+TXT files are UTF-8 and temporary under `cacheDir/reports/`. Before creating a new file, previous files in that dedicated directory are removed. A non-exported `FileProvider` exposes only `reports/`; sharing uses `ACTION_SEND` + `EXTRA_STREAM` + temporary read permission and the Android chooser. `ActivityNotFoundException` while opening the chooser is handled locally: the fresh file is deleted and a bounded UI error is returned. No report is auto-sent, persisted in Room, or uploaded to a report backend.
 
 ## AI assistant boundary
 
