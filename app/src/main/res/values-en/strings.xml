@@ -110,6 +110,7 @@
     <string name="ai_usage_budget_clear">Clear budget</string>
     <string name="ai_budget_warning_title">AI budget is running low</string>
     <string name="ai_budget_warning_message">Estimated remaining budget is below USD 1.</string>
+    <string name="ai_budget_warning_ack">OK</string>
     <string name="language_polish">Polski</string>
     <string name="language_english">English</string>
     <string name="settings_section_help">HELP</string>
