@@ -6,6 +6,6 @@ import org.junit.Test
 class BootstrapTest {
     @Test
     fun projectTestSetupRuns() {
-        assertEquals("Towarownik", "Towarownik")
+        assertEquals("Taksula", "Taksula")
     }
 }

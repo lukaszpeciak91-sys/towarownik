@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Towarownik</string>
+    <string name="app_name">Taksula</string>
 
     <string name="new_conversation">New conversation</string>
     <string name="search_conversations">Search conversations…</string>
@@ -61,9 +61,9 @@
     <string name="diagnostics_copy_report">Copy report</string>
     <string name="diagnostics_share_report">Share report</string>
     <string name="diagnostics_clear_report">Clear report</string>
-    <string name="diagnostics_share_subject">Towarownik — OBI diagnostics</string>
+    <string name="diagnostics_share_subject">Taksula — OBI diagnostics</string>
     <string name="diagnostics_share_chooser">Share report</string>
-    <string name="diagnostics_clipboard_label">Towarownik OBI diagnostics</string>
+    <string name="diagnostics_clipboard_label">Taksula OBI diagnostics</string>
     <string name="back">Back</string>
 
     <string name="cd_open_navigation">Open conversation history</string>
@@ -118,9 +118,9 @@
     <string name="report_error_description_required">Add a short problem description.</string>
     <string name="report_error_generation_failed">Could not create the report.</string>
     <string name="report_error_share_unavailable">Could not open the system share flow for the report.</string>
-    <string name="report_share_subject_assistant">Towarownik — response report</string>
-    <string name="report_share_subject_general">Towarownik — problem report</string>
-    <string name="report_share_body">A report created in Towarownik is attached.</string>
+    <string name="report_share_subject_assistant">Taksula — response report</string>
+    <string name="report_share_subject_general">Taksula — problem report</string>
+    <string name="report_share_body">A report created in Taksula is attached.</string>
     <string name="report_share_chooser">Share report</string>
 
 </resources>

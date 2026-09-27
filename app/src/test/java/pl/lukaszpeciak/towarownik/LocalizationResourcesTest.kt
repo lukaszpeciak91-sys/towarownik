@@ -7,6 +7,7 @@ import java.time.ZonedDateTime
 import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.w3c.dom.Element
 
@@ -24,8 +25,8 @@ class LocalizationResourcesTest {
         val polish = strings("values")
         val english = strings("values-en")
 
-        assertEquals("Towarownik", polish.getValue("app_name"))
-        assertEquals("Towarownik", english.getValue("app_name"))
+        assertEquals("Taksula", polish.getValue("app_name"))
+        assertEquals("Taksula", english.getValue("app_name"))
         assertEquals("Doradca", polish.getValue("advisor_title"))
         assertEquals("Advisor", english.getValue("advisor_title"))
         assertEquals(
@@ -39,12 +40,39 @@ class LocalizationResourcesTest {
         assertEquals("Zgłoś", polish.getValue("report_action"))
         assertEquals("Report", english.getValue("report_action"))
         assertEquals(
+            "Taksula — diagnostyka OBI",
+            polish.getValue("diagnostics_share_subject"),
+        )
+        assertEquals(
+            "Taksula — OBI diagnostics",
+            english.getValue("diagnostics_share_subject"),
+        )
+        assertEquals(
+            "Taksula — zgłoszenie problemu",
+            polish.getValue("report_share_subject_general"),
+        )
+        assertEquals(
+            "Taksula — problem report",
+            english.getValue("report_share_subject_general"),
+        )
+        assertEquals(
             "Błędna / zmyślona odpowiedź",
             polish.getValue("report_category_incorrect_fabricated"),
         )
         assertEquals(
             "Incorrect / fabricated answer",
             english.getValue("report_category_incorrect_fabricated"),
+        )
+    }
+
+    @Test
+    fun `public UI strings no longer expose the Towarownik working name`() {
+        val values = strings("values").values + strings("values-en").values
+
+        assertFalse(
+            values.any { value ->
+                value.contains("Towarownik", ignoreCase = true)
+            },
         )
     }
 
