@@ -1,9 +1,12 @@
 import {
   agentInstructionsForStore,
+  CURRENT_MODEL_PRICING,
   FINAL_ANSWER_FORMAT,
   LOCAL_TOOL_NAME,
   MAX_ANSWER_CHARS,
+  MAX_MODEL_NAME_CHARS,
   MAX_SELECTED_PRODUCT_REFS,
+  MAX_USAGE_TOKEN_COUNT,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
@@ -11,7 +14,14 @@ import {
   OBI_TOOL,
 } from "./config.js";
 import { InvalidRequestError, parseToolArguments } from "./validation.js";
-import type { AgentResult, ProductRef, ToolContinuationResult, UpstreamFetch } from "./types.js";
+import type {
+  AgentRequestType,
+  AgentResult,
+  AgentUsage,
+  ProductRef,
+  ToolContinuationResult,
+  UpstreamFetch,
+} from "./types.js";
 
 export class UpstreamFailureError extends Error {}
 
@@ -39,6 +49,7 @@ export async function startAgent(
     },
     apiKey,
     upstreamFetch,
+    "START",
   );
 }
 
@@ -68,6 +79,7 @@ export async function messageAgent(
     },
     apiKey,
     upstreamFetch,
+    "MESSAGE",
   );
 }
 
@@ -104,6 +116,7 @@ export async function continueAgent(
     },
     apiKey,
     upstreamFetch,
+    "CONTINUE",
   );
 }
 
@@ -111,6 +124,7 @@ async function requestOpenAI(
   body: unknown,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
+  requestType: AgentRequestType,
 ): Promise<AgentResult> {
   let response: Response;
   try {
@@ -137,15 +151,19 @@ async function requestOpenAI(
     throw new UpstreamFailureError();
   }
 
-  return normalizeOpenAIResponse(payload);
+  return normalizeOpenAIResponse(payload, requestType);
 }
 
-export function normalizeOpenAIResponse(payload: unknown): AgentResult {
+export function normalizeOpenAIResponse(
+  payload: unknown,
+  requestType: AgentRequestType = "START",
+): AgentResult {
   if (!isRecord(payload)) {
     throw new UpstreamFailureError();
   }
 
   const responseId = boundedUpstreamId(payload.id);
+  const usage = parseUsage(payload, requestType);
   if (!Array.isArray(payload.output)) {
     throw new UpstreamFailureError();
   }
@@ -189,6 +207,7 @@ export function normalizeOpenAIResponse(payload: unknown): AgentResult {
         callId: call.call_id,
         arguments: argumentsValue,
       },
+      ...(usage ? { usage } : {}),
     };
   }
 
@@ -199,7 +218,137 @@ export function normalizeOpenAIResponse(payload: unknown): AgentResult {
     responseId,
     text: answer.text,
     productRefs: answer.productRefs,
+    ...(usage ? { usage } : {}),
   };
+}
+
+function parseUsage(
+  payload: Record<string, unknown>,
+  requestType: AgentRequestType,
+): AgentUsage | undefined {
+  try {
+    const model = boundedModelName(payload.model);
+    const rawUsage = payload.usage;
+    if (!isRecord(rawUsage)) return undefined;
+
+    const inputTokens = boundedTokenCount(rawUsage.input_tokens);
+    const outputTokens = boundedTokenCount(rawUsage.output_tokens);
+    const totalTokens = boundedTokenCount(rawUsage.total_tokens);
+
+    const cachedInputTokens = optionalNestedTokenCount(
+      rawUsage.input_tokens_details,
+      "cached_tokens",
+    );
+    if (
+      cachedInputTokens !== null &&
+      cachedInputTokens > inputTokens
+    ) {
+      return undefined;
+    }
+
+    const reasoningTokens = optionalNestedTokenCount(
+      rawUsage.output_tokens_details,
+      "reasoning_tokens",
+    );
+    if (
+      reasoningTokens !== null &&
+      reasoningTokens > outputTokens
+    ) {
+      return undefined;
+    }
+
+    const pricing = priceUsage(
+      model,
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+    );
+
+    return {
+      model,
+      requestType,
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+      reasoningTokens,
+      totalTokens,
+      estimatedCostUsd: pricing?.estimatedCostUsd ?? null,
+      pricingVersion: pricing?.pricingVersion ?? null,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function priceUsage(
+  model: string,
+  inputTokens: number,
+  cachedInputTokens: number | null,
+  outputTokens: number,
+): { estimatedCostUsd: string; pricingVersion: string } | null {
+  if (
+    model !== CURRENT_MODEL_PRICING.model ||
+    cachedInputTokens === null
+  ) {
+    return null;
+  }
+
+  const uncachedInputTokens = inputTokens - cachedInputTokens;
+  const nanoUsd =
+    BigInt(uncachedInputTokens) *
+      CURRENT_MODEL_PRICING.nanoUsdPerToken.uncachedInput +
+    BigInt(cachedInputTokens) *
+      CURRENT_MODEL_PRICING.nanoUsdPerToken.cachedInput +
+    BigInt(outputTokens) *
+      CURRENT_MODEL_PRICING.nanoUsdPerToken.output;
+
+  return {
+    estimatedCostUsd: formatNanoUsd(nanoUsd),
+    pricingVersion: CURRENT_MODEL_PRICING.pricingVersion,
+  };
+}
+
+function formatNanoUsd(nanoUsd: bigint): string {
+  const whole = nanoUsd / 1_000_000_000n;
+  const fraction = (nanoUsd % 1_000_000_000n)
+    .toString()
+    .padStart(9, "0")
+    .replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
+function optionalNestedTokenCount(
+  value: unknown,
+  key: string,
+): number | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) throw new Error("Invalid token details");
+  if (!(key in value)) return null;
+  return boundedTokenCount(value[key]);
+}
+
+function boundedTokenCount(value: unknown): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > MAX_USAGE_TOKEN_COUNT
+  ) {
+    throw new Error("Invalid token count");
+  }
+  return value;
+}
+
+function boundedModelName(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > MAX_MODEL_NAME_CHARS ||
+    !/^[A-Za-z0-9._-]+$/.test(value)
+  ) {
+    throw new Error("Invalid model");
+  }
+  return value;
 }
 
 function parseStructuredAnswer(
