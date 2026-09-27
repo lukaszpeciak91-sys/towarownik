@@ -3,6 +3,24 @@ export const OPENAI_MODEL = "gpt-5.6-luna";
 export const OPENAI_REASONING_EFFORT = "low";
 export const OPENAI_MAX_OUTPUT_TOKENS = 384;
 
+export const CURRENT_MODEL_PRICING = {
+  model: OPENAI_MODEL,
+  pricingVersion: "openai-gpt-5.6-luna-2026-09-27",
+  usdPerMillionTokens: {
+    uncachedInput: "0.20",
+    cachedInput: "0.02",
+    output: "1.20",
+  },
+  nanoUsdPerToken: {
+    uncachedInput: 200n,
+    cachedInput: 20n,
+    output: 1_200n,
+  },
+} as const;
+
+export const MAX_USAGE_TOKEN_COUNT = 10_000_000_000;
+export const MAX_MODEL_NAME_CHARS = 100;
+
 export const LOCAL_TOOL_NAME = "find_obi_products";
 export const MAX_TOOL_PRODUCTS = 5;
 export const MAX_TOOL_QUERY_CHARS = 200;
