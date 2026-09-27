@@ -54,6 +54,7 @@ class AiUsageRepositoryTest {
         assertEquals(1L, snapshot.turns)
         assertEquals(1_000L, snapshot.inputTokens)
         assertEquals(400L, snapshot.cachedInputTokens)
+        assertEquals(0L, snapshot.cacheWriteTokens)
         assertEquals(100L, snapshot.outputTokens)
         assertEquals(50L, snapshot.reasoningTokens)
         assertEquals(1_100L, snapshot.totalTokens)
@@ -96,9 +97,58 @@ class AiUsageRepositoryTest {
         assertEquals(1L, snapshot.toolAssistedTurns)
         assertEquals(250L, snapshot.inputTokens)
         assertEquals(120L, snapshot.cachedInputTokens)
+        assertEquals(0L, snapshot.cacheWriteTokens)
         assertEquals(40L, snapshot.outputTokens)
         assertEquals(12L, snapshot.reasoningTokens)
         assertEquals(BigDecimal("0.000078"), snapshot.estimatedCostUsd)
+    }
+
+    @Test
+    fun `cache-write tokens aggregate globally and per model`() {
+        repository.recordOpenAiResponse(
+            usage(
+                input = 1_000,
+                cached = 300,
+                cacheWrite = 200,
+                cost = "0.00027",
+            ),
+        )
+        repository.recordOpenAiResponse(
+            usage(
+                input = 500,
+                cached = 100,
+                cacheWrite = 50,
+                cost = "0.00015",
+            ),
+        )
+
+        val snapshot = repository.snapshot()
+        assertEquals(250L, snapshot.cacheWriteTokens)
+        assertEquals(
+            250L,
+            snapshot.models.single().cacheWriteTokens,
+        )
+    }
+
+    @Test
+    fun `latest measured model comes from recorded usage`() {
+        assertNull(repository.snapshot().latestModel)
+
+        repository.recordOpenAiResponse(
+            usage(model = "gpt-5.6-luna"),
+        )
+        assertEquals(
+            "gpt-5.6-luna",
+            repository.snapshot().latestModel,
+        )
+
+        repository.recordOpenAiResponse(
+            usage(model = "future-model"),
+        )
+        assertEquals(
+            "future-model",
+            repository.snapshot().latestModel,
+        )
     }
 
     @Test
@@ -212,6 +262,7 @@ class AiUsageRepositoryTest {
         requestType: AdvisorRequestType = AdvisorRequestType.START,
         input: Long = 100,
         cached: Long? = 0,
+        cacheWrite: Long? = 0,
         output: Long = 10,
         reasoning: Long? = 0,
         total: Long = 110,
@@ -222,11 +273,12 @@ class AiUsageRepositoryTest {
             requestType = requestType,
             inputTokens = input,
             cachedInputTokens = cached,
+            cacheWriteTokens = cacheWrite,
             outputTokens = output,
             reasoningTokens = reasoning,
             totalTokens = total,
             estimatedCostUsd = BigDecimal(cost),
             pricingVersion =
-                "openai-gpt-5.6-luna-2026-09-27",
+                "openai-gpt-5.6-luna-2026-09-27-v2",
         )
 }
