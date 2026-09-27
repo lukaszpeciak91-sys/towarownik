@@ -441,7 +441,7 @@ test("valid OpenAI usage is normalized with cached and reasoning detail", async 
     outputTokens: 100,
     reasoningTokens: 50,
     totalTokens: 1_100,
-    estimatedCostUsd: "0.000248",
+    estimatedCostUsd: 0.000248,
     pricingVersion: CURRENT_MODEL_PRICING.pricingVersion,
   });
 });
@@ -459,7 +459,7 @@ test("reasoning tokens are output detail and are not double charged", async () =
 
   assert.equal(body.usage.outputTokens, 100);
   assert.equal(body.usage.reasoningTokens, 50);
-  assert.equal(body.usage.estimatedCostUsd, "0.000248");
+  assert.equal(body.usage.estimatedCostUsd, 0.000248);
 });
 
 test("current gpt-5.6-luna pricing is explicit and versioned", () => {
