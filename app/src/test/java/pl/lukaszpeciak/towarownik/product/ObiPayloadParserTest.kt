@@ -163,6 +163,22 @@ class ObiPayloadParserTest {
     }
 
     @Test
+    fun `confirmed rich fields also survive Ref wrapper decoding`() {
+        val html = fixture("live-3496072-store-075.html")
+            .replace("[\"ShallowRef\",4]", "[\"Ref\",4]")
+
+        val product = parser.parse(
+            html,
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals("Dragon", product.brand)
+        assertTrue(product.shortDescription?.contains("Butapren") == true)
+        assertTrue(product.technicalFacts.isNotEmpty())
+    }
+
+    @Test
     fun `current live OBI EAN comes from singleton Nuxt array without JSON-LD fallback`() {
         val product = parser.parse(
             fixture("live-3496072-store-075.html"),
