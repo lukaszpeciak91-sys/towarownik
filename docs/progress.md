@@ -40,7 +40,7 @@ Implemented direction:
 - Compose resolves user-visible chrome through Android string resources and formatted placeholders;
 - advisor/search errors use stable language-neutral enum state and are translated only in UI;
 - saved manual-search errors no longer persist rendered language-dependent sentences;
-- Android continues to choose resources from the current system/app locale; no in-app selector exists yet;
+- Android UI uses the complete PL/EN resource sets and Settings controls the supported per-app locale through AppCompat;
 - production UI uses the approved warm dark palette and centralized semantic Compose colors;
 - automatic Material light/dark switching and dynamic-color-style defaults are replaced by the approved dark-first scheme;
 - top bars, conversation drawer, chat bubbles, persistent composer, progress/error states, verified product card, and manual OBI search share one visual hierarchy;
