@@ -1192,7 +1192,7 @@ test("continue enforces compact rich product bounds", async () => {
   const cases = [
     (product) => { product.brand = "b".repeat(81); },
     (product) => {
-      product.shortDescription = "d".repeat(301);
+      product.shortDescription = "d".repeat(221);
     },
     (product) => {
       product.technicalFacts = Array.from(
@@ -1212,7 +1212,7 @@ test("continue enforces compact rich product bounds", async () => {
     (product) => {
       product.technicalFacts = [{
         label: "Fact",
-        value: "v".repeat(121),
+        value: "v".repeat(101),
       }];
     },
   ];
