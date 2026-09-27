@@ -9,9 +9,17 @@ export interface ToolArguments {
   limit: number;
 }
 
+export interface TechnicalFact {
+  label: string;
+  value: string;
+}
+
 export interface VerifiedProduct {
   obik: string;
   name: string;
+  brand: string | null;
+  shortDescription: string | null;
+  technicalFacts: TechnicalFact[];
   stock: number | null;
   price: number | null;
 }
