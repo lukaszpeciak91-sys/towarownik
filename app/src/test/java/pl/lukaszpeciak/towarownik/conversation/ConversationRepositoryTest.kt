@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.conversation
 
 import android.content.Context
+import java.math.BigDecimal
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.flow.first
@@ -14,6 +15,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -64,6 +66,91 @@ class ConversationRepositoryTest {
             listOf("Potrzebuję kleju do MDF", "Synthetic answer"),
             restored.messages.map { it.text },
         )
+    }
+
+    @Test
+    fun `assistant text response id and verified cards commit together`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Potrzebuję kleju",
+            createdAt = 100L,
+        )
+        val products = listOf(
+            snapshot(
+                obik = "1234567",
+                name = "First verified",
+                stock = 3,
+                price = BigDecimal("12.30"),
+                url = "https://www.obi.pl/p/1234567/first",
+                verifiedAt = 150L,
+            ),
+            snapshot(
+                obik = "7654321",
+                name = "Second verified",
+                stock = null,
+                price = null,
+                url = "https://www.obi.pl/p/7654321/second",
+                verifiedAt = 160L,
+            ),
+        )
+
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Verified answer",
+            finalResponseId = "resp_cards",
+            products = products,
+            createdAt = 200L,
+        )
+
+        val restored = requireNotNull(repository.load(started.conversationId))
+        val assistant = restored.messages.last()
+
+        assertEquals("resp_cards", restored.lastResponseId)
+        assertEquals("Verified answer", assistant.text)
+        assertEquals(products, assistant.products)
+        assertEquals(2, messageProductCount(started.conversationId))
+    }
+
+    @Test
+    fun `verified cards survive database recreation with order nullable fields and exact url`() = runBlocking {
+        val started = repository.beginUserTurn(null, "Case", 100L)
+        val first = snapshot(
+            obik = "1111111",
+            name = "First",
+            stock = null,
+            price = null,
+            url = "https://www.obi.pl/custom/trusted-one",
+            verifiedAt = 120L,
+        )
+        val second = snapshot(
+            obik = "2222222",
+            name = "Second",
+            stock = 0,
+            price = BigDecimal("99.9900"),
+            url = "https://www.obi.pl/custom/trusted-two?x=1",
+            verifiedAt = 130L,
+        )
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Answer",
+            finalResponseId = "resp",
+            products = listOf(first, second),
+            createdAt = 200L,
+        )
+
+        database.close()
+        openDatabase()
+
+        val cards = requireNotNull(repository.load(started.conversationId))
+            .messages.last().products
+        assertEquals(listOf("1111111", "2222222"), cards.map { it.obik })
+        assertEquals(null, cards[0].stock)
+        assertEquals(null, cards[0].grossPrice)
+        assertEquals(0, cards[1].stock)
+        assertEquals(BigDecimal("99.9900"), cards[1].grossPrice)
+        assertEquals(first.productUrl, cards[0].productUrl)
+        assertEquals(second.productUrl, cards[1].productUrl)
+        assertEquals(listOf(120L, 130L), cards.map { it.verifiedAt })
     }
 
     @Test
@@ -263,6 +350,34 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `conversation deletion cascades verified product snapshots`() = runBlocking {
+        val id = completedConversationWithCard(
+            title = "Delete cards",
+            updatedAt = 200L,
+        )
+        assertEquals(1, messageProductCount(id))
+
+        repository.deleteConversation(id)
+
+        assertEquals(0, messageProductCount(id))
+    }
+
+    @Test
+    fun `retention cleanup cascades verified product snapshots`() = runBlocking {
+        val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        val expired = completedConversationWithCard(
+            title = "Expired cards",
+            updatedAt = cutoff - 1,
+        )
+        assertEquals(1, messageProductCount(expired))
+
+        repository.cleanupExpiredConversations(nowMillis)
+
+        assertEquals(0, messageProductCount(expired))
+    }
+
+    @Test
     fun `retention cleanup cascades deleted conversation messages`() = runBlocking {
         val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
         val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
@@ -378,6 +493,86 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `interrupted turn leaves no orphan verified product snapshots`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Interrupted",
+            createdAt = 100L,
+        )
+
+        repository.recoverInterruptedTurn(started.conversationId)
+
+        assertEquals(0, messageProductCount(started.conversationId))
+    }
+
+    @Test
+    fun `multi turn cards remain attached to their own assistant messages`() = runBlocking {
+        val started = repository.beginUserTurn(null, "First", 100L)
+        val firstCard = snapshot(
+            obik = "1234567",
+            name = "Historical first",
+            stock = 5,
+            price = BigDecimal("20.00"),
+            url = "https://www.obi.pl/p/1234567/first",
+            verifiedAt = 150L,
+        )
+        repository.completeAssistantTurn(
+            started.conversationId,
+            "First answer",
+            "resp_first",
+            products = listOf(firstCard),
+            createdAt = 200L,
+        )
+        repository.beginUserTurn(
+            started.conversationId,
+            "A coś tańszego?",
+            300L,
+        )
+        val secondCard = snapshot(
+            obik = "7654321",
+            name = "New independent",
+            stock = 2,
+            price = BigDecimal("10.00"),
+            url = "https://www.obi.pl/p/7654321/second",
+            verifiedAt = 350L,
+        )
+        repository.completeAssistantTurn(
+            started.conversationId,
+            "Second answer",
+            "resp_second",
+            products = listOf(secondCard),
+            createdAt = 400L,
+        )
+
+        val assistants = requireNotNull(repository.load(started.conversationId))
+            .messages.filter { it.role == MESSAGE_ROLE_ASSISTANT }
+
+        assertEquals(listOf(firstCard), assistants[0].products)
+        assertEquals(listOf(secondCard), assistants[1].products)
+    }
+
+    @Test
+    fun `new conversation cannot inherit old verified cards`() = runBlocking {
+        val first = completedConversationWithCard(
+            title = "First case",
+            updatedAt = 200L,
+        )
+        val second = repository.beginUserTurn(null, "Second case", 300L)
+        repository.completeAssistantTurn(
+            second.conversationId,
+            "No cards",
+            "resp_second",
+            createdAt = 400L,
+        )
+
+        assertEquals(1, requireNotNull(repository.load(first)).messages.last().products.size)
+        assertTrue(
+            requireNotNull(repository.load(second.conversationId))
+                .messages.last().products.isEmpty(),
+        )
+    }
+
+    @Test
     fun `interrupted user turn becomes draft and keeps last completed response id`() = runBlocking {
         val started = repository.beginUserTurn(null, "Pierwszy turn", 100L)
         repository.completeAssistantTurn(
@@ -485,6 +680,68 @@ class ConversationRepositoryTest {
             createdAt = updatedAt,
         )
         return started.conversationId
+    }
+
+    private suspend fun completedConversationWithCard(
+        title: String,
+        updatedAt: Long,
+    ): Long {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = title,
+            createdAt = updatedAt - 100L,
+        )
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Answer",
+            finalResponseId = "resp_card",
+            products = listOf(
+                snapshot(
+                    obik = "1234567",
+                    name = "Verified",
+                    stock = 1,
+                    price = BigDecimal("9.99"),
+                    url = "https://www.obi.pl/p/1234567/trusted",
+                    verifiedAt = updatedAt - 10L,
+                ),
+            ),
+            createdAt = updatedAt,
+        )
+        return started.conversationId
+    }
+
+    private fun snapshot(
+        obik: String,
+        name: String,
+        stock: Int?,
+        price: BigDecimal?,
+        url: String,
+        verifiedAt: Long,
+    ) = VerifiedProductSnapshot(
+        obik = obik,
+        name = name,
+        stock = stock,
+        grossPrice = price,
+        productUrl = url,
+        verifiedAt = verifiedAt,
+    )
+
+    private fun messageProductCount(
+        conversationId: Long,
+    ): Int {
+        val cursor = database.openHelper.readableDatabase.query(
+            """
+            SELECT COUNT(*) FROM message_products
+            WHERE messageId IN (
+                SELECT id FROM messages WHERE conversationId = ?
+            )
+            """.trimIndent(),
+            arrayOf(conversationId),
+        )
+        return cursor.use {
+            check(it.moveToFirst())
+            it.getInt(0)
+        }
     }
 
     private fun messageCount(

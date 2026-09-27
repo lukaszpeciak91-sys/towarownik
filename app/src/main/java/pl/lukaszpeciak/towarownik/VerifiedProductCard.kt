@@ -15,6 +15,42 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+
+internal data class VerifiedProductUiModel(
+    val name: String,
+    val obik: String,
+    val grossPrice: BigDecimal?,
+    val stock: Int?,
+    val productUrl: String,
+    val verifiedAt: Long? = null,
+)
+
+internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
+    VerifiedProductUiModel =
+    VerifiedProductUiModel(
+        name = name,
+        obik = obik,
+        grossPrice = grossPrice,
+        stock = stock,
+        productUrl = productUrl,
+        verifiedAt = verifiedAt,
+    )
+
+internal fun verifiedProductOpenUrl(
+    product: VerifiedProductUiModel,
+): String = product.productUrl
+
+internal fun formatVerifiedProductTimestamp(
+    verifiedAt: Long,
+): String =
+    "Sprawdzono " + Instant.ofEpochMilli(verifiedAt)
+        .atZone(ZoneId.systemDefault())
+        .format(VERIFIED_AT_FORMATTER)
 
 @Composable
 internal fun VerifiedProductCard(
@@ -47,13 +83,20 @@ internal fun VerifiedProductCard(
                 text = formatStore075Stock(product.stock),
                 style = MaterialTheme.typography.bodyLarge,
             )
+            product.verifiedAt?.let { verifiedAt ->
+                Text(
+                    text = formatVerifiedProductTimestamp(verifiedAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             OutlinedButton(
                 onClick = {
                     runCatching {
                         context.startActivity(
                             Intent(
                                 Intent.ACTION_VIEW,
-                                Uri.parse(product.productUrl),
+                                Uri.parse(verifiedProductOpenUrl(product)),
                             ),
                         )
                     }
@@ -65,3 +108,7 @@ internal fun VerifiedProductCard(
         }
     }
 }
+
+
+private val VERIFIED_AT_FORMATTER =
+    DateTimeFormatter.ofPattern("dd.MM, HH:mm")

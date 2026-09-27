@@ -156,3 +156,17 @@ These decisions describe the broader intended product behavior. The currently im
 - Local conversations are retained for 30 days based on `updatedAt`. Startup cleanup deletes only rows with `updatedAt < now - 30 days`; the exact cutoff is retained. Messages are removed by the existing CASCADE foreign key.
 - Retention cleanup is startup-only and local-only: no WorkManager, scheduler, proxy, OpenAI, or OBI call is introduced.
 - History supports confirmed per-conversation deletion. Deleting the active conversation cancels active work, invalidates stale callbacks, removes the local row/messages, and opens a fresh empty advisor chat.
+
+
+## Advisor verified product cards v0.4
+
+- The model may select products for presentation only by seven-digit OBIK. It is never authoritative for card name, OBIK facts, stock, gross price, product URL, or verification time.
+- The final Responses answer is strict structured output with exactly a bounded non-empty `text` and `productObiks` array of at most five seven-digit strings. Duplicate selections are deterministically removed.
+- A selected OBIK is rendered only when it matches a locally retained exact store-`075` `LocalProduct` snapshot from the current USER turn. Unknown model selections are ignored and never trigger an extra lookup.
+- The existing OpenAI tool payload remains `{obik,name,stock,price}`. `productUrl`, `verifiedAt`, OBI HTML/Nuxt, cookies, diagnostics, and parser internals remain Android-local.
+- Successful exact lookups create local-only verified snapshots. Across two tool calls in one USER turn, snapshots are combined by OBIK and the latest exact lookup wins. Snapshot state is discarded between USER turns.
+- Room schema v2 adds `message_products` with a CASCADE foreign key to `messages`; v1 upgrades through an explicit migration. Gross price is persisted as decimal text, not floating point.
+- Completing an ASSISTANT turn atomically stores its text, selected snapshots, and final `lastResponseId`. Product snapshots belong only to that ASSISTANT message and cascade through existing manual/retention deletion.
+- Persisted cards are historical snapshots. Reopening history never refreshes them; current stock/price/availability questions must use the local tool again.
+- Advisor product cards reuse the existing verified product-card UI boundary and open only the trusted persisted exact `productUrl`; URLs are never reconstructed from OBIK or model output.
+- This iteration does not change OBI parser, transport, exact store-`075` lookup, manual search limit 25, advisor product limit 5, tool count limit 2, history phrase-search semantics, or retry behavior.

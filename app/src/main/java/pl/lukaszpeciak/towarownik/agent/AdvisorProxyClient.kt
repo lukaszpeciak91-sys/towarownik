@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -213,13 +214,26 @@ internal class AdvisorProxyClient(
 
         return when (type) {
             "answer" -> {
-                requireExactKeys(root, setOf("type", "responseId", "text"))
+                requireExactKeys(
+                    root,
+                    setOf("type", "responseId", "text", "productObiks"),
+                )
                 val text = root["text"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf { it.isNotBlank() && it.length <= MAX_ANSWER_CHARS }
                     ?: error("Invalid answer text")
+                val productObiks = root["productObiks"]
+                    ?.jsonArray
+                    ?.map { element ->
+                        element.jsonPrimitive.contentOrNull
+                            ?.takeIf(OBIK_PATTERN::matches)
+                            ?: error("Invalid selected OBIK")
+                    }
+                    ?.takeIf { it.size <= MAX_TOOL_PRODUCTS }
+                    ?: error("Invalid selected products")
                 AdvisorProxyResult.Answer(
                     responseId = responseId,
                     text = text,
+                    productObiks = productObiks.distinct(),
                 )
             }
 
@@ -284,6 +298,7 @@ internal class AdvisorProxyClient(
     private companion object {
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
         val CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
+        val OBIK_PATTERN = Regex("""\d{7}""")
         const val MAX_PROXY_RESPONSE_BYTES = 64 * 1024
         const val MAX_ID_CHARS = 256
         const val MAX_QUERY_CHARS = 200

@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 class AdvisorControllerTest {
     @Test
@@ -149,6 +150,148 @@ class AdvisorControllerTest {
             ),
             final,
         )
+    }
+
+    @Test
+    fun `model selected obik resolves only against locally verified snapshot`() = runBlocking {
+        val trusted = snapshot(
+            obik = "1234567",
+            name = "Trusted local name",
+            stock = 4,
+            price = BigDecimal("19.99"),
+            url = "https://www.obi.pl/p/1234567/trusted",
+        )
+        val controller = controller(
+            start = { successTool("resp_tool", "call_1", "klej") },
+            continueCall = { _, _, _ ->
+                successAnswer(
+                    "resp_final",
+                    "Use this.",
+                    productObiks = listOf("1234567", "7654321"),
+                )
+            },
+            tool = { verifiedResult(it.query, trusted) },
+        )
+
+        val final = controller.runTurn("test", null) { } as AdvisorUiState.Success
+
+        assertEquals(listOf(trusted), final.products)
+    }
+
+    @Test
+    fun `unknown model obik produces no card`() = runBlocking {
+        val controller = controller(
+            start = { successTool("resp_tool", "call_1", "klej") },
+            continueCall = { _, _, _ ->
+                successAnswer(
+                    "resp_final",
+                    "No matching verified card.",
+                    productObiks = listOf("7654321"),
+                )
+            },
+            tool = { verifiedResult(it.query) },
+        )
+
+        val final = controller.runTurn("test", null) { } as AdvisorUiState.Success
+
+        assertTrue(final.products.isEmpty())
+    }
+
+    @Test
+    fun `duplicate selected obiks do not duplicate cards`() = runBlocking {
+        val controller = controller(
+            start = { successTool("resp_tool", "call_1", "klej") },
+            continueCall = { _, _, _ ->
+                successAnswer(
+                    "resp_final",
+                    "One card.",
+                    productObiks = listOf("1234567", "1234567"),
+                )
+            },
+            tool = { verifiedResult(it.query) },
+        )
+
+        val final = controller.runTurn("test", null) { } as AdvisorUiState.Success
+
+        assertEquals(1, final.products.size)
+    }
+
+    @Test
+    fun `latest exact lookup wins when same obik is verified twice in one turn`() = runBlocking {
+        var toolCall = 0
+        val first = snapshot(
+            obik = "1234567",
+            name = "First exact",
+            stock = 5,
+            price = BigDecimal("20.00"),
+            verifiedAt = 1_000L,
+        )
+        val latest = snapshot(
+            obik = "1234567",
+            name = "Latest exact",
+            stock = 2,
+            price = BigDecimal("18.00"),
+            verifiedAt = 2_000L,
+        )
+        val controller = controller(
+            start = { successTool("resp_1", "call_1", "first") },
+            continueCall = { _, _, _ ->
+                toolCall += 1
+                if (toolCall == 1) {
+                    successTool("resp_2", "call_2", "second")
+                } else {
+                    successAnswer(
+                        "resp_final",
+                        "Latest",
+                        productObiks = listOf("1234567"),
+                    )
+                }
+            },
+            tool = { args ->
+                if (args.query == "first") {
+                    verifiedResult(args.query, first)
+                } else {
+                    verifiedResult(args.query, latest)
+                }
+            },
+        )
+
+        val final = controller.runTurn("test", null) { } as AdvisorUiState.Success
+
+        assertEquals(listOf(latest), final.products)
+    }
+
+    @Test
+    fun `verified snapshots do not carry into the next user turn`() = runBlocking {
+        var phase = 0
+        val controller = controller(
+            start = {
+                successTool("resp_tool", "call_1", "first")
+            },
+            message = { previousResponseId, _ ->
+                assertEquals("resp_first", previousResponseId)
+                successAnswer(
+                    "resp_second",
+                    "Historical OBIK must not become a current card.",
+                    productObiks = listOf("1234567"),
+                )
+            },
+            continueCall = { _, _, _ ->
+                phase += 1
+                successAnswer(
+                    "resp_first",
+                    "First answer",
+                    productObiks = listOf("1234567"),
+                )
+            },
+            tool = { verifiedResult(it.query) },
+        )
+
+        val first = controller.runTurn("first", null) { } as AdvisorUiState.Success
+        val second = controller.runTurn("second", first.responseId) { } as AdvisorUiState.Success
+
+        assertEquals(1, first.products.size)
+        assertTrue(second.products.isEmpty())
     }
 
     @Test
@@ -367,10 +510,12 @@ class AdvisorControllerTest {
     private fun successAnswer(
         responseId: String,
         text: String,
+        productObiks: List<String> = emptyList(),
     ) = AdvisorProxyCallResult.Success(
         AdvisorProxyResult.Answer(
             responseId = responseId,
             text = text,
+            productObiks = productObiks,
         ),
     )
 
@@ -391,17 +536,40 @@ class AdvisorControllerTest {
 
     private fun verifiedResult(
         query: String,
+        snapshot: VerifiedProductSnapshot = snapshot(
+            obik = "1234567",
+            name = "Synthetic product",
+            stock = 1,
+            price = BigDecimal("9.99"),
+        ),
     ) = AdvisorToolExecutionResult.Success(
-        AdvisorVerifiedToolResult(
+        result = AdvisorVerifiedToolResult(
             query = query,
             products = listOf(
                 AdvisorVerifiedProduct(
-                    obik = "1234567",
-                    name = "Synthetic product",
-                    stock = 1,
-                    price = BigDecimal("9.99"),
+                    obik = snapshot.obik,
+                    name = snapshot.name,
+                    stock = snapshot.stock,
+                    price = snapshot.grossPrice,
                 ),
             ),
         ),
+        snapshots = listOf(snapshot),
+    )
+
+    private fun snapshot(
+        obik: String,
+        name: String,
+        stock: Int?,
+        price: BigDecimal?,
+        url: String = "https://www.obi.pl/p/$obik/trusted",
+        verifiedAt: Long = 1_000L,
+    ) = VerifiedProductSnapshot(
+        obik = obik,
+        name = name,
+        stock = stock,
+        grossPrice = price,
+        productUrl = url,
+        verifiedAt = verifiedAt,
     )
 }

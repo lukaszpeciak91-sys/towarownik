@@ -25,6 +25,7 @@ export type AgentResult =
       type: "answer";
       responseId: string;
       text: string;
+      productObiks: string[];
     }
   | {
       type: "tool_request";

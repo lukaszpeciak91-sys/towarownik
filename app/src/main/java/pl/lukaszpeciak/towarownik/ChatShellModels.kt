@@ -3,10 +3,13 @@ package pl.lukaszpeciak.towarownik
 import androidx.compose.runtime.saveable.Saver
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
@@ -24,6 +27,7 @@ internal data class AdvisorChatMessage(
     val role: ChatMessageRole,
     val text: String,
     val createdAt: Long,
+    val products: List<VerifiedProductUiModel> = emptyList(),
 )
 
 internal data class AdvisorCaseUiState(
@@ -54,6 +58,9 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                 role = role,
                 text = message.text,
                 createdAt = message.createdAt,
+                products = message.products.map { product ->
+                    product.toVerifiedProductUiModel()
+                },
             )
         },
     )
@@ -90,6 +97,39 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                             put("role", message.role.name)
                             put("text", message.text)
                             put("createdAt", message.createdAt)
+                            put(
+                                "products",
+                                buildJsonArray {
+                                    message.products.forEach { product ->
+                                        add(
+                                            buildJsonObject {
+                                                put("name", product.name)
+                                                put("obik", product.obik)
+                                                put(
+                                                    "grossPrice",
+                                                    product.grossPrice
+                                                        ?.toPlainString()
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
+                                                put(
+                                                    "stock",
+                                                    product.stock
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
+                                                put("productUrl", product.productUrl)
+                                                put(
+                                                    "verifiedAt",
+                                                    product.verifiedAt
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
+                                            },
+                                        )
+                                    }
+                                },
+                            )
                         },
                     )
                 }
@@ -117,10 +157,44 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                     ?.jsonPrimitive
                     ?.longOrNull
                     ?: return@mapNotNull null
+                val products = (objectValue["products"] as? JsonArray)
+                    ?.mapNotNull { productElement ->
+                        val product = productElement as? JsonObject
+                            ?: return@mapNotNull null
+                        val name = product["name"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: return@mapNotNull null
+                        val obik = product["obik"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: return@mapNotNull null
+                        val productUrl = product["productUrl"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: return@mapNotNull null
+                        VerifiedProductUiModel(
+                            name = name,
+                            obik = obik,
+                            grossPrice = product["grossPrice"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?.toBigDecimalOrNull(),
+                            stock = product["stock"]
+                                ?.jsonPrimitive
+                                ?.intOrNull,
+                            productUrl = productUrl,
+                            verifiedAt = product["verifiedAt"]
+                                ?.jsonPrimitive
+                                ?.longOrNull,
+                        )
+                    }
+                    .orEmpty()
                 AdvisorChatMessage(
                     role = role,
                     text = text,
                     createdAt = createdAt,
+                    products = products,
                 )
             }
             .orEmpty()

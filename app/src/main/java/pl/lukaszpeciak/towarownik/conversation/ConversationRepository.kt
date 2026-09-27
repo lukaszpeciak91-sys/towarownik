@@ -1,7 +1,9 @@
 package pl.lukaszpeciak.towarownik.conversation
 
+import java.math.BigDecimal
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 internal const val CONVERSATION_TITLE_MAX_CHARS = 50
 internal const val CONVERSATION_RETENTION_DAYS = 30L
@@ -29,6 +31,7 @@ internal data class PersistedMessage(
     val role: String,
     val text: String,
     val createdAt: Long,
+    val products: List<VerifiedProductSnapshot>,
 )
 
 internal data class UserTurnStart(
@@ -130,12 +133,14 @@ internal class ConversationRepository(
         text: String,
         finalResponseId: String,
         createdAt: Long = now(),
+        products: List<VerifiedProductSnapshot> = emptyList(),
     ) {
         dao.completeAssistantTurn(
             conversationId = conversationId,
             text = text,
             createdAt = createdAt,
             lastResponseId = finalResponseId,
+            products = products,
         )
     }
 
@@ -204,15 +209,28 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
         draft = conversation.draft,
         messages = messages
             .sortedWith(
-                compareBy<MessageEntity> { it.createdAt }
-                    .thenBy { it.id },
+                compareBy<MessageWithProducts> { it.message.createdAt }
+                    .thenBy { it.message.id },
             )
-            .map { message ->
+            .map { item ->
+                val message = item.message
                 PersistedMessage(
                     id = message.id,
                     role = message.role,
                     text = message.text,
                     createdAt = message.createdAt,
+                    products = item.products
+                        .sortedBy { it.position }
+                        .map { product ->
+                            VerifiedProductSnapshot(
+                                obik = product.obik,
+                                name = product.name,
+                                stock = product.stock,
+                                grossPrice = product.grossPrice?.let(::BigDecimal),
+                                productUrl = product.productUrl,
+                                verifiedAt = product.verifiedAt,
+                            )
+                        },
                 )
             },
     )

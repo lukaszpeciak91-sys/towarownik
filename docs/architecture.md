@@ -25,7 +25,7 @@ The product lookup core implements repository, HTTP/session transport, and OBI-s
 
 Transport and parsing must remain isolated from the UI. An OBI website change should require changes in its transport/parser boundary and tests, not a UI rewrite.
 
-## Future AI assistant boundary
+## AI assistant boundary
 
 The Android app now exposes two separate top-level paths. WYSZUKIWARKA continues to use the existing local OBI flow directly and never invokes the proxy. DORADCA uses this assistant path:
 
@@ -39,7 +39,7 @@ Cloudflare proxy
 OpenAI
 ```
 
-The Cloudflare Worker exists to protect server-side API credentials and, in a later milestone, mediate assistant requests. The OpenAI API key exists only on the proxy side. The Android app must never embed it.
+The Cloudflare Worker is the active credential and OpenAI mediation boundary for advisor requests. The OpenAI API key exists only on the proxy side. The Android app must never embed it.
 
 When the model requests the single high-level local OBI tool, Android owns execution:
 
@@ -63,7 +63,7 @@ The Worker calls the OpenAI Responses API with a centralized `gpt-5.6-luna` conf
 
 When the model returns that function call, the Worker validates the tool name and arguments and returns a normalized `tool_request` envelope to Android. Android executes the existing OBI search/exact store-`075` lookup and later sends only the compact verified result to `/v1/agent/continue`. The Worker continues with `previous_response_id` and a matching `function_call_output`, resending the stable server-controlled instructions/tool declaration. It does not store conversation state in Cloudflare storage.
 
-The proxy normalizes OpenAI output to either `answer` or `tool_request`. Raw Responses payloads, reasoning items, token/usage metadata, internal instructions, and upstream error bodies do not cross into Android.
+The proxy normalizes OpenAI output to either `tool_request` or a structured final `answer`. Final answers are constrained by a strict JSON schema with exactly `text` and `productObiks` (maximum five seven-digit OBIKs). The model supplies no card price, stock, name, URL, or verification timestamp. Raw Responses payloads, reasoning items, token/usage metadata, internal instructions, and upstream error bodies do not cross into Android.
 
 On Android, `AdvisorProxyClient` is the isolated authenticated transport boundary. `AdvisorController` owns one USER turn and may execute at most two local tool calls during that turn before terminating with a bounded error. The allowance resets for every new USER message. It never automatically retries a completed proxy request. `FindAvailableObi075Tool` remains the only Android tool adapter; there is no generic agent/plugin framework.
 
@@ -85,15 +85,19 @@ transaction: ASSISTANT message + replace lastResponseId
 
 The first USER turn has no previous response and uses `/v1/agent/start`. Later turns use the last successfully completed final answer response ID. Tool request response IDs are used only transiently for `/continue`; call IDs are never persisted. A new conversation starts with no response ID.
 
-Room schema v1 contains `conversations` and `messages` with a CASCADE foreign key. Room stores rendered USER/ASSISTANT text, timestamps, local title, draft, and nullable final `lastResponseId`; it does not store secrets, OBI payloads, raw OpenAI responses, or reasoning data.
+Room schema v2 contains `conversations`, `messages`, and `message_products`. Conversation→message and message→product foreign keys use CASCADE deletion. The v1→v2 migration creates only the new product table/index and preserves existing conversations/messages. Room stores rendered USER/ASSISTANT text, timestamps, local title, draft, nullable final `lastResponseId`, and selected verified product snapshots. Snapshot gross price is stored as decimal text to avoid floating-point precision loss; the trusted exact `productUrl` and `verifiedAt` are stored locally for historical display. Room still does not store secrets, OBI payloads, raw OpenAI responses, or reasoning data.
 
-A trailing USER without a committed ASSISTANT means the turn was interrupted. Recovery removes only that trailing USER, restores its text to `draft`, and leaves the prior final `lastResponseId` unchanged. No proxy/OpenAI request runs during recovery. Completed assistant text and its final response ID are committed in one Room transaction.
+During a USER turn, every successful exact `LocalProduct` result yields two deliberately separate views: the existing compact `{obik,name,stock,price}` tool result sent to OpenAI and a local-only verified snapshot `{obik,name,stock,grossPrice,productUrl,verifiedAt}`. `productUrl` and `verifiedAt` are never sent upstream. `AdvisorController` accumulates snapshots only inside the current `runTurn`, deduplicates by OBIK with the latest exact lookup winning, and resolves the final model-selected `productObiks` only against that set. Unknown selections are ignored; they never cause a lookup. Requested ordering is retained and duplicate selections cannot create duplicate cards.
+
+A trailing USER without a committed ASSISTANT means the turn was interrupted. Recovery removes only that trailing USER, restores its text to `draft`, and leaves the prior final `lastResponseId` unchanged. No proxy/OpenAI request runs during recovery. Completed assistant text, selected verified snapshots, and the final response ID are committed in one Room transaction, so a failed/interrupted/stale turn cannot leave orphan product snapshots.
 
 Conversation history search is local SQL substring matching over title and message text. It has no AI/network dependency. Conversations are ordered by `updatedAt` descending. A conversation represents one customer case: a new customer or new problem should normally start with “Nowa rozmowa”, while follow-up questions for the same case continue in place; this is not enforced as a hard conversation-length limit.
 
 On normal app startup, Room deletes conversations whose `updatedAt` is strictly older than `now - 30 days`; rows exactly at the cutoff are retained and message rows disappear through the existing CASCADE foreign key. Cleanup is local-only and has no WorkManager, proxy, OpenAI, OBI, or other network dependency. If a remembered active conversation was removed by retention, the app opens a fresh empty chat instead of restoring stale saved UI state.
 
 Each history entry can also be deleted manually after confirmation. Deleting the active conversation first invalidates the advisor generation token and cancels/joins its active request, then removes the Room row and returns to a fresh empty chat. Final callback handling checks the generation/conversation guard before database mutation, and the DAO completion transaction requires the conversation row to still exist, so a stale completion cannot recreate a deleted conversation.
+
+Persisted product cards are historical point-in-time snapshots, not current OBI evidence. They render below the ASSISTANT message with their local verification timestamp and trusted persisted URL, with no proxy/OBI request merely to reopen history, restart the app, or open the drawer. A later USER question about current availability, stock, price, or currently suitable products must run `find_available_obi_075` again and receives independent current-turn snapshots.
 
 On cold start the most recently updated useful retained conversation is restored when practical. Switching/new conversation cancels active work and generation-guards stale UI callbacks.
 

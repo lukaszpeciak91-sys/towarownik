@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 @Dao
 internal abstract class ConversationDao {
@@ -83,6 +84,11 @@ internal abstract class ConversationDao {
     protected abstract suspend fun insertMessage(
         message: MessageEntity,
     ): Long
+
+    @Insert
+    protected abstract suspend fun insertMessageProducts(
+        products: List<MessageProductEntity>,
+    )
 
     @Query("DELETE FROM messages WHERE id = :messageId")
     protected abstract suspend fun deleteMessage(
@@ -185,9 +191,12 @@ internal abstract class ConversationDao {
         text: String,
         createdAt: Long,
         lastResponseId: String,
+        products: List<VerifiedProductSnapshot>,
     ) {
         checkNotNull(getConversation(conversationId))
-        insertMessage(
+        require(products.size <= 5)
+        require(products.map { it.obik }.distinct().size == products.size)
+        val messageId = insertMessage(
             MessageEntity(
                 conversationId = conversationId,
                 role = MESSAGE_ROLE_ASSISTANT,
@@ -195,6 +204,22 @@ internal abstract class ConversationDao {
                 createdAt = createdAt,
             ),
         )
+        if (products.isNotEmpty()) {
+            insertMessageProducts(
+                products.mapIndexed { position, product ->
+                    MessageProductEntity(
+                        messageId = messageId,
+                        position = position,
+                        obik = product.obik,
+                        name = product.name,
+                        stock = product.stock,
+                        grossPrice = product.grossPrice?.toPlainString(),
+                        productUrl = product.productUrl,
+                        verifiedAt = product.verifiedAt,
+                    )
+                },
+            )
+        }
         markAssistantTurnCompleted(
             conversationId = conversationId,
             lastResponseId = lastResponseId,

@@ -1,5 +1,6 @@
 package pl.lukaszpeciak.towarownik
 
+import java.math.BigDecimal
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -53,6 +54,36 @@ class ChatShellModelsTest {
         val restored = restoreAdvisorCase(saveAdvisorCase(completed))
 
         assertEquals(completed, restored)
+    }
+
+    @Test
+    fun `verified advisor cards survive save and restore with trusted url`() {
+        val card = VerifiedProductUiModel(
+            name = "Verified",
+            obik = "1234567",
+            grossPrice = BigDecimal("12.30"),
+            stock = 0,
+            productUrl = "https://www.obi.pl/p/1234567/trusted-exact",
+            verifiedAt = 1_234_567L,
+        )
+        val completed = AdvisorCaseUiState(
+            messages = listOf(
+                AdvisorChatMessage(
+                    role = ChatMessageRole.ASSISTANT,
+                    text = "Use this.",
+                    createdAt = 200L,
+                    products = listOf(card),
+                ),
+            ),
+        )
+
+        val restored = restoreAdvisorCase(saveAdvisorCase(completed))
+
+        assertEquals(completed, restored)
+        assertEquals(
+            "https://www.obi.pl/p/1234567/trusted-exact",
+            verifiedProductOpenUrl(restored.messages.single().products.single()),
+        )
     }
 
     @Test

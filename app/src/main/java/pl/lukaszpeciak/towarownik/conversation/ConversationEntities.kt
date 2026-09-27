@@ -44,12 +44,49 @@ internal data class MessageEntity(
     val createdAt: Long,
 )
 
+@Entity(
+    tableName = "message_products",
+    primaryKeys = ["messageId", "position"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MessageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["messageId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index("messageId"),
+    ],
+)
+internal data class MessageProductEntity(
+    val messageId: Long,
+    val position: Int,
+    val obik: String,
+    val name: String,
+    val stock: Int?,
+    val grossPrice: String?,
+    val productUrl: String,
+    val verifiedAt: Long,
+)
+
+internal data class MessageWithProducts(
+    @Embedded
+    val message: MessageEntity,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "messageId",
+    )
+    val products: List<MessageProductEntity>,
+)
+
 internal data class ConversationWithMessages(
     @Embedded
     val conversation: ConversationEntity,
     @Relation(
+        entity = MessageEntity::class,
         parentColumn = "id",
         entityColumn = "conversationId",
     )
-    val messages: List<MessageEntity>,
+    val messages: List<MessageWithProducts>,
 )

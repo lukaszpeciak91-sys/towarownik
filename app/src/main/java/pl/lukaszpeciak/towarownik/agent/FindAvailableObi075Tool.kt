@@ -8,6 +8,8 @@ import pl.lukaszpeciak.towarownik.product.ProductLookupRepository
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchRepository
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.toVerifiedProductSnapshot
 
 internal class FindAvailableObi075Tool(
     private val searchProducts: (String) -> ProductSearchResult =
@@ -15,6 +17,7 @@ internal class FindAvailableObi075Tool(
     private val lookupObik: (String) -> ProductLookupResult =
         ProductLookupRepository()::lookupObik,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     suspend fun execute(
         arguments: AdvisorToolArguments,
@@ -43,10 +46,11 @@ internal class FindAvailableObi075Tool(
         return when (val search = searchProducts(arguments.query)) {
             ProductSearchResult.NotFound -> {
                 AdvisorToolExecutionResult.Success(
-                    AdvisorVerifiedToolResult(
+                    result = AdvisorVerifiedToolResult(
                         query = arguments.query,
                         products = emptyList(),
                     ),
+                    snapshots = emptyList(),
                 )
             }
 
@@ -56,6 +60,7 @@ internal class FindAvailableObi075Tool(
 
             is ProductSearchResult.Candidates -> {
                 val verified = mutableListOf<AdvisorVerifiedProduct>()
+                val snapshots = mutableListOf<VerifiedProductSnapshot>()
                 var lookupFailed = false
 
                 search.items
@@ -79,6 +84,9 @@ internal class FindAvailableObi075Tool(
                                     stock = product.stock,
                                     price = product.grossPrice,
                                 )
+                                snapshots += product.toVerifiedProductSnapshot(
+                                    verifiedAt = now(),
+                                )
                             }
 
                             is ProductLookupResult.InvalidObik,
@@ -91,10 +99,11 @@ internal class FindAvailableObi075Tool(
                 when {
                     verified.isNotEmpty() -> {
                         AdvisorToolExecutionResult.Success(
-                            AdvisorVerifiedToolResult(
+                            result = AdvisorVerifiedToolResult(
                                 query = arguments.query,
                                 products = verified,
                             ),
+                            snapshots = snapshots,
                         )
                     }
 
@@ -104,10 +113,11 @@ internal class FindAvailableObi075Tool(
 
                     else -> {
                         AdvisorToolExecutionResult.Success(
-                            AdvisorVerifiedToolResult(
+                            result = AdvisorVerifiedToolResult(
                                 query = arguments.query,
                                 products = emptyList(),
                             ),
+                            snapshots = emptyList(),
                         )
                     }
                 }
