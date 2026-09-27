@@ -409,10 +409,18 @@ private fun formatPlnCost(
         return stringResource(R.string.ai_usage_unavailable)
     }
     return formatAdaptiveMoney(
-        snapshot.estimatedCostUsd * rate.rate,
+        convertUsdToPln(
+            snapshot.estimatedCostUsd,
+            rate.rate,
+        ),
         "PLN",
     )
 }
+
+internal fun convertUsdToPln(
+    usd: BigDecimal,
+    usdPlnRate: BigDecimal,
+): BigDecimal = usd * usdPlnRate
 
 internal fun parseBudgetInput(raw: String): BigDecimal? =
     raw.trim()
