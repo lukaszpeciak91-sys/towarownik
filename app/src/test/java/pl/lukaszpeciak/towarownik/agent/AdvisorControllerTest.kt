@@ -741,7 +741,7 @@ class AdvisorControllerTest {
             totalTokens = 110,
             estimatedCostUsd = BigDecimal("0.000032"),
             pricingVersion =
-                "openai-gpt-6-luna-2026-09-27",
+                "openai-gpt-6-luna-2026-09-27-v1",
         )
         val controller = controller(
             start = {
