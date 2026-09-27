@@ -175,7 +175,7 @@ class ObiDiagnosticRecorder(
     }
 
     private fun renderReport(records: List<DiagnosticOperationSnapshot>): String = buildString {
-        appendLine("Towarownik OBI diagnostics")
+        appendLine("Taksula OBI diagnostics")
         appendLine("diagnosticMode=${if (enabled) "ON" else "OFF"}")
         deviceContext?.let { context ->
             appendLine("app=${context.versionName} (${context.versionCode})")

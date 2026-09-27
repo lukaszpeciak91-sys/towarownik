@@ -266,7 +266,7 @@ internal object ProblemReportFormatter {
         metadata: ProblemReportTechnicalMetadata,
         safeObiDiagnostics: String?,
     ): String = buildString {
-        appendLine("TOWAROWNIK PROBLEM REPORT")
+        appendLine("TAKSULA PROBLEM REPORT")
         appendLine()
         appendLine("Report type: ${request.type.name}")
         appendLine("Category: ${request.category.name}")
@@ -406,7 +406,7 @@ internal class ProblemReportFileStore(
             .format(FILE_NAME_TIMESTAMP)
         val reportFile = File(
             directory,
-            "towarownik-report-$timestamp.txt",
+            "taksula-report-$timestamp.txt",
         )
         reportFile.writeText(
             text = reportText,
@@ -446,7 +446,7 @@ internal fun buildProblemReportSendIntent(
         putExtra(Intent.EXTRA_TEXT, body)
         putExtra(Intent.EXTRA_STREAM, reportUri)
         clipData = ClipData.newRawUri(
-            "Towarownik problem report",
+            "Taksula problem report",
             reportUri,
         )
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

@@ -1,6 +1,6 @@
-# Towarownik proxy
+# Taksula proxy
 
-This directory contains the Cloudflare Worker boundary for Towarownik's AI assistant.
+This directory contains the Cloudflare Worker boundary for Taksula's AI assistant.
 
 ## Endpoints
 
@@ -15,6 +15,8 @@ Returns:
 ```json
 {"ok":true,"service":"towarownik-proxy"}
 ```
+
+The public product name is **Taksula**. The existing `towarownik-proxy` Worker/service name and `TOWAROWNIK_APP_TOKEN` secret name are retained as technical identifiers.
 
 Health does not require either Worker secret.
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Towarownik</string>
+    <string name="app_name">Taksula</string>
 
     <string name="new_conversation">Nowa rozmowa</string>
     <string name="search_conversations">Przeszukaj rozmowy…</string>
@@ -61,9 +61,9 @@
     <string name="diagnostics_copy_report">Kopiuj raport</string>
     <string name="diagnostics_share_report">Udostępnij raport</string>
     <string name="diagnostics_clear_report">Wyczyść raport</string>
-    <string name="diagnostics_share_subject">Towarownik — diagnostyka OBI</string>
+    <string name="diagnostics_share_subject">Taksula — diagnostyka OBI</string>
     <string name="diagnostics_share_chooser">Udostępnij raport</string>
-    <string name="diagnostics_clipboard_label">Towarownik — diagnostyka OBI</string>
+    <string name="diagnostics_clipboard_label">Taksula — diagnostyka OBI</string>
     <string name="back">Powrót</string>
 
     <string name="cd_open_navigation">Otwórz historię rozmów</string>
@@ -118,9 +118,9 @@
     <string name="report_error_description_required">Dodaj krótki opis problemu.</string>
     <string name="report_error_generation_failed">Nie udało się utworzyć raportu.</string>
     <string name="report_error_share_unavailable">Nie udało się otworzyć systemowego udostępniania raportu.</string>
-    <string name="report_share_subject_assistant">Towarownik — zgłoszenie odpowiedzi</string>
-    <string name="report_share_subject_general">Towarownik — zgłoszenie problemu</string>
-    <string name="report_share_body">W załączniku znajduje się raport utworzony w aplikacji Towarownik.</string>
+    <string name="report_share_subject_assistant">Taksula — zgłoszenie odpowiedzi</string>
+    <string name="report_share_subject_general">Taksula — zgłoszenie problemu</string>
+    <string name="report_share_body">W załączniku znajduje się raport utworzony w aplikacji Taksula.</string>
     <string name="report_share_chooser">Udostępnij raport</string>
 
 </resources>

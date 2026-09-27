@@ -2,7 +2,7 @@
 
 ## Goal
 
-Towarownik should remain a small native Android application. Its intended data flow is:
+Taksula should remain a small native Android application. Its intended data flow is:
 
 ```text
 UI / Compose
@@ -147,7 +147,7 @@ An explicit empty-search state or ordinary HTTP 404 maps to not found. A narrow 
 
 ## Temporary OBI diagnostics
 
-A temporary in-app engineering diagnostic mode observes the existing OBI integration without changing its URLs, headers, redirect policy, cookie behavior, or parsing decisions. It is OFF by default and is opened from **Drawer → Settings → Diagnostics**. The former hidden long-press on the Towarownik title has been removed. State and history are process-session only; no persistence dependency is used.
+A temporary in-app engineering diagnostic mode observes the existing OBI integration without changing its URLs, headers, redirect policy, cookie behavior, or parsing decisions. It is OFF by default and is opened from **Drawer → Settings → Diagnostics**. The former hidden long-press on the app title has been removed. State and history are process-session only; no persistence dependency is used.
 
 `ObiDiagnosticRecorder` is bounded to the last 10 operations. An OkHttp network interceptor observes actual request headers, redirect hops, safe response metadata, and cookie names. All recorded URLs are sanitized: scheme/host/path are retained, only explicitly safe query values such as `storeNumber=075` remain visible, and other query values are replaced with `REDACTED`. Cookie values are inspected only transiently to classify per-hop store evidence as `true`, `false`, or `unknown`, then discarded; they are never stored or printed. Response bodies are never persisted. Successful responses are reduced immediately to safe signatures, while final 4xx/5xx responses use a bounded diagnostic preview for the same signatures. The reported body-size field is `decodedBodyUtf8Bytes`, meaning UTF-8 bytes of the decoded diagnostic text, not raw HTTP payload bytes.
 
@@ -157,7 +157,7 @@ Deterministic fixtures and CI prove code behavior against known inputs; they do 
 
 ## UI and configuration
 
-The application uses one AppCompat-backed Compose activity and state-based top-level surfaces; Navigation Compose is intentionally not introduced. The surfaces are Advisor, manual OBI search, Settings, and Diagnostics. The default surface is the advisor chat shell. Its top bar has a modal drawer action, centered Towarownik title, explicit new-case action, and quick access to the independent full-screen Wyszukiwarka OBI. The drawer contains “Nowa rozmowa”, local persisted history/search, per-conversation confirmed deletion, and a visually separated Settings action pinned at the bottom regardless of history/search state. Opening Settings changes only the surface and closes the drawer; it does not reset the active conversation/draft or initiate proxy/OBI work.
+The application uses one AppCompat-backed Compose activity and state-based top-level surfaces; Navigation Compose is intentionally not introduced. The surfaces are Advisor, manual OBI search, Settings, and Diagnostics. The default surface is the advisor chat shell. Its top bar has a modal drawer action, centered Taksula title, explicit new-case action, and quick access to the independent full-screen Wyszukiwarka OBI. The drawer contains “Nowa rozmowa”, local persisted history/search, per-conversation confirmed deletion, and a visually separated Settings action pinned at the bottom regardless of history/search state. Opening Settings changes only the surface and closes the drawer; it does not reset the active conversation/draft or initiate proxy/OBI work.
 
 Settings returns directly to Advisor. Diagnostics is entered only from Settings and returns to Settings. Settings contains General/Language, Help/Diagnostics plus disabled future Report problem, and About with resource-based `app_name`, current versionName/versionCode, plus a disabled future Privacy policy row. The placeholders are deliberately non-functional and contain no invented endpoint, URL, or legal text.
 

@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Problem reporting + assistant response reports v0.1**
+**Taksula branding rename v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. The localization, Warm Modular Utility, Settings, PL/EN selection, and diagnostics relocation are complete. The current iteration adds the first user-controlled problem-reporting workflow without adding a backend or changing advisor, OBI, Room schema, or product behavior.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, and user-controlled reporting are complete. The current iteration renames the public-facing product from Towarownik to **Taksula** without changing technical identity or behavior.
 
 Implemented direction:
 
@@ -65,8 +65,11 @@ Implemented direction:
 - existing sanitized OBI diagnostics are offered only when already enabled and populated, through a separate checkbox that defaults OFF; reporting never starts diagnostics/probes/network work;
 - reports are temporary UTF-8 TXT files under `cacheDir/reports/` and are not stored in Room;
 - a non-exported FileProvider exposes only the report cache path and Android ACTION_SEND opens the system chooser with the centralized Nepahu Studio recipient;
-- Towarownik never sends the report automatically; chooser launch failure is handled with a bounded UI error and deletion of the fresh TXT; screenshots are added manually in the chosen mail/share client;
+- Taksula never sends the report automatically; chooser launch failure is handled with a bounded UI error and deletion of the fresh TXT; screenshots are added manually in the chosen mail/share client;
 - report contents exclude OpenAI/tool IDs, response-chain IDs, secrets/auth headers, cookie values, raw model data, OBI HTML/Nuxt, account/network/location identifiers.
+- public-facing product branding is **Taksula** in Android resources, diagnostics/report labels, TXT headings, and current product documentation;
+- package/application ID `pl.lukaszpeciak.towarownik`, repository name, Worker/service/token identifiers, database/persisted contracts, internal theme symbols, and launcher asset filenames remain intentionally unchanged;
+- launcher icon artwork and Warm Modular Utility styling are unchanged; no binary asset is modified.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 

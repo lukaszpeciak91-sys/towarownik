@@ -78,7 +78,7 @@ class ProblemReportSharingTest {
             )
 
             assertEquals("reports", file.parentFile?.name)
-            assertTrue(file.name.startsWith("towarownik-report-"))
+            assertTrue(file.name.startsWith("taksula-report-"))
             assertTrue(file.name.endsWith(".txt"))
             assertEquals("UTF-8: zażółć", file.readText())
             assertFalse(File(cache, "reports/old.txt").exists())
@@ -259,7 +259,7 @@ class ProblemReportSharingTest {
         )
 
         assertNotNull(report)
-        assertTrue(report!!.contains("Towarownik OBI diagnostics"))
+        assertTrue(report!!.contains("Taksula OBI diagnostics"))
         assertTrue(recorder.isEnabled())
     }
 

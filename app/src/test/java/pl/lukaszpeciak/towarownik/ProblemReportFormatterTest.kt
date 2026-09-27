@@ -13,7 +13,7 @@ class ProblemReportFormatterTest {
     private val metadata = ProblemReportTechnicalMetadata(
         createdAtMillis = 1_000L,
         createdAtWithOffset = "2026-09-27T12:00:00+02:00",
-        appName = "Towarownik",
+        appName = "Taksula",
         versionName = "0.1.10",
         versionCode = 11,
         androidVersion = "13",
@@ -192,6 +192,8 @@ class ProblemReportFormatterTest {
             safeObiDiagnostics = null,
         )
 
+        assertTrue(report.startsWith("TAKSULA PROBLEM REPORT"))
+        assertTrue(report.contains("App: Taksula"))
         assertTrue(report.contains("Created: 2026-09-27T12:00:00+02:00"))
         assertTrue(report.contains("Version: 0.1.10 (11)"))
         assertTrue(report.contains("Android: 13 API 33"))
