@@ -13,7 +13,7 @@ enum class ObiDiagnosticInputType {
     UNKNOWN,
 }
 
-enum class Store075CookieMatch(val reportValue: String) {
+enum class StoreCookieMatch(val reportValue: String) {
     MATCH("true"),
     MISMATCH("false"),
     UNKNOWN("unknown"),
@@ -47,8 +47,8 @@ data class DiagnosticHttpHop(
     val safeInfrastructureHeaders: Map<String, String>,
     val outgoingCookies: List<DiagnosticCookie>,
     val setCookies: List<DiagnosticCookie>,
-    val outgoingStore075CookieMatch: Store075CookieMatch,
-    val setCookieStore075Match: Store075CookieMatch,
+    val outgoingStoreCookieMatch: StoreCookieMatch,
+    val setCookieStoreMatch: StoreCookieMatch,
 )
 
 data class DiagnosticBodySignatures(
@@ -62,7 +62,7 @@ data class DiagnosticBodySignatures(
     val containsCanonicalProductUrl: Boolean?,
     val canonicalUrl: String?,
     val containsSelectedStore: Boolean?,
-    val containsStore075: Boolean?,
+    val containsRequestedStore: Boolean?,
     val recognizedProductLinkCount: Int,
     val containsSearchResultsPhrase: Boolean?,
     val detectedSearchResultCount: Int?,
@@ -77,6 +77,7 @@ data class DiagnosticOperationSnapshot(
     val operation: ObiDiagnosticOperationType,
     val inputType: ObiDiagnosticInputType,
     val identifier: String,
+    val storeNumber: String?,
     val timestampMillis: Long,
     val requestedUrl: String,
     val requestMethod: String,
@@ -86,7 +87,7 @@ data class DiagnosticOperationSnapshot(
     val durationMillis: Long?,
     val outgoingCookies: List<DiagnosticCookie>,
     val setCookies: List<DiagnosticCookie>,
-    val store075CookieMatch: Store075CookieMatch,
+    val storeCookieMatch: StoreCookieMatch,
     val hops: List<DiagnosticHttpHop>,
     val finalStatus: Int?,
     val finalUrl: String?,

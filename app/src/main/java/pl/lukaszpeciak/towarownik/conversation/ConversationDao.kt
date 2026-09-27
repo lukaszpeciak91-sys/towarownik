@@ -112,6 +112,20 @@ internal abstract class ConversationDao {
     @Query(
         """
         UPDATE conversations
+        SET storeNumber = :storeNumber,
+            updatedAt = :updatedAt
+        WHERE id = :conversationId
+        """,
+    )
+    abstract suspend fun updateStoreNumber(
+        conversationId: Long,
+        storeNumber: String,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE conversations
         SET draft = '',
             updatedAt = :updatedAt
         WHERE id = :conversationId
@@ -142,6 +156,7 @@ internal abstract class ConversationDao {
         title: String,
         text: String,
         createdAt: Long,
+        storeNumber: String,
     ): Pair<Long, String?> {
         val conversationId = insertConversation(
             ConversationEntity(
@@ -150,6 +165,7 @@ internal abstract class ConversationDao {
                 updatedAt = createdAt,
                 lastResponseId = null,
                 draft = "",
+                storeNumber = storeNumber,
             ),
         )
         insertMessage(
@@ -168,8 +184,10 @@ internal abstract class ConversationDao {
         conversationId: Long,
         text: String,
         createdAt: Long,
+        expectedStoreNumber: String,
     ): String? {
         val conversation = checkNotNull(getConversation(conversationId))
+        require(conversation.storeNumber == expectedStoreNumber)
         insertMessage(
             MessageEntity(
                 conversationId = conversationId,
@@ -195,7 +213,7 @@ internal abstract class ConversationDao {
     ) {
         checkNotNull(getConversation(conversationId))
         require(products.size <= 5)
-        require(products.map { it.obik }.distinct().size == products.size)
+        require(products.map { it.key }.distinct().size == products.size)
         val messageId = insertMessage(
             MessageEntity(
                 conversationId = conversationId,
@@ -216,6 +234,7 @@ internal abstract class ConversationDao {
                         grossPrice = product.grossPrice?.toPlainString(),
                         productUrl = product.productUrl,
                         verifiedAt = product.verifiedAt,
+                        storeNumber = product.storeNumber,
                     )
                 },
             )

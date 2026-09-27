@@ -365,12 +365,13 @@ internal object ProblemReportFormatter {
             appendLine("${indent}Product ${index + 1}:")
             appendLine("${indent}  name=${product.name}")
             appendLine("${indent}  obik=${product.obik}")
+            appendLine("${indent}  storeNumber=${product.storeNumber}")
             appendLine(
-                "${indent}  stock_store_075=" +
+                "${indent}  stock=" +
                     (product.stock?.toString() ?: "UNKNOWN"),
             )
             appendLine(
-                "${indent}  gross_price_store_075=" +
+                "${indent}  grossPrice=" +
                     (product.grossPrice?.toPlainString() ?: "UNKNOWN"),
             )
             appendLine(

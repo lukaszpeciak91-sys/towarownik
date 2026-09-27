@@ -79,9 +79,9 @@ internal data class ObiLiveProbeReport(
                                 .ifBlank { "(none)" },
                     )
                     appendLine("  outgoingCookieNames=${hop.outgoingCookies.probeCookieNames()}")
-                    appendLine("  outgoingStore075CookieMatch=${hop.outgoingStore075CookieMatch.reportValue}")
+                    appendLine("  outgoingStoreCookieMatch=${hop.outgoingStoreCookieMatch.reportValue}")
                     appendLine("  setCookieNames=${hop.setCookies.probeCookieNames()}")
-                    appendLine("  setCookieStore075Match=${hop.setCookieStore075Match.reportValue}")
+                    appendLine("  setCookieStoreMatch=${hop.setCookieStoreMatch.reportValue}")
                     appendLine("  contentType=${hop.contentType ?: "(none)"}")
                     appendLine("  contentEncoding=${hop.contentEncoding ?: "(none)"}")
                     appendLine("  declaredContentLength=${hop.declaredContentLength ?: -1}")
@@ -106,6 +106,7 @@ internal data class ObiLiveProbeReport(
                     appendLine("body.challengeIndicators=${body.challengeIndicators.joinToString().ifBlank { "(none)" }}")
                     appendLine("body.containsNuxtData=${body.containsNuxtData}")
                     body.containsRequestedObik?.let { appendLine("body.containsRequestedObik=$it") }
+                    body.containsRequestedStore?.let { appendLine("body.containsRequestedStore=$it") }
                     body.canonicalUrl?.let { appendLine("body.canonicalUrl=$it") }
                     body.containsSearchResultsPhrase?.let { appendLine("body.containsSearchResultsPhrase=$it") }
                     body.detectedSearchResultCount?.let { appendLine("body.detectedSearchResultCount=$it") }
@@ -134,6 +135,7 @@ internal fun List<DiagnosticCookie>.probeCookieNames(): String =
 
 internal const val OBI_PROBE_CONTROL_SEARCH = "dedra"
 internal const val OBI_PROBE_CONTROL_OBIK = "3496072"
+internal const val OBI_PROBE_CONTROL_STORE = "075"
 internal const val OBI_PROBE_CANONICAL_PRODUCT_URL =
     "https://www.obi.pl/p/3496072/dragon-klej-uniwersalny-butapren-50-ml"
 internal const val OBI_PROBE_SEARCH_URL = "https://www.obi.pl/search/dedra/"

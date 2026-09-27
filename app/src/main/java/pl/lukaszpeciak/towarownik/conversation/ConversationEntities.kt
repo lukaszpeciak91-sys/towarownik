@@ -6,6 +6,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 
 internal const val MESSAGE_ROLE_USER = "USER"
 internal const val MESSAGE_ROLE_ASSISTANT = "ASSISTANT"
@@ -19,6 +20,7 @@ internal data class ConversationEntity(
     val updatedAt: Long,
     val lastResponseId: String?,
     val draft: String,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
 )
 
 @Entity(
@@ -68,6 +70,7 @@ internal data class MessageProductEntity(
     val grossPrice: String?,
     val productUrl: String,
     val verifiedAt: Long,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
 )
 
 internal data class MessageWithProducts(

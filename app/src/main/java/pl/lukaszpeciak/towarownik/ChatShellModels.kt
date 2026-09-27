@@ -17,6 +17,7 @@ import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 
 internal enum class ChatMessageRole {
     USER,
@@ -127,6 +128,7 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                                         ?: JsonNull,
                                                 )
                                                 put("productUrl", product.productUrl)
+                                                put("storeNumber", product.storeNumber)
                                                 put(
                                                     "verifiedAt",
                                                     product.verifiedAt
@@ -192,6 +194,10 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                                 ?.jsonPrimitive
                                 ?.intOrNull,
                             productUrl = productUrl,
+                            storeNumber = product["storeNumber"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: DEFAULT_OBI_STORE_NUMBER,
                             verifiedAt = product["verifiedAt"]
                                 ?.jsonPrimitive
                                 ?.longOrNull,

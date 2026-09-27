@@ -13,7 +13,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageEntity::class,
         MessageProductEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 internal abstract class ConversationDatabase : RoomDatabase() {
@@ -30,7 +30,10 @@ internal abstract class ConversationDatabase : RoomDatabase() {
                     ConversationDatabase::class.java,
                     "towarownik-conversations.db",
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                    )
                     .build()
                     .also { database ->
                         instance = database
@@ -64,6 +67,20 @@ internal val MIGRATION_1_2 = object : Migration(1, 2) {
             CREATE INDEX IF NOT EXISTS `index_message_products_messageId`
             ON `message_products` (`messageId`)
             """.trimIndent(),
+        )
+    }
+}
+
+
+internal val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE conversations " +
+                "ADD COLUMN storeNumber TEXT NOT NULL DEFAULT '075'",
+        )
+        db.execSQL(
+            "ALTER TABLE message_products " +
+                "ADD COLUMN storeNumber TEXT NOT NULL DEFAULT '075'",
         )
     }
 }

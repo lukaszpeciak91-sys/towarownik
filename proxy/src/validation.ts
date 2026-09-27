@@ -9,10 +9,33 @@ import {
   START_BODY_MAX_BYTES,
   START_MESSAGE_MAX_CHARS,
 } from "./config.js";
-import type { ToolArguments, VerifiedProduct, VerifiedToolResult } from "./types.js";
+import type {
+  RejectedToolResult,
+  ToolArguments,
+  ToolContinuationResult,
+  VerifiedProduct,
+  VerifiedToolResult,
+} from "./types.js";
 
 export class InvalidRequestError extends Error {}
 export class RequestTooLargeError extends Error {}
+
+export interface StartRequest {
+  message: string;
+  storeNumber: string;
+}
+
+export interface MessageRequest extends StartRequest {
+  previousResponseId: string;
+}
+
+export interface ContinueRequest {
+  responseId: string;
+  callId: string;
+  storeNumber: string;
+  tool: "find_obi_products";
+  result: ToolContinuationResult;
+}
 
 export async function readJsonBody(
   request: Request,
@@ -22,7 +45,9 @@ export async function readJsonBody(
     throw new InvalidRequestError();
   }
 
-  const declaredLength = parseContentLength(request.headers.get("Content-Length"));
+  const declaredLength = parseContentLength(
+    request.headers.get("Content-Length"),
+  );
   if (declaredLength !== null && declaredLength > maxBytes) {
     throw new RequestTooLargeError();
   }
@@ -36,96 +61,66 @@ export async function readJsonBody(
   }
 }
 
-export async function parseStartRequest(request: Request): Promise<string> {
+export async function parseStartRequest(
+  request: Request,
+): Promise<StartRequest> {
   const value = await readJsonBody(request, START_BODY_MAX_BYTES);
-  const object = exactObject(value, ["message"]);
+  const object = exactObject(value, ["message", "storeNumber"]);
 
-  if (typeof object.message !== "string") {
-    throw new InvalidRequestError();
-  }
-
-  const message = normalizeWhitespace(object.message);
-  if (!message) {
-    throw new InvalidRequestError();
-  }
-  if (message.length > START_MESSAGE_MAX_CHARS) {
-    throw new RequestTooLargeError();
-  }
-
-  return message;
+  return {
+    message: validatedMessage(object.message),
+    storeNumber: validateStoreNumber(object.storeNumber),
+  };
 }
 
 export async function parseMessageRequest(
   request: Request,
-): Promise<{
-  previousResponseId: string;
-  message: string;
-}> {
+): Promise<MessageRequest> {
   const value = await readJsonBody(request, MESSAGE_BODY_MAX_BYTES);
-  const object = exactObject(value, ["previousResponseId", "message"]);
-
-  const previousResponseId = boundedString(
-    object.previousResponseId,
-    MAX_RESPONSE_ID_CHARS,
+  const object = exactObject(
+    value,
+    ["previousResponseId", "message", "storeNumber"],
   );
-  if (typeof object.message !== "string") {
-    throw new InvalidRequestError();
-  }
-
-  const message = normalizeWhitespace(object.message);
-  if (!message) {
-    throw new InvalidRequestError();
-  }
-  if (message.length > START_MESSAGE_MAX_CHARS) {
-    throw new RequestTooLargeError();
-  }
 
   return {
-    previousResponseId,
-    message,
+    previousResponseId: boundedString(
+      object.previousResponseId,
+      MAX_RESPONSE_ID_CHARS,
+    ),
+    message: validatedMessage(object.message),
+    storeNumber: validateStoreNumber(object.storeNumber),
   };
 }
 
 export async function parseContinueRequest(
   request: Request,
-): Promise<{
-  responseId: string;
-  callId: string;
-  tool: "find_available_obi_075";
-  result: VerifiedToolResult;
-}> {
+): Promise<ContinueRequest> {
   const value = await readJsonBody(request, CONTINUE_BODY_MAX_BYTES);
-  const object = exactObject(value, ["responseId", "callId", "tool", "result"]);
-
-  const responseId = boundedString(object.responseId, MAX_RESPONSE_ID_CHARS);
-  const callId = boundedString(object.callId, MAX_CALL_ID_CHARS);
-
-  if (object.tool !== "find_available_obi_075") {
-    throw new InvalidRequestError();
-  }
-
-  const resultObject = exactObject(object.result, ["query", "products"]);
-  const query = normalizeWhitespace(
-    boundedString(resultObject.query, MAX_TOOL_QUERY_CHARS),
+  const object = exactObject(
+    value,
+    ["responseId", "callId", "storeNumber", "tool", "result"],
   );
-  if (!query) {
+
+  const responseId = boundedString(
+    object.responseId,
+    MAX_RESPONSE_ID_CHARS,
+  );
+  const callId = boundedString(
+    object.callId,
+    MAX_CALL_ID_CHARS,
+  );
+  const storeNumber = validateStoreNumber(object.storeNumber);
+
+  if (object.tool !== "find_obi_products") {
     throw new InvalidRequestError();
   }
-
-  if (!Array.isArray(resultObject.products) || resultObject.products.length > MAX_TOOL_PRODUCTS) {
-    throw new InvalidRequestError();
-  }
-
-  const products = resultObject.products.map(validateProduct);
 
   return {
     responseId,
     callId,
-    tool: "find_available_obi_075",
-    result: {
-      query,
-      products,
-    },
+    storeNumber,
+    tool: "find_obi_products",
+    result: validateToolContinuationResult(object.result),
   };
 }
 
@@ -137,10 +132,14 @@ export function parseToolArguments(raw: string): ToolArguments {
     throw new InvalidRequestError();
   }
 
-  const object = exactObject(value, ["query", "limit"]);
+  const object = exactObject(
+    value,
+    ["query", "storeNumber", "limit"],
+  );
   const query = normalizeWhitespace(
     boundedString(object.query, MAX_TOOL_QUERY_CHARS),
   );
+  const storeNumber = validateStoreNumber(object.storeNumber);
 
   if (
     !query ||
@@ -154,14 +153,110 @@ export function parseToolArguments(raw: string): ToolArguments {
 
   return {
     query,
+    storeNumber,
     limit: object.limit,
   };
 }
 
-function validateProduct(value: unknown): VerifiedProduct {
-  const object = exactObject(value, ["obik", "name", "stock", "price"]);
+function validateToolContinuationResult(
+  value: unknown,
+): ToolContinuationResult {
+  if (!isRecord(value)) {
+    throw new InvalidRequestError();
+  }
 
-  if (typeof object.obik !== "string" || !/^\d{7}$/.test(object.obik)) {
+  if ("products" in value) {
+    return validateVerifiedToolResult(value);
+  }
+  if ("rejection" in value) {
+    return validateRejectedToolResult(value);
+  }
+  throw new InvalidRequestError();
+}
+
+function validateVerifiedToolResult(
+  value: unknown,
+): VerifiedToolResult {
+  const object = exactObject(
+    value,
+    ["query", "storeNumber", "products"],
+  );
+  const query = normalizedToolQuery(object.query);
+  const storeNumber = validateStoreNumber(object.storeNumber);
+
+  if (
+    !Array.isArray(object.products) ||
+    object.products.length > MAX_TOOL_PRODUCTS
+  ) {
+    throw new InvalidRequestError();
+  }
+
+  return {
+    query,
+    storeNumber,
+    products: object.products.map(validateProduct),
+  };
+}
+
+function validateRejectedToolResult(
+  value: unknown,
+): RejectedToolResult {
+  const object = exactObject(
+    value,
+    ["query", "storeNumber", "rejection"],
+  );
+  if (object.rejection !== "store_not_authorized") {
+    throw new InvalidRequestError();
+  }
+
+  return {
+    query: normalizedToolQuery(object.query),
+    storeNumber: validateStoreNumber(object.storeNumber),
+    rejection: "store_not_authorized",
+  };
+}
+
+function validatedMessage(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new InvalidRequestError();
+  }
+  const message = normalizeWhitespace(value);
+  if (!message) {
+    throw new InvalidRequestError();
+  }
+  if (message.length > START_MESSAGE_MAX_CHARS) {
+    throw new RequestTooLargeError();
+  }
+  return message;
+}
+
+function normalizedToolQuery(value: unknown): string {
+  const query = normalizeWhitespace(
+    boundedString(value, MAX_TOOL_QUERY_CHARS),
+  );
+  if (!query) {
+    throw new InvalidRequestError();
+  }
+  return query;
+}
+
+function validateStoreNumber(value: unknown): string {
+  if (typeof value !== "string" || !/^\d{3}$/.test(value)) {
+    throw new InvalidRequestError();
+  }
+  return value;
+}
+
+function validateProduct(value: unknown): VerifiedProduct {
+  const object = exactObject(
+    value,
+    ["obik", "name", "stock", "price"],
+  );
+
+  if (
+    typeof object.obik !== "string" ||
+    !/^\d{7}$/.test(object.obik)
+  ) {
     throw new InvalidRequestError();
   }
 
@@ -172,20 +267,21 @@ function validateProduct(value: unknown): VerifiedProduct {
     throw new InvalidRequestError();
   }
 
-  const stock = validateNullableStock(object.stock);
-  const price = validateNullablePrice(object.price);
-
   return {
     obik: object.obik,
     name,
-    stock,
-    price,
+    stock: validateNullableStock(object.stock),
+    price: validateNullablePrice(object.price),
   };
 }
 
 function validateNullableStock(value: unknown): number | null {
   if (value === null) return null;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0
+  ) {
     throw new InvalidRequestError();
   }
   return value;
@@ -193,7 +289,11 @@ function validateNullableStock(value: unknown): number | null {
 
 function validateNullablePrice(value: unknown): number | null {
   if (value === null) return null;
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0
+  ) {
     throw new InvalidRequestError();
   }
   return value;
@@ -203,25 +303,28 @@ function exactObject(
   value: unknown,
   allowedKeys: readonly string[],
 ): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (!isRecord(value)) {
     throw new InvalidRequestError();
   }
 
-  const object = value as Record<string, unknown>;
-  const keys = Object.keys(object);
+  const keys = Object.keys(value);
   if (
     keys.length !== allowedKeys.length ||
     keys.some((key) => !allowedKeys.includes(key)) ||
-    allowedKeys.some((key) => !(key in object))
+    allowedKeys.some((key) => !(key in value))
   ) {
     throw new InvalidRequestError();
   }
 
-  return object;
+  return value;
 }
 
 function boundedString(value: unknown, maxChars: number): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > maxChars) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > maxChars
+  ) {
     throw new InvalidRequestError();
   }
   return value;
@@ -232,7 +335,8 @@ const normalizeWhitespace = (value: string): string =>
 
 function isJsonContentType(value: string | null): boolean {
   if (!value) return false;
-  return value.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
+  return value.split(";", 1)[0]?.trim().toLowerCase() ===
+    "application/json";
 }
 
 function parseContentLength(value: string | null): number | null {
@@ -241,7 +345,10 @@ function parseContentLength(value: string | null): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-async function readUtf8Body(request: Request, maxBytes: number): Promise<string> {
+async function readUtf8Body(
+  request: Request,
+  maxBytes: number,
+): Promise<string> {
   if (!request.body) {
     throw new InvalidRequestError();
   }
@@ -282,4 +389,12 @@ async function readUtf8Body(request: Request, maxBytes: number): Promise<string>
   } catch {
     throw new InvalidRequestError();
   }
+}
+
+function isRecord(
+  value: unknown,
+): value is Record<string, unknown> {
+  return typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value);
 }

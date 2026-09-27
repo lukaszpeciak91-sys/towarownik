@@ -79,17 +79,22 @@ async function handleProtectedAgentRequest(
 
   try {
     const result = endpoint === "start"
-      ? await startAgent(
-          await parseStartRequest(request),
-          apiKey,
-          upstreamFetch,
-        )
+      ? await (async () => {
+          const input = await parseStartRequest(request);
+          return startAgent(
+            input.message,
+            input.storeNumber,
+            apiKey,
+            upstreamFetch,
+          );
+        })()
       : endpoint === "message"
         ? await (async () => {
             const input = await parseMessageRequest(request);
             return messageAgent(
               input.previousResponseId,
               input.message,
+              input.storeNumber,
               apiKey,
               upstreamFetch,
             );
@@ -99,6 +104,7 @@ async function handleProtectedAgentRequest(
             return continueAgent(
               input.responseId,
               input.callId,
+              input.storeNumber,
               input.result,
               apiKey,
               upstreamFetch,

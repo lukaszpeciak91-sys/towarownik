@@ -88,6 +88,9 @@ import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.SUPPORTED_OBI_STORE_NUMBERS
+import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
 import pl.lukaszpeciak.towarownik.ui.theme.TowarownikTheme
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
@@ -193,6 +196,9 @@ private fun TowarownikApp() {
     var activeConversationId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
+    var selectedStoreNumber by rememberSaveable {
+        mutableStateOf(DEFAULT_OBI_STORE_NUMBER)
+    }
     var freshCaseSelected by rememberSaveable {
         mutableStateOf(false)
     }
@@ -206,6 +212,7 @@ private fun TowarownikApp() {
     }
     var advisorJob by remember { mutableStateOf<Job?>(null) }
     var draftPersistJob by remember { mutableStateOf<Job?>(null) }
+    var storePersistJob by remember { mutableStateOf<Job?>(null) }
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
 
     var manualQuery by rememberSaveable { mutableStateOf("") }
@@ -229,11 +236,13 @@ private fun TowarownikApp() {
     ) {
         if (conversation == null) {
             activeConversationId = null
+            selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
             advisorCase = AdvisorCaseUiState()
             return
         }
 
         activeConversationId = conversation.id
+        selectedStoreNumber = conversation.storeNumber
         advisorCase = conversation.toAdvisorCaseUiState()
     }
 
@@ -245,6 +254,8 @@ private fun TowarownikApp() {
         advisorJob = null
         draftPersistJob?.cancelAndJoin()
         draftPersistJob = null
+        storePersistJob?.cancelAndJoin()
+        storePersistJob = null
 
         if (recoverInterrupted) {
             activeConversationId?.let { conversationId ->
@@ -258,6 +269,7 @@ private fun TowarownikApp() {
             cancelAndRecoverActiveTurn()
             freshCaseSelected = true
             activeConversationId = null
+            selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
             advisorState = AdvisorUiState.Idle
             advisorCase = AdvisorCaseUiState()
         }
@@ -301,6 +313,26 @@ private fun TowarownikApp() {
         }
     }
 
+    fun selectConversationStore(storeNumber: String) {
+        if (
+            advisorJob?.isActive == true ||
+            !isSupportedObiStoreNumber(storeNumber)
+        ) {
+            return
+        }
+
+        selectedStoreNumber = storeNumber
+        manualState = ManualSearchUiState.Idle
+        val conversationId = activeConversationId ?: return
+        storePersistJob?.cancel()
+        storePersistJob = scope.launch {
+            conversationRepository.updateStoreNumber(
+                conversationId = conversationId,
+                storeNumber = storeNumber,
+            )
+        }
+    }
+
     fun updateAdvisorDraft(value: String) {
         advisorCase = advisorCase.withDraft(value)
         val conversationId = activeConversationId ?: return
@@ -318,15 +350,19 @@ private fun TowarownikApp() {
 
         val submitted = advisorCase.draft.trim()
         if (submitted.isBlank()) return
+        val turnStoreNumber = selectedStoreNumber
 
         val generation = advisorRequestGuard.token()
         advisorJob = scope.launch {
             draftPersistJob?.cancelAndJoin()
             draftPersistJob = null
+            storePersistJob?.join()
+            storePersistJob = null
 
             val turn = conversationRepository.beginUserTurn(
                 conversationId = activeConversationId,
                 text = submitted,
+                storeNumber = turnStoreNumber,
             )
 
             if (!advisorRequestGuard.isTokenCurrent(generation)) {
@@ -344,6 +380,7 @@ private fun TowarownikApp() {
             val finalState = advisorController.runTurn(
                 input = submitted,
                 previousResponseId = turn.previousResponseId,
+                conversationStoreNumber = turn.storeNumber,
             ) { state ->
                 if (
                     advisorRequestGuard.isCurrent(
@@ -414,20 +451,28 @@ private fun TowarownikApp() {
     }
 
     fun submitManualSearch() {
+        val storeNumber = selectedStoreNumber
         val submission = prepareSearchSubmission(manualQuery)
         manualJob?.cancel()
         manualQuery = submission.nextVisibleQuery
         manualJob = scope.launch {
-            manualSearchController.submit(submission.submittedQuery) { state ->
+            manualSearchController.submit(
+                input = submission.submittedQuery,
+                storeNumber = storeNumber,
+            ) { state ->
                 manualState = state
             }
         }
     }
 
     fun selectManualResult(item: ManualSearchResultItem) {
+        val storeNumber = selectedStoreNumber
         manualJob?.cancel()
         manualJob = scope.launch {
-            manualSearchController.select(item) { state ->
+            manualSearchController.select(
+                item = item,
+                storeNumber = storeNumber,
+            ) { state ->
                 manualState = state
             }
         }
@@ -532,6 +577,10 @@ private fun TowarownikApp() {
                     },
                     onNewCase = ::newAdvisorCase,
                     onOpenSearch = ::openManualSearch,
+                    selectedStoreNumber = selectedStoreNumber,
+                    storeSelectorEnabled =
+                        advisorJob?.isActive != true,
+                    onStoreSelected = ::selectConversationStore,
                     onReportAssistantMessage = ::openAssistantReport,
                 )
             }
@@ -943,6 +992,9 @@ private fun AdvisorChatScreen(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
+    selectedStoreNumber: String,
+    storeSelectorEnabled: Boolean,
+    onStoreSelected: (String) -> Unit,
     onReportAssistantMessage: (Long) -> Unit,
 ) {
     val isRunning = state.isRunning()
@@ -955,6 +1007,9 @@ private fun AdvisorChatScreen(
                 onOpenDrawer = onOpenDrawer,
                 onNewCase = onNewCase,
                 onOpenSearch = onOpenSearch,
+                selectedStoreNumber = selectedStoreNumber,
+                storeSelectorEnabled = storeSelectorEnabled,
+                onStoreSelected = onStoreSelected,
             )
         },
         bottomBar = {
@@ -1026,6 +1081,9 @@ private fun AdvisorTopBar(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
+    selectedStoreNumber: String,
+    storeSelectorEnabled: Boolean,
+    onStoreSelected: (String) -> Unit,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.background,
@@ -1050,11 +1108,20 @@ private fun AdvisorTopBar(
                     )
                 }
 
-                Text(
-                    text = stringResource(R.string.app_name),
+                Column(
                     modifier = Modifier.align(Alignment.Center),
-                    style = MaterialTheme.typography.titleMedium,
-                )
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    ObiStoreSelector(
+                        selectedStoreNumber = selectedStoreNumber,
+                        enabled = storeSelectorEnabled,
+                        onStoreSelected = onStoreSelected,
+                    )
+                }
 
                 Row(
                     modifier = Modifier.align(Alignment.CenterEnd),
@@ -1086,6 +1153,48 @@ private fun AdvisorTopBar(
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
             )
+        }
+    }
+}
+
+@Composable
+private fun ObiStoreSelector(
+    selectedStoreNumber: String,
+    enabled: Boolean,
+    onStoreSelected: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        TextButton(
+            onClick = { expanded = true },
+            enabled = enabled,
+            contentPadding = PaddingValues(
+                horizontal = 8.dp,
+                vertical = 0.dp,
+            ),
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.obi_store_selector,
+                    selectedStoreNumber,
+                ),
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            SUPPORTED_OBI_STORE_NUMBERS.forEach { storeNumber ->
+                DropdownMenuItem(
+                    text = { Text("OBI $storeNumber") },
+                    onClick = {
+                        expanded = false
+                        onStoreSelected(storeNumber)
+                    },
+                )
+            }
         }
     }
 }
@@ -1739,6 +1848,9 @@ private fun AdvisorChatPreview() {
             onOpenDrawer = {},
             onNewCase = {},
             onOpenSearch = {},
+            selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER,
+            storeSelectorEnabled = true,
+            onStoreSelected = {},
             onReportAssistantMessage = {},
         )
     }

@@ -67,14 +67,15 @@ class ObiHttpClient(
             operation = ObiDiagnosticOperationType.PRODUCT_LOOKUP,
             inputType = ObiDiagnosticInputType.OBIK,
             identifier = obik,
+            storeNumber = storeNumber,
             requestedUrl = selectionUrl.toString(),
             requestMethod = "GET",
         )
         return execute(
-            request = taggedGet(selectionUrl, diagnosticId),
+            request = taggedGet(selectionUrl, diagnosticId, storeNumber),
             emptyReason = "OBI returned an empty product page",
             diagnosticId = diagnosticId,
-            bodySignatures = { html -> productBodySignatures(html, obik) },
+            bodySignatures = { html -> productBodySignatures(html, obik, storeNumber) },
         )
     }
 
@@ -95,21 +96,25 @@ class ObiHttpClient(
             requestMethod = "GET",
         )
         return execute(
-            request = taggedGet(searchUrl, diagnosticId),
+            request = taggedGet(searchUrl, diagnosticId, null),
             emptyReason = "OBI returned an empty search page",
             diagnosticId = diagnosticId,
             bodySignatures = ::searchBodySignatures,
         )
     }
 
-    private fun taggedGet(url: HttpUrl, diagnosticId: Long?): Request {
+    private fun taggedGet(
+        url: HttpUrl,
+        diagnosticId: Long?,
+        storeNumber: String?,
+    ): Request {
         val builder = ObiBrowserCompatibilityProfile.apply(
             Request.Builder().url(url).get(),
         )
         if (diagnosticId != null) {
             builder.tag(
                 ObiDiagnosticRequestTag::class.java,
-                ObiDiagnosticRequestTag(diagnosticId),
+                ObiDiagnosticRequestTag(diagnosticId, storeNumber),
             )
         }
         return builder.build()

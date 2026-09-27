@@ -8,12 +8,15 @@ import okhttp3.Response
 
 internal data class DiagnosticCookieEvidence(
     val cookies: List<DiagnosticCookie>,
-    val store075Match: Store075CookieMatch,
+    val storeMatchResult: StoreCookieMatch,
 )
 
-internal fun outgoingDiagnosticCookieEvidence(header: String?): DiagnosticCookieEvidence {
+internal fun outgoingDiagnosticCookieEvidence(
+    header: String?,
+    expectedStoreNumber: String?,
+): DiagnosticCookieEvidence {
     var recognizedStoreCookie = false
-    var store075Match = false
+    var storeMatchResult = false
     val cookies = header.orEmpty()
         .split(';')
         .mapNotNull { part ->
@@ -23,8 +26,11 @@ internal fun outgoingDiagnosticCookieEvidence(header: String?): DiagnosticCookie
             val value = part.substringAfter('=', missingDelimiterValue = "").trim()
             if (isRecognizableStoreCookie(name)) {
                 recognizedStoreCookie = true
-                if (value == EXPECTED_STORE_NUMBER) {
-                    store075Match = true
+                if (
+                    expectedStoreNumber != null &&
+                    value == expectedStoreNumber
+                ) {
+                    storeMatchResult = true
                 }
             }
 
@@ -37,9 +43,9 @@ internal fun outgoingDiagnosticCookieEvidence(header: String?): DiagnosticCookie
 
     return DiagnosticCookieEvidence(
         cookies = cookies,
-        store075Match = storeMatch(
+        storeMatchResult = storeMatch(
             recognized = recognizedStoreCookie,
-            matched = store075Match,
+            matched = storeMatchResult,
         ),
     )
 }
@@ -47,6 +53,7 @@ internal fun outgoingDiagnosticCookieEvidence(header: String?): DiagnosticCookie
 internal fun setDiagnosticCookieEvidence(
     requestUrl: okhttp3.HttpUrl,
     responseHeaders: Headers,
+    expectedStoreNumber: String?,
 ): DiagnosticCookieEvidence {
     val cookies = Cookie.parseAll(requestUrl, responseHeaders)
     val recognizableStoreCookies = cookies.filter { cookie ->
@@ -60,10 +67,11 @@ internal fun setDiagnosticCookieEvidence(
                 path = cookie.path,
             )
         },
-        store075Match = storeMatch(
+        storeMatchResult = storeMatch(
             recognized = recognizableStoreCookies.isNotEmpty(),
             matched = recognizableStoreCookies.any { cookie ->
-                cookie.value == EXPECTED_STORE_NUMBER
+                expectedStoreNumber != null &&
+                    cookie.value == expectedStoreNumber
             },
         ),
     )
@@ -98,10 +106,10 @@ internal fun diagnosticProtocolLabel(protocol: Protocol): String = when (protoco
 private fun storeMatch(
     recognized: Boolean,
     matched: Boolean,
-): Store075CookieMatch = when {
-    matched -> Store075CookieMatch.MATCH
-    recognized -> Store075CookieMatch.MISMATCH
-    else -> Store075CookieMatch.UNKNOWN
+): StoreCookieMatch = when {
+    matched -> StoreCookieMatch.MATCH
+    recognized -> StoreCookieMatch.MISMATCH
+    else -> StoreCookieMatch.UNKNOWN
 }
 
 private fun isRecognizableStoreCookie(name: String): Boolean =
@@ -166,5 +174,4 @@ private val IPV6 = Regex("""(?i)\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{0,4}\b""")
 private val QUERY_VALUE = Regex("""([?&])([A-Za-z0-9_.-]+)=([^&\s]+)""")
 private val STORE_NUMBER = Regex("""\d{1,4}""")
 
-private const val EXPECTED_STORE_NUMBER = "075"
 private const val MAX_HEADER_VALUE_LENGTH = 300

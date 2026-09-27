@@ -47,7 +47,7 @@ internal sealed interface ProductSearchUiState {
 }
 
 internal class ProductSearchController(
-    private val lookupObik: (String) -> ProductLookupResult = ProductLookupRepository()::lookupObik,
+    private val lookupObik: (String) -> ProductLookupResult = { obik -> ProductLookupRepository().lookupObik(obik) },
     private val searchProducts: (String) -> ProductSearchResult = ProductSearchRepository()::search,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
@@ -117,6 +117,8 @@ internal class ProductSearchController(
                             }
                         }
                         is ProductLookupResult.InvalidObik -> ProductSearchUiState.Error(SearchUiError.INVALID_INPUT)
+                        is ProductLookupResult.InvalidStore -> ProductSearchUiState.Error(SearchUiError.LOOKUP)
+    is ProductLookupResult.InvalidStore -> ProductSearchUiState.Error(SearchUiError.LOOKUP)
                         is ProductLookupResult.Unavailable -> lookup.toUiState()
                     }
                 }

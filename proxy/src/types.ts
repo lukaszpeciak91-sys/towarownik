@@ -5,6 +5,7 @@ export interface Env {
 
 export interface ToolArguments {
   query: string;
+  storeNumber: string;
   limit: number;
 }
 
@@ -17,7 +18,23 @@ export interface VerifiedProduct {
 
 export interface VerifiedToolResult {
   query: string;
+  storeNumber: string;
   products: VerifiedProduct[];
+}
+
+export interface RejectedToolResult {
+  query: string;
+  storeNumber: string;
+  rejection: "store_not_authorized";
+}
+
+export type ToolContinuationResult =
+  | VerifiedToolResult
+  | RejectedToolResult;
+
+export interface ProductRef {
+  storeNumber: string;
+  obik: string;
 }
 
 export type AgentResult =
@@ -25,13 +42,13 @@ export type AgentResult =
       type: "answer";
       responseId: string;
       text: string;
-      productObiks: string[];
+      productRefs: ProductRef[];
     }
   | {
       type: "tool_request";
       responseId: string;
       tool: {
-        name: "find_available_obi_075";
+        name: "find_obi_products";
         callId: string;
         arguments: ToolArguments;
       };

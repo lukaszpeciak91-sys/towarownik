@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.LocalProduct
 import pl.lukaszpeciak.towarownik.product.ManualProductSearchResult
 import pl.lukaszpeciak.towarownik.product.ProductLookupFailure
@@ -54,14 +55,17 @@ internal sealed interface ManualSearchUiState {
 }
 
 internal class ManualSearchController(
-    private val lookupObik: (String) -> ProductLookupResult =
-        ProductLookupRepository()::lookupObik,
+    private val lookupObik: (String, String) -> ProductLookupResult =
+        { obik, storeNumber ->
+            ProductLookupRepository().lookupObik(obik, storeNumber)
+        },
     private val searchProducts: (String) -> ManualProductSearchResult =
         ProductSearchRepository()::searchManual,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     suspend fun submit(
         input: String,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
         onState: (ManualSearchUiState) -> Unit,
     ) {
         val normalizedInput = normalizeProductSearchInput(input)
@@ -76,8 +80,8 @@ internal class ManualSearchController(
         val result = try {
             withContext(ioDispatcher) {
                 when (classified) {
-                    is ProductSearchInput.Obik -> lookupObik(classified.value).toManualUiState()
-                    is ProductSearchInput.Ean -> resolveEan(classified.value)
+                    is ProductSearchInput.Obik -> lookupObik(classified.value, storeNumber).toManualUiState()
+                    is ProductSearchInput.Ean -> resolveEan(classified.value, storeNumber)
                     is ProductSearchInput.Text -> resolveText(classified.value)
                     ProductSearchInput.Invalid -> ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
                 }
@@ -93,13 +97,14 @@ internal class ManualSearchController(
 
     suspend fun select(
         item: ManualSearchResultItem,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
         onState: (ManualSearchUiState) -> Unit,
     ) {
         onState(ManualSearchUiState.Loading)
 
         val result = try {
             withContext(ioDispatcher) {
-                lookupObik(item.obik).toManualUiState()
+                lookupObik(item.obik, storeNumber).toManualUiState()
             }
         } catch (exception: CancellationException) {
             throw exception
@@ -110,14 +115,17 @@ internal class ManualSearchController(
         onState(result)
     }
 
-    private fun resolveEan(ean: String): ManualSearchUiState {
+    private fun resolveEan(
+        ean: String,
+        storeNumber: String,
+    ): ManualSearchUiState {
         return when (val search = searchProducts(ean)) {
             is ManualProductSearchResult.Candidates -> {
                 if (search.items.size != 1) {
                     search.toManualSearchResults()
                 } else {
                     val candidate = search.items.single()
-                    when (val lookup = lookupObik(candidate.obik)) {
+                    when (val lookup = lookupObik(candidate.obik, storeNumber)) {
                         is ProductLookupResult.Found -> {
                             if (lookup.product.ean == ean) {
                                 lookup.toManualUiState()
@@ -126,7 +134,8 @@ internal class ManualSearchController(
                             }
                         }
 
-                        is ProductLookupResult.InvalidObik ->
+                        is ProductLookupResult.InvalidObik,
+                        is ProductLookupResult.InvalidStore ->
                             ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
 
                         is ProductLookupResult.Unavailable ->
@@ -175,6 +184,9 @@ private fun ProductLookupResult.toManualUiState(): ManualSearchUiState = when (t
     is ProductLookupResult.InvalidObik ->
         ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
 
+    is ProductLookupResult.InvalidStore ->
+        ManualSearchUiState.Error(SearchUiError.LOOKUP)
+
     is ProductLookupResult.Unavailable ->
         ManualSearchUiState.Error(
             when (failure) {
@@ -202,4 +214,5 @@ internal fun LocalProduct.toVerifiedProductUiModel(): VerifiedProductUiModel =
         grossPrice = grossPrice,
         stock = stock,
         productUrl = productUrl,
+        storeNumber = storeNumber,
     )
