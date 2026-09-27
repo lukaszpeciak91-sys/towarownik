@@ -46,6 +46,7 @@ internal const val PRIVACY_POLICY_AVAILABLE = false
 @Composable
 internal fun SettingsScreen(
     onBack: () -> Unit,
+    onOpenAiUsage: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onReportProblem: () -> Unit,
 ) {
@@ -82,6 +83,12 @@ internal fun SettingsScreen(
                 onClick = {
                     languageDialogOpen = true
                 },
+            )
+
+            SettingsRow(
+                iconRes = R.drawable.ic_info_24,
+                title = stringResource(R.string.settings_ai_usage),
+                onClick = onOpenAiUsage,
             )
 
             SettingsSectionTitle(
