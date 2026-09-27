@@ -4,12 +4,13 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.matchParentSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -18,7 +19,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -109,7 +110,7 @@ internal fun VerifiedProductCard(
 ) {
     val context = LocalContext.current
     val warmColors = MaterialTheme.towarownikColors
-    val shape = RoundedCornerShape(18.dp)
+    val accentColor = MaterialTheme.colorScheme.primary
     val stockColor = when {
         product.stock == null -> MaterialTheme.colorScheme.onSurfaceVariant
         product.stock == 0 -> MaterialTheme.colorScheme.error
@@ -117,8 +118,16 @@ internal fun VerifiedProductCard(
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = shape,
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    color = accentColor,
+                    size = Size(3.dp.toPx(), size.height),
+                )
+            },
+        shape = RoundedCornerShape(18.dp),
         color = warmColors.surfaceRaised,
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(
@@ -126,93 +135,77 @@ internal fun VerifiedProductCard(
             MaterialTheme.colorScheme.outline,
         ),
     ) {
-        Box {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .drawBehind {
-                        drawRect(
-                            color = MaterialTheme.colorScheme.primary,
-                            size = Size(3.dp.toPx(), size.height),
-                        )
-                    },
+        Column(
+            modifier = Modifier.padding(
+                start = 18.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = product.name,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.product_obik, product.obik),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Column(
-                modifier = Modifier.padding(
-                    start = 18.dp,
-                    end = 16.dp,
-                    top = 16.dp,
-                    bottom = 16.dp,
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(
+                    alpha = 0.65f,
                 ),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            )
+
+            Text(
+                text = formatStore075Price(product.grossPrice),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = formatStore075Stock(product.stock),
+                style = MaterialTheme.typography.bodyLarge,
+                color = stockColor,
+            )
+
+            product.verifiedAt?.let { verifiedAt ->
                 Text(
-                    text = product.name,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = stringResource(R.string.product_obik, product.obik),
-                    style = MaterialTheme.typography.bodySmall,
+                    text = formatVerifiedProductTimestamp(verifiedAt),
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
 
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outline.copy(
-                        alpha = 0.65f,
-                    ),
+            OutlinedButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse(verifiedProductOpenUrl(product)),
+                            ),
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline,
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+                Text(stringResource(R.string.open_in_obi))
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    painter = painterResource(R.drawable.ic_open_in_new_24),
+                    contentDescription = null,
                 )
-
-                Text(
-                    text = formatStore075Price(product.grossPrice),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = formatStore075Stock(product.stock),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = stockColor,
-                )
-
-                product.verifiedAt?.let { verifiedAt ->
-                    Text(
-                        text = formatVerifiedProductTimestamp(verifiedAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse(verifiedProductOpenUrl(product)),
-                                ),
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    border = BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outline,
-                    ),
-                    colors = androidx.compose.material3.ButtonDefaults
-                        .outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        ),
-                ) {
-                    Text(stringResource(R.string.open_in_obi))
-                    androidx.compose.foundation.layout.Spacer(
-                        modifier = Modifier.padding(horizontal = 3.dp),
-                    )
-                    Icon(
-                        painter = painterResource(R.drawable.ic_open_in_new_24),
-                        contentDescription = null,
-                    )
-                }
             }
         }
     }
