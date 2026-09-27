@@ -628,6 +628,46 @@ class AdvisorProxyClientTest {
         }
     }
 
+    @Test
+    fun `maximum bounded rich five-product continuation stays under proxy body limit`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(answerResponse())
+            val products = (1..5).map { index ->
+                AdvisorVerifiedProduct(
+                    obik = (1_000_000 + index).toString(),
+                    name = "N".repeat(200),
+                    stock = 1,
+                    price = BigDecimal("999.99"),
+                    brand = "B".repeat(80),
+                    shortDescription = "Ż".repeat(300),
+                    technicalFacts = (1..6).map {
+                        AdvisorTechnicalFact(
+                            label = "Ł".repeat(60),
+                            value = "Ż".repeat(120),
+                        )
+                    },
+                )
+            }
+
+            val result = client(server, FAKE_TOKEN).continueTurn(
+                responseId = "resp_previous",
+                callId = "call_previous",
+                storeNumber = "075",
+                continuation = AdvisorToolContinuation.Verified(
+                    AdvisorVerifiedToolResult(
+                        query = "q".repeat(200),
+                        storeNumber = "075",
+                        products = products,
+                    ),
+                ),
+            )
+
+            assertTrue(result is AdvisorProxyCallResult.Success)
+            val request = server.takeRequest()
+            assertTrue(request.body.size < 16 * 1024)
+        }
+    }
+
     private fun client(
         server: MockWebServer,
         token: String,
