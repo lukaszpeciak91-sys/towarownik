@@ -119,6 +119,7 @@ internal class AdvisorController(
                 }
 
                 is AdvisorProxyResult.ToolRequest -> {
+                    val toolRequest = proxyResult
                     if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
                         return AdvisorUiState.Error(
                             AdvisorError.TOO_MANY_TOOLS,
@@ -126,7 +127,7 @@ internal class AdvisorController(
                     }
                     toolCalls += 1
 
-                    val arguments = proxyResult.arguments
+                    val arguments = toolRequest.arguments
                     val continuation =
                         if (!authorization.isAuthorized(
                                 arguments.storeNumber,
@@ -167,8 +168,8 @@ internal class AdvisorController(
                     proxyResult = when (
                         val continued = safeProxyCall {
                             continueAgent(
-                                proxyResult.responseId,
-                                proxyResult.callId,
+                                toolRequest.responseId,
+                                toolRequest.callId,
                                 conversationStoreNumber,
                                 continuation,
                             )

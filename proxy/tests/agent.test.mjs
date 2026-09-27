@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   AGENT_INSTRUCTIONS,
+  agentInstructionsForStore,
   FINAL_ANSWER_FORMAT,
   LOCAL_TOOL_NAME,
   OPENAI_MAX_OUTPUT_TOKENS,
@@ -21,6 +22,15 @@ const configuredEnv = {
 };
 
 function jsonRequest(path, body, options = {}) {
+  const normalizedBody =
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    path.startsWith("/v1/agent/") &&
+    options.injectStore !== false &&
+    !Object.prototype.hasOwnProperty.call(body, "storeNumber")
+      ? { ...body, storeNumber: "075" }
+      : body;
   const headers = {
     "Content-Type": "application/json",
     ...(options.authorization === false
@@ -32,12 +42,17 @@ function jsonRequest(path, body, options = {}) {
   return new Request(`https://proxy.example${path}`, {
     method: options.method ?? "POST",
     headers,
-    body: options.rawBody ?? JSON.stringify(body),
+    body: options.rawBody ?? JSON.stringify(normalizedBody),
   });
 }
 
-function answerPayload(text = "Synthetic answer", productObiks = []) {
-  const structured = JSON.stringify({ text, productObiks });
+function answerPayload(text = "Synthetic answer", productRefs = []) {
+  const normalizedRefs = productRefs.map((value) =>
+    typeof value === "string"
+      ? { storeNumber: "075", obik: value }
+      : value,
+  );
+  const structured = JSON.stringify({ text, productRefs: normalizedRefs });
   return {
     id: "resp_test_answer",
     output_text: structured,
@@ -50,7 +65,7 @@ function answerPayload(text = "Synthetic answer", productObiks = []) {
   };
 }
 
-function toolPayload(argumentsJson = '{"query":"synthetic query","limit":5}', name = LOCAL_TOOL_NAME) {
+function toolPayload(argumentsJson = '{"query":"synthetic query","storeNumber":"075","limit":5}', name = LOCAL_TOOL_NAME) {
   return {
     id: "resp_test_tool",
     output: [
@@ -99,9 +114,11 @@ function validContinueBody(overrides = {}) {
   return {
     responseId: "resp_previous",
     callId: "call_previous",
+    storeNumber: "075",
     tool: LOCAL_TOOL_NAME,
     result: {
       query: "synthetic query",
+      storeNumber: "075",
       products: [
         {
           obik: "1234567",
@@ -235,7 +252,7 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
     type: "answer",
     responseId: "resp_test_answer",
     text: "Use a verified local lookup.",
-    productObiks: [],
+    productRefs: [],
   });
   assert.equal(fake.captures.length, 1);
 
@@ -248,7 +265,7 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
 
   assert.equal(capture.body.model, OPENAI_MODEL);
   assert.equal(capture.body.model, "gpt-5.6-luna");
-  assert.equal(capture.body.instructions, AGENT_INSTRUCTIONS);
+  assert.equal(capture.body.instructions, agentInstructionsForStore("075"));
   assert.equal(capture.body.input, "find a product please");
   assert.deepEqual(capture.body.reasoning, { effort: OPENAI_REASONING_EFFORT });
   assert.equal(capture.body.reasoning.effort, "low");
@@ -262,7 +279,7 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
   assert.equal(capture.body.tools[0].type, "function");
   assert.equal(capture.body.tools[0].name, LOCAL_TOOL_NAME);
   assert.equal(capture.body.tools[0].strict, true);
-  assert.deepEqual(capture.body.tools[0].parameters.required, ["query", "limit"]);
+  assert.deepEqual(capture.body.tools[0].parameters.required, ["query", "storeNumber", "limit"]);
   assert.equal(capture.body.tools[0].parameters.additionalProperties, false);
   assert.equal(capture.body.tools[0].parameters.properties.limit.maximum, 5);
 });
@@ -348,7 +365,11 @@ test("client cannot inject model tools instructions or reasoning", async () => {
 test("structured OpenAI answer is normalized and raw response is not forwarded", async () => {
   const structured = JSON.stringify({
     text: " concise answer ",
-    productObiks: ["1234567", "1234567", "7654321"],
+    productRefs: [
+      { storeNumber: "075", obik: "1234567" },
+      { storeNumber: "075", obik: "1234567" },
+      { storeNumber: "075", obik: "7654321" },
+    ],
   });
   const fake = fakeOpenAI({
     id: "resp_direct",
@@ -376,7 +397,10 @@ test("structured OpenAI answer is normalized and raw response is not forwarded",
     type: "answer",
     responseId: "resp_direct",
     text: "concise answer",
-    productObiks: ["1234567", "7654321"],
+    productRefs: [
+      { storeNumber: "075", obik: "1234567" },
+      { storeNumber: "075", obik: "7654321" },
+    ],
   });
   assert.equal(JSON.stringify(body).includes("usage"), false);
   assert.equal(JSON.stringify(body).includes("internal"), false);
@@ -399,7 +423,7 @@ test("malformed structured final output fails closed", async () => {
   assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
 });
 
-test("structured final output rejects more than five selected products", async () => {
+test("structured final output rejects more than five selected product refs", async () => {
   const fake = fakeOpenAI(
     answerPayload(
       "Too many",
@@ -418,7 +442,7 @@ test("structured final output rejects more than five selected products", async (
 });
 
 test("valid known function call becomes normalized tool_request", async () => {
-  const fake = fakeOpenAI(toolPayload('{"query":"  moisture   absorber ","limit":5}'));
+  const fake = fakeOpenAI(toolPayload('{"query":"  moisture   absorber ","storeNumber":"075","limit":5}'));
   const worker = createWorker(fake.fetch);
 
   const response = await worker.fetch(
@@ -435,6 +459,7 @@ test("valid known function call becomes normalized tool_request", async () => {
       callId: "call_test_tool",
       arguments: {
         query: "moisture absorber",
+        storeNumber: "075",
         limit: 5,
       },
     },
@@ -442,7 +467,7 @@ test("valid known function call becomes normalized tool_request", async () => {
 });
 
 test("unknown model function call is a bounded upstream failure", async () => {
-  const fake = fakeOpenAI(toolPayload('{"query":"x","limit":1}', "unknown_tool"));
+  const fake = fakeOpenAI(toolPayload('{"query":"x","storeNumber":"075","limit":1}', "unknown_tool"));
   const worker = createWorker(fake.fetch);
 
   const response = await worker.fetch(
@@ -455,7 +480,7 @@ test("unknown model function call is a bounded upstream failure", async () => {
 });
 
 test("malformed model function arguments are a bounded upstream failure", async () => {
-  const fake = fakeOpenAI(toolPayload('{"query":"x","limit":99}'));
+  const fake = fakeOpenAI(toolPayload('{"query":"x","storeNumber":"075","limit":99}'));
   const worker = createWorker(fake.fetch);
 
   const response = await worker.fetch(
@@ -502,7 +527,7 @@ test("valid message chains previous response with server-controlled configuratio
   assert.equal(capture.body.previous_response_id, "resp_previous");
   assert.equal(capture.body.input, "A coś tańszego?");
   assert.equal(capture.body.model, OPENAI_MODEL);
-  assert.equal(capture.body.instructions, AGENT_INSTRUCTIONS);
+  assert.equal(capture.body.instructions, agentInstructionsForStore("075"));
   assert.equal(capture.body.reasoning.effort, "low");
   assert.equal(capture.body.tools.length, 1);
   assert.equal(capture.body.tools[0].name, LOCAL_TOOL_NAME);
@@ -577,12 +602,12 @@ test("valid continue sends previous_response_id and function_call_output", async
     type: "answer",
     responseId: "resp_test_answer",
     text: "Final synthetic answer",
-    productObiks: [],
+    productRefs: [],
   });
 
   const capture = fake.captures[0];
   assert.equal(capture.body.model, OPENAI_MODEL);
-  assert.equal(capture.body.instructions, AGENT_INSTRUCTIONS);
+  assert.equal(capture.body.instructions, agentInstructionsForStore("075"));
   assert.equal(capture.body.previous_response_id, "resp_previous");
   assert.deepEqual(capture.body.reasoning, { effort: "low" });
   assert.equal(capture.body.tools.length, 1);
@@ -594,7 +619,7 @@ test("valid continue sends previous_response_id and function_call_output", async
   assert.deepEqual(JSON.parse(capture.body.input[0].output), validContinueBody().result);
 });
 
-test("tool assisted structured answer exposes selected obiks only", async () => {
+test("tool assisted structured answer exposes selected product refs only", async () => {
   const fake = fakeOpenAI(
     answerPayload("Use first and second.", ["1234567", "7654321"]),
   );
@@ -610,12 +635,15 @@ test("tool assisted structured answer exposes selected obiks only", async () => 
     type: "answer",
     responseId: "resp_test_answer",
     text: "Use first and second.",
-    productObiks: ["1234567", "7654321"],
+    productRefs: [
+      { storeNumber: "075", obik: "1234567" },
+      { storeNumber: "075", obik: "7654321" },
+    ],
   });
 });
 
 test("continue can return another normalized local tool request", async () => {
-  const fake = fakeOpenAI(toolPayload('{"query":"second synthetic query","limit":2}'));
+  const fake = fakeOpenAI(toolPayload('{"query":"second synthetic query","storeNumber":"074","limit":2}'));
   const worker = createWorker(fake.fetch);
 
   const response = await worker.fetch(
@@ -629,6 +657,7 @@ test("continue can return another normalized local tool request", async () => {
   assert.equal(body.tool.name, LOCAL_TOOL_NAME);
   assert.deepEqual(body.tool.arguments, {
     query: "second synthetic query",
+    storeNumber: "074",
     limit: 2,
   });
 });
@@ -769,6 +798,185 @@ test("continue rejects arbitrary HTML-like result structures", async () => {
 
   assert.equal(response.status, 400);
   assert.equal(fake.captures.length, 0);
+});
+
+
+test("start and message require exact 3-digit store context", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+
+  for (const storeNumber of ["74", "0074", "abc", ""]) {
+    const response = await worker.fetch(
+      jsonRequest(
+        "/v1/agent/start",
+        { message: "hello", storeNumber },
+      ),
+      configuredEnv,
+    );
+    assert.equal(response.status, 400);
+  }
+
+  const missing = await worker.fetch(
+    jsonRequest(
+      "/v1/agent/start",
+      { message: "hello" },
+      { injectStore: false },
+    ),
+    configuredEnv,
+  );
+  assert.equal(missing.status, 400);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("selected conversation store is carried into dynamic instructions", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", {
+      message: "hello",
+      storeNumber: "074",
+    }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    fake.captures[0].body.instructions,
+    agentInstructionsForStore("074"),
+  );
+  assert.equal(
+    fake.captures[0].body.instructions.includes("074"),
+    true,
+  );
+  assert.equal(
+    fake.captures[0].body.instructions.includes(
+      "001,002,003",
+    ),
+    false,
+  );
+});
+
+test("generic tool carries one explicit store number", async () => {
+  const fake = fakeOpenAI(
+    toolPayload(
+      '{"query":"klej","storeNumber":"074","limit":3}',
+    ),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", {
+      message: "Sprawdź w 074",
+      storeNumber: "075",
+    }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await responseJson(response), {
+    type: "tool_request",
+    responseId: "resp_test_tool",
+    tool: {
+      name: "find_obi_products",
+      callId: "call_test_tool",
+      arguments: {
+        query: "klej",
+        storeNumber: "074",
+        limit: 3,
+      },
+    },
+  });
+});
+
+test("continue retains conversation store and compact result store context", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.storeNumber = "075";
+  body.result.storeNumber = "074";
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const capture = fake.captures[0];
+  assert.equal(
+    capture.body.instructions,
+    agentInstructionsForStore("075"),
+  );
+  const output = JSON.parse(capture.body.input[0].output);
+  assert.equal(output.storeNumber, "074");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(
+      output.products[0],
+      "storeNumber",
+    ),
+    false,
+  );
+});
+
+test("continue accepts bounded store rejection without products", async () => {
+  const fake = fakeOpenAI(answerPayload("Need store number."));
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.result = {
+    query: "klej",
+    storeNumber: "999",
+    rejection: "store_not_authorized",
+  };
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const output = JSON.parse(
+    fake.captures[0].body.input[0].output,
+  );
+  assert.deepEqual(output, body.result);
+});
+
+test("final productRefs preserve same OBIK in two stores", async () => {
+  const refs = [
+    { storeNumber: "074", obik: "3496072" },
+    { storeNumber: "075", obik: "3496072" },
+  ];
+  const fake = fakeOpenAI(answerPayload("Compare.", refs));
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", {
+      message: "Porównaj 074 i 075",
+      storeNumber: "075",
+    }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    (await responseJson(response)).productRefs,
+    refs,
+  );
+});
+
+test("tool schema is generic and final schema is store-aware", () => {
+  assert.equal(LOCAL_TOOL_NAME, "find_obi_products");
+  assert.deepEqual(
+    FINAL_ANSWER_FORMAT.schema.required,
+    ["text", "productRefs"],
+  );
+  assert.deepEqual(
+    FINAL_ANSWER_FORMAT.schema.properties.productRefs.items.required,
+    ["storeNumber", "obik"],
+  );
+  assert.equal(
+    AGENT_INSTRUCTIONS.includes("find_available_obi_075"),
+    false,
+  );
 });
 
 for (const status of [401, 429, 500]) {

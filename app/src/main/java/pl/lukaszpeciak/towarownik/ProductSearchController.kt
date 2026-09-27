@@ -153,7 +153,10 @@ private fun ProductLookupResult.toUiState(): ProductSearchUiState = when (this) 
         stock = product.stock,
         grossPrice = product.grossPrice,
     )
-    is ProductLookupResult.InvalidObik -> ProductSearchUiState.Error(SearchUiError.INVALID_INPUT)
+    is ProductLookupResult.InvalidObik ->
+        ProductSearchUiState.Error(SearchUiError.INVALID_INPUT)
+    is ProductLookupResult.InvalidStore ->
+        ProductSearchUiState.Error(SearchUiError.LOOKUP)
     is ProductLookupResult.Unavailable -> ProductSearchUiState.Error(
         when (failure) {
             ProductLookupFailure.NETWORK -> SearchUiError.NETWORK
