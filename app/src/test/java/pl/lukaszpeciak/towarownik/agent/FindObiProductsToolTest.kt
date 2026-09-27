@@ -367,6 +367,69 @@ class FindObiProductsToolTest {
     }
 
     @Test
+    fun `same OBIK across stores keeps store facts independent and product facts stable`() = runBlocking {
+        val commonFacts = listOf(
+            TechnicalFact("Moc", "600 W"),
+        )
+        fun storeTool(stock: Int, price: String) = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    listOf(
+                        ProductSearchCandidate(
+                            "3496072",
+                            "Candidate",
+                        ),
+                    ),
+                )
+            },
+            lookup = { obik, storeNumber ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        name = "Same product",
+                        stock = stock,
+                        price = BigDecimal(price),
+                        storeNumber = storeNumber,
+                        brand = "Brand",
+                        shortDescription = "Same verified description.",
+                        technicalFacts = commonFacts,
+                    ),
+                )
+            },
+        )
+
+        val in074 = storeTool(2, "10.00").execute(
+            arguments(storeNumber = "074"),
+        ) as AdvisorToolExecutionResult.Success
+        val in075 = storeTool(7, "12.00").execute(
+            arguments(storeNumber = "075"),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals("074", in074.result.storeNumber)
+        assertEquals("075", in075.result.storeNumber)
+        assertEquals(2, in074.result.products.single().stock)
+        assertEquals(7, in075.result.products.single().stock)
+        assertEquals(
+            BigDecimal("10.00"),
+            in074.result.products.single().price,
+        )
+        assertEquals(
+            BigDecimal("12.00"),
+            in075.result.products.single().price,
+        )
+        assertEquals(
+            in074.result.products.single().brand,
+            in075.result.products.single().brand,
+        )
+        assertEquals(
+            in074.result.products.single().technicalFacts,
+            in075.result.products.single().technicalFacts,
+        )
+        assertEquals("074", in074.snapshots.single().storeNumber)
+        assertEquals("075", in075.snapshots.single().storeNumber)
+    }
+
+    @Test
     fun `unsupported store fails before search or lookup`() = runBlocking {
         var searched = false
         var lookedUp = false
