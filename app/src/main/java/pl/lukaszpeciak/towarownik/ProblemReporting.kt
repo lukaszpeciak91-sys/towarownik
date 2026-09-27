@@ -35,6 +35,14 @@ internal enum class ProblemReportOrigin {
     SETTINGS,
 }
 
+internal fun reportBackSurface(
+    origin: ProblemReportOrigin,
+): AppSurface =
+    when (origin) {
+        ProblemReportOrigin.ADVISOR -> AppSurface.ADVISOR
+        ProblemReportOrigin.SETTINGS -> AppSurface.SETTINGS
+    }
+
 internal class ProblemReportTargetUnavailableException :
     IllegalStateException("report target unavailable")
 

@@ -467,10 +467,7 @@ private fun TowarownikApp() {
     }
 
     fun closeReport() {
-        surfaceName = when (reportOrigin) {
-            ProblemReportOrigin.ADVISOR -> AppSurface.ADVISOR.name
-            ProblemReportOrigin.SETTINGS -> AppSurface.SETTINGS.name
-        }
+        surfaceName = reportBackSurface(reportOrigin).name
     }
 
     fun navigateBackFrom(currentSurface: AppSurface) {

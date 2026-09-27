@@ -29,6 +29,41 @@ class ProblemReportSharingTest {
     }
 
     @Test
+    fun `report origin returns to the correct surface`() {
+        assertEquals(
+            AppSurface.ADVISOR,
+            reportBackSurface(ProblemReportOrigin.ADVISOR),
+        )
+        assertEquals(
+            AppSurface.SETTINGS,
+            reportBackSurface(ProblemReportOrigin.SETTINGS),
+        )
+    }
+
+    @Test
+    fun `opening a report only records report navigation state`() {
+        val source = File(
+            projectRoot(),
+            "app/src/main/java/pl/lukaszpeciak/towarownik/MainActivity.kt",
+        ).readText()
+        val general = source
+            .substringAfter("fun openGeneralReport() {")
+            .substringBefore("\n    }")
+        val assistant = source
+            .substringAfter("fun openAssistantReport(messageId: Long) {")
+            .substringBefore("\n    }")
+
+        listOf(general, assistant).forEach { body ->
+            assertFalse(body.contains("advisorCase ="))
+            assertFalse(body.contains("updateDraft"))
+            assertFalse(body.contains("conversationRepository."))
+            assertFalse(body.contains("advisorController."))
+        }
+        assertTrue(general.contains("ProblemReportType.GENERAL"))
+        assertTrue(assistant.contains("ProblemReportType.ASSISTANT_RESPONSE"))
+    }
+
+    @Test
     fun `report file is created only under dedicated cache reports directory`() {
         val cache = Files.createTempDirectory("towarownik-cache").toFile()
         try {
