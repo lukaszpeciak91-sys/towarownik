@@ -843,7 +843,7 @@ private fun TowarownikApp() {
                         showAiBudgetWarning = false
                     },
                 ) {
-                    Text(stringResource(R.string.ok))
+                    Text(stringResource(R.string.ai_budget_warning_ack))
                 }
             },
         )
