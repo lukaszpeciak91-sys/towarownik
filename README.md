@@ -84,7 +84,17 @@ Current production advisor model is `gpt-6-luna` with low reasoning. Its server-
 
 The optional **Taksula AI budget** is user-configured local state, not OpenAI account-balance or account-credit data. Setting a remaining USD budget records the current cumulative Taksula spend as its baseline. Estimated remaining budget subtracts only later priced Taksula spend; if required cost data is unavailable, the app does not guess. Crossing below USD 1 produces one warning and re-arms only after the configured budget is reset/increased back to at least USD 1.
 
-The GPT-5.6 Luna measurements remain historical baseline data in the same per-model usage store. After this model swap the planned sequence is: **(1)** richer OBI product facts, **(2)** final advisor instructions/persona, **(3)** optional OpenAI `web_search`.
+The GPT-5.6 Luna measurements remain historical baseline data in the same per-model usage store. The advisor tool now receives compact verified product-page context from the same exact OBI lookup used for store facts. Next planned stages are: **(1)** final advisor instructions/persona, **(2)** optional OpenAI `web_search`.
+
+## Richer verified OBI product facts
+
+The exact product lookup now extracts a compact optional product-context layer from the same decoded `__NUXT_DATA__` product object that already supplies verified identity and selected-store data. Live proof on OBIK 3496072, 6743009, and 7156243 confirmed `product.brand.name`, `product.productDescription`, `product.productOverview[]`, `product.technicalData.productDetails[]`, and `product.technicalData.dimensionsAndWeight[]`. No second product-page request is added.
+
+Only three model-context fields are implemented: nullable brand, nullable normalized short description, and bounded technical facts. There is no separate inferred applications field because the live payload did not expose one stable structured application section; explicit uses/limitations present in OBI's structured product description remain available through the bounded description itself.
+
+Bounds intentionally preserve the existing 16 KiB continuation envelope for up to five products: brand 80 chars, description 300 chars, at most 6 technical facts, fact label 60 chars, fact value 120 chars. Optional rich sections fail soft and never invalidate a product with valid identity/store/basic data. The parser strips presentation-only markup, collapses whitespace, removes empty entries, and deduplicates facts by normalized label.
+
+Stock and price remain authoritative only from the requested selected store's `product.store.articleData.stock` and `product.store.articleData.pricing.grossPrice`. Rich descriptive/specification facts are product-level model context. They are not persisted into message-product snapshots, do not change visible verified cards, and do not enter problem reports. Product URL, verification timestamp, EAN, raw HTML, raw Nuxt, cookies, and diagnostics remain excluded from OpenAI tool results.
 
 ## Signed Google Play AAB
 
