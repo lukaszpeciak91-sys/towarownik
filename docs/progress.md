@@ -4,7 +4,7 @@
 
 **Richer verified OBI product facts v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, and the Taksula public rename are complete. The current iteration generalizes the proven OBI store-075 integration into explicit conversation-selected multi-store support without changing the underlying transport/search parser design.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, and the GPT-6 Luna swap are complete. The current iteration enriches exact verified OBI product lookup with bounded product-page facts for model context while preserving store authority, visible-card authority, and the existing transport/search architecture.
 
 Implemented direction:
 
