@@ -82,27 +82,27 @@ class LocalizationResourcesTest {
         val english = strings("values-en")
 
         assertEquals(
-            "Stan Nowy Sącz: brak danych",
+            "Stan: brak danych",
             polish.getValue("product_stock_unknown"),
         )
         assertEquals(
-            "Nowy Sącz stock: no data",
+            "Stock: no data",
             english.getValue("product_stock_unknown"),
         )
         assertEquals(
-            "Stan Nowy Sącz: 0 szt. — brak na stanie",
+            "Stan: 0 szt. — brak na stanie",
             polish.getValue("product_stock_zero"),
         )
         assertEquals(
-            "Nowy Sącz stock: 0 — unavailable",
+            "Stock: 0 — unavailable",
             english.getValue("product_stock_zero"),
         )
         assertEquals(
-            "Stan Nowy Sącz: 7 szt.",
+            "Stan: 7 szt.",
             format(polish.getValue("product_stock_count"), 7),
         )
         assertEquals(
-            "Nowy Sącz stock: 7",
+            "Stock: 7",
             format(english.getValue("product_stock_count"), 7),
         )
     }
@@ -114,19 +114,19 @@ class LocalizationResourcesTest {
         val price = BigDecimal("14.99").toPlainString()
 
         assertEquals(
-            "Cena Nowy Sącz: brak danych",
+            "Cena: brak danych",
             polish.getValue("product_price_unknown"),
         )
         assertEquals(
-            "Nowy Sącz price: no data",
+            "Price: no data",
             english.getValue("product_price_unknown"),
         )
         assertEquals(
-            "Cena Nowy Sącz: 14.99 zł",
+            "Cena: 14.99 zł",
             format(polish.getValue("product_price"), price),
         )
         assertEquals(
-            "Nowy Sącz price: 14.99 zł",
+            "Price: 14.99 zł",
             format(english.getValue("product_price"), price),
         )
     }

@@ -305,6 +305,7 @@ private fun TowarownikApp() {
 
             if (freshCase != null) {
                 activeConversationId = null
+                selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
                 freshCaseSelected = true
                 advisorState = AdvisorUiState.Idle
                 advisorCase = freshCase
