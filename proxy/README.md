@@ -102,13 +102,16 @@ find_obi_products(query, limit)
 
 For every successful Responses API result, the Worker independently attempts to validate OpenAI `usage`. START, MESSAGE, and CONTINUE are explicit request types. Missing or malformed usage is dropped while the normalized answer/tool request remains valid.
 
-Current pricing is server-controlled and versioned as `openai-gpt-5.6-luna-2026-09-27` for `gpt-5.6-luna`:
+Current pricing is server-controlled and versioned as `openai-gpt-5.6-luna-2026-09-27-v2` for `gpt-5.6-luna`:
 
-- uncached input: USD 0.20 / 1M tokens;
+- ordinary input: USD 0.20 / 1M tokens;
 - cached input: USD 0.02 / 1M tokens;
+- cache-write input: USD 0.25 / 1M tokens;
 - output: USD 1.20 / 1M tokens.
 
-The Worker computes uncached input as `inputTokens - cachedInputTokens`. Reasoning tokens are an output-usage detail and are never charged in addition to output tokens. Pricing arithmetic is performed in integer nanodollars before the bounded numeric USD estimate is serialized.
+For requests with more than 272,000 input tokens, pricing switches for the full request to 2× every input-side rate and 1.5× the output rate.
+
+The Worker computes ordinary input as `inputTokens - cachedInputTokens - cacheWriteTokens` and validates that cached plus cache-write tokens do not exceed total input. Reasoning tokens are an output-usage detail and are never charged in addition to output tokens. Pricing arithmetic is performed in integer nanodollars before the bounded numeric USD estimate is serialized.
 
 The successful envelope may therefore include:
 
@@ -119,11 +122,12 @@ The successful envelope may therefore include:
     "requestType": "START",
     "inputTokens": 1000,
     "cachedInputTokens": 400,
+    "cacheWriteTokens": 100,
     "outputTokens": 100,
     "reasoningTokens": 50,
     "totalTokens": 1100,
     "estimatedCostUsd": 0.000248,
-    "pricingVersion": "openai-gpt-5.6-luna-2026-09-27"
+    "pricingVersion": "openai-gpt-5.6-luna-2026-09-27-v2"
   }
 }
 ```
