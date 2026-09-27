@@ -251,9 +251,16 @@ class AiUsageRepositoryTest {
     @Test
     fun `unpriced response makes remaining budget unavailable rather than guessed`() {
         repository.configureBudget(BigDecimal("5.00"))
-        repository.recordOpenAiResponse(null)
+        repository.recordOpenAiResponse(
+            usage(
+                model = "unknown-model",
+                cost = null,
+            ),
+        )
 
-        assertNull(repository.snapshot().budget?.remainingBudgetUsd)
+        val snapshot = repository.snapshot()
+        assertEquals(1L, snapshot.unpricedRequests)
+        assertNull(snapshot.budget?.remainingBudgetUsd)
         assertFalse(repository.consumePendingBudgetWarning())
     }
 
@@ -266,7 +273,7 @@ class AiUsageRepositoryTest {
         output: Long = 10,
         reasoning: Long? = 0,
         total: Long = 110,
-        cost: String = "0.0001",
+        cost: String? = "0.0001",
     ): AdvisorUsage =
         AdvisorUsage(
             model = model,
@@ -277,7 +284,7 @@ class AiUsageRepositoryTest {
             outputTokens = output,
             reasoningTokens = reasoning,
             totalTokens = total,
-            estimatedCostUsd = BigDecimal(cost),
+            estimatedCostUsd = cost?.let(::BigDecimal),
             pricingVersion =
                 "openai-gpt-5.6-luna-2026-09-27-v2",
         )
