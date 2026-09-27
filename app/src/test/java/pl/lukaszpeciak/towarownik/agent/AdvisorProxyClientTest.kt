@@ -284,6 +284,102 @@ class AdvisorProxyClientTest {
     }
 
     @Test
+    fun `usage envelope parses independently from answer content`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_usage",
+                      "text":"Measured",
+                      "productRefs":[],
+                      "usage":{
+                        "model":"gpt-5.6-luna",
+                        "requestType":"START",
+                        "inputTokens":1000,
+                        "cachedInputTokens":400,
+                        "outputTokens":100,
+                        "reasoningTokens":50,
+                        "totalTokens":1100,
+                        "estimatedCostUsd":"0.000248",
+                        "pricingVersion":"openai-gpt-5.6-luna-2026-09-27"
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            val result = client(server, FAKE_TOKEN).start("test")
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_usage",
+                        text = "Measured",
+                        productRefs = emptyList(),
+                        usage = AdvisorUsage(
+                            model = "gpt-5.6-luna",
+                            requestType = AdvisorRequestType.START,
+                            inputTokens = 1_000,
+                            cachedInputTokens = 400,
+                            outputTokens = 100,
+                            reasoningTokens = 50,
+                            totalTokens = 1_100,
+                            estimatedCostUsd =
+                                BigDecimal("0.000248"),
+                            pricingVersion =
+                                "openai-gpt-5.6-luna-2026-09-27",
+                        ),
+                    ),
+                ),
+                result,
+            )
+        }
+    }
+
+    @Test
+    fun `malformed telemetry is ignored without losing answer`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_usage_bad",
+                      "text":"Still usable",
+                      "productRefs":[],
+                      "usage":{
+                        "model":"gpt-5.6-luna",
+                        "requestType":"START",
+                        "inputTokens":"bad",
+                        "cachedInputTokens":0,
+                        "outputTokens":1,
+                        "reasoningTokens":0,
+                        "totalTokens":1,
+                        "estimatedCostUsd":"0.0000012",
+                        "pricingVersion":"openai-gpt-5.6-luna-2026-09-27"
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_usage_bad",
+                        text = "Still usable",
+                        productRefs = emptyList(),
+                        usage = null,
+                    ),
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
     fun `malformed store fails locally before request`() = runBlocking {
         MockWebServer().use { server ->
             val result = client(server, FAKE_TOKEN).start(
