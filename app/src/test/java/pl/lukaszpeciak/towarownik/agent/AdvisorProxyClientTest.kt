@@ -299,11 +299,12 @@ class AdvisorProxyClientTest {
                         "requestType":"START",
                         "inputTokens":1000,
                         "cachedInputTokens":400,
+                        "cacheWriteTokens":100,
                         "outputTokens":100,
                         "reasoningTokens":50,
                         "totalTokens":1100,
-                        "estimatedCostUsd":0.000248,
-                        "pricingVersion":"openai-gpt-5.6-luna-2026-09-27"
+                        "estimatedCostUsd":0.000253,
+                        "pricingVersion":"openai-gpt-5.6-luna-2026-09-27-v2"
                       }
                     }
                     """.trimIndent(),
@@ -323,13 +324,14 @@ class AdvisorProxyClientTest {
                             requestType = AdvisorRequestType.START,
                             inputTokens = 1_000,
                             cachedInputTokens = 400,
+                            cacheWriteTokens = 100,
                             outputTokens = 100,
                             reasoningTokens = 50,
                             totalTokens = 1_100,
                             estimatedCostUsd =
-                                BigDecimal("0.000248"),
+                                BigDecimal("0.000253"),
                             pricingVersion =
-                                "openai-gpt-5.6-luna-2026-09-27",
+                                "openai-gpt-5.6-luna-2026-09-27-v2",
                         ),
                     ),
                 ),
@@ -354,11 +356,12 @@ class AdvisorProxyClientTest {
                         "requestType":"START",
                         "inputTokens":"bad",
                         "cachedInputTokens":0,
+                        "cacheWriteTokens":0,
                         "outputTokens":1,
                         "reasoningTokens":0,
                         "totalTokens":1,
                         "estimatedCostUsd":0.0000012,
-                        "pricingVersion":"openai-gpt-5.6-luna-2026-09-27"
+                        "pricingVersion":"openai-gpt-5.6-luna-2026-09-27-v2"
                       }
                     }
                     """.trimIndent(),
@@ -369,6 +372,48 @@ class AdvisorProxyClientTest {
                 AdvisorProxyCallResult.Success(
                     AdvisorProxyResult.Answer(
                         responseId = "resp_usage_bad",
+                        text = "Still usable",
+                        productRefs = emptyList(),
+                        usage = null,
+                    ),
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `cached plus cache-write overflow makes telemetry fail soft`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_bad_cache_sum",
+                      "text":"Still usable",
+                      "productRefs":[],
+                      "usage":{
+                        "model":"gpt-5.6-luna",
+                        "requestType":"START",
+                        "inputTokens":100,
+                        "cachedInputTokens":60,
+                        "cacheWriteTokens":50,
+                        "outputTokens":10,
+                        "reasoningTokens":0,
+                        "totalTokens":110,
+                        "estimatedCostUsd":null,
+                        "pricingVersion":null
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_bad_cache_sum",
                         text = "Still usable",
                         productRefs = emptyList(),
                         usage = null,
