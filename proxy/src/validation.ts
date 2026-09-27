@@ -3,6 +3,11 @@ import {
   MAX_CALL_ID_CHARS,
   MESSAGE_BODY_MAX_BYTES,
   MAX_PRODUCT_NAME_CHARS,
+  MAX_PRODUCT_BRAND_CHARS,
+  MAX_PRODUCT_DESCRIPTION_CHARS,
+  MAX_PRODUCT_TECHNICAL_FACTS,
+  MAX_PRODUCT_FACT_LABEL_CHARS,
+  MAX_PRODUCT_FACT_VALUE_CHARS,
   MAX_RESPONSE_ID_CHARS,
   MAX_TOOL_PRODUCTS,
   MAX_TOOL_QUERY_CHARS,
@@ -250,7 +255,15 @@ function validateStoreNumber(value: unknown): string {
 function validateProduct(value: unknown): VerifiedProduct {
   const object = exactObject(
     value,
-    ["obik", "name", "stock", "price"],
+    [
+      "obik",
+      "name",
+      "brand",
+      "shortDescription",
+      "technicalFacts",
+      "stock",
+      "price",
+    ],
   );
 
   if (
@@ -270,9 +283,68 @@ function validateProduct(value: unknown): VerifiedProduct {
   return {
     obik: object.obik,
     name,
+    brand: validateNullableNormalizedString(
+      object.brand,
+      MAX_PRODUCT_BRAND_CHARS,
+    ),
+    shortDescription: validateNullableNormalizedString(
+      object.shortDescription,
+      MAX_PRODUCT_DESCRIPTION_CHARS,
+    ),
+    technicalFacts: validateTechnicalFacts(
+      object.technicalFacts,
+    ),
     stock: validateNullableStock(object.stock),
     price: validateNullablePrice(object.price),
   };
+}
+
+function validateTechnicalFacts(
+  value: unknown,
+): VerifiedProduct["technicalFacts"] {
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_PRODUCT_TECHNICAL_FACTS
+  ) {
+    throw new InvalidRequestError();
+  }
+
+  return value.map((entry) => {
+    const object = exactObject(entry, ["label", "value"]);
+    const label = normalizeWhitespace(
+      boundedString(
+        object.label,
+        MAX_PRODUCT_FACT_LABEL_CHARS,
+      ),
+    );
+    const factValue = normalizeWhitespace(
+      boundedString(
+        object.value,
+        MAX_PRODUCT_FACT_VALUE_CHARS,
+      ),
+    );
+    if (!label || !factValue) {
+      throw new InvalidRequestError();
+    }
+    return {
+      label,
+      value: factValue,
+    };
+  });
+}
+
+function validateNullableNormalizedString(
+  value: unknown,
+  maxChars: number,
+): string | null {
+  if (value === null) return null;
+  const normalized = normalizeWhitespace(
+    boundedString(value, maxChars),
+  );
+  if (!normalized) {
+    throw new InvalidRequestError();
+  }
+  return normalized;
 }
 
 function validateNullableStock(value: unknown): number | null {
