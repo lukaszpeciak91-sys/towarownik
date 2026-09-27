@@ -95,7 +95,7 @@ Android test version: **0.1.10 (11)**.
 - exact verified OBI lookups now carry optional model-context brand, short description, and bounded technical facts from the same decoded product payload;
 - live proof used OBIK 3496072 (adhesive), 6743009 (drill), and 7156243 (LED fitting), confirming productDescription/productOverview/technicalData shapes across categories;
 - optional rich sections fail soft while OBIK/store identity, stock, and price rules remain unchanged;
-- advisor tool payload remains bounded to brand 80, description 300, six facts, fact label 60, fact value 120;
+- advisor tool payload remains bounded to brand 80, description 220, six facts, fact label 60, fact value 100;
 - message-product snapshots/cards/reports remain unchanged; rich facts are transient model context only;
 - raw OBI HTML/Nuxt, URLs, EAN, cookies, diagnostics, and verification timestamps remain outside OpenAI tool results.
 
