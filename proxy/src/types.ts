@@ -44,6 +44,7 @@ export interface AgentUsage {
   requestType: AgentRequestType;
   inputTokens: number;
   cachedInputTokens: number | null;
+  cacheWriteTokens: number | null;
   outputTokens: number;
   reasoningTokens: number | null;
   totalTokens: number;
