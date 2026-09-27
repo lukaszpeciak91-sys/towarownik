@@ -185,7 +185,7 @@ class ObiPayloadParser(
     private fun parseBrand(product: JsonObject): String? =
         runCatching {
             (product["brand"] as? JsonObject)
-                ?.string("name")
+                ?.richString("name")
                 ?.normalizeRichText(MAX_BRAND_CHARS)
         }.getOrNull()
 
@@ -193,7 +193,7 @@ class ObiPayloadParser(
         product: JsonObject,
     ): String? =
         runCatching {
-            product.string("productDescription")
+            product.richString("productDescription")
                 ?.stripPresentationMarkup()
                 ?.normalizeRichText(MAX_DESCRIPTION_CHARS)
         }.getOrNull()
@@ -250,8 +250,8 @@ class ObiPayloadParser(
         array.forEach { element ->
             val factObject = element as? JsonObject ?: return@forEach
             technicalFact(
-                label = factObject.string("key"),
-                value = factObject.string("value"),
+                label = factObject.richString("key"),
+                value = factObject.richString("value"),
             )?.let(target::add)
         }
     }
@@ -337,10 +337,10 @@ class ObiPayloadParser(
         val PRODUCT_NAME_KEYS = listOf("productTitle", "productTitleTab", "name", "productName")
         val EAN_KEYS = listOf("articleEanEcms", "ean", "gtin13", "gtin")
         const val MAX_BRAND_CHARS = 80
-        const val MAX_DESCRIPTION_CHARS = 300
+        const val MAX_DESCRIPTION_CHARS = 220
         const val MAX_TECHNICAL_FACTS = 6
         const val MAX_FACT_LABEL_CHARS = 60
-        const val MAX_FACT_VALUE_CHARS = 120
+        const val MAX_FACT_VALUE_CHARS = 100
         const val MAX_FACT_LINE_CHARS =
             MAX_FACT_LABEL_CHARS + MAX_FACT_VALUE_CHARS + 2
     }
@@ -357,6 +357,12 @@ private fun JsonElement.objects(): Sequence<JsonObject> = sequence {
         else -> Unit
     }
 }
+
+private fun JsonObject.richString(key: String): String? =
+    (get(key) as? JsonPrimitive)
+        ?.takeIf { it.isString }
+        ?.contentOrNull
+        ?.takeIf(String::isNotBlank)
 
 private fun JsonObject.string(key: String): String? =
     (get(key) as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
