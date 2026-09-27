@@ -90,12 +90,16 @@
     <string name="ai_usage_tokens">TOKENY</string>
     <string name="ai_usage_input_tokens">Wejściowe</string>
     <string name="ai_usage_cached_tokens">Wejściowe z cache</string>
+    <string name="ai_usage_cache_write_tokens">Zapis do cache</string>
     <string name="ai_usage_output_tokens">Wyjściowe</string>
     <string name="ai_usage_reasoning_tokens">Reasoning</string>
     <string name="ai_usage_total_tokens">Łącznie</string>
     <string name="ai_usage_cost">SZACOWANY KOSZT</string>
     <string name="ai_usage_cost_usd">USD</string>
     <string name="ai_usage_cost_pln">PLN</string>
+    <string name="ai_usage_unpriced_requests">Niepoliczone odpowiedzi</string>
+    <string name="ai_usage_known_cost_usd_at_least">Znany koszt, co najmniej</string>
+    <string name="ai_usage_known_cost_pln_at_least">Znany koszt PLN, co najmniej</string>
     <string name="ai_usage_nbp_rate">Kurs NBP z %1$s.</string>
     <string name="ai_usage_nbp_rate_cached">Ostatni dostępny kurs NBP z %1$s (cache).</string>
     <string name="ai_usage_unavailable">Niedostępne</string>
