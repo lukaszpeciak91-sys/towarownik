@@ -252,4 +252,16 @@ These decisions describe the broader intended product behavior. The currently im
 - Final structured output is `{text, productRefs:[{storeNumber,obik}]}`. Android resolves references only against current-turn verified snapshots; unknown references never trigger a lookup.
 - Product cards, reports, and persisted message products include the snapshot store. Current price/stock questions still require fresh verification.
 - Store `075` remains the deterministic regression baseline, including the manual live-contract probe. Search discovery remains store-independent; exact verification is store-aware.
-- Richer product facts, descriptions/specifications, OpenAI web research, final advisor persona/domain policy, token telemetry/compaction, other retailers, and location-based store selection remain separate future iterations.
+- Richer product facts, descriptions/specifications, OpenAI web research, final advisor persona/domain policy, context compaction, other retailers, and location-based store selection remain separate future iterations. AI token/cost telemetry is implemented first as the measured baseline.
+
+
+## AI usage metrics + budget visibility v0.1
+
+- Keep advisor behavior frozen while measuring it: model remains `gpt-5.6-luna`, reasoning remains low, current instructions/tools/context chain are unchanged.
+- Treat OpenAI usage telemetry as optional evidence attached to each successful response, never as a prerequisite for a usable answer.
+- Version corrected current pricing as `openai-gpt-5.6-luna-2026-09-27-v2`: USD 0.20/M ordinary input, USD 0.02/M cached input, USD 0.25/M cache-write input, USD 1.20/M output. Above 272,000 input tokens apply 2× to every input-side class and 1.5× to output for the full request. Do not add reasoning tokens separately to output cost, and do not price unknown models or incomplete usage by inference.
+- Keep cumulative telemetry local to the installation and grouped by model; do not introduce backend analytics or persist conversation content in usage state.
+- Use official NBP USD/PLN only on demand from the usage UI with a 24-hour cache. FX/network failure cannot affect advisor execution.
+- A configured “remaining AI budget” is a Taksula-local estimate with a spend baseline, not OpenAI credit/balance. Unknown/unpriced spend makes the remaining estimate unavailable rather than guessed.
+- Warn once when the known estimate crosses below USD 1; reset/increasing the budget to at least USD 1 re-arms the warning.
+- Measured future sequence: baseline → model comparison/swap PR → richer OBI facts → final advisor instructions/persona → optional OpenAI web_search.

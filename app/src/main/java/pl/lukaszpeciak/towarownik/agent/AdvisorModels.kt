@@ -42,6 +42,25 @@ internal data class AdvisorVerifiedToolResult(
     val products: List<AdvisorVerifiedProduct>,
 )
 
+internal enum class AdvisorRequestType {
+    START,
+    MESSAGE,
+    CONTINUE,
+}
+
+internal data class AdvisorUsage(
+    val model: String,
+    val requestType: AdvisorRequestType,
+    val inputTokens: Long,
+    val cachedInputTokens: Long?,
+    val cacheWriteTokens: Long? = null,
+    val outputTokens: Long,
+    val reasoningTokens: Long?,
+    val totalTokens: Long,
+    val estimatedCostUsd: BigDecimal?,
+    val pricingVersion: String?,
+)
+
 internal sealed interface AdvisorToolContinuation {
     data class Verified(
         val result: AdvisorVerifiedToolResult,
@@ -58,12 +77,14 @@ internal sealed interface AdvisorProxyResult {
         val responseId: String,
         val text: String,
         val productRefs: List<AdvisorProductRef>,
+        val usage: AdvisorUsage? = null,
     ) : AdvisorProxyResult
 
     data class ToolRequest(
         val responseId: String,
         val callId: String,
         val arguments: AdvisorToolArguments,
+        val usage: AdvisorUsage? = null,
     ) : AdvisorProxyResult
 }
 

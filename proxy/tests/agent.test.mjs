@@ -6,6 +6,7 @@ import {
   agentInstructionsForStore,
   FINAL_ANSWER_FORMAT,
   LOCAL_TOOL_NAME,
+  CURRENT_MODEL_PRICING,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
@@ -62,6 +63,24 @@ function answerPayload(text = "Synthetic answer", productRefs = []) {
         content: [{ type: "output_text", text: structured }],
       },
     ],
+  };
+}
+
+function withUsage(payload, overrides = {}) {
+  return {
+    ...payload,
+    model: OPENAI_MODEL,
+    usage: {
+      input_tokens: 1_000,
+      input_tokens_details: {
+        cached_tokens: 400,
+        cache_write_tokens: 0,
+      },
+      output_tokens: 100,
+      output_tokens_details: { reasoning_tokens: 50 },
+      total_tokens: 1_100,
+      ...overrides,
+    },
   };
 }
 
@@ -404,6 +423,302 @@ test("structured OpenAI answer is normalized and raw response is not forwarded",
   });
   assert.equal(JSON.stringify(body).includes("usage"), false);
   assert.equal(JSON.stringify(body).includes("internal"), false);
+});
+
+test("valid OpenAI usage is normalized with cached and reasoning detail", async () => {
+  const fake = fakeOpenAI(withUsage(answerPayload("Measured answer")));
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", { message: "hello" }),
+    configuredEnv,
+  );
+  const body = await responseJson(response);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.usage, {
+    model: OPENAI_MODEL,
+    requestType: "START",
+    inputTokens: 1_000,
+    cachedInputTokens: 400,
+    cacheWriteTokens: 0,
+    outputTokens: 100,
+    reasoningTokens: 50,
+    totalTokens: 1_100,
+    estimatedCostUsd: 0.000248,
+    pricingVersion: CURRENT_MODEL_PRICING.pricingVersion,
+  });
+});
+
+test("reasoning tokens are output detail and are not double charged", async () => {
+  const fake = fakeOpenAI(withUsage(answerPayload()));
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.outputTokens, 100);
+  assert.equal(body.usage.reasoningTokens, 50);
+  assert.equal(body.usage.estimatedCostUsd, 0.000248);
+});
+
+test("current gpt-5.6-luna pricing is explicit and versioned", () => {
+  assert.equal(CURRENT_MODEL_PRICING.model, "gpt-5.6-luna");
+  assert.deepEqual(CURRENT_MODEL_PRICING.usdPerMillionTokens, {
+    uncachedInput: "0.20",
+    cachedInput: "0.02",
+    cacheWriteInput: "0.25",
+    output: "1.20",
+  });
+  assert.match(CURRENT_MODEL_PRICING.pricingVersion, /2026-09-27/);
+});
+
+test("cache-write tokens are parsed and charged at USD 0.25 per million", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 1_000,
+      input_tokens_details: {
+        cached_tokens: 400,
+        cache_write_tokens: 100,
+      },
+      output_tokens: 100,
+      output_tokens_details: { reasoning_tokens: 50 },
+      total_tokens: 1_100,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.cacheWriteTokens, 100);
+  assert.equal(body.usage.estimatedCostUsd, 0.000253);
+});
+
+test("cached plus cache-write tokens cannot exceed input tokens", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload("Still usable"), {
+      input_tokens: 100,
+      input_tokens_details: {
+        cached_tokens: 60,
+        cache_write_tokens: 50,
+      },
+      output_tokens: 10,
+      total_tokens: 110,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.text, "Still usable");
+  assert.equal(Object.prototype.hasOwnProperty.call(body, "usage"), false);
+});
+
+test("272000 input tokens use short-context pricing", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 272_000,
+      input_tokens_details: {
+        cached_tokens: 0,
+        cache_write_tokens: 0,
+      },
+      output_tokens: 100,
+      output_tokens_details: { reasoning_tokens: 50 },
+      total_tokens: 272_100,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.05452);
+});
+
+test("272001 input tokens use long-context pricing for the full request", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 272_001,
+      input_tokens_details: {
+        cached_tokens: 0,
+        cache_write_tokens: 0,
+      },
+      output_tokens: 100,
+      output_tokens_details: { reasoning_tokens: 50 },
+      total_tokens: 272_101,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.1089804);
+});
+
+test("long-context pricing doubles cache writes and other input-side rates", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 272_001,
+      input_tokens_details: {
+        cached_tokens: 100_000,
+        cache_write_tokens: 100_000,
+      },
+      output_tokens: 100,
+      output_tokens_details: { reasoning_tokens: 50 },
+      total_tokens: 272_101,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.0829804);
+});
+
+test("missing cache-write detail leaves cost unpriced instead of guessing", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens_details: { cached_tokens: 400 },
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.cacheWriteTokens, null);
+  assert.equal(body.usage.estimatedCostUsd, null);
+  assert.equal(body.usage.pricingVersion, null);
+});
+
+test("unknown model usage is preserved but not priced", async () => {
+  const fake = fakeOpenAI({
+    ...withUsage(answerPayload()),
+    model: "unknown-model",
+  });
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.model, "unknown-model");
+  assert.equal(body.usage.estimatedCostUsd, null);
+  assert.equal(body.usage.pricingVersion, null);
+});
+
+test("usage request type identifies MESSAGE and CONTINUE", async () => {
+  const messageFake = fakeOpenAI(withUsage(answerPayload()));
+  const messageWorker = createWorker(messageFake.fetch);
+  const messageBody = await responseJson(
+    await messageWorker.fetch(
+      jsonRequest("/v1/agent/message", {
+        previousResponseId: "resp_previous",
+        message: "follow-up",
+      }),
+      configuredEnv,
+    ),
+  );
+  assert.equal(messageBody.usage.requestType, "MESSAGE");
+
+  const continueFake = fakeOpenAI(withUsage(answerPayload()));
+  const continueWorker = createWorker(continueFake.fetch);
+  const continueBody = await responseJson(
+    await continueWorker.fetch(
+      jsonRequest("/v1/agent/continue", validContinueBody()),
+      configuredEnv,
+    ),
+  );
+  assert.equal(continueBody.usage.requestType, "CONTINUE");
+});
+
+test("malformed usage fails soft and does not hide a valid answer", async () => {
+  const payload = withUsage(answerPayload("Still usable"), {
+    input_tokens: "not-a-number",
+  });
+  const fake = fakeOpenAI(payload);
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.text, "Still usable");
+  assert.equal(Object.prototype.hasOwnProperty.call(body, "usage"), false);
+});
+
+test("normalized usage is bounded and exposes no raw OpenAI internals", async () => {
+  const payload = withUsage(answerPayload("Safe"), {
+    input_tokens_details: {
+      cached_tokens: 400,
+      raw_secret_detail: "must-not-leak",
+    },
+    output_tokens_details: {
+      reasoning_tokens: 50,
+      reasoning_text: "must-not-leak",
+    },
+  });
+  payload.raw_internal = "must-not-leak";
+  const fake = fakeOpenAI(payload);
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+  assert.deepEqual(Object.keys(body.usage).sort(), [
+    "cachedInputTokens",
+    "cacheWriteTokens",
+    "estimatedCostUsd",
+    "inputTokens",
+    "model",
+    "outputTokens",
+    "pricingVersion",
+    "reasoningTokens",
+    "requestType",
+    "totalTokens",
+  ].sort());
+  assert.equal(JSON.stringify(body).includes("must-not-leak"), false);
 });
 
 test("malformed structured final output fails closed", async () => {

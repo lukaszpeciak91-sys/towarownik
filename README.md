@@ -61,7 +61,7 @@ Normal pull-request CI never calls live OBI. It runs deterministic Python tests 
 
 The self-contained Cloudflare Worker project lives under `proxy/` and is an active part of the advisor architecture. `GET /health` remains public. The authenticated agent endpoints `POST /v1/agent/start`, `POST /v1/agent/message`, and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
 
-Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. The advisor has exactly one generic local tool, `find_obi_products(query, storeNumber, limit)`, capped at five products per call and two local calls per USER turn. Android validates `storeNumber` against one canonical static allowlist before any OBI request. The compact OpenAI tool payload contains one store context plus only product OBIK, name, stock, and price; trusted product URLs and verification timestamps remain Android-local. The human-only Wyszukiwarka OBI still parses at most 25 recognized candidates from one search response and exact-verifies a selected candidate against the active conversation store. The final advisor persona, richer product facts, web research, summarization/compaction, and token telemetry remain later milestones.
+Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. The advisor has exactly one generic local tool, `find_obi_products(query, storeNumber, limit)`, capped at five products per call and two local calls per USER turn. Android validates `storeNumber` against one canonical static allowlist before any OBI request. The compact OpenAI tool payload contains one store context plus only product OBIK, name, stock, and price; trusted product URLs and verification timestamps remain Android-local. The human-only Wyszukiwarka OBI still parses at most 25 recognized candidates from one search response and exact-verifies a selected candidate against the active conversation store. The final advisor persona, richer product facts, web research, and summarization/compaction remain later milestones. AI usage/cost telemetry is now captured as the optimization baseline.
 
 Proxy checks require Node.js 22:
 
@@ -73,6 +73,18 @@ npm test
 ```
 
 For later Cloudflare repository setup, use `proxy` as the root directory and `towarownik-proxy` as the Worker name. Future secret names are documented in `proxy/README.md`; no secret is required for `/health`.
+
+## AI usage baseline and local budget
+
+Every successful OpenAI Responses API call may carry a bounded usage object from the Worker to Android: model, START/MESSAGE/CONTINUE request type, input/cached/output/reasoning/total token counts, estimated USD cost, and pricing version. Missing or malformed usage never invalidates an otherwise valid advisor answer. Each successful paid response is observed immediately, so usage from an earlier response remains counted even if a later local tool or continuation fails.
+
+Current server-controlled pricing configuration is versioned as `openai-gpt-5.6-luna-2026-09-27-v2` for `gpt-5.6-luna`: USD 0.20/M ordinary input, USD 0.02/M cached input, USD 0.25/M cache-write input, and USD 1.20/M output. Requests above 272,000 input tokens use the model's long-context pricing for the full request: 2× all input-side rates and 1.5× output. Reasoning tokens are reported as an output detail and are never charged a second time. Android persists cumulative operational totals locally with decimal money arithmetic and keeps model totals separate for later comparisons.
+
+**Settings → Użycie AI / AI usage** shows the latest measured model, tracking start, request/turn/tool-assisted-turn counts, ordinary usage details including cached/cache-write tokens, and estimated cost. Before measured usage there is no Android-side model guess. If one or more responses are unpriced, the UI explicitly reports their count and labels the accumulated priced spend as a known minimum rather than a complete total. PLN is derived only when an official NBP USD/PLN rate is available; the rate is refreshed on usage-screen demand with a 24-hour local cache. On NBP failure, the last cached rate remains dated and usable, otherwise PLN is simply unavailable. Advisor requests never depend on NBP.
+
+The optional **Taksula AI budget** is user-configured local state, not OpenAI account-balance or account-credit data. Setting a remaining USD budget records the current cumulative Taksula spend as its baseline. Estimated remaining budget subtracts only later priced Taksula spend; if required cost data is unavailable, the app does not guess. Crossing below USD 1 produces one warning and re-arms only after the configured budget is reset/increased back to at least USD 1.
+
+Planned measured sequence remains: **(1)** establish this usage baseline, **(2)** compare/swap the model in a separate PR, **(3)** richer OBI product facts, **(4)** final advisor instructions/persona, **(5)** optional OpenAI `web_search`.
 
 ## Signed Google Play AAB
 

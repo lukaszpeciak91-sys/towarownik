@@ -31,7 +31,7 @@ Content-Type: application/json
 Request:
 
 ```json
-{"message":"..."}
+{"message":"...","storeNumber":"075"}
 ```
 
 The message is trimmed/whitespace-normalized and bounded. Model, instructions, tools, reasoning effort, output budget, and OpenAI URL are server-controlled.
@@ -47,7 +47,7 @@ Content-Type: application/json
 Request:
 
 ```json
-{"previousResponseId":"...","message":"..."}
+{"previousResponseId":"...","message":"...","storeNumber":"075"}
 ```
 
 This endpoint handles a new USER turn in an existing customer conversation. It passes the stored prior final response as `previous_response_id` and sends only the new normalized user message. Model, instructions, tool definition, reasoning effort, and output budget remain server-controlled.
@@ -75,14 +75,14 @@ or:
   "type":"tool_request",
   "responseId":"...",
   "tool":{
-    "name":"find_available_obi_075",
+    "name":"find_obi_products",
     "callId":"...",
     "arguments":{"query":"...","limit":5}
   }
 }
 ```
 
-Raw OpenAI responses, reasoning items, usage metadata, internal instructions, and upstream error bodies are never forwarded to Android.
+Raw OpenAI responses, reasoning content/items, internal instructions, and upstream error bodies are never forwarded to Android. The only usage data forwarded is a bounded validated metadata object containing model, request type, token counts, estimated cost, and pricing version.
 
 ## OpenAI contract
 
@@ -93,10 +93,46 @@ The Worker uses native `fetch` against the Responses API. It enables no OpenAI b
 Exactly one application-defined function is declared:
 
 ```text
-find_available_obi_075(query, limit)
+find_obi_products(query, limit)
 ```
 
-`limit` is at most 5. The Worker validates model-produced arguments and returns the tool request to Android; it does not execute OBI lookup itself.
+`storeNumber` is an explicit three-digit string and `limit` is at most 5. The Worker validates shape and model-produced arguments and returns the tool request to Android; Android owns supported-store authorization and executes OBI lookup.
+
+## Usage and pricing telemetry
+
+For every successful Responses API result, the Worker independently attempts to validate OpenAI `usage`. START, MESSAGE, and CONTINUE are explicit request types. Missing or malformed usage is dropped while the normalized answer/tool request remains valid.
+
+Current pricing is server-controlled and versioned as `openai-gpt-5.6-luna-2026-09-27-v2` for `gpt-5.6-luna`:
+
+- ordinary input: USD 0.20 / 1M tokens;
+- cached input: USD 0.02 / 1M tokens;
+- cache-write input: USD 0.25 / 1M tokens;
+- output: USD 1.20 / 1M tokens.
+
+For requests with more than 272,000 input tokens, pricing switches for the full request to 2× every input-side rate and 1.5× the output rate.
+
+The Worker computes ordinary input as `inputTokens - cachedInputTokens - cacheWriteTokens` and validates that cached plus cache-write tokens do not exceed total input. Reasoning tokens are an output-usage detail and are never charged in addition to output tokens. Pricing arithmetic is performed in integer nanodollars before the bounded numeric USD estimate is serialized.
+
+The successful envelope may therefore include:
+
+```json
+{
+  "usage": {
+    "model": "gpt-5.6-luna",
+    "requestType": "START",
+    "inputTokens": 1000,
+    "cachedInputTokens": 400,
+    "cacheWriteTokens": 100,
+    "outputTokens": 100,
+    "reasoningTokens": 50,
+    "totalTokens": 1100,
+    "estimatedCostUsd": 0.000253,
+    "pricingVersion": "openai-gpt-5.6-luna-2026-09-27-v2"
+  }
+}
+```
+
+No prompt/message/tool content, response IDs beyond the existing operational envelope, reasoning text, secrets, or raw upstream data are included in telemetry.
 
 ## Secrets and authentication
 
@@ -119,11 +155,12 @@ Android remains authoritative for:
 
 - OBI search discovery;
 - OBIK extraction;
-- exact store-`075` lookup;
+- supported-store authorization;
+- exact selected-store lookup;
 - local stock;
 - local price.
 
-When OpenAI requests `find_available_obi_075`, Android uses its existing OBI repositories and returns only a compact verified result containing the query and up to five products. OBI HTML, Nuxt payloads, cookies, and parser internals are never accepted as the tool result or forwarded to OpenAI.
+When OpenAI requests `find_obi_products`, Android uses its existing OBI repositories and returns only a compact verified result containing the query, authorized store context, and up to five products. OBI HTML, Nuxt payloads, cookies, and parser internals are never accepted as the tool result or forwarded to OpenAI.
 
 The Worker stores no conversation state in Cloudflare storage. Android persists only the final answer response ID for a conversation. New USER turns call `/v1/agent/message`; tool outputs inside that turn continue through `/v1/agent/continue`. Using `previous_response_id` avoids manually replaying the local transcript, but earlier chain input tokens remain billable.
 
@@ -160,4 +197,4 @@ Worker name: towarownik-proxy
 
 ## Current OBI-fact freshness rule
 
-Conversation history may mention older stock or price values. The server-controlled advisor instructions require a new `find_available_obi_075` call whenever the current user question depends on current store-`075` availability, stock, price, or choosing currently available products. Historical facts are not current authority. Stock `0` means unavailable; null stock or null price means unknown.
+Conversation history may mention older stock or price values. The server-controlled advisor instructions require a new `find_obi_products` call whenever the current user question depends on current store-`075` availability, stock, price, or choosing currently available products. Historical facts are not current authority. Stock `0` means unavailable; null stock or null price means unknown.

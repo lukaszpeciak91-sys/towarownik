@@ -15,6 +15,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.Callback
@@ -246,9 +247,14 @@ internal class AdvisorProxyClient(
 
         return when (type) {
             "answer" -> {
-                requireExactKeys(
+                requireEnvelopeKeys(
                     root,
-                    setOf("type", "responseId", "text", "productRefs"),
+                    required = setOf(
+                        "type",
+                        "responseId",
+                        "text",
+                        "productRefs",
+                    ),
                 )
                 val text = root["text"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf {
@@ -286,11 +292,15 @@ internal class AdvisorProxyClient(
                     responseId = responseId,
                     text = text,
                     productRefs = productRefs.distinctBy { it.key },
+                    usage = parseUsageOrNull(root["usage"]),
                 )
             }
 
             "tool_request" -> {
-                requireExactKeys(root, setOf("type", "responseId", "tool"))
+                requireEnvelopeKeys(
+                    root,
+                    required = setOf("type", "responseId", "tool"),
+                )
                 val tool = root["tool"] as? JsonObject
                     ?: error("Missing tool")
                 requireExactKeys(
@@ -328,6 +338,7 @@ internal class AdvisorProxyClient(
                         storeNumber = storeNumber,
                         limit = limit,
                     ),
+                    usage = parseUsageOrNull(root["usage"]),
                 )
             }
 
@@ -357,6 +368,129 @@ internal class AdvisorProxyClient(
             put("price", price?.let(::JsonPrimitive) ?: JsonNull)
         }
 
+    private fun parseUsageOrNull(
+        raw: kotlinx.serialization.json.JsonElement?,
+    ): AdvisorUsage? =
+        runCatching {
+            val usage = raw as? JsonObject
+                ?: error("Missing usage object")
+            requireExactKeys(
+                usage,
+                setOf(
+                    "model",
+                    "requestType",
+                    "inputTokens",
+                    "cachedInputTokens",
+                    "cacheWriteTokens",
+                    "outputTokens",
+                    "reasoningTokens",
+                    "totalTokens",
+                    "estimatedCostUsd",
+                    "pricingVersion",
+                ),
+            )
+
+            val model = usage["model"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.takeIf {
+                    it.length in 1..MAX_MODEL_CHARS &&
+                        MODEL_PATTERN.matches(it)
+                }
+                ?: error("Invalid usage model")
+            val requestType = usage["requestType"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.let {
+                    runCatching {
+                        AdvisorRequestType.valueOf(it)
+                    }.getOrNull()
+                }
+                ?: error("Invalid request type")
+            val inputTokens = usage.requireTokenCount("inputTokens")
+            val cachedInputTokens =
+                usage.optionalTokenCount("cachedInputTokens")
+            val cacheWriteTokens =
+                usage.optionalTokenCount("cacheWriteTokens")
+            val outputTokens = usage.requireTokenCount("outputTokens")
+            val reasoningTokens =
+                usage.optionalTokenCount("reasoningTokens")
+            val totalTokens = usage.requireTokenCount("totalTokens")
+
+            require(
+                cachedInputTokens == null ||
+                    cachedInputTokens <= inputTokens,
+            )
+            require(
+                cacheWriteTokens == null ||
+                    cacheWriteTokens <= inputTokens,
+            )
+            require(
+                cachedInputTokens == null ||
+                    cacheWriteTokens == null ||
+                    cachedInputTokens + cacheWriteTokens <= inputTokens,
+            )
+            require(
+                reasoningTokens == null ||
+                    reasoningTokens <= outputTokens,
+            )
+
+            val estimatedCostUsd = usage["estimatedCostUsd"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.takeIf { it.length <= MAX_MONEY_CHARS }
+                ?.toBigDecimalOrNull()
+                ?.takeIf { it.signum() >= 0 }
+            val pricingVersion = usage["pricingVersion"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.takeIf {
+                    it.length in 1..MAX_PRICING_VERSION_CHARS
+                }
+
+            if (estimatedCostUsd != null) {
+                require(pricingVersion != null)
+            }
+
+            AdvisorUsage(
+                model = model,
+                requestType = requestType,
+                inputTokens = inputTokens,
+                cachedInputTokens = cachedInputTokens,
+                cacheWriteTokens = cacheWriteTokens,
+                outputTokens = outputTokens,
+                reasoningTokens = reasoningTokens,
+                totalTokens = totalTokens,
+                estimatedCostUsd = estimatedCostUsd,
+                pricingVersion = pricingVersion,
+            )
+        }.getOrNull()
+
+    private fun JsonObject.requireTokenCount(key: String): Long =
+        get(key)
+            ?.jsonPrimitive
+            ?.longOrNull
+            ?.takeIf { it in 0..MAX_USAGE_TOKENS }
+            ?: error("Invalid token count")
+
+    private fun JsonObject.optionalTokenCount(key: String): Long? {
+        val value = get(key) ?: error("Missing token field")
+        if (value is JsonNull) return null
+        return value.jsonPrimitive.longOrNull
+            ?.takeIf { it in 0..MAX_USAGE_TOKENS }
+            ?: error("Invalid optional token count")
+    }
+
+    private fun requireEnvelopeKeys(
+        objectValue: JsonObject,
+        required: Set<String>,
+    ) {
+        require(
+            objectValue.keys == required ||
+                objectValue.keys == required + "usage",
+        )
+    }
+
     private fun requireExactKeys(
         objectValue: JsonObject,
         keys: Set<String>,
@@ -372,9 +506,14 @@ internal class AdvisorProxyClient(
         val CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
         val OBIK_PATTERN = Regex("""\d{7}""")
         val STORE_NUMBER_PATTERN = Regex("""\d{3}""")
+        val MODEL_PATTERN = Regex("""[A-Za-z0-9._-]+""")
         const val MAX_PROXY_RESPONSE_BYTES = 64 * 1024
         const val MAX_ID_CHARS = 256
         const val MAX_QUERY_CHARS = 200
         const val MAX_ANSWER_CHARS = 4_000
+        const val MAX_MODEL_CHARS = 100
+        const val MAX_PRICING_VERSION_CHARS = 100
+        const val MAX_MONEY_CHARS = 32
+        const val MAX_USAGE_TOKENS = 10_000_000_000L
     }
 }

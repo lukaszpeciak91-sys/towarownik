@@ -37,12 +37,28 @@ export interface ProductRef {
   obik: string;
 }
 
+export type AgentRequestType = "START" | "MESSAGE" | "CONTINUE";
+
+export interface AgentUsage {
+  model: string;
+  requestType: AgentRequestType;
+  inputTokens: number;
+  cachedInputTokens: number | null;
+  cacheWriteTokens: number | null;
+  outputTokens: number;
+  reasoningTokens: number | null;
+  totalTokens: number;
+  estimatedCostUsd: number | null;
+  pricingVersion: string | null;
+}
+
 export type AgentResult =
   | {
       type: "answer";
       responseId: string;
       text: string;
       productRefs: ProductRef[];
+      usage?: AgentUsage;
     }
   | {
       type: "tool_request";
@@ -52,6 +68,7 @@ export type AgentResult =
         callId: string;
         arguments: ToolArguments;
       };
+      usage?: AgentUsage;
     };
 
 export type UpstreamFetch = (
