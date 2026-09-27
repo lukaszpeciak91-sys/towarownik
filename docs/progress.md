@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Advisor model swap to GPT-6 Luna v0.1**
+**Richer verified OBI product facts v0.1**
 
 PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, and the Taksula public rename are complete. The current iteration generalizes the proven OBI store-075 integration into explicit conversation-selected multi-store support without changing the underlying transport/search parser design.
 
@@ -92,9 +92,16 @@ Android test version: **0.1.10 (11)**.
 - a user-configured local Taksula remaining budget uses the current cumulative cost as its baseline and is explicitly not OpenAI balance/credit data;
 - the below-USD-1 budget warning is one-shot per threshold crossing and re-arms after budget reset/increase.
 
+- exact verified OBI lookups now carry optional model-context brand, short description, and bounded technical facts from the same decoded product payload;
+- live proof used OBIK 3496072 (adhesive), 6743009 (drill), and 7156243 (LED fitting), confirming productDescription/productOverview/technicalData shapes across categories;
+- optional rich sections fail soft while OBIK/store identity, stock, and price rules remain unchanged;
+- advisor tool payload remains bounded to brand 80, description 300, six facts, fact label 60, fact value 120;
+- message-product snapshots/cards/reports remain unchanged; rich facts are transient model context only;
+- raw OBI HTML/Nuxt, URLs, EAN, cookies, diagnostics, and verification timestamps remain outside OpenAI tool results.
+
 ## Next implementation milestone
 
-After this measured GPT-6 Luna swap, proceed independently with richer verified OBI product facts, final advisor instructions/persona, and optional OpenAI web_search. Context compaction and privacy-policy content remain separate work.
+After richer verified OBI product facts, proceed with final advisor instructions/persona as a separate measured iteration, then optional OpenAI web_search. Context compaction and privacy-policy content remain separate work.
 
 The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 
