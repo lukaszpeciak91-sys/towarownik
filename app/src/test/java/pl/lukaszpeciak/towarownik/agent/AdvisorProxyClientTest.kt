@@ -664,7 +664,7 @@ class AdvisorProxyClientTest {
 
             assertTrue(result is AdvisorProxyCallResult.Success)
             val request = server.takeRequest()
-            assertTrue(request.body.size < 16 * 1024)
+            assertTrue(request.body.size < 16L * 1024L)
         }
     }
 
