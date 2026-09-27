@@ -203,6 +203,46 @@ class AiUsageRepositoryTest {
     }
 
     @Test
+    fun `GPT-5 baseline and GPT-6 spend share budget without resetting history`() {
+        repository.recordOpenAiResponse(
+            usage(
+                model = "gpt-5.6-luna",
+                cost = "0.50",
+                pricingVersion =
+                    "openai-gpt-5.6-luna-2026-09-27-v2",
+            ),
+        )
+        repository.configureBudget(BigDecimal("5.00"))
+
+        repository.recordOpenAiResponse(
+            usage(
+                model = "gpt-6-luna",
+                cost = "0.20",
+            ),
+        )
+
+        val snapshot = repository.snapshot()
+        assertEquals("gpt-6-luna", snapshot.latestModel)
+        assertEquals(2, snapshot.models.size)
+        assertEquals(
+            BigDecimal("0.50"),
+            snapshot.models
+                .first { it.model == "gpt-5.6-luna" }
+                .estimatedCostUsd,
+        )
+        assertEquals(
+            BigDecimal("0.20"),
+            snapshot.models
+                .first { it.model == "gpt-6-luna" }
+                .estimatedCostUsd,
+        )
+        assertEquals(
+            BigDecimal("4.80"),
+            snapshot.budget?.remainingBudgetUsd,
+        )
+    }
+
+    @Test
     fun `budget baseline subtracts only spend after configuration`() {
         repository.recordOpenAiResponse(
             usage(cost = "0.50"),
