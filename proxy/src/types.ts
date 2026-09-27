@@ -47,7 +47,7 @@ export interface AgentUsage {
   outputTokens: number;
   reasoningTokens: number | null;
   totalTokens: number;
-  estimatedCostUsd: string | null;
+  estimatedCostUsd: number | null;
   pricingVersion: string | null;
 }
 
