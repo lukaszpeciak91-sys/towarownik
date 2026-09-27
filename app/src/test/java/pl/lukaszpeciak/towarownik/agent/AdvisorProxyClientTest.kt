@@ -295,7 +295,7 @@ class AdvisorProxyClientTest {
                       "text":"Measured",
                       "productRefs":[],
                       "usage":{
-                        "model":"gpt-5.6-luna",
+                        "model":"gpt-6-luna",
                         "requestType":"START",
                         "inputTokens":1000,
                         "cachedInputTokens":400,
@@ -304,7 +304,7 @@ class AdvisorProxyClientTest {
                         "reasoningTokens":50,
                         "totalTokens":1100,
                         "estimatedCostUsd":0.000253,
-                        "pricingVersion":"openai-gpt-5.6-luna-2026-09-27-v2"
+                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v2"
                       }
                     }
                     """.trimIndent(),
@@ -320,7 +320,7 @@ class AdvisorProxyClientTest {
                         text = "Measured",
                         productRefs = emptyList(),
                         usage = AdvisorUsage(
-                            model = "gpt-5.6-luna",
+                            model = "gpt-6-luna",
                             requestType = AdvisorRequestType.START,
                             inputTokens = 1_000,
                             cachedInputTokens = 400,
@@ -331,7 +331,7 @@ class AdvisorProxyClientTest {
                             estimatedCostUsd =
                                 BigDecimal("0.000253"),
                             pricingVersion =
-                                "openai-gpt-5.6-luna-2026-09-27-v2",
+                                "openai-gpt-6-luna-2026-09-27-v2",
                         ),
                     ),
                 ),
@@ -352,7 +352,7 @@ class AdvisorProxyClientTest {
                       "text":"Still usable",
                       "productRefs":[],
                       "usage":{
-                        "model":"gpt-5.6-luna",
+                        "model":"gpt-6-luna",
                         "requestType":"START",
                         "inputTokens":"bad",
                         "cachedInputTokens":0,
@@ -361,7 +361,7 @@ class AdvisorProxyClientTest {
                         "reasoningTokens":0,
                         "totalTokens":1,
                         "estimatedCostUsd":0.0000012,
-                        "pricingVersion":"openai-gpt-5.6-luna-2026-09-27-v2"
+                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v2"
                       }
                     }
                     """.trimIndent(),
@@ -394,7 +394,7 @@ class AdvisorProxyClientTest {
                       "text":"Still usable",
                       "productRefs":[],
                       "usage":{
-                        "model":"gpt-5.6-luna",
+                        "model":"gpt-6-luna",
                         "requestType":"START",
                         "inputTokens":100,
                         "cachedInputTokens":60,
