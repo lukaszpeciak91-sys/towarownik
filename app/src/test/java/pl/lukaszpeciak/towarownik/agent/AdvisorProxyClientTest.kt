@@ -639,11 +639,11 @@ class AdvisorProxyClientTest {
                     stock = 1,
                     price = BigDecimal("999.99"),
                     brand = "B".repeat(80),
-                    shortDescription = "Ż".repeat(300),
+                    shortDescription = "Ż".repeat(220),
                     technicalFacts = (1..6).map {
                         AdvisorTechnicalFact(
                             label = "Ł".repeat(60),
-                            value = "Ż".repeat(120),
+                            value = "Ż".repeat(100),
                         )
                     },
                 )
