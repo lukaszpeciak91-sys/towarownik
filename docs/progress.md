@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Taksula branding rename v0.1**
+**OBI multi-store v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, and user-controlled reporting are complete. The current iteration renames the public-facing product from Towarownik to **Taksula** without changing technical identity or behavior.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, and the Taksula public rename are complete. The current iteration generalizes the proven OBI store-075 integration into explicit conversation-selected multi-store support without changing the underlying transport/search parser design.
 
 Implemented direction:
 
@@ -28,10 +28,10 @@ Implemented direction:
 - the exact 30-day cutoff remains retained and message rows cascade on deletion;
 - each history row can be deleted manually after explicit confirmation;
 - deleting the active conversation cancels its request, invalidates stale callbacks, and opens a fresh empty chat;
-- final model answers use strict structured `{text, productObiks}` output with at most five selected OBIKs;
+- final model answers use strict structured `{text, productRefs:[{storeNumber,obik}]}` output with at most five selected verified references;
 - exact `LocalProduct` lookups retain local-only snapshots containing trusted URL and verification time while OpenAI still receives only OBIK/name/stock/price;
-- product selection resolves only against verified snapshots from the current USER turn, with latest lookup winning per OBIK;
-- Room schema v2 persists ordered snapshots per ASSISTANT message through an explicit v1→v2 migration;
+- product selection resolves only against verified snapshots from the current USER turn, keyed by `(storeNumber, obik)` so the same OBIK in different stores remains distinct;
+- Room schema v3 persists each conversation store and each message-product store; v2→v3 deterministically assigns historical rows to `075`;
 - ASSISTANT text, selected snapshots, and final response ID commit atomically;
 - historical cards reopen without network access and display their verification timestamp;
 - the existing `VerifiedProductCard` boundary is shared by manual search and advisor history;
@@ -70,6 +70,15 @@ Implemented direction:
 - public-facing product branding is **Taksula** in Android resources, diagnostics/report labels, TXT headings, and current product documentation;
 - package/application ID `pl.lukaszpeciak.towarownik`, repository name, Worker/service/token identifiers, database/persisted contracts, internal theme symbols, and launcher asset filenames remain intentionally unchanged;
 - launcher icon artwork and Warm Modular Utility styling are unchanged; no binary asset is modified.
+- one canonical Android allowlist contains confirmed OBI Poland store numbers; new conversations default to `075`;
+- the advisor top bar exposes a compact conversation store selector; unsaved selection remains transient until first send;
+- direct OBIK and selected EAN/text candidates exact-verify against the active selected store while search discovery remains store-independent;
+- the single advisor OBI tool is now `find_obi_products(query, storeNumber, limit)`;
+- Android authorizes alternate tool stores only when a supported exact three-digit token occurs literally in the current USER message, with exact digit boundaries;
+- START/MESSAGE/CONTINUE carry the immutable turn-store context to the proxy, while the full allowlist remains Android-local;
+- unsupported/unauthorized store tool requests fail closed before OBI and never substitute `075`;
+- verified cards/history/reports preserve their own snapshot store and changing the conversation selector never rewrites historical facts;
+- store `075` remains the deterministic regression/live-probe baseline.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
@@ -77,7 +86,7 @@ Android test version: **0.1.10 (11)**.
 
 ## Next implementation milestone
 
-Evaluate reporting and Settings on-device, then continue with the next measured advisor/product iteration. Privacy-policy content/URL remains intentionally unimplemented until a real policy destination exists.
+Audit multi-store behavior on-device, especially selector persistence and 074/075 comparison. Richer verified product facts, web research, final advisor persona/domain policy, token telemetry/compaction, and privacy-policy content remain separate measured iterations.
 
 The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 

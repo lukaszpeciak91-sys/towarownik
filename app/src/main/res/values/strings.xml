@@ -12,6 +12,8 @@
     <string name="cancel">Anuluj</string>
 
     <string name="advisor_title">Doradca</string>
+    <string name="obi_store_selector">OBI • %1$s</string>
+    <string name="obi_store_item">OBI %1$s</string>
     <string name="advisor_empty_body">Opisz, czego potrzebuje klient.</string>
     <string name="advisor_composer_placeholder">Opisz czego potrzebuje klient…</string>
     <string name="advisor_progress_connecting">Łączę z doradcą…</string>
@@ -39,12 +41,13 @@
     <string name="search_error_search_data">Nie udało się odczytać wyników wyszukiwania z OBI.</string>
     <string name="search_error_lookup">Nie udało się wyszukać produktu.</string>
 
+    <string name="product_store">OBI %1$s</string>
     <string name="product_obik">OBIK: %1$s</string>
-    <string name="product_price">Cena Nowy Sącz: %1$s zł</string>
-    <string name="product_price_unknown">Cena Nowy Sącz: brak danych</string>
-    <string name="product_stock_count">Stan Nowy Sącz: %1$d szt.</string>
-    <string name="product_stock_zero">Stan Nowy Sącz: 0 szt. — brak na stanie</string>
-    <string name="product_stock_unknown">Stan Nowy Sącz: brak danych</string>
+    <string name="product_price">Cena: %1$s zł</string>
+    <string name="product_price_unknown">Cena: brak danych</string>
+    <string name="product_stock_count">Stan: %1$d szt.</string>
+    <string name="product_stock_zero">Stan: 0 szt. — brak na stanie</string>
+    <string name="product_stock_unknown">Stan: brak danych</string>
     <string name="product_verified_at">Sprawdzono %1$s</string>
     <string name="open_in_obi">Otwórz w OBI</string>
 

@@ -3,7 +3,9 @@ package pl.lukaszpeciak.towarownik.conversation
 import java.math.BigDecimal
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
 
 internal const val CONVERSATION_TITLE_MAX_CHARS = 50
 internal const val CONVERSATION_RETENTION_DAYS = 30L
@@ -23,6 +25,7 @@ internal data class PersistedConversation(
     val updatedAt: Long,
     val lastResponseId: String?,
     val draft: String,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val messages: List<PersistedMessage>,
 )
 
@@ -37,6 +40,7 @@ internal data class PersistedMessage(
 internal data class UserTurnStart(
     val conversationId: Long,
     val previousResponseId: String?,
+    val storeNumber: String,
 )
 
 internal class ConversationRepository(
@@ -101,9 +105,11 @@ internal class ConversationRepository(
         conversationId: Long?,
         text: String,
         createdAt: Long = now(),
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     ): UserTurnStart {
         val normalized = normalizeConversationText(text)
         require(normalized.isNotBlank())
+        require(isSupportedObiStoreNumber(storeNumber))
 
         return if (conversationId == null) {
             val (newId, previousResponseId) =
@@ -111,10 +117,12 @@ internal class ConversationRepository(
                     title = deriveConversationTitle(normalized),
                     text = normalized,
                     createdAt = createdAt,
+                    storeNumber = storeNumber,
                 )
             UserTurnStart(
                 conversationId = newId,
                 previousResponseId = previousResponseId,
+                storeNumber = storeNumber,
             )
         } else {
             UserTurnStart(
@@ -123,9 +131,23 @@ internal class ConversationRepository(
                     conversationId = conversationId,
                     text = normalized,
                     createdAt = createdAt,
+                    expectedStoreNumber = storeNumber,
                 ),
+                storeNumber = storeNumber,
             )
         }
+    }
+
+    suspend fun updateStoreNumber(
+        conversationId: Long,
+        storeNumber: String,
+    ): Boolean {
+        require(isSupportedObiStoreNumber(storeNumber))
+        return dao.updateStoreNumber(
+            conversationId = conversationId,
+            storeNumber = storeNumber,
+            updatedAt = now(),
+        ) > 0
     }
 
     suspend fun completeAssistantTurn(
@@ -207,6 +229,7 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
         updatedAt = conversation.updatedAt,
         lastResponseId = conversation.lastResponseId,
         draft = conversation.draft,
+        storeNumber = conversation.storeNumber,
         messages = messages
             .sortedWith(
                 compareBy<MessageWithProducts> { it.message.createdAt }
@@ -229,6 +252,7 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 grossPrice = product.grossPrice?.let(::BigDecimal),
                                 productUrl = product.productUrl,
                                 verifiedAt = product.verifiedAt,
+                                storeNumber = product.storeNumber,
                             )
                         },
                 )

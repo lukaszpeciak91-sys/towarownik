@@ -256,7 +256,7 @@ internal class ObiProbeUrls(
             .encodedPath("/api/disc/store/change")
             .query(null)
             .fragment(null)
-            .addQueryParameter("storeNumber", "075")
+            .addQueryParameter("storeNumber", OBI_PROBE_CONTROL_STORE)
             .addQueryParameter("redirectUrl", redirectPath)
             .build()
 
@@ -320,6 +320,7 @@ internal class ObiProbeSession(
                     ObiProbeBodyKind.PRODUCT -> productBodySignatures(
                         previewText,
                         OBI_PROBE_CONTROL_OBIK,
+                        OBI_PROBE_CONTROL_STORE,
                     )
                 }
                 val bodyPreview = ObiProbeBodyPreview(
@@ -402,11 +403,15 @@ private class ProbeTraceInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val outgoingEvidence = outgoingDiagnosticCookieEvidence(request.header("Cookie"))
+        val outgoingEvidence = outgoingDiagnosticCookieEvidence(
+            request.header("Cookie"),
+            OBI_PROBE_CONTROL_STORE,
+        )
         val response = chain.proceed(request)
         val setCookieEvidence = setDiagnosticCookieEvidence(
             requestUrl = request.url,
             responseHeaders = response.headers,
+            expectedStoreNumber = OBI_PROBE_CONTROL_STORE,
         )
 
         hops?.add(
@@ -423,8 +428,8 @@ private class ProbeTraceInterceptor : Interceptor {
                 safeInfrastructureHeaders = safeDiagnosticInfrastructureHeaders(response),
                 outgoingCookies = outgoingEvidence.cookies,
                 setCookies = setCookieEvidence.cookies,
-                outgoingStore075CookieMatch = outgoingEvidence.store075Match,
-                setCookieStore075Match = setCookieEvidence.store075Match,
+                outgoingStoreCookieMatch = outgoingEvidence.storeMatchResult,
+                setCookieStoreMatch = setCookieEvidence.storeMatchResult,
             ),
         )
         return response

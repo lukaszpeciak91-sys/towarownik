@@ -4,8 +4,6 @@ import java.math.BigDecimal
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 
-const val NOWY_SACZ_STORE_NUMBER = "075"
-
 data class LocalProduct(
     val obik: String,
     val name: String,
@@ -13,7 +11,7 @@ data class LocalProduct(
     val grossPrice: BigDecimal?,
     val productUrl: String,
     internal val ean: String?,
-    val storeNumber: String = NOWY_SACZ_STORE_NUMBER,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
 )
 
 enum class ProductLookupFailure {
@@ -25,6 +23,7 @@ enum class ProductLookupFailure {
 sealed interface ProductLookupResult {
     data class Found(val product: LocalProduct) : ProductLookupResult
     data class InvalidObik(val input: String) : ProductLookupResult
+    data class InvalidStore(val storeNumber: String) : ProductLookupResult
     data class Unavailable(
         val failure: ProductLookupFailure,
         internal val reason: String,
@@ -36,20 +35,31 @@ class ProductLookupRepository(
     private val parser: ObiPayloadParser = ObiPayloadParser(),
     private val diagnostics: ObiDiagnosticRecorder = ObiDiagnostics.recorder,
 ) {
-    fun lookupObik(obik: String): ProductLookupResult {
-        if (!OBIK_PATTERN.matches(obik)) return ProductLookupResult.InvalidObik(obik)
+    fun lookupObik(
+        obik: String,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    ): ProductLookupResult {
+        if (!OBIK_PATTERN.matches(obik)) {
+            return ProductLookupResult.InvalidObik(obik)
+        }
+        if (!isSupportedObiStoreNumber(storeNumber)) {
+            return ProductLookupResult.InvalidStore(storeNumber)
+        }
 
-        return when (val response = httpClient.fetchProduct(obik, NOWY_SACZ_STORE_NUMBER)) {
+        return when (val response = httpClient.fetchProduct(obik, storeNumber)) {
             is ObiHttpResult.Success -> {
                 val parsed = parser.parse(
                     html = response.html,
                     expectedObik = obik,
-                    storeNumber = NOWY_SACZ_STORE_NUMBER,
+                    storeNumber = storeNumber,
                     diagnosticId = response.diagnosticId,
                 )
                 parsed.fold(
                     onSuccess = {
-                        diagnostics.mappingTrace(response.diagnosticId, "ProductLookupResult.Found")
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "ProductLookupResult.Found",
+                        )
                         diagnostics.finish(response.diagnosticId)
                         ProductLookupResult.Found(it)
                     },
@@ -58,11 +68,15 @@ class ProductLookupRepository(
                             response.diagnosticId,
                             "ProductLookupFailure.DATA",
                         )
-                        diagnostics.mappingTrace(response.diagnosticId, "UI DATA_ERROR")
+                        diagnostics.mappingTrace(
+                            response.diagnosticId,
+                            "UI DATA_ERROR",
+                        )
                         diagnostics.finish(response.diagnosticId)
                         ProductLookupResult.Unavailable(
                             failure = ProductLookupFailure.DATA,
-                            reason = exception.message ?: "OBI payload could not be parsed",
+                            reason = exception.message
+                                ?: "OBI payload could not be parsed",
                         )
                     },
                 )
@@ -71,9 +85,12 @@ class ProductLookupRepository(
             is ObiHttpResult.Failure -> {
                 val failure = when (response.kind) {
                     ObiHttpFailureKind.TRANSPORT,
-                    ObiHttpFailureKind.SERVER -> ProductLookupFailure.NETWORK
-                    ObiHttpFailureKind.NOT_FOUND -> ProductLookupFailure.NOT_FOUND
-                    ObiHttpFailureKind.DATA -> ProductLookupFailure.DATA
+                    ObiHttpFailureKind.SERVER ->
+                        ProductLookupFailure.NETWORK
+                    ObiHttpFailureKind.NOT_FOUND ->
+                        ProductLookupFailure.NOT_FOUND
+                    ObiHttpFailureKind.DATA ->
+                        ProductLookupFailure.DATA
                 }
                 diagnostics.mappingTrace(
                     response.diagnosticId,

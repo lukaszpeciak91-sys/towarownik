@@ -26,6 +26,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import pl.lukaszpeciak.towarownik.BuildConfig
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 
 internal class AdvisorProxyClient(
     private val appToken: String = BuildConfig.TOWAROWNIK_APP_TOKEN,
@@ -42,15 +43,25 @@ internal class AdvisorProxyClient(
 
     fun isConfigured(): Boolean = appToken.isNotBlank()
 
-    suspend fun start(message: String): AdvisorProxyCallResult {
+    suspend fun start(
+        message: String,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.NOT_CONFIGURED,
             )
         }
 
+        if (!STORE_NUMBER_PATTERN.matches(storeNumber)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
         val body = buildJsonObject {
             put("message", message)
+            put("storeNumber", storeNumber)
         }
 
         return execute(
@@ -62,6 +73,7 @@ internal class AdvisorProxyClient(
     suspend fun message(
         previousResponseId: String,
         message: String,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
@@ -69,9 +81,16 @@ internal class AdvisorProxyClient(
             )
         }
 
+        if (!STORE_NUMBER_PATTERN.matches(storeNumber)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
         val body = buildJsonObject {
             put("previousResponseId", previousResponseId)
             put("message", message)
+            put("storeNumber", storeNumber)
         }
 
         return execute(
@@ -83,7 +102,8 @@ internal class AdvisorProxyClient(
     suspend fun continueTurn(
         responseId: String,
         callId: String,
-        result: AdvisorVerifiedToolResult,
+        storeNumber: String,
+        continuation: AdvisorToolContinuation,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
@@ -91,22 +111,34 @@ internal class AdvisorProxyClient(
             )
         }
 
+        if (!STORE_NUMBER_PATTERN.matches(storeNumber)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
         val body = buildJsonObject {
             put("responseId", responseId)
             put("callId", callId)
-            put("tool", FIND_AVAILABLE_OBI_075)
+            put("storeNumber", storeNumber)
+            put("tool", FIND_OBI_PRODUCTS)
             put(
                 "result",
-                buildJsonObject {
-                    put("query", result.query)
-                    put(
-                        "products",
-                        buildJsonArray {
-                            result.products.forEach { product ->
-                                add(product.toJson())
-                            }
-                        },
-                    )
+                when (continuation) {
+                    is AdvisorToolContinuation.Verified ->
+                        continuation.result.toJson()
+                    is AdvisorToolContinuation.RejectedStore ->
+                        buildJsonObject {
+                            put("query", continuation.query)
+                            put(
+                                "storeNumber",
+                                continuation.storeNumber,
+                            )
+                            put(
+                                "rejection",
+                                "store_not_authorized",
+                            )
+                        }
                 },
             )
         }
@@ -216,24 +248,44 @@ internal class AdvisorProxyClient(
             "answer" -> {
                 requireExactKeys(
                     root,
-                    setOf("type", "responseId", "text", "productObiks"),
+                    setOf("type", "responseId", "text", "productRefs"),
                 )
                 val text = root["text"]?.jsonPrimitive?.contentOrNull
-                    ?.takeIf { it.isNotBlank() && it.length <= MAX_ANSWER_CHARS }
+                    ?.takeIf {
+                        it.isNotBlank() &&
+                            it.length <= MAX_ANSWER_CHARS
+                    }
                     ?: error("Invalid answer text")
-                val productObiks = root["productObiks"]
+                val productRefs = root["productRefs"]
                     ?.jsonArray
                     ?.map { element ->
-                        element.jsonPrimitive.contentOrNull
+                        val reference = element as? JsonObject
+                            ?: error("Invalid product reference")
+                        requireExactKeys(
+                            reference,
+                            setOf("storeNumber", "obik"),
+                        )
+                        val storeNumber = reference["storeNumber"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?.takeIf(STORE_NUMBER_PATTERN::matches)
+                            ?: error("Invalid selected store")
+                        val obik = reference["obik"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
                             ?.takeIf(OBIK_PATTERN::matches)
                             ?: error("Invalid selected OBIK")
+                        AdvisorProductRef(
+                            storeNumber = storeNumber,
+                            obik = obik,
+                        )
                     }
                     ?.takeIf { it.size <= MAX_TOOL_PRODUCTS }
                     ?: error("Invalid selected products")
                 AdvisorProxyResult.Answer(
                     responseId = responseId,
                     text = text,
-                    productObiks = productObiks.distinct(),
+                    productRefs = productRefs.distinctBy { it.key },
                 )
             }
 
@@ -247,18 +299,23 @@ internal class AdvisorProxyClient(
                 )
                 require(
                     tool["name"]?.jsonPrimitive?.contentOrNull ==
-                        FIND_AVAILABLE_OBI_075,
+                        FIND_OBI_PRODUCTS,
                 )
                 val callId = tool["callId"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf { it.isNotBlank() && it.length <= MAX_ID_CHARS }
                     ?: error("Invalid call id")
                 val arguments = tool["arguments"] as? JsonObject
                     ?: error("Missing tool arguments")
-                requireExactKeys(arguments, setOf("query", "limit"))
+                requireExactKeys(arguments, setOf("query", "storeNumber", "limit"))
                 val query = arguments["query"]?.jsonPrimitive?.contentOrNull
                     ?.normalizeWhitespace()
                     ?.takeIf { it.isNotBlank() && it.length <= MAX_QUERY_CHARS }
                     ?: error("Invalid tool query")
+                val storeNumber = arguments["storeNumber"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.takeIf(STORE_NUMBER_PATTERN::matches)
+                    ?: error("Invalid tool store")
                 val limit = arguments["limit"]?.jsonPrimitive?.intOrNull
                     ?.takeIf { it in 1..MAX_TOOL_PRODUCTS }
                     ?: error("Invalid tool limit")
@@ -268,6 +325,7 @@ internal class AdvisorProxyClient(
                     callId = callId,
                     arguments = AdvisorToolArguments(
                         query = query,
+                        storeNumber = storeNumber,
                         limit = limit,
                     ),
                 )
@@ -276,6 +334,20 @@ internal class AdvisorProxyClient(
             else -> error("Unknown response type")
         }
     }
+
+    private fun AdvisorVerifiedToolResult.toJson(): JsonObject =
+        buildJsonObject {
+            put("query", query)
+            put("storeNumber", storeNumber)
+            put(
+                "products",
+                buildJsonArray {
+                    products.forEach { product ->
+                        add(product.toJson())
+                    }
+                },
+            )
+        }
 
     private fun AdvisorVerifiedProduct.toJson(): JsonObject =
         buildJsonObject {
@@ -299,6 +371,7 @@ internal class AdvisorProxyClient(
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
         val CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
         val OBIK_PATTERN = Regex("""\d{7}""")
+        val STORE_NUMBER_PATTERN = Regex("""\d{3}""")
         const val MAX_PROXY_RESPONSE_BYTES = 64 * 1024
         const val MAX_ID_CHARS = 256
         const val MAX_QUERY_CHARS = 200

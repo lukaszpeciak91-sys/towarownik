@@ -2,6 +2,8 @@ package pl.lukaszpeciak.towarownik.agent
 
 import kotlinx.coroutines.CancellationException
 import pl.lukaszpeciak.towarownik.BuildConfig
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.VerifiedProductKey
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 internal enum class AdvisorError {
@@ -29,139 +31,176 @@ internal sealed interface AdvisorUiState {
 
 internal class AdvisorController(
     private val isConfigured: () -> Boolean,
-    private val startAgent: suspend (String) -> AdvisorProxyCallResult,
+    private val startAgent: suspend (
+        message: String,
+        storeNumber: String,
+    ) -> AdvisorProxyCallResult,
     private val messageAgent: suspend (
         previousResponseId: String,
         message: String,
+        storeNumber: String,
     ) -> AdvisorProxyCallResult,
     private val continueAgent: suspend (
         responseId: String,
         callId: String,
-        result: AdvisorVerifiedToolResult,
+        storeNumber: String,
+        continuation: AdvisorToolContinuation,
     ) -> AdvisorProxyCallResult,
-    private val executeTool: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult,
+    private val executeTool: suspend (
+        AdvisorToolArguments,
+    ) -> AdvisorToolExecutionResult,
 ) {
     suspend fun runTurn(
         input: String,
         previousResponseId: String?,
+        conversationStoreNumber: String = DEFAULT_OBI_STORE_NUMBER,
         onState: (AdvisorUiState) -> Unit,
     ): AdvisorUiState {
         val normalizedInput = input.normalizeWhitespace()
         if (normalizedInput.isBlank()) {
-            val error = AdvisorUiState.Error(AdvisorError.INPUT)
-            onState(error)
-            return error
+            return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
+        }
+
+        val authorization = runCatching {
+            AdvisorTurnStoreAuthorization.capture(
+                conversationStoreNumber = conversationStoreNumber,
+                currentUserMessage = normalizedInput,
+            )
+        }.getOrElse {
+            return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
         }
 
         if (!isConfigured()) {
-            val error = AdvisorUiState.Error(AdvisorError.NOT_CONFIGURED)
-            onState(error)
-            return error
+            return AdvisorUiState.Error(
+                AdvisorError.NOT_CONFIGURED,
+            ).also(onState)
         }
 
         onState(AdvisorUiState.LoadingProxy)
 
         val initialCall = safeProxyCall {
             if (previousResponseId == null) {
-                startAgent(normalizedInput)
+                startAgent(
+                    normalizedInput,
+                    conversationStoreNumber,
+                )
             } else {
                 messageAgent(
                     previousResponseId,
                     normalizedInput,
+                    conversationStoreNumber,
                 )
             }
         }
 
         var proxyResult = when (initialCall) {
             is AdvisorProxyCallResult.Success -> initialCall.result
-            is AdvisorProxyCallResult.Failure -> {
-                val error = initialCall.toUiError()
-                onState(error)
-                return error
-            }
+            is AdvisorProxyCallResult.Failure ->
+                return initialCall.toUiError().also(onState)
         }
 
         var toolCalls = 0
-        val verifiedByObik = linkedMapOf<String, VerifiedProductSnapshot>()
+        val verifiedByKey =
+            linkedMapOf<VerifiedProductKey, VerifiedProductSnapshot>()
 
         while (true) {
             when (proxyResult) {
                 is AdvisorProxyResult.Answer -> {
-                    val selectedProducts = proxyResult.productObiks
-                        .distinct()
-                        .mapNotNull(verifiedByObik::get)
+                    val selectedProducts = proxyResult.productRefs
+                        .distinctBy { it.key }
+                        .mapNotNull { reference ->
+                            verifiedByKey[reference.key]
+                        }
                         .take(MAX_TOOL_PRODUCTS)
-                    val success = AdvisorUiState.Success(
+                    return AdvisorUiState.Success(
                         text = proxyResult.text,
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
-                    )
-                    onState(success)
-                    return success
+                    ).also(onState)
                 }
 
                 is AdvisorProxyResult.ToolRequest -> {
                     val toolRequest = proxyResult
                     if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
-                        val error = AdvisorUiState.Error(
+                        return AdvisorUiState.Error(
                             AdvisorError.TOO_MANY_TOOLS,
-                        )
-                        onState(error)
-                        return error
+                        ).also(onState)
                     }
-
                     toolCalls += 1
-                    onState(AdvisorUiState.RunningLocalTool)
 
-                    val localResult = try {
-                        executeTool(toolRequest.arguments)
-                    } catch (exception: CancellationException) {
-                        throw exception
-                    } catch (_: Exception) {
-                        AdvisorToolExecutionResult.Failure
-                    }
-
-                    val verifiedResult = when (localResult) {
-                        is AdvisorToolExecutionResult.Success -> {
-                            localResult.snapshots.forEach { snapshot ->
-                                verifiedByObik[snapshot.obik] = snapshot
-                            }
-                            localResult.result
-                        }
-                        AdvisorToolExecutionResult.Failure -> {
-                            val error = AdvisorUiState.Error(
-                                AdvisorError.OBI,
+                    val arguments = toolRequest.arguments
+                    val continuation =
+                        if (!authorization.isAuthorized(
+                                arguments.storeNumber,
                             )
-                            onState(error)
-                            return error
+                        ) {
+                            AdvisorToolContinuation.RejectedStore(
+                                query = arguments.query,
+                                storeNumber = arguments.storeNumber,
+                            )
+                        } else {
+                            onState(AdvisorUiState.RunningLocalTool)
+                            when (
+                                val localResult = safeExecuteTool(arguments)
+                            ) {
+                                is AdvisorToolExecutionResult.Success -> {
+                                    localResult.snapshots.forEach {
+                                        verifiedByKey[it.key] = it
+                                    }
+                                    AdvisorToolContinuation.Verified(
+                                        localResult.result,
+                                    )
+                                }
+
+                                AdvisorToolExecutionResult.UnsupportedStore ->
+                                    AdvisorToolContinuation.RejectedStore(
+                                        query = arguments.query,
+                                        storeNumber = arguments.storeNumber,
+                                    )
+
+                                AdvisorToolExecutionResult.Failure ->
+                                    return AdvisorUiState.Error(
+                                        AdvisorError.OBI,
+                                    ).also(onState)
+                            }
                         }
-                    }
 
                     onState(AdvisorUiState.WaitingForFinalAnswer)
-
-                    proxyResult = when (val continued = safeProxyCall {
-                        continueAgent(
-                            toolRequest.responseId,
-                            toolRequest.callId,
-                            verifiedResult,
-                        )
-                    }) {
-                        is AdvisorProxyCallResult.Success -> continued.result
-                        is AdvisorProxyCallResult.Failure -> {
-                            val error = continued.toUiError()
-                            onState(error)
-                            return error
+                    proxyResult = when (
+                        val continued = safeProxyCall {
+                            continueAgent(
+                                toolRequest.responseId,
+                                toolRequest.callId,
+                                conversationStoreNumber,
+                                continuation,
+                            )
                         }
+                    ) {
+                        is AdvisorProxyCallResult.Success ->
+                            continued.result
+                        is AdvisorProxyCallResult.Failure ->
+                            return continued.toUiError().also(onState)
                     }
                 }
             }
         }
     }
 
+    private suspend fun safeExecuteTool(
+        arguments: AdvisorToolArguments,
+    ): AdvisorToolExecutionResult =
+        try {
+            executeTool(arguments)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: Exception) {
+            AdvisorToolExecutionResult.Failure
+        }
+
     private suspend fun safeProxyCall(
         block: suspend () -> AdvisorProxyCallResult,
-    ): AdvisorProxyCallResult {
-        return try {
+    ): AdvisorProxyCallResult =
+        try {
             block()
         } catch (exception: CancellationException) {
             throw exception
@@ -170,12 +209,11 @@ internal class AdvisorController(
                 AdvisorProxyFailureKind.NETWORK,
             )
         }
-    }
 
     companion object {
         fun production(): AdvisorController {
             val proxyClient = AdvisorProxyClient()
-            val localTool = FindAvailableObi075Tool()
+            val localTool = FindObiProductsTool()
             return AdvisorController(
                 isConfigured = {
                     BuildConfig.TOWAROWNIK_APP_TOKEN.isNotBlank() &&
@@ -190,7 +228,8 @@ internal class AdvisorController(
     }
 }
 
-private fun AdvisorProxyCallResult.Failure.toUiError(): AdvisorUiState.Error =
+private fun AdvisorProxyCallResult.Failure.toUiError():
+    AdvisorUiState.Error =
     AdvisorUiState.Error(
         when (kind) {
             AdvisorProxyFailureKind.NOT_CONFIGURED ->

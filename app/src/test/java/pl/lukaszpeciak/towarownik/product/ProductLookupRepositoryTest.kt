@@ -140,6 +140,60 @@ class ProductLookupRepositoryTest {
         }
     }
 
+    @Test
+    fun `invalid store is rejected before HTTP`() {
+        MockWebServer().use { server ->
+            val repository = ProductLookupRepository(
+                httpClient = ObiHttpClient(server.url("/")),
+            )
+
+            val result = repository.lookupObik(
+                OBIK,
+                storeNumber = "999",
+            )
+
+            assertEquals(
+                ProductLookupResult.InvalidStore("999"),
+                result,
+            )
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `alternate supported store propagates to transport and parser`() {
+        MockWebServer().use { server ->
+            val alternatePayload =
+                fixture("real-7313810-store-075.html")
+                    .replace("075", "074")
+            server.enqueue(
+                MockResponse().setBody(alternatePayload),
+            )
+            val repository = ProductLookupRepository(
+                httpClient = ObiHttpClient(server.url("/")),
+            )
+
+            val result = repository.lookupObik(
+                OBIK,
+                storeNumber = "074",
+            )
+
+            assertTrue(result is ProductLookupResult.Found)
+            assertEquals(
+                "074",
+                (result as ProductLookupResult.Found)
+                    .product
+                    .storeNumber,
+            )
+            val request = server.takeRequest()
+            assertTrue(
+                request.path.orEmpty().contains(
+                    "storeNumber=074",
+                ),
+            )
+        }
+    }
+
     private fun fixture(name: String): String =
         checkNotNull(javaClass.getResource("/obi/$name")).readText()
 

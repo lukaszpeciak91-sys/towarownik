@@ -481,6 +481,252 @@ class AdvisorControllerTest {
         )
     }
 
+    @Test
+    fun `conversation selected store is authorized without literal mention`() = runBlocking {
+        var toolCalls = 0
+        val seenStores = mutableListOf<String>()
+        val controller = controller(
+            start = {
+                successTool(
+                    responseId = "resp_tool",
+                    callId = "call_tool",
+                    query = "klej",
+                    storeNumber = "074",
+                )
+            },
+            continueCall = { _, _, result ->
+                assertEquals("074", result.storeNumber)
+                successAnswer("resp_final", "Done")
+            },
+            tool = {
+                toolCalls += 1
+                verifiedResult(
+                    it.query,
+                    snapshot(
+                        obik = "3496072",
+                        name = "Product",
+                        stock = 13,
+                        price = BigDecimal("12.99"),
+                        storeNumber = it.storeNumber,
+                    ),
+                )
+            },
+            onStartStore = { seenStores += it },
+            onContinueStore = { seenStores += it },
+        )
+
+        controller.runTurn(
+            input = "Sprawdź klej",
+            previousResponseId = null,
+            conversationStoreNumber = "074",
+        ) { }
+
+        assertEquals(1, toolCalls)
+        assertEquals(listOf("074", "074"), seenStores)
+    }
+
+    @Test
+    fun `non mentioned alternate store is rejected before OBI tool`() = runBlocking {
+        var toolCalls = 0
+        var rejectedStore: String? = null
+        val controller = controller(
+            start = {
+                successTool(
+                    "resp_tool",
+                    "call_tool",
+                    "klej",
+                    storeNumber = "074",
+                )
+            },
+            rejectedContinueCall = { _, _, rejected ->
+                rejectedStore = rejected.storeNumber
+                successAnswer("resp_final", "Podaj numer marketu")
+            },
+            tool = {
+                toolCalls += 1
+                verifiedResult(it.query)
+            },
+        )
+
+        controller.runTurn(
+            input = "Sprawdź w innym markecie",
+            previousResponseId = null,
+            conversationStoreNumber = "075",
+        ) { }
+
+        assertEquals(0, toolCalls)
+        assertEquals("074", rejectedStore)
+    }
+
+    @Test
+    fun `two explicitly mentioned stores can both be queried`() = runBlocking {
+        val requestedStores = mutableListOf<String>()
+        var continuation = 0
+        val controller = controller(
+            start = {
+                successTool("resp_1", "call_1", "klej", "074")
+            },
+            continueCall = { _, _, _ ->
+                continuation += 1
+                if (continuation == 1) {
+                    successTool("resp_2", "call_2", "klej", "075")
+                } else {
+                    successAnswer("resp_final", "Done")
+                }
+            },
+            tool = {
+                requestedStores += it.storeNumber
+                verifiedResult(
+                    it.query,
+                    snapshot(
+                        "3496072",
+                        "Product",
+                        if (it.storeNumber == "074") 13 else 25,
+                        BigDecimal("12.99"),
+                        storeNumber = it.storeNumber,
+                    ),
+                )
+            },
+        )
+
+        controller.runTurn(
+            input = "Porównaj 074 i 075",
+            previousResponseId = null,
+            conversationStoreNumber = "075",
+        ) { }
+
+        assertEquals(listOf("074", "075"), requestedStores)
+    }
+
+    @Test
+    fun `embedded digits and unsupported stores are not authorized`() = runBlocking {
+        listOf(
+            "Sprawdź 1074" to "074",
+            "Sprawdź 999" to "999",
+        ).forEach { (message, requestedStore) ->
+            var toolCalls = 0
+            var rejected = false
+            val controller = controller(
+                start = {
+                    successTool(
+                        "resp_tool",
+                        "call_tool",
+                        "klej",
+                        requestedStore,
+                    )
+                },
+                rejectedContinueCall = { _, _, _ ->
+                    rejected = true
+                    successAnswer("resp_final", "Clarify")
+                },
+                tool = {
+                    toolCalls += 1
+                    verifiedResult(it.query)
+                },
+            )
+
+            controller.runTurn(
+                input = message,
+                previousResponseId = null,
+                conversationStoreNumber = "075",
+            ) { }
+
+            assertEquals(0, toolCalls)
+            assertTrue(rejected)
+        }
+    }
+
+    @Test
+    fun `store mentioned only in previous user turn does not authorize current turn`() = runBlocking {
+        var toolCalls = 0
+        var rejected = false
+        val controller = controller(
+            start = {
+                successAnswer("resp_first", "Noted")
+            },
+            message = { _, _ ->
+                successTool(
+                    "resp_tool",
+                    "call_tool",
+                    "klej",
+                    storeNumber = "074",
+                )
+            },
+            rejectedContinueCall = { _, _, _ ->
+                rejected = true
+                successAnswer("resp_final", "Need number")
+            },
+            tool = {
+                toolCalls += 1
+                verifiedResult(it.query)
+            },
+        )
+
+        val first = controller.runTurn(
+            input = "Zapamiętaj 074",
+            previousResponseId = null,
+            conversationStoreNumber = "075",
+        ) { } as AdvisorUiState.Success
+
+        controller.runTurn(
+            input = "Sprawdź tam klej",
+            previousResponseId = first.responseId,
+            conversationStoreNumber = "075",
+        ) { }
+
+        assertEquals(0, toolCalls)
+        assertTrue(rejected)
+    }
+
+    @Test
+    fun `same OBIK from two stores resolves to two current turn cards`() = runBlocking {
+        var continuation = 0
+        val controller = controller(
+            start = {
+                successTool("resp_1", "call_1", "x", "074")
+            },
+            continueCall = { _, _, _ ->
+                continuation += 1
+                if (continuation == 1) {
+                    successTool("resp_2", "call_2", "x", "075")
+                } else {
+                    successAnswerRefs(
+                        "resp_final",
+                        "Compare",
+                        listOf(
+                            AdvisorProductRef("074", "3496072"),
+                            AdvisorProductRef("075", "3496072"),
+                            AdvisorProductRef("078", "3496072"),
+                        ),
+                    )
+                }
+            },
+            tool = {
+                verifiedResult(
+                    it.query,
+                    snapshot(
+                        "3496072",
+                        "Product",
+                        if (it.storeNumber == "074") 13 else 25,
+                        BigDecimal("12.99"),
+                        storeNumber = it.storeNumber,
+                    ),
+                )
+            },
+        )
+
+        val result = controller.runTurn(
+            input = "Porównaj 074 i 075",
+            previousResponseId = null,
+            conversationStoreNumber = "075",
+        ) { } as AdvisorUiState.Success
+
+        assertEquals(
+            listOf("074", "075"),
+            result.products.map { it.storeNumber },
+        )
+    }
+
     private fun controller(
         configured: Boolean = true,
         start: suspend (String) -> AdvisorProxyCallResult = {
@@ -496,14 +742,46 @@ class AdvisorControllerTest {
         ) -> AdvisorProxyCallResult = { _, _, _ ->
             error("continue not expected")
         },
+        rejectedContinueCall: suspend (
+            String,
+            String,
+            AdvisorToolContinuation.RejectedStore,
+        ) -> AdvisorProxyCallResult = { _, _, _ ->
+            error("rejected continue not expected")
+        },
         tool: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult = {
             error("tool not expected")
         },
+        onStartStore: (String) -> Unit = {},
+        onMessageStore: (String) -> Unit = {},
+        onContinueStore: (String) -> Unit = {},
     ) = AdvisorController(
         isConfigured = { configured },
-        startAgent = start,
-        messageAgent = message,
-        continueAgent = continueCall,
+        startAgent = { input, storeNumber ->
+            onStartStore(storeNumber)
+            start(input)
+        },
+        messageAgent = { previousResponseId, input, storeNumber ->
+            onMessageStore(storeNumber)
+            message(previousResponseId, input)
+        },
+        continueAgent = { responseId, callId, storeNumber, continuation ->
+            onContinueStore(storeNumber)
+            when (continuation) {
+                is AdvisorToolContinuation.Verified ->
+                    continueCall(
+                        responseId,
+                        callId,
+                        continuation.result,
+                    )
+                is AdvisorToolContinuation.RejectedStore ->
+                    rejectedContinueCall(
+                        responseId,
+                        callId,
+                        continuation,
+                    )
+            }
+        },
         executeTool = tool,
     )
 
@@ -511,11 +789,29 @@ class AdvisorControllerTest {
         responseId: String,
         text: String,
         productObiks: List<String> = emptyList(),
+        storeNumber: String = "075",
     ) = AdvisorProxyCallResult.Success(
         AdvisorProxyResult.Answer(
             responseId = responseId,
             text = text,
-            productObiks = productObiks,
+            productRefs = productObiks.map {
+                AdvisorProductRef(
+                    storeNumber = storeNumber,
+                    obik = it,
+                )
+            },
+        ),
+    )
+
+    private fun successAnswerRefs(
+        responseId: String,
+        text: String,
+        productRefs: List<AdvisorProductRef>,
+    ) = AdvisorProxyCallResult.Success(
+        AdvisorProxyResult.Answer(
+            responseId = responseId,
+            text = text,
+            productRefs = productRefs,
         ),
     )
 
@@ -523,12 +819,14 @@ class AdvisorControllerTest {
         responseId: String,
         callId: String,
         query: String,
+        storeNumber: String = "075",
     ) = AdvisorProxyCallResult.Success(
         AdvisorProxyResult.ToolRequest(
             responseId = responseId,
             callId = callId,
             arguments = AdvisorToolArguments(
                 query = query,
+                storeNumber = storeNumber,
                 limit = 5,
             ),
         ),
@@ -545,6 +843,7 @@ class AdvisorControllerTest {
     ) = AdvisorToolExecutionResult.Success(
         result = AdvisorVerifiedToolResult(
             query = query,
+            storeNumber = snapshot.storeNumber,
             products = listOf(
                 AdvisorVerifiedProduct(
                     obik = snapshot.obik,
@@ -564,6 +863,7 @@ class AdvisorControllerTest {
         price: BigDecimal?,
         url: String = "https://www.obi.pl/p/$obik/trusted",
         verifiedAt: Long = 1_000L,
+        storeNumber: String = "075",
     ) = VerifiedProductSnapshot(
         obik = obik,
         name = name,
@@ -571,5 +871,6 @@ class AdvisorControllerTest {
         grossPrice = price,
         productUrl = url,
         verifiedAt = verifiedAt,
+        storeNumber = storeNumber,
     )
 }

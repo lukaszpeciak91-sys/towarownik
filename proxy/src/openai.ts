@@ -1,9 +1,9 @@
 import {
-  AGENT_INSTRUCTIONS,
+  agentInstructionsForStore,
   FINAL_ANSWER_FORMAT,
   LOCAL_TOOL_NAME,
   MAX_ANSWER_CHARS,
-  MAX_SELECTED_PRODUCT_OBIKS,
+  MAX_SELECTED_PRODUCT_REFS,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
@@ -11,19 +11,20 @@ import {
   OBI_TOOL,
 } from "./config.js";
 import { InvalidRequestError, parseToolArguments } from "./validation.js";
-import type { AgentResult, UpstreamFetch, VerifiedToolResult } from "./types.js";
+import type { AgentResult, ProductRef, ToolContinuationResult, UpstreamFetch } from "./types.js";
 
 export class UpstreamFailureError extends Error {}
 
 export async function startAgent(
   message: string,
+  storeNumber: string,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: AGENT_INSTRUCTIONS,
+      instructions: agentInstructionsForStore(storeNumber),
       input: message,
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
@@ -44,13 +45,14 @@ export async function startAgent(
 export async function messageAgent(
   previousResponseId: string,
   message: string,
+  storeNumber: string,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: AGENT_INSTRUCTIONS,
+      instructions: agentInstructionsForStore(storeNumber),
       previous_response_id: previousResponseId,
       input: message,
       reasoning: {
@@ -72,14 +74,15 @@ export async function messageAgent(
 export async function continueAgent(
   responseId: string,
   callId: string,
-  result: VerifiedToolResult,
+  storeNumber: string,
+  result: ToolContinuationResult,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: AGENT_INSTRUCTIONS,
+      instructions: agentInstructionsForStore(storeNumber),
       previous_response_id: responseId,
       input: [
         {
@@ -195,7 +198,7 @@ export function normalizeOpenAIResponse(payload: unknown): AgentResult {
     type: "answer",
     responseId,
     text: answer.text,
-    productObiks: answer.productObiks,
+    productRefs: answer.productRefs,
   };
 }
 
@@ -203,7 +206,7 @@ function parseStructuredAnswer(
   raw: string | null,
 ): {
   text: string;
-  productObiks: string[];
+  productRefs: ProductRef[];
 } {
   if (!raw) {
     throw new UpstreamFailureError();
@@ -224,7 +227,7 @@ function parseStructuredAnswer(
   if (
     keys.length !== 2 ||
     !keys.includes("text") ||
-    !keys.includes("productObiks")
+    !keys.includes("productRefs")
   ) {
     throw new UpstreamFailureError();
   }
@@ -238,27 +241,43 @@ function parseStructuredAnswer(
   }
 
   if (
-    !Array.isArray(parsed.productObiks) ||
-    parsed.productObiks.length > MAX_SELECTED_PRODUCT_OBIKS
+    !Array.isArray(parsed.productRefs) ||
+    parsed.productRefs.length > MAX_SELECTED_PRODUCT_REFS
   ) {
     throw new UpstreamFailureError();
   }
 
-  const deduplicated: string[] = [];
+  const deduplicated: ProductRef[] = [];
   const seen = new Set<string>();
-  for (const value of parsed.productObiks) {
-    if (typeof value !== "string" || !/^\d{7}$/.test(value)) {
+  for (const value of parsed.productRefs) {
+    if (!isRecord(value)) {
       throw new UpstreamFailureError();
     }
-    if (!seen.has(value)) {
-      seen.add(value);
-      deduplicated.push(value);
+    const refKeys = Object.keys(value);
+    if (
+      refKeys.length !== 2 ||
+      !refKeys.includes("storeNumber") ||
+      !refKeys.includes("obik") ||
+      typeof value.storeNumber !== "string" ||
+      !/^\d{3}$/.test(value.storeNumber) ||
+      typeof value.obik !== "string" ||
+      !/^\d{7}$/.test(value.obik)
+    ) {
+      throw new UpstreamFailureError();
+    }
+    const key = value.storeNumber + ":" + value.obik;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduplicated.push({
+        storeNumber: value.storeNumber,
+        obik: value.obik,
+      });
     }
   }
 
   return {
     text,
-    productObiks: deduplicated,
+    productRefs: deduplicated,
   };
 }
 

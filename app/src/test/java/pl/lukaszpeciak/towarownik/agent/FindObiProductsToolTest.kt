@@ -12,12 +12,12 @@ import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 
-class FindAvailableObi075ToolTest {
+class FindObiProductsToolTest {
     @Test
     fun `not found becomes verified empty products result`() = runBlocking {
         val tool = tool(
             search = { ProductSearchResult.NotFound },
-            lookup = { error("lookup must not run") },
+            lookup = { _, _ -> error("lookup must not run") },
         )
 
         val result = tool.execute(arguments())
@@ -43,7 +43,7 @@ class FindAvailableObi075ToolTest {
                     "synthetic",
                 )
             },
-            lookup = { error("lookup must not run") },
+            lookup = { _, _ -> error("lookup must not run") },
         )
 
         assertEquals(
@@ -63,7 +63,7 @@ class FindAvailableObi075ToolTest {
                     ),
                 )
             },
-            lookup = { obik ->
+            lookup = { obik, _ ->
                 lookedUp += obik
                 ProductLookupResult.Found(
                     product(
@@ -95,7 +95,7 @@ class FindAvailableObi075ToolTest {
                     ),
                 )
             },
-            lookup = { obik ->
+            lookup = { obik, _ ->
                 lookedUp += obik
                 ProductLookupResult.Found(
                     product(obik = obik),
@@ -122,7 +122,7 @@ class FindAvailableObi075ToolTest {
             search = {
                 ProductSearchResult.Candidates(candidates)
             },
-            lookup = { obik ->
+            lookup = { obik, _ ->
                 lookedUp += obik
                 ProductLookupResult.Found(product(obik = obik))
             },
@@ -154,7 +154,7 @@ class FindAvailableObi075ToolTest {
                     products.keys.map { ProductSearchCandidate(it, null) },
                 )
             },
-            lookup = { obik ->
+            lookup = { obik, _ ->
                 ProductLookupResult.Found(checkNotNull(products[obik]))
             },
         )
@@ -174,7 +174,7 @@ class FindAvailableObi075ToolTest {
                     listOf(ProductSearchCandidate("1234567", "Candidate")),
                 )
             },
-            lookup = {
+            lookup = { _, _ ->
                 ProductLookupResult.Unavailable(
                     ProductLookupFailure.DATA,
                     "synthetic",
@@ -199,7 +199,7 @@ class FindAvailableObi075ToolTest {
                     ),
                 )
             },
-            lookup = { obik ->
+            lookup = { obik, _ ->
                 if (obik == "1234567") {
                     ProductLookupResult.Found(
                         product(obik = obik, name = "Verified"),
@@ -231,7 +231,7 @@ class FindAvailableObi075ToolTest {
                     ),
                 )
             },
-            lookup = {
+            lookup = { _, _ ->
                 ProductLookupResult.Unavailable(
                     ProductLookupFailure.NETWORK,
                     "synthetic",
@@ -254,7 +254,7 @@ class FindAvailableObi075ToolTest {
                     listOf(ProductSearchCandidate("1234567", "Candidate")),
                 )
             },
-            lookup = {
+            lookup = { _, _ ->
                 ProductLookupResult.Found(
                     product(
                         obik = "1234567",
@@ -279,6 +279,63 @@ class FindAvailableObi075ToolTest {
     }
 
     @Test
+    fun `alternate store propagates to every exact lookup and compact result`() = runBlocking {
+        val stores = mutableListOf<String>()
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    listOf(ProductSearchCandidate("3496072", "Candidate")),
+                )
+            },
+            lookup = { obik, storeNumber ->
+                stores += storeNumber
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        stock = 13,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(
+            arguments(storeNumber = "074"),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(listOf("074"), stores)
+        assertEquals("074", result.result.storeNumber)
+        assertEquals("074", result.snapshots.single().storeNumber)
+    }
+
+    @Test
+    fun `unsupported store fails before search or lookup`() = runBlocking {
+        var searched = false
+        var lookedUp = false
+        val tool = tool(
+            search = {
+                searched = true
+                ProductSearchResult.NotFound
+            },
+            lookup = { _, _ ->
+                lookedUp = true
+                error("must not run")
+            },
+        )
+
+        val result = tool.execute(
+            arguments(storeNumber = "999"),
+        )
+
+        assertEquals(
+            AdvisorToolExecutionResult.UnsupportedStore,
+            result,
+        )
+        assertEquals(false, searched)
+        assertEquals(false, lookedUp)
+    }
+
+    @Test
     fun `compact result exposes only verified product fields`() = runBlocking {
         val tool = tool(
             search = {
@@ -286,7 +343,7 @@ class FindAvailableObi075ToolTest {
                     listOf(ProductSearchCandidate("1234567", "Candidate")),
                 )
             },
-            lookup = {
+            lookup = { _, _ ->
                 ProductLookupResult.Found(
                     product(
                         obik = "1234567",
@@ -310,9 +367,9 @@ class FindAvailableObi075ToolTest {
 
     private fun tool(
         search: (String) -> ProductSearchResult,
-        lookup: (String) -> ProductLookupResult,
-    ): FindAvailableObi075Tool =
-        FindAvailableObi075Tool(
+        lookup: (String, String) -> ProductLookupResult,
+    ): FindObiProductsTool =
+        FindObiProductsTool(
             searchProducts = search,
             lookupObik = lookup,
             ioDispatcher = Dispatchers.Unconfined,
@@ -321,9 +378,11 @@ class FindAvailableObi075ToolTest {
 
     private fun arguments(
         query: String = "klej",
+        storeNumber: String = "075",
         limit: Int = 5,
     ) = AdvisorToolArguments(
         query = query,
+        storeNumber = storeNumber,
         limit = limit,
     )
 
@@ -333,6 +392,7 @@ class FindAvailableObi075ToolTest {
         stock: Int? = 3,
         price: BigDecimal? = BigDecimal("10.00"),
         productUrl: String = "https://example.invalid/p/$obik",
+        storeNumber: String = "075",
     ) = LocalProduct(
         obik = obik,
         name = name,
@@ -340,5 +400,6 @@ class FindAvailableObi075ToolTest {
         grossPrice = price,
         productUrl = productUrl,
         ean = null,
+        storeNumber = storeNumber,
     )
 }

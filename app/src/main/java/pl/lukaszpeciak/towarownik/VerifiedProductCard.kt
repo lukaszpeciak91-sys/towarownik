@@ -29,6 +29,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
@@ -39,6 +40,7 @@ internal data class VerifiedProductUiModel(
     val stock: Int?,
     val productUrl: String,
     val verifiedAt: Long? = null,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
 )
 
 internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
@@ -50,19 +52,20 @@ internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
         stock = stock,
         productUrl = productUrl,
         verifiedAt = verifiedAt,
+        storeNumber = storeNumber,
     )
 
 internal fun verifiedProductOpenUrl(
     product: VerifiedProductUiModel,
 ): String = product.productUrl
 
-internal fun store075StockStringRes(stock: Int?): Int = when (stock) {
+internal fun stockStringRes(stock: Int?): Int = when (stock) {
     null -> R.string.product_stock_unknown
     0 -> R.string.product_stock_zero
     else -> R.string.product_stock_count
 }
 
-internal fun store075PriceStringRes(price: BigDecimal?): Int =
+internal fun priceStringRes(price: BigDecimal?): Int =
     if (price == null) {
         R.string.product_price_unknown
     } else {
@@ -78,8 +81,8 @@ internal fun formatVerifiedProductTimestampValue(
         .format(VERIFIED_AT_FORMATTER)
 
 @Composable
-internal fun formatStore075Stock(stock: Int?): String {
-    val resource = store075StockStringRes(stock)
+internal fun formatStoreStock(stock: Int?): String {
+    val resource = stockStringRes(stock)
     return if (stock != null && stock > 0) {
         stringResource(resource, stock)
     } else {
@@ -88,8 +91,8 @@ internal fun formatStore075Stock(stock: Int?): String {
 }
 
 @Composable
-internal fun formatStore075Price(price: BigDecimal?): String {
-    val resource = store075PriceStringRes(price)
+internal fun formatStorePrice(price: BigDecimal?): String {
+    val resource = priceStringRes(price)
     return price?.let {
         stringResource(resource, it.toPlainString())
     } ?: stringResource(resource)
@@ -149,6 +152,14 @@ internal fun VerifiedProductCard(
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
+                text = stringResource(
+                    R.string.product_store,
+                    product.storeNumber,
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
                 text = stringResource(R.string.product_obik, product.obik),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -161,12 +172,12 @@ internal fun VerifiedProductCard(
             )
 
             Text(
-                text = formatStore075Price(product.grossPrice),
+                text = formatStorePrice(product.grossPrice),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = formatStore075Stock(product.stock),
+                text = formatStoreStock(product.stock),
                 style = MaterialTheme.typography.bodyLarge,
                 color = stockColor,
             )

@@ -65,7 +65,7 @@ class ObiPayloadParser(
                 )
                 diagnostics.parserStage(
                     diagnosticId,
-                    if (storeMatch) "STORE_075_MATCH" else "STORE_075_MATCH_FAILED",
+                    if (storeMatch) "STORE_MATCH" else "STORE_MATCH_FAILED",
                 )
             }
 

@@ -17,6 +17,7 @@ private const val ZERO_NO_RESULTS = "Brak wyników"
 fun productBodySignatures(
     html: String,
     requestedObik: String,
+    requestedStoreNumber: String? = null,
 ): DiagnosticBodySignatures {
     val canonical = CANONICAL_LINK.find(html)?.groupValues?.get(1)
     return genericBodySignatures(html).copy(
@@ -24,7 +25,7 @@ fun productBodySignatures(
         containsCanonicalProductUrl = canonical?.contains("/p/", ignoreCase = true) == true,
         canonicalUrl = sanitizeDiagnosticUrl(canonical),
         containsSelectedStore = html.contains("selectedStore"),
-        containsStore075 = html.contains("075"),
+        containsRequestedStore = requestedStoreNumber?.let(html::contains),
     )
 }
 
@@ -63,7 +64,7 @@ internal fun genericBodySignatures(html: String): DiagnosticBodySignatures {
         containsCanonicalProductUrl = null,
         canonicalUrl = null,
         containsSelectedStore = null,
-        containsStore075 = null,
+        containsRequestedStore = null,
         recognizedProductLinkCount = PRODUCT_LINK.findAll(html).count(),
         containsSearchResultsPhrase = null,
         detectedSearchResultCount = null,

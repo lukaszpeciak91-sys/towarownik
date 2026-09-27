@@ -645,6 +645,123 @@ class ConversationRepositoryTest {
         assertTrue(fresh.conversationId != first.conversationId)
     }
 
+    @Test
+    fun `new conversation defaults to 075 and selected store persists`() = runBlocking {
+        val defaultTurn = repository.beginUserTurn(
+            conversationId = null,
+            text = "Default",
+            createdAt = 100L,
+        )
+        assertEquals("075", defaultTurn.storeNumber)
+        assertEquals(
+            "075",
+            requireNotNull(repository.load(defaultTurn.conversationId))
+                .storeNumber,
+        )
+
+        val alternateTurn = repository.beginUserTurn(
+            conversationId = null,
+            text = "Alternate",
+            createdAt = 200L,
+            storeNumber = "074",
+        )
+        assertEquals(
+            "074",
+            requireNotNull(repository.load(alternateTurn.conversationId))
+                .storeNumber,
+        )
+
+        database.close()
+        openDatabase()
+        assertEquals(
+            "074",
+            requireNotNull(repository.load(alternateTurn.conversationId))
+                .storeNumber,
+        )
+    }
+
+    @Test
+    fun `changing selected store does not rewrite historical product store`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Historical",
+            createdAt = 100L,
+            storeNumber = "074",
+        )
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Answer",
+            finalResponseId = "resp_store",
+            createdAt = 200L,
+            products = listOf(
+                snapshot(
+                    obik = "3496072",
+                    name = "Product",
+                    stock = 13,
+                    price = BigDecimal("12.99"),
+                    url = "https://example.invalid/p/3496072",
+                    verifiedAt = 150L,
+                    storeNumber = "074",
+                ),
+            ),
+        )
+
+        assertTrue(
+            repository.updateStoreNumber(
+                started.conversationId,
+                "075",
+            ),
+        )
+        val restored = requireNotNull(
+            repository.load(started.conversationId),
+        )
+        assertEquals("075", restored.storeNumber)
+        assertEquals(
+            "074",
+            restored.messages.last().products.single().storeNumber,
+        )
+    }
+
+    @Test
+    fun `same OBIK in two stores persists as distinct snapshots`() = runBlocking {
+        val started = repository.beginUserTurn(
+            null,
+            "Compare",
+            100L,
+        )
+        val first = snapshot(
+            obik = "3496072",
+            name = "Product",
+            stock = 13,
+            price = BigDecimal("12.99"),
+            url = "https://example.invalid/p/3496072",
+            verifiedAt = 150L,
+            storeNumber = "074",
+        )
+        val second = first.copy(
+            stock = 25,
+            verifiedAt = 160L,
+            storeNumber = "075",
+        )
+
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Comparison",
+            finalResponseId = "resp_compare",
+            createdAt = 200L,
+            products = listOf(first, second),
+        )
+
+        val products = requireNotNull(
+            repository.load(started.conversationId),
+        ).messages.last().products
+        assertEquals(2, products.size)
+        assertEquals(
+            listOf("074", "075"),
+            products.map { it.storeNumber },
+        )
+    }
+
     private suspend fun completedConversation(
         firstUser: String,
         assistant: String,
@@ -717,6 +834,7 @@ class ConversationRepositoryTest {
         price: BigDecimal?,
         url: String,
         verifiedAt: Long,
+        storeNumber: String = "075",
     ) = VerifiedProductSnapshot(
         obik = obik,
         name = name,
@@ -724,6 +842,7 @@ class ConversationRepositoryTest {
         grossPrice = price,
         productUrl = url,
         verifiedAt = verifiedAt,
+        storeNumber = storeNumber,
     )
 
     private fun messageProductCount(

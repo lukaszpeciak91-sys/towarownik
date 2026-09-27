@@ -51,6 +51,7 @@ class ObiDiagnosticRecorder(
         operation: ObiDiagnosticOperationType,
         inputType: ObiDiagnosticInputType,
         identifier: String,
+        storeNumber: String? = null,
         requestedUrl: String,
         requestMethod: String,
     ): Long? {
@@ -62,6 +63,7 @@ class ObiDiagnosticRecorder(
             operation = operation,
             inputType = inputType,
             identifier = identifier,
+            storeNumber = storeNumber,
             timestampMillis = clock(),
             requestedUrl = sanitizeDiagnosticUrl(requestedUrl) ?: "[redacted-url]",
             requestMethod = requestMethod,
@@ -98,8 +100,8 @@ class ObiDiagnosticRecorder(
         safeInfrastructureHeaders: Map<String, String>,
         outgoingCookies: List<DiagnosticCookie>,
         setCookies: List<DiagnosticCookie>,
-        outgoingStore075CookieMatch: Store075CookieMatch,
-        setCookieStore075Match: Store075CookieMatch,
+        outgoingStoreCookieMatch: StoreCookieMatch,
+        setCookieStoreMatch: StoreCookieMatch,
     ) {
         val operation = id?.let(active::get) ?: return
         val sanitizedUrl = sanitizeDiagnosticUrl(url) ?: "[redacted-url]"
@@ -119,8 +121,8 @@ class ObiDiagnosticRecorder(
                 safeInfrastructureHeaders = safeInfrastructureHeaders,
                 outgoingCookies = outgoingCookies.distinct(),
                 setCookies = setCookies.distinct(),
-                outgoingStore075CookieMatch = outgoingStore075CookieMatch,
-                setCookieStore075Match = setCookieStore075Match,
+                outgoingStoreCookieMatch = outgoingStoreCookieMatch,
+                setCookieStoreMatch = setCookieStoreMatch,
             )
         }
         operation.setCookies.addAll(setCookies)
@@ -196,6 +198,7 @@ class ObiDiagnosticRecorder(
             appendLine("operation=${record.operation}")
             appendLine("inputType=${record.inputType}")
             appendLine("identifier=${record.identifier}")
+            appendLine("storeNumber=${record.storeNumber ?: "(none)"}")
             appendLine("request=${record.requestMethod} ${record.requestedUrl}")
             appendLine("userAgent=${record.userAgent ?: "(none)"}")
             appendLine("accept=${record.accept ?: "(none)"}")
@@ -203,7 +206,7 @@ class ObiDiagnosticRecorder(
             appendLine("durationMs=${record.durationMillis ?: -1}")
             appendLine("outgoingCookieNames=${record.outgoingCookies.safeCookieList()}")
             appendLine("setCookieNames=${record.setCookies.safeCookieList()}")
-            appendLine("store075CookieMatch=${record.store075CookieMatch.reportValue}")
+            appendLine("storeCookieMatch=${record.storeCookieMatch.reportValue}")
 
             appendLine("redirectChain:")
             if (record.hops.isEmpty()) {
@@ -221,13 +224,13 @@ class ObiDiagnosticRecorder(
                     )
                     appendLine("    outgoingCookieNames=${hop.outgoingCookies.safeCookieList()}")
                     appendLine(
-                        "    outgoingStore075CookieMatch=" +
-                            hop.outgoingStore075CookieMatch.reportValue,
+                        "    outgoingStoreCookieMatch=" +
+                            hop.outgoingStoreCookieMatch.reportValue,
                     )
                     appendLine("    setCookieNames=${hop.setCookies.safeCookieList()}")
                     appendLine(
-                        "    setCookieStore075Match=" +
-                            hop.setCookieStore075Match.reportValue,
+                        "    setCookieStoreMatch=" +
+                            hop.setCookieStoreMatch.reportValue,
                     )
                     appendLine("    contentType=${hop.contentType ?: "(none)"}")
                     appendLine("    contentEncoding=${hop.contentEncoding ?: "(none)"}")
@@ -254,7 +257,7 @@ class ObiDiagnosticRecorder(
                 body.containsCanonicalProductUrl?.let { appendLine("body.containsCanonicalProductUrl=$it") }
                 body.canonicalUrl?.let { appendLine("body.canonicalUrl=$it") }
                 body.containsSelectedStore?.let { appendLine("body.containsSelectedStore=$it") }
-                body.containsStore075?.let { appendLine("body.containsStore075=$it") }
+                body.containsRequestedStore?.let { appendLine("body.containsRequestedStore=$it") }
                 appendLine("body.recognizedProductLinkCount=${body.recognizedProductLinkCount}")
                 body.containsSearchResultsPhrase?.let { appendLine("body.containsSearchResultsPhrase=$it") }
                 body.detectedSearchResultCount?.let { appendLine("body.detectedSearchResultCount=$it") }
@@ -302,6 +305,7 @@ class ObiDiagnosticRecorder(
         val operation: ObiDiagnosticOperationType,
         val inputType: ObiDiagnosticInputType,
         val identifier: String,
+        val storeNumber: String?,
         val timestampMillis: Long,
         val requestedUrl: String,
         val requestMethod: String,
@@ -324,6 +328,7 @@ class ObiDiagnosticRecorder(
                 operation = operation,
                 inputType = inputType,
                 identifier = identifier,
+                storeNumber = storeNumber,
                 timestampMillis = timestampMillis,
                 requestedUrl = requestedUrl,
                 requestMethod = requestMethod,
@@ -333,8 +338,8 @@ class ObiDiagnosticRecorder(
                 durationMillis = durationMillis,
                 outgoingCookies = outgoingCookies.distinct(),
                 setCookies = setCookies.distinct(),
-                store075CookieMatch = hops.lastOrNull()?.outgoingStore075CookieMatch
-                    ?: Store075CookieMatch.UNKNOWN,
+                storeCookieMatch = hops.lastOrNull()?.outgoingStoreCookieMatch
+                    ?: StoreCookieMatch.UNKNOWN,
                 hops = hops.toList(),
                 finalStatus = finalStatus,
                 finalUrl = finalUrl,

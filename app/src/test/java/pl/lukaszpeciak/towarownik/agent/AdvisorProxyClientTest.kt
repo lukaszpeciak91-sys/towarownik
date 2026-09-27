@@ -34,10 +34,14 @@ class AdvisorProxyClientTest {
 
             val raw = request.body.readUtf8()
             val body = Json.parseToJsonElement(raw).jsonObject
-            assertEquals(setOf("message"), body.keys)
+            assertEquals(setOf("message", "storeNumber"), body.keys)
             assertEquals(
                 "potrzebuję kleju",
                 body["message"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                "075",
+                body["storeNumber"]?.jsonPrimitive?.content,
             )
             assertFalse(raw.contains(FAKE_TOKEN))
         }
@@ -63,7 +67,7 @@ class AdvisorProxyClientTest {
             val raw = request.body.readUtf8()
             val body = Json.parseToJsonElement(raw).jsonObject
             assertEquals(
-                setOf("previousResponseId", "message"),
+                setOf("previousResponseId", "message", "storeNumber"),
                 body.keys,
             )
             assertEquals(
@@ -73,6 +77,10 @@ class AdvisorProxyClientTest {
             assertEquals(
                 "A coś tańszego?",
                 body["message"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                "075",
+                body["storeNumber"]?.jsonPrimitive?.content,
             )
             assertFalse(raw.contains(FAKE_TOKEN))
         }
@@ -89,7 +97,7 @@ class AdvisorProxyClientTest {
                     AdvisorProxyResult.Answer(
                         responseId = "resp_1",
                         text = "Synthetic answer",
-                        productObiks = emptyList(),
+                        productRefs = emptyList(),
                     ),
                 ),
                 result,
@@ -109,7 +117,11 @@ class AdvisorProxyClientTest {
                           "type":"answer",
                           "responseId":"resp_cards",
                           "text":"Synthetic answer",
-                          "productObiks":["1234567","1234567","7654321"]
+                          "productRefs":[
+                            {"storeNumber":"074","obik":"1234567"},
+                            {"storeNumber":"074","obik":"1234567"},
+                            {"storeNumber":"075","obik":"7654321"}
+                          ]
                         }
                         """.trimIndent(),
                     ),
@@ -122,7 +134,10 @@ class AdvisorProxyClientTest {
                     AdvisorProxyResult.Answer(
                         responseId = "resp_cards",
                         text = "Synthetic answer",
-                        productObiks = listOf("1234567", "7654321"),
+                        productRefs = listOf(
+                            AdvisorProductRef("074", "1234567"),
+                            AdvisorProductRef("075", "7654321"),
+                        ),
                     ),
                 ),
                 result,
@@ -140,7 +155,7 @@ class AdvisorProxyClientTest {
                       "type":"answer",
                       "responseId":"resp_bad",
                       "text":"Synthetic",
-                      "productObiks":["1234567"],
+                      "productRefs":[{"storeNumber":"075","obik":"1234567"}],
                       "price":0.01
                     }
                     """.trimIndent(),
@@ -166,7 +181,14 @@ class AdvisorProxyClientTest {
                       "type":"answer",
                       "responseId":"resp_bad",
                       "text":"Synthetic",
-                      "productObiks":["1000001","1000002","1000003","1000004","1000005","1000006"]
+                      "productRefs":[
+                        {"storeNumber":"075","obik":"1000001"},
+                        {"storeNumber":"075","obik":"1000002"},
+                        {"storeNumber":"075","obik":"1000003"},
+                        {"storeNumber":"075","obik":"1000004"},
+                        {"storeNumber":"075","obik":"1000005"},
+                        {"storeNumber":"075","obik":"1000006"}
+                      ]
                     }
                     """.trimIndent(),
                 ),
@@ -193,9 +215,9 @@ class AdvisorProxyClientTest {
                           "type":"tool_request",
                           "responseId":"resp_2",
                           "tool":{
-                            "name":"find_available_obi_075",
+                            "name":"find_obi_products",
                             "callId":"call_1",
-                            "arguments":{"query":"klej montażowy","limit":5}
+                            "arguments":{"query":"klej montażowy","storeNumber":"074","limit":5}
                           }
                         }
                         """.trimIndent(),
@@ -211,12 +233,71 @@ class AdvisorProxyClientTest {
                         callId = "call_1",
                         arguments = AdvisorToolArguments(
                             query = "klej montażowy",
+                            storeNumber = "074",
                             limit = 5,
                         ),
                     ),
                 ),
                 result,
             )
+        }
+    }
+
+    @Test
+    fun `same OBIK in two stores remains two distinct selected refs`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_compare",
+                      "text":"Compare",
+                      "productRefs":[
+                        {"storeNumber":"074","obik":"3496072"},
+                        {"storeNumber":"075","obik":"3496072"}
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            val result = client(server, FAKE_TOKEN).start(
+                "Porównaj",
+                storeNumber = "075",
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_compare",
+                        text = "Compare",
+                        productRefs = listOf(
+                            AdvisorProductRef("074", "3496072"),
+                            AdvisorProductRef("075", "3496072"),
+                        ),
+                    ),
+                ),
+                result,
+            )
+        }
+    }
+
+    @Test
+    fun `malformed store fails locally before request`() = runBlocking {
+        MockWebServer().use { server ->
+            val result = client(server, FAKE_TOKEN).start(
+                "test",
+                storeNumber = "74",
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.PROTOCOL,
+                ),
+                result,
+            )
+            assertEquals(0, server.requestCount)
         }
     }
 
@@ -248,9 +329,9 @@ class AdvisorProxyClientTest {
                       "type":"tool_request",
                       "responseId":"resp_2",
                       "tool":{
-                        "name":"find_available_obi_075",
+                        "name":"find_obi_products",
                         "callId":"call_1",
-                        "arguments":{"query":"klej","limit":6}
+                        "arguments":{"query":"klej","storeNumber":"075","limit":6}
                       }
                     }
                     """.trimIndent(),
@@ -316,6 +397,7 @@ class AdvisorProxyClientTest {
             server.enqueue(answerResponse())
             val verified = AdvisorVerifiedToolResult(
                 query = "klej",
+                storeNumber = "074",
                 products = listOf(
                     AdvisorVerifiedProduct(
                         obik = "1234567",
@@ -329,7 +411,8 @@ class AdvisorProxyClientTest {
             val result = client(server, FAKE_TOKEN).continueTurn(
                 responseId = "resp_previous",
                 callId = "call_previous",
-                result = verified,
+                storeNumber = "075",
+                continuation = AdvisorToolContinuation.Verified(verified),
             )
 
             assertTrue(result is AdvisorProxyCallResult.Success)
@@ -338,15 +421,29 @@ class AdvisorProxyClientTest {
             val raw = request.body.readUtf8()
             val body = Json.parseToJsonElement(raw).jsonObject
             assertEquals(
-                setOf("responseId", "callId", "tool", "result"),
+                setOf(
+                    "responseId",
+                    "callId",
+                    "storeNumber",
+                    "tool",
+                    "result",
+                ),
                 body.keys,
             )
             assertEquals("resp_previous", body["responseId"]?.jsonPrimitive?.content)
             assertEquals("call_previous", body["callId"]?.jsonPrimitive?.content)
-            assertEquals(FIND_AVAILABLE_OBI_075, body["tool"]?.jsonPrimitive?.content)
+            assertEquals("075", body["storeNumber"]?.jsonPrimitive?.content)
+            assertEquals(FIND_OBI_PRODUCTS, body["tool"]?.jsonPrimitive?.content)
 
             val resultBody = body["result"] as JsonObject
-            assertEquals(setOf("query", "products"), resultBody.keys)
+            assertEquals(
+                setOf("query", "storeNumber", "products"),
+                resultBody.keys,
+            )
+            assertEquals(
+                "074",
+                resultBody["storeNumber"]?.jsonPrimitive?.content,
+            )
             val products = resultBody["products"] as kotlinx.serialization.json.JsonArray
             val product = products.single() as JsonObject
             assertEquals(
@@ -379,7 +476,7 @@ class AdvisorProxyClientTest {
                   "type":"answer",
                   "responseId":"resp_1",
                   "text":"Synthetic answer",
-                  "productObiks":[]
+                  "productRefs":[]
                 }
                 """.trimIndent(),
             )
