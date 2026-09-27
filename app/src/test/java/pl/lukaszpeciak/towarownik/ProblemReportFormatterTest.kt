@@ -108,6 +108,7 @@ class ProblemReportFormatterTest {
             category = ProblemReportCategory.APP_PROBLEM,
             description = "Button failed",
             includeConversation = false,
+            includeObiDiagnostics = false,
         )
         val report = ProblemReportFormatter.format(
             request = request,
@@ -132,6 +133,7 @@ class ProblemReportFormatterTest {
             category = ProblemReportCategory.GENERAL_OTHER,
             description = "General issue",
             includeConversation = true,
+            includeObiDiagnostics = true,
             conversationId = 4,
         )
         val report = ProblemReportFormatter.format(
@@ -152,6 +154,29 @@ class ProblemReportFormatterTest {
         assertTrue(report.contains("PERSISTED ASSISTANT"))
         assertTrue(report.contains("SAFE DIAGNOSTICS"))
         assertFalse(report.contains("draft="))
+    }
+
+    @Test
+    fun `formatter ignores diagnostics unless request explicitly opts in`() {
+        val report = ProblemReportFormatter.format(
+            request = ProblemReportRequest(
+                type = ProblemReportType.GENERAL,
+                category = ProblemReportCategory.APP_PROBLEM,
+                description = "Problem",
+                includeConversation = false,
+                includeObiDiagnostics = false,
+            ),
+            evidence = ProblemReportEvidence(
+                conversationId = null,
+                reportedMessage = null,
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = "SAFE DIAGNOSTICS MUST NOT LEAK",
+        )
+
+        assertFalse(report.contains("SAFE DIAGNOSTICS MUST NOT LEAK"))
+        assertTrue(report.contains("OBI diagnostics: not included"))
     }
 
     @Test
@@ -196,6 +221,7 @@ class ProblemReportFormatterTest {
         category = ProblemReportCategory.INCORRECT_FABRICATED,
         description = "",
         includeConversation = includeConversation,
+        includeObiDiagnostics = false,
         conversationId = 44,
         reportedMessageId = 2,
     )

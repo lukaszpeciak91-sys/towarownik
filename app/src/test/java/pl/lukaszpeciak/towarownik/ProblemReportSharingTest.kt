@@ -1,5 +1,6 @@
 package pl.lukaszpeciak.towarownik
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import java.io.File
@@ -24,8 +25,9 @@ import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
 @Config(sdk = [33])
 class ProblemReportSharingTest {
     @Test
-    fun `conversation inclusion defaults to off`() {
+    fun `conversation and diagnostics inclusion default to off`() {
         assertFalse(REPORT_INCLUDE_CONVERSATION_DEFAULT)
+        assertFalse(REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT)
     }
 
     @Test
@@ -118,6 +120,60 @@ class ProblemReportSharingTest {
     }
 
     @Test
+    fun `share launch failure deletes fresh report file and returns controlled error`() {
+        val cache = Files.createTempDirectory("towarownik-share-failure").toFile()
+        try {
+            val file = File(cache, "report.txt").apply {
+                writeText("report")
+            }
+            val payload = ProblemReportSharePayload(
+                intent = Intent(Intent.ACTION_SEND),
+                reportFile = file,
+            )
+
+            val error = launchProblemReportShare(
+                payload = payload,
+                chooserTitle = "Share report",
+                startActivity = {
+                    throw ActivityNotFoundException("synthetic")
+                },
+            )
+
+            assertEquals(ProblemReportUiError.SHARE_UNAVAILABLE, error)
+            assertFalse(file.exists())
+        } finally {
+            cache.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `successful share launch keeps report file for receiving app`() {
+        val cache = Files.createTempDirectory("towarownik-share-success").toFile()
+        try {
+            val file = File(cache, "report.txt").apply {
+                writeText("report")
+            }
+            val payload = ProblemReportSharePayload(
+                intent = Intent(Intent.ACTION_SEND),
+                reportFile = file,
+            )
+            var launched: Intent? = null
+
+            val error = launchProblemReportShare(
+                payload = payload,
+                chooserTitle = "Share report",
+                startActivity = { launched = it },
+            )
+
+            assertNull(error)
+            assertNotNull(launched)
+            assertTrue(file.exists())
+        } finally {
+            cache.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `FileProvider exposes only dedicated report cache path`() {
         val manifest = parseXml(
             File(projectRoot(), "app/src/main/AndroidManifest.xml"),
@@ -166,12 +222,18 @@ class ProblemReportSharingTest {
         val recorder = ObiDiagnosticRecorder()
 
         assertFalse(recorder.isEnabled())
-        assertNull(existingSafeObiDiagnostics(recorder))
+        assertFalse(hasExistingSafeObiDiagnostics(recorder))
+        assertNull(
+            existingSafeObiDiagnostics(
+                recorder = recorder,
+                include = true,
+            ),
+        )
         assertFalse(recorder.isEnabled())
     }
 
     @Test
-    fun `existing sanitized diagnostics are included only when already available`() {
+    fun `existing sanitized diagnostics require explicit opt in`() {
         val recorder = ObiDiagnosticRecorder()
         recorder.setEnabled(true)
         val operation = recorder.startOperation(
@@ -183,7 +245,18 @@ class ProblemReportSharingTest {
         )
         recorder.finish(operation)
 
-        val report = existingSafeObiDiagnostics(recorder)
+        assertTrue(hasExistingSafeObiDiagnostics(recorder))
+        assertNull(
+            existingSafeObiDiagnostics(
+                recorder = recorder,
+                include = false,
+            ),
+        )
+
+        val report = existingSafeObiDiagnostics(
+            recorder = recorder,
+            include = true,
+        )
 
         assertNotNull(report)
         assertTrue(report!!.contains("Towarownik OBI diagnostics"))

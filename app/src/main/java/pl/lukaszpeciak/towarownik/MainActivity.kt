@@ -1,6 +1,5 @@
 package pl.lukaszpeciak.towarownik
 
-import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
@@ -606,6 +605,10 @@ private fun TowarownikApp() {
                 type = reportType,
                 canIncludeConversation =
                     reportConversationId != null,
+                canIncludeObiDiagnostics =
+                    hasExistingSafeObiDiagnostics(
+                        ObiDiagnostics.recorder,
+                    ),
                 onBack = ::closeReport,
                 onCreateAndShare = { submission ->
                     if (
@@ -620,10 +623,12 @@ private fun TowarownikApp() {
                             description = submission.description,
                             includeConversation =
                                 submission.includeConversation,
+                            includeObiDiagnostics =
+                                submission.includeObiDiagnostics,
                             conversationId = reportConversationId,
                             reportedMessageId = reportMessageId,
                         )
-                        val result = createProblemReportShareIntent(
+                        val result = createProblemReportSharePayload(
                             context = uiContext,
                             repository = conversationRepository,
                             request = request,
@@ -631,15 +636,15 @@ private fun TowarownikApp() {
                             body = body,
                             recorder = ObiDiagnostics.recorder,
                         )
-                        val shareIntent = result.getOrNull()
-                        if (shareIntent != null) {
-                            uiContext.startActivity(
-                                Intent.createChooser(
-                                    shareIntent,
-                                    chooserTitle,
-                                ),
+                        val payload = result.getOrNull()
+                        if (payload != null) {
+                            launchProblemReportShare(
+                                payload = payload,
+                                chooserTitle = chooserTitle,
+                                startActivity = { intent ->
+                                    uiContext.startActivity(intent)
+                                },
                             )
-                            null
                         } else {
                             when (result.exceptionOrNull()) {
                                 is ProblemReportTargetUnavailableException ->

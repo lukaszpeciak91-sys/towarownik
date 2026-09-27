@@ -47,12 +47,14 @@ internal data class ProblemReportFormSubmission(
     val category: ProblemReportCategory,
     val description: String,
     val includeConversation: Boolean,
+    val includeObiDiagnostics: Boolean,
 )
 
 @Composable
 internal fun ProblemReportScreen(
     type: ProblemReportType,
     canIncludeConversation: Boolean,
+    canIncludeObiDiagnostics: Boolean,
     onBack: () -> Unit,
     onCreateAndShare: suspend (
         ProblemReportFormSubmission,
@@ -66,6 +68,9 @@ internal fun ProblemReportScreen(
     }
     var includeConversation by rememberSaveable {
         mutableStateOf(REPORT_INCLUDE_CONVERSATION_DEFAULT)
+    }
+    var includeObiDiagnostics by rememberSaveable {
+        mutableStateOf(REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT)
     }
     var error by rememberSaveable {
         mutableStateOf<ProblemReportUiError?>(null)
@@ -232,6 +237,51 @@ internal fun ProblemReportScreen(
                 }
             }
 
+            if (canIncludeObiDiagnostics) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = warmColors.surfaceRaised,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !creating) {
+                                includeObiDiagnostics = !includeObiDiagnostics
+                                error = null
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = includeObiDiagnostics,
+                            enabled = !creating,
+                            onCheckedChange = { checked ->
+                                includeObiDiagnostics = checked
+                                error = null
+                            },
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.report_include_obi_diagnostics,
+                                ),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                text = stringResource(
+                                    R.string.report_include_obi_diagnostics_hint,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = warmColors.surfaceRaised,
@@ -241,6 +291,9 @@ internal fun ProblemReportScreen(
                         type = type,
                         includeConversation =
                             canIncludeConversation && includeConversation,
+                        includeObiDiagnostics =
+                            canIncludeObiDiagnostics &&
+                                includeObiDiagnostics,
                     ),
                     modifier = Modifier.padding(12.dp),
                     style = MaterialTheme.typography.bodySmall,
@@ -275,6 +328,9 @@ internal fun ProblemReportScreen(
                                 includeConversation =
                                     canIncludeConversation &&
                                         includeConversation,
+                                includeObiDiagnostics =
+                                    canIncludeObiDiagnostics &&
+                                        includeObiDiagnostics,
                             ),
                         )
                         creating = false
@@ -350,8 +406,9 @@ private fun ProblemReportTopBar(
 private fun reportPrivacyDisclosure(
     type: ProblemReportType,
     includeConversation: Boolean,
-): String =
-    stringResource(
+    includeObiDiagnostics: Boolean,
+): String {
+    val base = stringResource(
         when (type) {
             ProblemReportType.ASSISTANT_RESPONSE ->
                 if (includeConversation) {
@@ -368,6 +425,15 @@ private fun reportPrivacyDisclosure(
                 }
         },
     )
+    val diagnostics = stringResource(
+        if (includeObiDiagnostics) {
+            R.string.report_privacy_obi_diagnostics_included
+        } else {
+            R.string.report_privacy_obi_diagnostics_not_included
+        },
+    )
+    return "$base\n\n$diagnostics"
+}
 
 @Composable
 private fun reportErrorText(
@@ -381,5 +447,7 @@ private fun reportErrorText(
                 R.string.report_error_description_required
             ProblemReportUiError.GENERATION_FAILED ->
                 R.string.report_error_generation_failed
+            ProblemReportUiError.SHARE_UNAVAILABLE ->
+                R.string.report_error_share_unavailable
         },
     )

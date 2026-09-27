@@ -1,5 +1,6 @@
 package pl.lukaszpeciak.towarownik
 
+import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -24,6 +25,7 @@ internal const val REPORT_DESCRIPTION_MAX_CHARS = 2_000
 internal const val REPORT_CACHE_DIRECTORY = "reports"
 internal const val REPORT_FILE_PROVIDER_AUTHORITY_SUFFIX = ".fileprovider"
 internal const val REPORT_INCLUDE_CONVERSATION_DEFAULT = false
+internal const val REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT = false
 
 internal enum class ProblemReportType {
     ASSISTANT_RESPONSE,
@@ -90,6 +92,7 @@ internal data class ProblemReportRequest(
     val category: ProblemReportCategory,
     val description: String,
     val includeConversation: Boolean,
+    val includeObiDiagnostics: Boolean,
     val conversationId: Long? = null,
     val reportedMessageId: Long? = null,
 ) {
@@ -122,6 +125,7 @@ internal enum class ProblemReportUiError {
     TARGET_UNAVAILABLE,
     DESCRIPTION_REQUIRED,
     GENERATION_FAILED,
+    SHARE_UNAVAILABLE,
 }
 
 internal sealed interface ProblemReportResolution {
@@ -240,10 +244,16 @@ internal fun createProblemReportMetadata(
     )
 }
 
+internal fun hasExistingSafeObiDiagnostics(
+    recorder: ObiDiagnosticRecorder,
+): Boolean =
+    recorder.isEnabled() && recorder.snapshots().isNotEmpty()
+
 internal fun existingSafeObiDiagnostics(
     recorder: ObiDiagnosticRecorder,
+    include: Boolean,
 ): String? =
-    if (recorder.isEnabled() && recorder.snapshots().isNotEmpty()) {
+    if (include && hasExistingSafeObiDiagnostics(recorder)) {
         recorder.report()
     } else {
         null
@@ -322,7 +332,10 @@ internal object ProblemReportFormatter {
         }
 
         appendSection("OBI DIAGNOSTICS") {
-            if (safeObiDiagnostics == null) {
+            if (
+                !request.includeObiDiagnostics ||
+                safeObiDiagnostics == null
+            ) {
                 appendLine("OBI diagnostics: not included")
             } else {
                 appendLine(safeObiDiagnostics.trimEnd())
@@ -439,14 +452,19 @@ internal fun buildProblemReportSendIntent(
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
-internal suspend fun createProblemReportShareIntent(
+internal data class ProblemReportSharePayload(
+    val intent: Intent,
+    val reportFile: File,
+)
+
+internal suspend fun createProblemReportSharePayload(
     context: Context,
     repository: ConversationRepository,
     request: ProblemReportRequest,
     subject: String,
     body: String,
     recorder: ObiDiagnosticRecorder,
-): Result<Intent> {
+): Result<ProblemReportSharePayload> {
     if (
         request.type == ProblemReportType.GENERAL &&
         request.description.isBlank()
@@ -470,7 +488,10 @@ internal suspend fun createProblemReportShareIntent(
             request = request,
             evidence = resolution.evidence,
             metadata = metadata,
-            safeObiDiagnostics = existingSafeObiDiagnostics(recorder),
+            safeObiDiagnostics = existingSafeObiDiagnostics(
+                recorder = recorder,
+                include = request.includeObiDiagnostics,
+            ),
         )
         val file = withContext(Dispatchers.IO) {
             ProblemReportFileStore(context.cacheDir).write(
@@ -479,10 +500,31 @@ internal suspend fun createProblemReportShareIntent(
             )
         }
         val uri = problemReportUri(context, file)
-        buildProblemReportSendIntent(
-            reportUri = uri,
-            subject = subject,
-            body = body,
+        ProblemReportSharePayload(
+            intent = buildProblemReportSendIntent(
+                reportUri = uri,
+                subject = subject,
+                body = body,
+            ),
+            reportFile = file,
         )
     }
 }
+
+internal fun launchProblemReportShare(
+    payload: ProblemReportSharePayload,
+    chooserTitle: String,
+    startActivity: (Intent) -> Unit,
+): ProblemReportUiError? =
+    try {
+        startActivity(
+            Intent.createChooser(
+                payload.intent,
+                chooserTitle,
+            ),
+        )
+        null
+    } catch (_: ActivityNotFoundException) {
+        payload.reportFile.delete()
+        ProblemReportUiError.SHARE_UNAVAILABLE
+    }
