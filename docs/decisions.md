@@ -182,3 +182,13 @@ These decisions describe the broader intended product behavior. The currently im
 - Technical and persisted contracts are not localization targets: USER/ASSISTANT roles, JSON/API/tool identifiers, OBIK/store 075, HTTP details, database schema/values, URLs, OpenAI schema, and diagnostic internal traces remain stable.
 - This iteration relies only on Android resource locale selection. In-app Polish/English selection and a Settings UI are explicitly deferred.
 - No localization framework or new dependency is introduced.
+
+
+## Towarownik visual system v0.1 — Warm Modular Utility
+
+- Production UI uses a dark-first warm palette: Background #17110F, Surface #211815, SurfaceRaised #2B201C, SurfaceHighlight #352720, Outline #49362E, TextPrimary #F3E8DE, TextSecondary #BDAA9E, Accent #E58A3F, AccentLight #F2AC68, Success #91A77F, Error #DE7468.
+- Amber is semantic rather than decorative: active, selected, verified, and important actions may use it strongly; ordinary surfaces and secondary actions stay visually quiet.
+- The Material 3 theme is centralized in Compose and no longer follows automatic light/dark switching or dynamic color. The approved production scope is dark only.
+- Surface hierarchy, soft modular rounding, system typography, restrained metadata, and vector action icons define the visual language.
+- Verified product cards use a raised warm surface plus subtle amber extraction rail; assistant messages are not amber.
+- A dedicated light theme is intentionally deferred instead of being inferred from the dark palette.
