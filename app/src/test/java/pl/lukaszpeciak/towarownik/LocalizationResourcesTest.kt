@@ -60,7 +60,7 @@ class LocalizationResourcesTest {
             polish.getString(store075StockStringRes(null)),
         )
         assertEquals(
-            "Stock Nowy Sącz: no data",
+            "Nowy Sącz stock: no data",
             english.getString(store075StockStringRes(null)),
         )
         assertEquals(
@@ -68,7 +68,7 @@ class LocalizationResourcesTest {
             polish.getString(store075StockStringRes(0)),
         )
         assertEquals(
-            "Stock Nowy Sącz: 0 pcs. — unavailable",
+            "Nowy Sącz stock: 0 — unavailable",
             english.getString(store075StockStringRes(0)),
         )
         assertEquals(
@@ -76,7 +76,7 @@ class LocalizationResourcesTest {
             polish.getString(store075StockStringRes(7), 7),
         )
         assertEquals(
-            "Stock Nowy Sącz: 7 pcs.",
+            "Nowy Sącz stock: 7",
             english.getString(store075StockStringRes(7), 7),
         )
     }
@@ -92,7 +92,7 @@ class LocalizationResourcesTest {
             polish.getString(store075PriceStringRes(null)),
         )
         assertEquals(
-            "Price Nowy Sącz: no data",
+            "Nowy Sącz price: no data",
             english.getString(store075PriceStringRes(null)),
         )
         assertEquals(
@@ -103,7 +103,7 @@ class LocalizationResourcesTest {
             ),
         )
         assertEquals(
-            "Price Nowy Sącz: 14.99 zł",
+            "Nowy Sącz price: 14.99 zł",
             english.getString(
                 store075PriceStringRes(price),
                 price.toPlainString(),

@@ -63,7 +63,7 @@
     <string name="diagnostics_clear_report">Wyczyść raport</string>
     <string name="diagnostics_share_subject">Towarownik — diagnostyka OBI</string>
     <string name="diagnostics_share_chooser">Udostępnij raport</string>
-    <string name="diagnostics_clipboard_label">Towarownik OBI diagnostics</string>
+    <string name="diagnostics_clipboard_label">Towarownik — diagnostyka OBI</string>
     <string name="back">Powrót</string>
 
     <string name="cd_open_navigation">Otwórz historię rozmów</string>
