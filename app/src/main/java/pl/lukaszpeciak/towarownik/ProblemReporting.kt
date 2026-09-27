@@ -110,6 +110,12 @@ internal data class ProblemReportEvidence(
     val conversationMessages: List<PersistedMessage>,
 )
 
+internal enum class ProblemReportUiError {
+    TARGET_UNAVAILABLE,
+    DESCRIPTION_REQUIRED,
+    GENERATION_FAILED,
+}
+
 internal sealed interface ProblemReportResolution {
     data class Success(
         val evidence: ProblemReportEvidence,

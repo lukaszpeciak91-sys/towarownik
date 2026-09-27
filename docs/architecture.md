@@ -35,6 +35,18 @@ Locale selection uses AndroidX AppCompat per-app locales. `MainActivity` is an `
 
 The UI locale remains independent from advisor/model language. No locale field is added to proxy requests or persisted conversations, and existing USER/ASSISTANT text is never translated as a side effect of changing Settings.
 
+## Problem reporting boundary
+
+Problem reporting is local and user-controlled. There are two entry points: an exact persisted ASSISTANT-message report from the advisor transcript and a general report from Settings. The UI carries a nullable persisted message ID only so the report flow can re-resolve the authoritative Room message before generation; Room schema v2 is unchanged.
+
+A contextual report resolves the requested conversation/message from `ConversationRepository`, confirms that the message belongs to that conversation and has role `ASSISTANT`, and reads its persisted verified-product snapshots. With conversation inclusion OFF (the default), no unrelated transcript is included. With inclusion ON, context is sliced from the beginning through the reported response only. General reports include the current persisted conversation only after explicit opt-in. Draft text is not part of report evidence.
+
+Report generation never calls the proxy, OpenAI, OBI repositories, or the live diagnostic probe. If the existing OBI recorder is already enabled and has sanitized captured operations, its existing public `report()` output may be appended; otherwise the report records that diagnostics were not included.
+
+The report formatter receives only bounded technical metadata, persisted message/product evidence, the stable report category, and the user's description. It deliberately has no access to `lastResponseId`, OpenAI/tool IDs, secrets, raw responses, cookies, HTML/Nuxt, accounts, network address, or location.
+
+TXT files are UTF-8 and temporary under `cacheDir/reports/`. Before creating a new file, previous files in that dedicated directory are removed. A non-exported `FileProvider` exposes only `reports/`; sharing uses `ACTION_SEND` + `EXTRA_STREAM` + temporary read permission and the Android chooser. No report is auto-sent, persisted in Room, or uploaded to a report backend.
+
 ## AI assistant boundary
 
 The Android app now exposes two separate top-level paths. WYSZUKIWARKA continues to use the existing local OBI flow directly and never invokes the proxy. DORADCA uses this assistant path:
