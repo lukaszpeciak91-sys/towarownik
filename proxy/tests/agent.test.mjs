@@ -506,42 +506,17 @@ test("cache-write tokens are parsed and charged at USD 0.125 per million", async
   assert.equal(body.usage.estimatedCostUsd, 0.0001165);
 });
 
-test("GPT-6 ordinary input pricing is USD 0.10 per million", async () => {
+test("GPT-6 ordinary input uses the USD 0.10 per million standard rate", async () => {
   const fake = fakeOpenAI(
     withUsage(answerPayload(), {
-      input_tokens: 1_000_000,
+      input_tokens: 100_000,
       input_tokens_details: {
         cached_tokens: 0,
         cache_write_tokens: 0,
       },
       output_tokens: 0,
       output_tokens_details: { reasoning_tokens: 0 },
-      total_tokens: 1_000_000,
-    }),
-  );
-  const worker = createWorker(fake.fetch);
-
-  const body = await responseJson(
-    await worker.fetch(
-      jsonRequest("/v1/agent/start", { message: "hello" }),
-      configuredEnv,
-    ),
-  );
-
-  assert.equal(body.usage.estimatedCostUsd, 0.1);
-});
-
-test("GPT-6 cached input pricing is USD 0.01 per million", async () => {
-  const fake = fakeOpenAI(
-    withUsage(answerPayload(), {
-      input_tokens: 1_000_000,
-      input_tokens_details: {
-        cached_tokens: 1_000_000,
-        cache_write_tokens: 0,
-      },
-      output_tokens: 0,
-      output_tokens_details: { reasoning_tokens: 0 },
-      total_tokens: 1_000_000,
+      total_tokens: 100_000,
     }),
   );
   const worker = createWorker(fake.fetch);
@@ -556,17 +531,17 @@ test("GPT-6 cached input pricing is USD 0.01 per million", async () => {
   assert.equal(body.usage.estimatedCostUsd, 0.01);
 });
 
-test("GPT-6 cache-write pricing is USD 0.125 per million", async () => {
+test("GPT-6 cached input uses the USD 0.01 per million standard rate", async () => {
   const fake = fakeOpenAI(
     withUsage(answerPayload(), {
-      input_tokens: 1_000_000,
+      input_tokens: 100_000,
       input_tokens_details: {
-        cached_tokens: 0,
-        cache_write_tokens: 1_000_000,
+        cached_tokens: 100_000,
+        cache_write_tokens: 0,
       },
       output_tokens: 0,
       output_tokens_details: { reasoning_tokens: 0 },
-      total_tokens: 1_000_000,
+      total_tokens: 100_000,
     }),
   );
   const worker = createWorker(fake.fetch);
@@ -578,7 +553,32 @@ test("GPT-6 cache-write pricing is USD 0.125 per million", async () => {
     ),
   );
 
-  assert.equal(body.usage.estimatedCostUsd, 0.125);
+  assert.equal(body.usage.estimatedCostUsd, 0.001);
+});
+
+test("GPT-6 cache-write input uses the USD 0.125 per million standard rate", async () => {
+  const fake = fakeOpenAI(
+    withUsage(answerPayload(), {
+      input_tokens: 100_000,
+      input_tokens_details: {
+        cached_tokens: 0,
+        cache_write_tokens: 100_000,
+      },
+      output_tokens: 0,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 100_000,
+    }),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "hello" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.usage.estimatedCostUsd, 0.0125);
 });
 
 test("GPT-6 output pricing is USD 0.50 per million", async () => {
