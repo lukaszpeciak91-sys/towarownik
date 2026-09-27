@@ -43,6 +43,126 @@ class ObiPayloadParserTest {
     }
 
     @Test
+    fun `confirmed live rich product fields are extracted from decoded Nuxt product`() {
+        val product = parser.parse(
+            fixture("live-3496072-store-075.html"),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals("Dragon", product.brand)
+        assertEquals(
+            "Klej Butapren firmy DRAGON to produkt specjalistyczny, uniwersalnego przeznaczenia. Do łączenia gumy, skóry, tkanin, ceramiki, szkła i drewna.",
+            product.shortDescription,
+        )
+        assertEquals(
+            listOf(
+                TechnicalFact(
+                    "Właściwości",
+                    "tworzy wodoodporną, wytrzymałą i elastyczną spoinę",
+                ),
+                TechnicalFact("Czas wstępnego wiązania", "3 h"),
+                TechnicalFact("Zalety", "nie plami łączonych elementów"),
+                TechnicalFact("Pojemność", "50 ml"),
+                TechnicalFact("rodzaj", "Kleje specjalistyczne"),
+                TechnicalFact("Waga", "44 g"),
+                TechnicalFact("Wysokość", "15,0 cm"),
+                TechnicalFact("Szerokość", "4,0 cm"),
+                TechnicalFact("Głębokość", "2,0 cm"),
+            ),
+            product.technicalFacts,
+        )
+    }
+
+    @Test
+    fun `missing optional rich product data keeps basic product valid`() {
+        val product = parser.parse(
+            optionalRichFixture(
+                richFields = "",
+            ),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals(LIVE_OBIK, product.obik)
+        assertEquals("Synthetic product", product.name)
+        assertEquals(4, product.stock)
+        assertEquals(BigDecimal("9.99"), product.grossPrice)
+        assertNull(product.brand)
+        assertNull(product.shortDescription)
+        assertTrue(product.technicalFacts.isEmpty())
+    }
+
+    @Test
+    fun `malformed optional rich subsections fail soft entry by entry`() {
+        val rich = """
+            ,"brand":"not-an-object"
+            ,"productDescription":["not","a","string"]
+            ,"productOverview":[
+              {"bad":"entry"},
+              "Moc [W]: 600",
+              "bez separatora"
+            ]
+            ,"technicalData":{
+              "productDetails":[
+                {"key":"Prędkość","value":"  3000/min  "},
+                {"key":5,"value":"bad"},
+                {"key":"Pusty","value":"   "}
+              ],
+              "dimensionsAndWeight":"bad"
+            }
+        """.trimIndent().replace("\n", "")
+
+        val product = parser.parse(
+            optionalRichFixture(rich),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertNull(product.brand)
+        assertNull(product.shortDescription)
+        assertEquals(
+            listOf(
+                TechnicalFact("Moc [W]", "600"),
+                TechnicalFact("Prędkość", "3000/min"),
+            ),
+            product.technicalFacts,
+        )
+    }
+
+    @Test
+    fun `rich text normalizes markup whitespace deduplicates labels and respects bounds`() {
+        val longBrand = "B".repeat(100)
+        val longDescription = "D".repeat(700)
+        val overview = (1..20).joinToString(",") { index ->
+            val label = if (index == 2) "Fakt 1" else "Fakt $index"
+            "\"$label: ${"V".repeat(220)}\""
+        }
+        val rich = """
+            ,"brand":{"name":"  $longBrand  "}
+            ,"productDescription":"<p> $longDescription </p>"
+            ,"productOverview":[$overview]
+            ,"technicalData":{
+              "productDetails":[{"key":"Fakt 1","value":"duplicate"}],
+              "dimensionsAndWeight":[{"key":"Waga","value":"  44   g  "}]
+            }
+        """.trimIndent().replace("\n", "")
+
+        val product = parser.parse(
+            optionalRichFixture(rich),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals(80, product.brand?.length)
+        assertEquals(600, product.shortDescription?.length)
+        assertEquals(12, product.technicalFacts.size)
+        assertEquals(1, product.technicalFacts.count { it.label == "Fakt 1" })
+        assertTrue(product.technicalFacts.all { it.label.length <= 80 })
+        assertTrue(product.technicalFacts.all { it.value.length <= 180 })
+    }
+
+    @Test
     fun `current live OBI EAN comes from singleton Nuxt array without JSON-LD fallback`() {
         val product = parser.parse(
             fixture("live-3496072-store-075.html"),
@@ -164,6 +284,30 @@ class ObiPayloadParserTest {
     fun `different product identity fails`() {
         assertTrue(parser.parse(fixture("positive-stock.html"), "1234567", STORE).isFailure)
     }
+
+    private fun optionalRichFixture(
+        richFields: String,
+    ): String =
+        """
+        <!doctype html><html><body>
+        <script id="__NUXT_DATA__" type="application/json">
+        {
+          "skuId":"3496072",
+          "productTitle":"Synthetic product",
+          "prettyUrl":"/p/3496072/synthetic",
+          "articleEanEcms":["5900000000000"],
+          "store":{
+            "information":{"storeId":"075"},
+            "articleData":{
+              "stock":4,
+              "pricing":{"grossPrice":9.99}
+            }
+          }
+          $richFields
+        }
+        </script>
+        </body></html>
+        """.trimIndent()
 
     private fun fixture(name: String): String =
         checkNotNull(javaClass.getResource("/obi/$name")).readText()
