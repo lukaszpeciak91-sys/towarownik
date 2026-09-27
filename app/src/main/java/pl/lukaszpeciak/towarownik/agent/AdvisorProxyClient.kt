@@ -381,6 +381,7 @@ internal class AdvisorProxyClient(
                     "requestType",
                     "inputTokens",
                     "cachedInputTokens",
+                    "cacheWriteTokens",
                     "outputTokens",
                     "reasoningTokens",
                     "totalTokens",
@@ -409,6 +410,8 @@ internal class AdvisorProxyClient(
             val inputTokens = usage.requireTokenCount("inputTokens")
             val cachedInputTokens =
                 usage.optionalTokenCount("cachedInputTokens")
+            val cacheWriteTokens =
+                usage.optionalTokenCount("cacheWriteTokens")
             val outputTokens = usage.requireTokenCount("outputTokens")
             val reasoningTokens =
                 usage.optionalTokenCount("reasoningTokens")
@@ -416,7 +419,8 @@ internal class AdvisorProxyClient(
 
             require(
                 cachedInputTokens == null ||
-                    cachedInputTokens <= inputTokens,
+                    cacheWriteTokens == null ||
+                    cachedInputTokens + cacheWriteTokens <= inputTokens,
             )
             require(
                 reasoningTokens == null ||
@@ -445,6 +449,7 @@ internal class AdvisorProxyClient(
                 requestType = requestType,
                 inputTokens = inputTokens,
                 cachedInputTokens = cachedInputTokens,
+                cacheWriteTokens = cacheWriteTokens,
                 outputTokens = outputTokens,
                 reasoningTokens = reasoningTokens,
                 totalTokens = totalTokens,
