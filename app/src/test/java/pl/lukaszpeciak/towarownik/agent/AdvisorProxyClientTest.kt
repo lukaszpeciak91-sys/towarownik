@@ -302,7 +302,7 @@ class AdvisorProxyClientTest {
                         "outputTokens":100,
                         "reasoningTokens":50,
                         "totalTokens":1100,
-                        "estimatedCostUsd":"0.000248",
+                        "estimatedCostUsd":0.000248,
                         "pricingVersion":"openai-gpt-5.6-luna-2026-09-27"
                       }
                     }
@@ -357,7 +357,7 @@ class AdvisorProxyClientTest {
                         "outputTokens":1,
                         "reasoningTokens":0,
                         "totalTokens":1,
-                        "estimatedCostUsd":"0.0000012",
+                        "estimatedCostUsd":0.0000012,
                         "pricingVersion":"openai-gpt-5.6-luna-2026-09-27"
                       }
                     }
