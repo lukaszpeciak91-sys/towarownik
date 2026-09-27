@@ -219,8 +219,8 @@ class ObiPayloadParser(
                     raw = technicalData?.get("dimensionsAndWeight"),
                 )
             }
-                .distinctBy {
-                    it.label.lowercase() to it.value.lowercase()
+.distinctBy {
+                    it.label.lowercase()
                 }
                 .take(MAX_TECHNICAL_FACTS)
         }.getOrDefault(emptyList())
@@ -387,7 +387,7 @@ private fun String.stripPresentationMarkup(): String =
 private fun String.decodeBasicHtmlEntities(): String =
     replace("&nbsp;", " ", ignoreCase = true)
         .replace("&amp;", "&", ignoreCase = true)
-        .replace("&quot;", """, ignoreCase = true)
+        .replace("&quot;", "\"", ignoreCase = true)
         .replace("&#39;", "'", ignoreCase = true)
         .replace("&apos;", "'", ignoreCase = true)
         .replace("&lt;", "<", ignoreCase = true)
