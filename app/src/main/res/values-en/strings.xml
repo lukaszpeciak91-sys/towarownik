@@ -90,12 +90,16 @@
     <string name="ai_usage_tokens">TOKENS</string>
     <string name="ai_usage_input_tokens">Input</string>
     <string name="ai_usage_cached_tokens">Cached input</string>
+    <string name="ai_usage_cache_write_tokens">Cache writes</string>
     <string name="ai_usage_output_tokens">Output</string>
     <string name="ai_usage_reasoning_tokens">Reasoning</string>
     <string name="ai_usage_total_tokens">Total</string>
     <string name="ai_usage_cost">ESTIMATED COST</string>
     <string name="ai_usage_cost_usd">USD</string>
     <string name="ai_usage_cost_pln">PLN</string>
+    <string name="ai_usage_unpriced_requests">Unpriced responses</string>
+    <string name="ai_usage_known_cost_usd_at_least">Known cost, at least</string>
+    <string name="ai_usage_known_cost_pln_at_least">Known PLN cost, at least</string>
     <string name="ai_usage_nbp_rate">NBP rate dated %1$s.</string>
     <string name="ai_usage_nbp_rate_cached">Last available NBP rate dated %1$s (cached).</string>
     <string name="ai_usage_unavailable">Unavailable</string>
