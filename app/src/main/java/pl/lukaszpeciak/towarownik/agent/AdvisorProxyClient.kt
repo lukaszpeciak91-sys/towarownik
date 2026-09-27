@@ -419,6 +419,14 @@ internal class AdvisorProxyClient(
 
             require(
                 cachedInputTokens == null ||
+                    cachedInputTokens <= inputTokens,
+            )
+            require(
+                cacheWriteTokens == null ||
+                    cacheWriteTokens <= inputTokens,
+            )
+            require(
+                cachedInputTokens == null ||
                     cacheWriteTokens == null ||
                     cachedInputTokens + cacheWriteTokens <= inputTokens,
             )
