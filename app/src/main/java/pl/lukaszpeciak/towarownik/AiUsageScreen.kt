@@ -45,7 +45,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import pl.lukaszpeciak.towarownik.aiusage.AiUsageRepository
 import pl.lukaszpeciak.towarownik.aiusage.AiUsageSnapshot
-import pl.lukaszpeciak.towarownik.aiusage.CURRENT_AI_MODEL_LABEL
 import pl.lukaszpeciak.towarownik.aiusage.NbpUsdPlnRateProvider
 import pl.lukaszpeciak.towarownik.aiusage.UsdPlnRate
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
@@ -96,7 +95,10 @@ internal fun AiUsageScreen(
             ) {
                 UsageMetricRow(
                     stringResource(R.string.ai_usage_current_model),
-                    CURRENT_AI_MODEL_LABEL,
+                    measuredModelForDisplay(snapshot)
+                        ?: stringResource(
+                            R.string.ai_usage_unavailable,
+                        ),
                 )
                 UsageMetricRow(
                     stringResource(R.string.ai_usage_tracking_since),
@@ -129,6 +131,11 @@ internal fun AiUsageScreen(
                         ?: stringResource(R.string.ai_usage_unavailable),
                 )
                 UsageMetricRow(
+                    stringResource(R.string.ai_usage_cache_write_tokens),
+                    snapshot.cacheWriteTokens?.toString()
+                        ?: stringResource(R.string.ai_usage_unavailable),
+                )
+                UsageMetricRow(
                     stringResource(R.string.ai_usage_output_tokens),
                     snapshot.outputTokens.toString(),
                 )
@@ -146,15 +153,35 @@ internal fun AiUsageScreen(
             UsageCard(
                 title = stringResource(R.string.ai_usage_cost),
             ) {
+                if (knownCostIsPartial(snapshot)) {
+                    UsageMetricRow(
+                        stringResource(
+                            R.string.ai_usage_unpriced_requests,
+                        ),
+                        snapshot.unpricedRequests.toString(),
+                    )
+                }
                 UsageMetricRow(
-                    stringResource(R.string.ai_usage_cost_usd),
+                    stringResource(
+                        if (knownCostIsPartial(snapshot)) {
+                            R.string.ai_usage_known_cost_usd_at_least
+                        } else {
+                            R.string.ai_usage_cost_usd
+                        },
+                    ),
                     formatAdaptiveMoney(
                         snapshot.estimatedCostUsd,
                         "USD",
                     ),
                 )
                 UsageMetricRow(
-                    stringResource(R.string.ai_usage_cost_pln),
+                    stringResource(
+                        if (knownCostIsPartial(snapshot)) {
+                            R.string.ai_usage_known_cost_pln_at_least
+                        } else {
+                            R.string.ai_usage_cost_pln
+                        },
+                    ),
                     formatPlnCost(
                         snapshot = snapshot,
                         rate = usdPlnRate,
@@ -416,6 +443,15 @@ private fun formatPlnCost(
         "PLN",
     )
 }
+
+internal fun measuredModelForDisplay(
+    snapshot: AiUsageSnapshot,
+): String? =
+    snapshot.latestModel ?: snapshot.models.singleOrNull()?.model
+
+internal fun knownCostIsPartial(
+    snapshot: AiUsageSnapshot,
+): Boolean = snapshot.unpricedRequests > 0
 
 internal fun convertUsdToPln(
     usd: BigDecimal,
