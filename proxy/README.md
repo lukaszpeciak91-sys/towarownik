@@ -126,7 +126,7 @@ The successful envelope may therefore include:
     "outputTokens": 100,
     "reasoningTokens": 50,
     "totalTokens": 1100,
-    "estimatedCostUsd": 0.000248,
+    "estimatedCostUsd": 0.000253,
     "pricingVersion": "openai-gpt-5.6-luna-2026-09-27-v2"
   }
 }
