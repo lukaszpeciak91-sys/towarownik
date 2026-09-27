@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Persistent advisor conversations + multi-turn v0.3**
+**Persistent advisor conversations + lifecycle polish v0.3.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. This iteration connects that shell to real local conversation state and the Responses continuation chain.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 now combines real local conversation state and Responses continuation with the agreed conversation lifecycle polish.
 
 Implemented direction:
 
@@ -22,7 +22,12 @@ Implemented direction:
 - local tool allowance is two calls per USER turn and resets on every new USER message;
 - interrupted USER-only tails recover to editable draft without automatic resend;
 - switching/new conversation cancels active work and stale callbacks are rejected;
-- current OBI facts continue to be refreshed through the existing Android local tool.
+- current OBI facts continue to be refreshed through the existing Android local tool;
+- conversations are treated as individual customer cases, with “Nowa rozmowa” recommended for a new customer/problem;
+- startup-only local retention removes conversations strictly older than 30 days by `updatedAt`;
+- the exact 30-day cutoff remains retained and message rows cascade on deletion;
+- each history row can be deleted manually after explicit confirmation;
+- deleting the active conversation cancels its request, invalidates stale callbacks, and opens a fresh empty chat.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
@@ -34,11 +39,11 @@ Android test version: **0.1.7 (8)**.
 
 Keep the reusable Android `VerifiedProductCard` boundary and add structured advisor product presentation without making model-generated URLs/facts authoritative.
 
-The final Justyna persona/instructions and any context compaction should remain separate measured iterations.
+The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 
 ## Not started
 
-- Final "Justyna" advisor persona/prompt
+- Final advisor persona/prompt
 - Advisor structured product-card proxy output
 - Locally persisted verified product snapshots
 - Context summarization/compaction

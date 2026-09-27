@@ -26,9 +26,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -38,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -113,6 +117,16 @@ private enum class AppSurface {
     MANUAL_SEARCH,
 }
 
+internal fun freshAdvisorCaseAfterDelete(
+    deletedConversationId: Long,
+    activeConversationId: Long?,
+): AdvisorCaseUiState? =
+    if (deletedConversationId == activeConversationId) {
+        AdvisorCaseUiState()
+    } else {
+        null
+    }
+
 @Composable
 private fun TowarownikApp() {
     val context = LocalContext.current.applicationContext
@@ -180,15 +194,19 @@ private fun TowarownikApp() {
         advisorCase = conversation.toAdvisorCaseUiState()
     }
 
-    suspend fun cancelAndRecoverActiveTurn() {
+    suspend fun cancelAndRecoverActiveTurn(
+        recoverInterrupted: Boolean = true,
+    ) {
         advisorRequestGuard.invalidate()
         advisorJob?.cancelAndJoin()
         advisorJob = null
         draftPersistJob?.cancelAndJoin()
         draftPersistJob = null
 
-        activeConversationId?.let { conversationId ->
-            conversationRepository.recoverInterruptedTurn(conversationId)
+        if (recoverInterrupted) {
+            activeConversationId?.let { conversationId ->
+                conversationRepository.recoverInterruptedTurn(conversationId)
+            }
         }
     }
 
@@ -213,6 +231,30 @@ private fun TowarownikApp() {
                 applyConversation(loaded)
             }
             drawerState.close()
+        }
+    }
+
+    fun deleteConversation(conversationId: Long) {
+        scope.launch {
+            val freshCase = freshAdvisorCaseAfterDelete(
+                deletedConversationId = conversationId,
+                activeConversationId = activeConversationId,
+            )
+            if (freshCase != null) {
+                cancelAndRecoverActiveTurn(
+                    recoverInterrupted = false,
+                )
+            }
+
+            conversationRepository.deleteConversation(conversationId)
+
+            if (freshCase != null) {
+                activeConversationId = null
+                freshCaseSelected = true
+                advisorState = AdvisorUiState.Idle
+                advisorCase = freshCase
+                drawerState.close()
+            }
         }
     }
 
@@ -269,6 +311,16 @@ private fun TowarownikApp() {
                 ) {
                     advisorState = state
                 }
+            }
+
+            if (
+                !advisorRequestGuard.isCurrent(
+                    token = generation,
+                    expectedConversationId = turn.conversationId,
+                    activeConversationId = activeConversationId,
+                )
+            ) {
+                return@launch
             }
 
             when (finalState) {
@@ -346,12 +398,20 @@ private fun TowarownikApp() {
     }
 
     LaunchedEffect(Unit) {
+        conversationRepository.cleanupExpiredConversations()
+
         val savedConversationId = activeConversationId
         when {
             savedConversationId != null -> {
-                conversationRepository
+                val loaded = conversationRepository
                     .loadRecoveringInterrupted(savedConversationId)
-                    ?.let(::applyConversation)
+                if (loaded != null) {
+                    applyConversation(loaded)
+                } else {
+                    freshCaseSelected = true
+                    advisorState = AdvisorUiState.Idle
+                    applyConversation(null)
+                }
             }
 
             !freshCaseSelected &&
@@ -388,6 +448,7 @@ private fun TowarownikApp() {
                             scope.launch { drawerState.close() }
                         },
                         onOpenConversation = ::openConversation,
+                        onDeleteConversation = ::deleteConversation,
                     )
                 },
             ) {
@@ -446,7 +507,12 @@ private fun ConversationDrawer(
     onQueryChange: (String) -> Unit,
     onNewConversation: () -> Unit,
     onOpenConversation: (Long) -> Unit,
+    onDeleteConversation: (Long) -> Unit,
 ) {
+    var pendingDelete by remember {
+        mutableStateOf<ConversationSummary?>(null)
+    }
+
     ModalDrawerSheet {
         Column(
             modifier = Modifier
@@ -495,33 +561,97 @@ private fun ConversationDrawer(
                         items = conversations,
                         key = { conversation -> conversation.id },
                     ) { conversation ->
-                        OutlinedButton(
-                            onClick = {
-                                onOpenConversation(conversation.id)
-                            },
+                        var menuExpanded by remember(conversation.id) {
+                            mutableStateOf(false)
+                        }
+
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.Start,
+                            OutlinedButton(
+                                onClick = {
+                                    onOpenConversation(conversation.id)
+                                },
+                                modifier = Modifier.weight(1f),
                             ) {
-                                Text(
-                                    text = conversation.title,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                                Text(
-                                    text = formatHistoryTimestamp(
-                                        conversation.updatedAt,
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.Start,
+                                ) {
+                                    Text(
+                                        text = conversation.title,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                    Text(
+                                        text = formatHistoryTimestamp(
+                                            conversation.updatedAt,
+                                        ),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+
+                            Box {
+                                IconButton(
+                                    onClick = {
+                                        menuExpanded = true
+                                    },
+                                ) {
+                                    Text("⋮")
+                                }
+                                DropdownMenu(
+                                    expanded = menuExpanded,
+                                    onDismissRequest = {
+                                        menuExpanded = false
+                                    },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Usuń rozmowę") },
+                                        onClick = {
+                                            menuExpanded = false
+                                            pendingDelete = conversation
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    val conversationToDelete = pendingDelete
+    if (conversationToDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                pendingDelete = null
+            },
+            title = {
+                Text("Usunąć tę rozmowę?")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        onDeleteConversation(conversationToDelete.id)
+                    },
+                ) {
+                    Text("Usuń")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                    },
+                ) {
+                    Text("Anuluj")
+                }
+            },
+        )
     }
 }
 

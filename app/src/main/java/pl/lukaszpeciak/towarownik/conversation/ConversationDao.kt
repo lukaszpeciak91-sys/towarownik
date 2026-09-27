@@ -46,6 +46,16 @@ internal abstract class ConversationDao {
         conversationId: Long,
     ): ConversationEntity?
 
+    @Query("DELETE FROM conversations WHERE id = :conversationId")
+    abstract suspend fun deleteConversation(
+        conversationId: Long,
+    ): Int
+
+    @Query("DELETE FROM conversations WHERE updatedAt < :cutoffExclusive")
+    abstract suspend fun deleteConversationsUpdatedBefore(
+        cutoffExclusive: Long,
+    ): Int
+
     @Transaction
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     abstract suspend fun getConversationWithMessages(

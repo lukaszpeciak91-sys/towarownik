@@ -28,4 +28,20 @@ class AdvisorRequestGuardTest {
             ),
         )
     }
+
+    @Test
+    fun `deleting active conversation invalidates stale callback token`() {
+        val guard = AdvisorRequestGuard()
+        val staleToken = guard.token()
+
+        guard.invalidate()
+
+        assertFalse(
+            guard.isCurrent(
+                token = staleToken,
+                expectedConversationId = 42L,
+                activeConversationId = null,
+            ),
+        )
+    }
 }

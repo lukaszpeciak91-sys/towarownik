@@ -4,6 +4,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 internal const val CONVERSATION_TITLE_MAX_CHARS = 50
+internal const val CONVERSATION_RETENTION_DAYS = 30L
+internal const val CONVERSATION_RETENTION_MILLIS =
+    CONVERSATION_RETENTION_DAYS * 24L * 60L * 60L * 1000L
 
 internal data class ConversationSummary(
     val id: Long,
@@ -53,6 +56,18 @@ internal class ConversationRepository(
             conversations.map(ConversationEntity::toSummary)
         }
     }
+
+    suspend fun cleanupExpiredConversations(
+        nowMillis: Long = now(),
+    ): Int =
+        dao.deleteConversationsUpdatedBefore(
+            cutoffExclusive = nowMillis - CONVERSATION_RETENTION_MILLIS,
+        )
+
+    suspend fun deleteConversation(
+        conversationId: Long,
+    ): Boolean =
+        dao.deleteConversation(conversationId) > 0
 
     suspend fun loadMostRecentRecoveringInterrupted():
         PersistedConversation? {

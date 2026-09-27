@@ -217,6 +217,167 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `older than 30 days is deleted`() = runBlocking {
+        val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        val expired = completedConversationAt(
+            title = "Expired case",
+            updatedAt = cutoff - 1,
+        )
+
+        assertEquals(
+            1,
+            repository.cleanupExpiredConversations(nowMillis),
+        )
+        assertNull(repository.load(expired))
+    }
+
+    @Test
+    fun `exactly 30 days old is kept`() = runBlocking {
+        val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        val kept = completedConversationAt(
+            title = "Cutoff case",
+            updatedAt = cutoff,
+        )
+
+        assertEquals(
+            0,
+            repository.cleanupExpiredConversations(nowMillis),
+        )
+        assertEquals(kept, repository.load(kept)?.id)
+    }
+
+    @Test
+    fun `newer than 30 days is kept`() = runBlocking {
+        val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        val kept = completedConversationAt(
+            title = "Recent case",
+            updatedAt = cutoff + 1,
+        )
+
+        repository.cleanupExpiredConversations(nowMillis)
+
+        assertEquals(kept, repository.load(kept)?.id)
+    }
+
+    @Test
+    fun `retention cleanup cascades deleted conversation messages`() = runBlocking {
+        val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        val expired = completedConversationAt(
+            title = "Expired with messages",
+            updatedAt = cutoff - 1,
+        )
+        assertEquals(2, messageCount(expired))
+
+        repository.cleanupExpiredConversations(nowMillis)
+
+        assertEquals(0, messageCount(expired))
+    }
+
+    @Test
+    fun `retention cleanup is idempotent`() = runBlocking {
+        val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        completedConversationAt(
+            title = "Expired once",
+            updatedAt = cutoff - 1,
+        )
+
+        assertEquals(1, repository.cleanupExpiredConversations(nowMillis))
+        assertEquals(0, repository.cleanupExpiredConversations(nowMillis))
+        assertTrue(repository.observeConversations("").first().isEmpty())
+    }
+
+    @Test
+    fun `expired conversations disappear from local search`() = runBlocking {
+        val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        completedConversationAt(
+            title = "fuga retention",
+            updatedAt = cutoff - 1,
+        )
+        completedConversationAt(
+            title = "recent other case",
+            updatedAt = cutoff + 1,
+        )
+
+        repository.cleanupExpiredConversations(nowMillis)
+
+        assertTrue(
+            repository.observeConversations("fuga retention").first().isEmpty(),
+        )
+    }
+
+    @Test
+    fun `manual delete removes only selected conversation and cascades messages`() = runBlocking {
+        val selected = completedConversation(
+            firstUser = "Delete this case",
+            assistant = "Selected answer",
+            startAt = 100L,
+        )
+        val kept = completedConversation(
+            firstUser = "Keep this case",
+            assistant = "Kept answer",
+            startAt = 300L,
+        )
+        assertEquals(2, messageCount(selected))
+
+        assertTrue(repository.deleteConversation(selected))
+
+        assertNull(repository.load(selected))
+        assertEquals(0, messageCount(selected))
+        assertEquals(
+            listOf(kept),
+            repository.observeConversations("").first().map { it.id },
+        )
+    }
+
+    @Test
+    fun `deleted conversation cannot be resurrected by stale completion`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Case to delete",
+            createdAt = 100L,
+        )
+
+        assertTrue(repository.deleteConversation(started.conversationId))
+        val staleCompletion = runCatching {
+            repository.completeAssistantTurn(
+                conversationId = started.conversationId,
+                text = "Late answer",
+                finalResponseId = "resp_late",
+                createdAt = 200L,
+            )
+        }
+
+        assertTrue(staleCompletion.isFailure)
+        assertNull(repository.load(started.conversationId))
+        assertTrue(repository.observeConversations("").first().isEmpty())
+    }
+
+    @Test
+    fun `cleanup and delete are local database operations`() = runBlocking {
+        val nowMillis = CONVERSATION_RETENTION_MILLIS * 10
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        completedConversationAt(
+            title = "Expired local case",
+            updatedAt = cutoff - 1,
+        )
+        val manual = completedConversationAt(
+            title = "Manual local case",
+            updatedAt = cutoff + 1,
+        )
+
+        repository.cleanupExpiredConversations(nowMillis)
+        repository.deleteConversation(manual)
+
+        assertTrue(repository.observeConversations("").first().isEmpty())
+    }
+
+    @Test
     fun `interrupted user turn becomes draft and keeps last completed response id`() = runBlocking {
         val started = repository.beginUserTurn(null, "Pierwszy turn", 100L)
         repository.completeAssistantTurn(
@@ -306,6 +467,37 @@ class ConversationRepositoryTest {
             createdAt = startAt + 100L,
         )
         return started.conversationId
+    }
+
+    private suspend fun completedConversationAt(
+        title: String,
+        updatedAt: Long,
+    ): Long {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = title,
+            createdAt = updatedAt - 1,
+        )
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Synthetic answer",
+            finalResponseId = "resp_${started.conversationId}",
+            createdAt = updatedAt,
+        )
+        return started.conversationId
+    }
+
+    private fun messageCount(
+        conversationId: Long,
+    ): Int {
+        val cursor = database.openHelper.readableDatabase.query(
+            "SELECT COUNT(*) FROM messages WHERE conversationId = ?",
+            arrayOf(conversationId),
+        )
+        return cursor.use {
+            check(it.moveToFirst())
+            it.getInt(0)
+        }
     }
 
     private fun openDatabase() {

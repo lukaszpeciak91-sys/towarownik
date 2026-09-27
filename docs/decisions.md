@@ -152,3 +152,7 @@ These decisions describe the broader intended product behavior. The currently im
 - Interrupted trailing USER messages are transactionally recovered into editable draft text without advancing `lastResponseId` and without automatic network retry.
 - Completing a turn commits the ASSISTANT message and replacement final `lastResponseId` in one Room transaction.
 - Local history remains readable even if the corresponding OpenAI chain later cannot continue. This milestone does not silently replay the transcript or start a replacement context chain.
+- A conversation represents one customer case. The intended workflow is new customer/new problem -> “Nowa rozmowa”; follow-ups for the same case stay in the same conversation. No hard maximum conversation length is introduced.
+- Local conversations are retained for 30 days based on `updatedAt`. Startup cleanup deletes only rows with `updatedAt < now - 30 days`; the exact cutoff is retained. Messages are removed by the existing CASCADE foreign key.
+- Retention cleanup is startup-only and local-only: no WorkManager, scheduler, proxy, OpenAI, or OBI call is introduced.
+- History supports confirmed per-conversation deletion. Deleting the active conversation cancels active work, invalidates stale callbacks, removes the local row/messages, and opens a fresh empty advisor chat.

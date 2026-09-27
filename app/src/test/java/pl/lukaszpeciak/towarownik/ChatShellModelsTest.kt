@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
@@ -136,6 +137,23 @@ class ChatShellModelsTest {
         assertEquals("A coś tańszego?", restored.draft)
         assertEquals(2, restored.messages.size)
         assertEquals(ChatMessageRole.ASSISTANT, restored.messages.last().role)
+    }
+
+    @Test
+    fun `deleting active conversation opens a fresh empty case`() {
+        val fresh = freshAdvisorCaseAfterDelete(
+            deletedConversationId = 42L,
+            activeConversationId = 42L,
+        )
+
+        requireNotNull(fresh)
+        assertEquals(AdvisorCaseUiState(), fresh)
+        assertNull(
+            freshAdvisorCaseAfterDelete(
+                deletedConversationId = 42L,
+                activeConversationId = 99L,
+            ),
+        )
     }
 
     @Test

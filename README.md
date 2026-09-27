@@ -4,7 +4,7 @@ Towarownik is a small native Android utility for fast retail product lookup. The
 
 ## Project status
 
-The current phase is **persistent advisor conversations + multi-turn v0.3**. Advisor conversations are stored locally in Room, appear in the existing drawer, can be searched by title or message phrase, and may continue across multiple user turns using the conversation's last completed OpenAI response ID. Direct OBI search remains a separate full-screen local surface and does not depend on the proxy/OpenAI path.
+The current phase is **persistent advisor conversations + lifecycle polish v0.3.1**. Advisor conversations represent individual customer cases, are stored locally in Room, appear in the existing drawer, can be searched by title or message phrase, and may continue across multiple user turns using the conversation's last completed OpenAI response ID. Local history is retained for 30 days from its last update and may also be deleted manually. Direct OBI search remains a separate full-screen local surface and does not depend on the proxy/OpenAI path.
 
 ## Technology
 
@@ -102,3 +102,12 @@ History search is entirely local and performs case-insensitive SQLite phrase mat
 A first user send creates the conversation and derives a bounded local title from that message. Follow-up turns use the stored final `lastResponseId`. Only the final answer response ID advances conversation context; transient tool-call IDs are never stored.
 
 If a request is interrupted after the USER message was written but before an ASSISTANT completion, the trailing USER message is removed during recovery and its text becomes the editable draft. No paid request is repeated automatically.
+
+
+## Conversation lifecycle
+
+A conversation is intended to represent one customer case. Start **Nowa rozmowa** for a new customer or a new problem; follow-up questions about the same case stay in the existing conversation. This is a product convention, not a technical length limit.
+
+On normal app startup, local-only cleanup deletes conversations with `updatedAt < now - 30 days`. A conversation exactly at the cutoff is retained. Message rows disappear through the existing Room cascade. Cleanup does not call the proxy, OpenAI, or OBI and does not use WorkManager or a background scheduler.
+
+Each history row also exposes **Usuń rozmowę** with explicit confirmation. Deleting an active conversation cancels its active advisor request, invalidates stale callbacks, removes the local conversation/messages, and returns the advisor surface to a fresh empty chat.
