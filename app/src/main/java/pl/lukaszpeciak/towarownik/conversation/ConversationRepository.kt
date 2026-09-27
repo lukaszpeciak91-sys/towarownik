@@ -132,8 +132,8 @@ internal class ConversationRepository(
         conversationId: Long,
         text: String,
         finalResponseId: String,
-        products: List<VerifiedProductSnapshot> = emptyList(),
         createdAt: Long = now(),
+        products: List<VerifiedProductSnapshot> = emptyList(),
     ) {
         dao.completeAssistantTurn(
             conversationId = conversationId,
