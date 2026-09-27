@@ -54,6 +54,8 @@ internal class AdvisorController(
         input: String,
         previousResponseId: String?,
         conversationStoreNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        onOpenAiResponse: (AdvisorUsage?) -> Unit = {},
+        onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
     ): AdvisorUiState {
         val normalizedInput = input.normalizeWhitespace()
@@ -94,12 +96,19 @@ internal class AdvisorController(
         }
 
         var proxyResult = when (initialCall) {
-            is AdvisorProxyCallResult.Success -> initialCall.result
+            is AdvisorProxyCallResult.Success -> {
+                observeUsageSafely(
+                    initialCall.result.usageOrNull(),
+                    onOpenAiResponse,
+                )
+                initialCall.result
+            }
             is AdvisorProxyCallResult.Failure ->
                 return initialCall.toUiError().also(onState)
         }
 
         var toolCalls = 0
+        var toolAssistedObserved = false
         val verifiedByKey =
             linkedMapOf<VerifiedProductKey, VerifiedProductSnapshot>()
 
@@ -121,6 +130,10 @@ internal class AdvisorController(
 
                 is AdvisorProxyResult.ToolRequest -> {
                     val toolRequest = proxyResult
+                    if (!toolAssistedObserved) {
+                        toolAssistedObserved = true
+                        observeToolSafely(onToolRequestObserved)
+                    }
                     if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
                         return AdvisorUiState.Error(
                             AdvisorError.TOO_MANY_TOOLS,
@@ -176,13 +189,35 @@ internal class AdvisorController(
                             )
                         }
                     ) {
-                        is AdvisorProxyCallResult.Success ->
+                        is AdvisorProxyCallResult.Success -> {
+                            observeUsageSafely(
+                                continued.result.usageOrNull(),
+                                onOpenAiResponse,
+                            )
                             continued.result
+                        }
                         is AdvisorProxyCallResult.Failure ->
                             return continued.toUiError().also(onState)
                     }
                 }
             }
+        }
+    }
+
+    private fun observeUsageSafely(
+        usage: AdvisorUsage?,
+        callback: (AdvisorUsage?) -> Unit,
+    ) {
+        runCatching {
+            callback(usage)
+        }
+    }
+
+    private fun observeToolSafely(
+        callback: () -> Unit,
+    ) {
+        runCatching {
+            callback()
         }
     }
 
@@ -227,6 +262,12 @@ internal class AdvisorController(
         }
     }
 }
+
+private fun AdvisorProxyResult.usageOrNull(): AdvisorUsage? =
+    when (this) {
+        is AdvisorProxyResult.Answer -> usage
+        is AdvisorProxyResult.ToolRequest -> usage
+    }
 
 private fun AdvisorProxyCallResult.Failure.toUiError():
     AdvisorUiState.Error =
