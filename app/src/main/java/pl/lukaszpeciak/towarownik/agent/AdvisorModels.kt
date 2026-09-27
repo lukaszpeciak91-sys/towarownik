@@ -53,6 +53,7 @@ internal data class AdvisorUsage(
     val requestType: AdvisorRequestType,
     val inputTokens: Long,
     val cachedInputTokens: Long?,
+    val cacheWriteTokens: Long? = null,
     val outputTokens: Long,
     val reasoningTokens: Long?,
     val totalTokens: Long,
