@@ -727,6 +727,64 @@ class AdvisorControllerTest {
         )
     }
 
+    @Test
+    fun `usage is observed before a later continuation failure`() = runBlocking {
+        val observed = mutableListOf<AdvisorUsage?>()
+        var toolAssistedSignals = 0
+        val paidUsage = AdvisorUsage(
+            model = "gpt-5.6-luna",
+            requestType = AdvisorRequestType.START,
+            inputTokens = 100,
+            cachedInputTokens = 0,
+            outputTokens = 10,
+            reasoningTokens = 2,
+            totalTokens = 110,
+            estimatedCostUsd = BigDecimal("0.000032"),
+            pricingVersion =
+                "openai-gpt-5.6-luna-2026-09-27",
+        )
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.ToolRequest(
+                        responseId = "resp_paid",
+                        callId = "call_paid",
+                        arguments = AdvisorToolArguments(
+                            query = "klej",
+                            storeNumber = "075",
+                            limit = 1,
+                        ),
+                        usage = paidUsage,
+                    ),
+                )
+            },
+            continueCall = { _, _, _ ->
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.SERVICE,
+                )
+            },
+            tool = {
+                verifiedResult(it.query)
+            },
+        )
+
+        val final = controller.runTurn(
+            input = "test",
+            previousResponseId = null,
+            onOpenAiResponse = { observed += it },
+            onToolRequestObserved = {
+                toolAssistedSignals += 1
+            },
+        ) { }
+
+        assertEquals(
+            AdvisorUiState.Error(AdvisorError.SERVICE),
+            final,
+        )
+        assertEquals(listOf(paidUsage), observed)
+        assertEquals(1, toolAssistedSignals)
+    }
+
     private fun controller(
         configured: Boolean = true,
         start: suspend (String) -> AdvisorProxyCallResult = {
