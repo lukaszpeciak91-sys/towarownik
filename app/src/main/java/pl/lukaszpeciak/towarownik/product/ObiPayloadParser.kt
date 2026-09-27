@@ -105,6 +105,23 @@ class ObiPayloadParser(
             val ean = EAN_KEYS.firstNotNullOfOrNull(product::stringOrSingletonString)
                 ?: jsonLdProduct(html, expectedObik)?.let { EAN_KEYS.firstNotNullOfOrNull(it::string) }
 
+            val brand = parseBrand(product)
+            val shortDescription = parseShortDescription(product)
+            val technicalFacts = parseTechnicalFacts(product)
+
+            diagnostics.parserStage(
+                diagnosticId,
+                "DESCRIPTION_PRESENT=${shortDescription != null}",
+            )
+            diagnostics.parserStage(
+                diagnosticId,
+                "TECHNICAL_FACTS_PRESENT=${technicalFacts.isNotEmpty()}",
+            )
+            diagnostics.parserStage(
+                diagnosticId,
+                "TECHNICAL_FACTS_COUNT=${technicalFacts.size}",
+            )
+
             diagnostics.parserStage(
                 diagnosticId,
                 if (localArticleData["stock"] != null) "STOCK_PRESENT" else "STOCK_MISSING",
@@ -114,7 +131,18 @@ class ObiPayloadParser(
                 if (pricing?.get("grossPrice") != null) "PRICE_PRESENT" else "PRICE_MISSING",
             )
 
-            LocalProduct(expectedObik, name, stock, grossPrice, canonicalUrl, ean, storeNumber)
+            LocalProduct(
+                obik = expectedObik,
+                name = name,
+                stock = stock,
+                grossPrice = grossPrice,
+                productUrl = canonicalUrl,
+                ean = ean,
+                storeNumber = storeNumber,
+                brand = brand,
+                shortDescription = shortDescription,
+                technicalFacts = technicalFacts,
+            )
         }
 
         result.onSuccess {
@@ -152,6 +180,99 @@ class ObiPayloadParser(
         val store = get("store") as? JsonObject ?: return null
         val information = store["information"] as? JsonObject ?: return null
         return information.string("storeId") ?: information.string("storeNumber")
+    }
+
+    private fun parseBrand(product: JsonObject): String? =
+        runCatching {
+            (product["brand"] as? JsonObject)
+                ?.string("name")
+                ?.normalizeRichText(MAX_BRAND_CHARS)
+        }.getOrNull()
+
+    private fun parseShortDescription(
+        product: JsonObject,
+    ): String? =
+        runCatching {
+            product.string("productDescription")
+                ?.stripPresentationMarkup()
+                ?.normalizeRichText(MAX_DESCRIPTION_CHARS)
+        }.getOrNull()
+
+    private fun parseTechnicalFacts(
+        product: JsonObject,
+    ): List<TechnicalFact> =
+        runCatching {
+            buildList {
+                val overview = product["productOverview"] as? JsonArray
+                overview
+                    ?.mapNotNull(::overviewFact)
+                    ?.forEach(::add)
+
+                val technicalData =
+                    product["technicalData"] as? JsonObject
+                appendFactObjects(
+                    target = this,
+                    raw = technicalData?.get("productDetails"),
+                )
+                appendFactObjects(
+                    target = this,
+                    raw = technicalData?.get("dimensionsAndWeight"),
+                )
+            }
+                .distinctBy {
+                    it.label.lowercase() to it.value.lowercase()
+                }
+                .take(MAX_TECHNICAL_FACTS)
+        }.getOrDefault(emptyList())
+
+    private fun overviewFact(
+        element: JsonElement,
+    ): TechnicalFact? {
+        val raw = (element as? JsonPrimitive)
+            ?.contentOrNull
+            ?.normalizeRichText(MAX_FACT_LINE_CHARS)
+            ?: return null
+        val separator = raw.indexOf(':')
+        if (separator <= 0 || separator >= raw.lastIndex) {
+            return null
+        }
+        return technicalFact(
+            label = raw.substring(0, separator),
+            value = raw.substring(separator + 1),
+        )
+    }
+
+    private fun appendFactObjects(
+        target: MutableList<TechnicalFact>,
+        raw: JsonElement?,
+    ) {
+        val array = raw as? JsonArray ?: return
+        array.forEach { element ->
+            val factObject = element as? JsonObject ?: return@forEach
+            technicalFact(
+                label = factObject.string("key"),
+                value = factObject.string("value"),
+            )?.let(target::add)
+        }
+    }
+
+    private fun technicalFact(
+        label: String?,
+        value: String?,
+    ): TechnicalFact? {
+        val normalizedLabel = label
+            ?.normalizeRichText(MAX_FACT_LABEL_CHARS)
+            ?: return null
+        val normalizedValue = value
+            ?.normalizeRichText(MAX_FACT_VALUE_CHARS)
+            ?: return null
+        if (normalizedLabel.isBlank() || normalizedValue.isBlank()) {
+            return null
+        }
+        return TechnicalFact(
+            label = normalizedLabel,
+            value = normalizedValue,
+        )
     }
 
     private class NuxtDecoder(private val root: JsonElement) {
@@ -215,6 +336,13 @@ class ObiPayloadParser(
         val PRODUCT_NUMBER_KEYS = listOf("skuId", "obik", "productNumber", "articleNumber", "sku")
         val PRODUCT_NAME_KEYS = listOf("productTitle", "productTitleTab", "name", "productName")
         val EAN_KEYS = listOf("articleEanEcms", "ean", "gtin13", "gtin")
+        const val MAX_BRAND_CHARS = 80
+        const val MAX_DESCRIPTION_CHARS = 600
+        const val MAX_TECHNICAL_FACTS = 12
+        const val MAX_FACT_LABEL_CHARS = 80
+        const val MAX_FACT_VALUE_CHARS = 180
+        const val MAX_FACT_LINE_CHARS =
+            MAX_FACT_LABEL_CHARS + MAX_FACT_VALUE_CHARS + 2
     }
 }
 
@@ -249,6 +377,38 @@ private fun JsonObject.nonNegativeInt(key: String): Int? =
 
 private fun JsonObject.decimal(key: String): BigDecimal? =
     (get(key) as? JsonPrimitive)?.contentOrNull?.toBigDecimalOrNull()?.takeIf { it.signum() >= 0 }
+
+private fun String.stripPresentationMarkup(): String =
+    replace(BREAK_TAG, " ")
+        .replace(CLOSING_BLOCK_TAG, " ")
+        .replace(HTML_TAG, " ")
+        .decodeBasicHtmlEntities()
+
+private fun String.decodeBasicHtmlEntities(): String =
+    replace("&nbsp;", " ", ignoreCase = true)
+        .replace("&amp;", "&", ignoreCase = true)
+        .replace("&quot;", """, ignoreCase = true)
+        .replace("&#39;", "'", ignoreCase = true)
+        .replace("&apos;", "'", ignoreCase = true)
+        .replace("&lt;", "<", ignoreCase = true)
+        .replace("&gt;", ">", ignoreCase = true)
+
+private fun String.normalizeRichText(
+    maxChars: Int,
+): String? {
+    val normalized = replace(CONTROL_OR_WHITESPACE, " ").trim()
+    if (normalized.isEmpty()) return null
+    return normalized.take(maxChars)
+}
+
+private val BREAK_TAG =
+    Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE)
+private val CLOSING_BLOCK_TAG =
+    Regex("""</(?:p|div|li|ul|ol|h[1-6])\s*>""", RegexOption.IGNORE_CASE)
+private val HTML_TAG =
+    Regex("""<[^>]+>""")
+private val CONTROL_OR_WHITESPACE =
+    Regex("""[\s\p{Cc}]+""")
 
 private fun String.asObiUrl(): String =
     when {
