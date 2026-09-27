@@ -244,9 +244,13 @@ function parseUsage(
       "cache_write_tokens",
     );
     if (
-      cachedInputTokens !== null &&
-      cacheWriteTokens !== null &&
-      cachedInputTokens + cacheWriteTokens > inputTokens
+      (cachedInputTokens !== null &&
+        cachedInputTokens > inputTokens) ||
+      (cacheWriteTokens !== null &&
+        cacheWriteTokens > inputTokens) ||
+      (cachedInputTokens !== null &&
+        cacheWriteTokens !== null &&
+        cachedInputTokens + cacheWriteTokens > inputTokens)
     ) {
       return undefined;
     }
