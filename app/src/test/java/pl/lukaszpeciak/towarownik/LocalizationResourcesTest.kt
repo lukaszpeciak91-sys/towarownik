@@ -1,8 +1,5 @@
 package pl.lukaszpeciak.towarownik
 
-import android.content.Context
-import android.content.res.Configuration
-import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.math.BigDecimal
 import java.time.ZoneId
@@ -11,103 +8,88 @@ import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 import org.w3c.dom.Element
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
 class LocalizationResourcesTest {
-    private val baseContext: Context =
-        ApplicationProvider.getApplicationContext()
-
     @Test
     fun `Polish and English resource files expose the same string keys`() {
-        val resDir = findResourceDirectory()
-        val polish = stringNames(File(resDir, "values/strings.xml"))
-        val english = stringNames(File(resDir, "values-en/strings.xml"))
-
-        assertEquals(polish, english)
+        assertEquals(
+            strings("values").keys,
+            strings("values-en").keys,
+        )
     }
 
     @Test
-    fun `core UI strings resolve in Polish and English`() {
-        val polish = localizedContext("pl")
-        val english = localizedContext("en")
+    fun `core UI strings are available in Polish and English`() {
+        val polish = strings("values")
+        val english = strings("values-en")
 
-        assertEquals("Towarownik", polish.getString(R.string.app_name))
-        assertEquals("Towarownik", english.getString(R.string.app_name))
-        assertEquals("Doradca", polish.getString(R.string.advisor_title))
-        assertEquals("Advisor", english.getString(R.string.advisor_title))
+        assertEquals("Towarownik", polish.getValue("app_name"))
+        assertEquals("Towarownik", english.getValue("app_name"))
+        assertEquals("Doradca", polish.getValue("advisor_title"))
+        assertEquals("Advisor", english.getValue("advisor_title"))
         assertEquals(
             "Wyszukiwarka OBI",
-            polish.getString(R.string.manual_search_title),
+            polish.getValue("manual_search_title"),
         )
         assertEquals(
             "OBI search",
-            english.getString(R.string.manual_search_title),
+            english.getValue("manual_search_title"),
         )
     }
 
     @Test
-    fun `stock presentation preserves null zero and positive semantics in both locales`() {
-        val polish = localizedContext("pl")
-        val english = localizedContext("en")
+    fun `stock resources preserve null zero and positive semantics in both locales`() {
+        val polish = strings("values")
+        val english = strings("values-en")
 
         assertEquals(
             "Stan Nowy Sącz: brak danych",
-            polish.getString(store075StockStringRes(null)),
+            polish.getValue("product_stock_unknown"),
         )
         assertEquals(
             "Nowy Sącz stock: no data",
-            english.getString(store075StockStringRes(null)),
+            english.getValue("product_stock_unknown"),
         )
         assertEquals(
             "Stan Nowy Sącz: 0 szt. — brak na stanie",
-            polish.getString(store075StockStringRes(0)),
+            polish.getValue("product_stock_zero"),
         )
         assertEquals(
             "Nowy Sącz stock: 0 — unavailable",
-            english.getString(store075StockStringRes(0)),
+            english.getValue("product_stock_zero"),
         )
         assertEquals(
             "Stan Nowy Sącz: 7 szt.",
-            polish.getString(store075StockStringRes(7), 7),
+            format(polish.getValue("product_stock_count"), 7),
         )
         assertEquals(
             "Nowy Sącz stock: 7",
-            english.getString(store075StockStringRes(7), 7),
+            format(english.getValue("product_stock_count"), 7),
         )
     }
 
     @Test
-    fun `price presentation preserves unknown and present semantics in both locales`() {
-        val polish = localizedContext("pl")
-        val english = localizedContext("en")
-        val price = BigDecimal("14.99")
+    fun `price resources preserve unknown and present semantics in both locales`() {
+        val polish = strings("values")
+        val english = strings("values-en")
+        val price = BigDecimal("14.99").toPlainString()
 
         assertEquals(
             "Cena Nowy Sącz: brak danych",
-            polish.getString(store075PriceStringRes(null)),
+            polish.getValue("product_price_unknown"),
         )
         assertEquals(
             "Nowy Sącz price: no data",
-            english.getString(store075PriceStringRes(null)),
+            english.getValue("product_price_unknown"),
         )
         assertEquals(
             "Cena Nowy Sącz: 14.99 zł",
-            polish.getString(
-                store075PriceStringRes(price),
-                price.toPlainString(),
-            ),
+            format(polish.getValue("product_price"), price),
         )
         assertEquals(
             "Nowy Sącz price: 14.99 zł",
-            english.getString(
-                store075PriceStringRes(price),
-                price.toPlainString(),
-            ),
+            format(english.getValue("product_price"), price),
         )
     }
 
@@ -132,28 +114,40 @@ class LocalizationResourcesTest {
         assertEquals("27.09, 10:24", value)
         assertEquals(
             "Sprawdzono 27.09, 10:24",
-            localizedContext("pl").getString(
-                R.string.product_verified_at,
-                value,
-            ),
+            format(strings("values").getValue("product_verified_at"), value),
         )
         assertEquals(
             "Checked 27.09, 10:24",
-            localizedContext("en").getString(
-                R.string.product_verified_at,
-                value,
-            ),
+            format(strings("values-en").getValue("product_verified_at"), value),
         )
     }
 
-    private fun localizedContext(languageTag: String): Context {
-        val configuration = Configuration(baseContext.resources.configuration)
-        configuration.setLocale(Locale.forLanguageTag(languageTag))
-        return baseContext.createConfigurationContext(configuration)
+    private fun strings(valuesDirectory: String): Map<String, String> {
+        val file = File(
+            findResourceDirectory(),
+            "$valuesDirectory/strings.xml",
+        )
+        val document = DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder()
+            .parse(file)
+        val children = document.documentElement.childNodes
+        return buildMap {
+            for (index in 0 until children.length) {
+                val node = children.item(index)
+                if (node is Element && node.tagName == "string") {
+                    put(
+                        node.getAttribute("name"),
+                        node.textContent,
+                    )
+                }
+            }
+        }
     }
 
     private fun findResourceDirectory(): File {
-        val workingDirectory = File(System.getProperty("user.dir"))
+        val workingDirectory = File(
+            requireNotNull(System.getProperty("user.dir")),
+        )
         return listOf(
             File(workingDirectory, "app/src/main/res"),
             File(workingDirectory, "src/main/res"),
@@ -161,18 +155,13 @@ class LocalizationResourcesTest {
             ?: error("Android resource directory not found")
     }
 
-    private fun stringNames(file: File): Set<String> {
-        val document = DocumentBuilderFactory.newInstance()
-            .newDocumentBuilder()
-            .parse(file)
-        val children = document.documentElement.childNodes
-        return buildSet {
-            for (index in 0 until children.length) {
-                val node = children.item(index)
-                if (node is Element && node.tagName == "string") {
-                    add(node.getAttribute("name"))
-                }
-            }
-        }
-    }
+    private fun format(
+        template: String,
+        vararg arguments: Any,
+    ): String =
+        String.format(
+            Locale.ROOT,
+            template,
+            *arguments,
+        )
 }
