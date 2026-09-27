@@ -182,7 +182,7 @@ class ProductSearchControllerTest {
 
         controller.submit("missing product") { states += it }
 
-        assertEquals(ProductSearchUiState.Error(NOT_FOUND_MESSAGE), states.last())
+        assertEquals(ProductSearchUiState.Error(SearchUiError.NOT_FOUND), states.last())
     }
 
     @Test

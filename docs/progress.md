@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Advisor verified product cards v0.4**
+**Android localization foundation PL/EN v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. The current v0.4 iteration adds persistent app-owned verified product cards without moving OBI authority into the model or proxy.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards without moving OBI authority into the model or proxy. The current iteration prepares the Android UI for Polish/English localization without changing product or advisor behavior.
 
 Implemented direction:
 
@@ -34,15 +34,21 @@ Implemented direction:
 - Room schema v2 persists ordered snapshots per ASSISTANT message through an explicit v1→v2 migration;
 - ASSISTANT text, selected snapshots, and final response ID commit atomically;
 - historical cards reopen without network access and display their verification timestamp;
-- the existing `VerifiedProductCard` boundary is shared by manual search and advisor history.
+- the existing `VerifiedProductCard` boundary is shared by manual search and advisor history;
+- current Android UI text is moved to the Polish/default `values/strings.xml` resource set;
+- a complete matching English `values-en/strings.xml` resource set is provided;
+- Compose resolves user-visible chrome through Android string resources and formatted placeholders;
+- advisor/search errors use stable language-neutral enum state and are translated only in UI;
+- saved manual-search errors no longer persist rendered language-dependent sentences;
+- Android continues to choose resources from the current system/app locale; no in-app selector exists yet.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
-Android test version: **0.1.7 (8)**.
+Android test version: **0.1.8 (9)**.
 
 ## Next implementation milestone
 
-Evaluate the verified-card advisor flow on-device and choose the next measured advisor iteration without broadening the OBI trust boundary.
+Add the Settings surface and expose explicit **Polski / English** language selection using the localization foundation from this iteration.
 
 The final advisor persona/instructions and any context compaction should remain separate measured iterations.
 

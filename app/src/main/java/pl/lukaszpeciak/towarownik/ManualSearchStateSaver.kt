@@ -38,7 +38,7 @@ private fun encodeManualSearchState(state: ManualSearchUiState): String {
 
             is ManualSearchUiState.Error -> {
                 put("type", "error")
-                put("message", persistable.message)
+                put("error", persistable.error.name)
             }
 
             is ManualSearchUiState.Product -> {
@@ -93,7 +93,13 @@ private fun decodeManualSearchState(raw: String): ManualSearchUiState =
         when (root["type"]?.jsonPrimitive?.contentOrNull) {
             "idle" -> ManualSearchUiState.Idle
             "error" -> ManualSearchUiState.Error(
-                root["message"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                root["error"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.let { value ->
+                        runCatching { SearchUiError.valueOf(value) }.getOrNull()
+                    }
+                    ?: SearchUiError.LOOKUP,
             )
             "product" -> ManualSearchUiState.Product(
                 VerifiedProductUiModel(

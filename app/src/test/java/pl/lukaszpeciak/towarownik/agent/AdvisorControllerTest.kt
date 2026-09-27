@@ -321,7 +321,7 @@ class AdvisorControllerTest {
         assertEquals(2, toolCalls)
         assertEquals(2, continueCalls)
         assertEquals(
-            AdvisorUiState.Error(ADVISOR_TOO_MANY_TOOLS_MESSAGE),
+            AdvisorUiState.Error(AdvisorError.TOO_MANY_TOOLS),
             final,
         )
     }
@@ -401,7 +401,7 @@ class AdvisorControllerTest {
 
         assertEquals(0, continueCalls)
         assertEquals(
-            AdvisorUiState.Error(ADVISOR_OBI_ERROR_MESSAGE),
+            AdvisorUiState.Error(AdvisorError.OBI),
             final,
         )
     }
@@ -428,7 +428,7 @@ class AdvisorControllerTest {
         assertEquals(1, starts)
         assertEquals(0, messages)
         assertEquals(
-            AdvisorUiState.Error(ADVISOR_NETWORK_ERROR_MESSAGE),
+            AdvisorUiState.Error(AdvisorError.NETWORK),
             final,
         )
     }
@@ -476,7 +476,7 @@ class AdvisorControllerTest {
         assertEquals(0, starts)
         assertEquals(0, messages)
         assertEquals(
-            AdvisorUiState.Error(ADVISOR_NOT_CONFIGURED_MESSAGE),
+            AdvisorUiState.Error(AdvisorError.NOT_CONFIGURED),
             final,
         )
     }

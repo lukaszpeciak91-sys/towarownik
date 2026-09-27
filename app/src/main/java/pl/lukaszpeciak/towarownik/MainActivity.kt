@@ -56,6 +56,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -68,6 +71,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import pl.lukaszpeciak.towarownik.agent.AdvisorController
+import pl.lukaszpeciak.towarownik.agent.AdvisorError
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.conversation.ConversationDatabase
 import pl.lukaszpeciak.towarownik.conversation.ConversationRepository
@@ -522,7 +526,7 @@ private fun ConversationDrawer(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                text = "Towarownik",
+                text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge,
             )
 
@@ -530,7 +534,7 @@ private fun ConversationDrawer(
                 onClick = onNewConversation,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("+ Nowa rozmowa")
+                Text(stringResource(R.string.new_conversation))
             }
 
             OutlinedTextField(
@@ -538,15 +542,15 @@ private fun ConversationDrawer(
                 onValueChange = onQueryChange,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                label = { Text("Przeszukaj rozmowy...") },
+                label = { Text(stringResource(R.string.search_conversations)) },
             )
 
             if (conversations.isEmpty()) {
                 Text(
                     text = if (query.isBlank()) {
-                        "Brak zapisanych rozmów."
+                        stringResource(R.string.no_saved_conversations)
                     } else {
-                        "Brak rozmów zawierających tę frazę."
+                        stringResource(R.string.no_matching_conversations)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -595,9 +599,14 @@ private fun ConversationDrawer(
                             }
 
                             Box {
+                                val conversationOptionsDescription =
+                                    stringResource(R.string.cd_conversation_options)
                                 IconButton(
                                     onClick = {
                                         menuExpanded = true
+                                    },
+                                    modifier = Modifier.semantics {
+                                        contentDescription = conversationOptionsDescription
                                     },
                                 ) {
                                     Text("⋮")
@@ -609,7 +618,7 @@ private fun ConversationDrawer(
                                     },
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Usuń rozmowę") },
+                                        text = { Text(stringResource(R.string.delete_conversation)) },
                                         onClick = {
                                             menuExpanded = false
                                             pendingDelete = conversation
@@ -631,7 +640,7 @@ private fun ConversationDrawer(
                 pendingDelete = null
             },
             title = {
-                Text("Usunąć tę rozmowę?")
+                Text(stringResource(R.string.delete_conversation_confirm))
             },
             confirmButton = {
                 TextButton(
@@ -640,7 +649,7 @@ private fun ConversationDrawer(
                         onDeleteConversation(conversationToDelete.id)
                     },
                 ) {
-                    Text("Usuń")
+                    Text(stringResource(R.string.delete))
                 }
             },
             dismissButton = {
@@ -649,7 +658,7 @@ private fun ConversationDrawer(
                         pendingDelete = null
                     },
                 ) {
-                    Text("Anuluj")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -719,19 +728,19 @@ private fun AdvisorChatScreen(
                     is AdvisorUiState.Success -> Unit
 
                     AdvisorUiState.LoadingProxy -> item {
-                        AdvisorProgressBubble("Łączę z doradcą…")
+                        AdvisorProgressBubble(stringResource(R.string.advisor_progress_connecting))
                     }
 
                     AdvisorUiState.RunningLocalTool -> item {
-                        AdvisorProgressBubble("Sprawdzam OBI…")
+                        AdvisorProgressBubble(stringResource(R.string.advisor_progress_checking_obi))
                     }
 
                     AdvisorUiState.WaitingForFinalAnswer -> item {
-                        AdvisorProgressBubble("Przygotowuję odpowiedź…")
+                        AdvisorProgressBubble(stringResource(R.string.advisor_progress_preparing))
                     }
 
                     is AdvisorUiState.Error -> item {
-                        AdvisorErrorBubble(state.message)
+                        AdvisorErrorBubble(advisorErrorText(state.error))
                     }
                 }
             }
@@ -746,6 +755,10 @@ private fun AdvisorTopBar(
     onOpenSearch: () -> Unit,
     onOpenDiagnostics: () -> Unit,
 ) {
+    val openNavigationDescription = stringResource(R.string.cd_open_navigation)
+    val newConversationDescription = stringResource(R.string.cd_new_conversation)
+    val openSearchDescription = stringResource(R.string.cd_open_obi_search)
+
     Surface(shadowElevation = 2.dp) {
         Box(
             modifier = Modifier
@@ -754,7 +767,11 @@ private fun AdvisorTopBar(
         ) {
             IconButton(
                 onClick = onOpenDrawer,
-                modifier = Modifier.align(Alignment.CenterStart),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .semantics {
+                        contentDescription = openNavigationDescription
+                    },
             ) {
                 Text(
                     text = "☰",
@@ -763,7 +780,7 @@ private fun AdvisorTopBar(
             }
 
             Text(
-                text = "Towarownik",
+                text = stringResource(R.string.app_name),
                 modifier = Modifier
                     .align(Alignment.Center)
                     .pointerInput(onOpenDiagnostics) {
@@ -777,13 +794,23 @@ private fun AdvisorTopBar(
             Row(
                 modifier = Modifier.align(Alignment.CenterEnd),
             ) {
-                IconButton(onClick = onNewCase) {
+                IconButton(
+                    onClick = onNewCase,
+                    modifier = Modifier.semantics {
+                        contentDescription = newConversationDescription
+                    },
+                ) {
                     Text(
                         text = "+",
                         style = MaterialTheme.typography.headlineSmall,
                     )
                 }
-                IconButton(onClick = onOpenSearch) {
+                IconButton(
+                    onClick = onOpenSearch,
+                    modifier = Modifier.semantics {
+                        contentDescription = openSearchDescription
+                    },
+                ) {
                     Text(
                         text = "🔍",
                         style = MaterialTheme.typography.headlineSmall,
@@ -801,6 +828,8 @@ private fun AdvisorComposer(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
 ) {
+    val sendDescription = stringResource(R.string.cd_send_message)
+
     Surface(shadowElevation = 4.dp) {
         Box(
             modifier = Modifier
@@ -824,7 +853,7 @@ private fun AdvisorComposer(
                     minLines = 1,
                     maxLines = 4,
                     placeholder = {
-                        Text("Opisz czego potrzebuje klient…")
+                        Text(stringResource(R.string.advisor_composer_placeholder))
                     },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
@@ -842,6 +871,9 @@ private fun AdvisorComposer(
                 IconButton(
                     onClick = onSend,
                     enabled = enabled && value.isNotBlank(),
+                    modifier = Modifier.semantics {
+                        contentDescription = sendDescription
+                    },
                 ) {
                     Text(
                         text = "➤",
@@ -863,11 +895,11 @@ private fun EmptyAdvisorState() {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Doradca",
+            text = stringResource(R.string.advisor_title),
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
-            text = "Opisz, czego potrzebuje klient.",
+            text = stringResource(R.string.advisor_empty_body),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -1003,7 +1035,7 @@ private fun ManualObiSearchScreen(
                     value = query,
                     onValueChange = onQueryChange,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("OBIK / EAN / nazwa") },
+                    label = { Text(stringResource(R.string.manual_search_input_label)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
@@ -1016,7 +1048,13 @@ private fun ManualObiSearchScreen(
                     ),
                     trailingIcon = if (query.isNotEmpty()) {
                         {
-                            IconButton(onClick = onClear) {
+                            val clearDescription = stringResource(R.string.cd_clear_search)
+                            IconButton(
+                                onClick = onClear,
+                                modifier = Modifier.semantics {
+                                    contentDescription = clearDescription
+                                },
+                            ) {
                                 Text(
                                     text = "×",
                                     style = MaterialTheme.typography.titleLarge,
@@ -1033,7 +1071,7 @@ private fun ManualObiSearchScreen(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !isLoading,
                 ) {
-                    Text("Szukaj")
+                    Text(stringResource(R.string.search))
                 }
 
                 when (state) {
@@ -1053,7 +1091,7 @@ private fun ManualObiSearchScreen(
                         VerifiedProductCard(state.item)
 
                     is ManualSearchUiState.Error ->
-                        ErrorText(state.message)
+                        ErrorText(searchErrorText(state.error))
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1066,6 +1104,8 @@ private fun ManualObiSearchScreen(
 private fun ManualSearchTopBar(
     onBack: () -> Unit,
 ) {
+    val backDescription = stringResource(R.string.cd_back)
+
     Surface(shadowElevation = 2.dp) {
         Box(
             modifier = Modifier
@@ -1074,7 +1114,11 @@ private fun ManualSearchTopBar(
         ) {
             IconButton(
                 onClick = onBack,
-                modifier = Modifier.align(Alignment.CenterStart),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .semantics {
+                        contentDescription = backDescription
+                    },
             ) {
                 Text(
                     text = "←",
@@ -1082,7 +1126,7 @@ private fun ManualSearchTopBar(
                 )
             }
             Text(
-                text = "Wyszukiwarka OBI",
+                text = stringResource(R.string.manual_search_title),
                 modifier = Modifier.align(Alignment.Center),
                 style = MaterialTheme.typography.titleLarge,
             )
@@ -1097,7 +1141,7 @@ private fun ManualSearchProgress() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CircularProgressIndicator()
-        Text("Szukam produktu…")
+        Text(stringResource(R.string.manual_search_progress))
     }
 }
 
@@ -1111,11 +1155,11 @@ private fun ManualSearchResults(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = "Wyniki 1–${state.visibleItems.size}",
+            text = stringResource(R.string.manual_search_results_range, state.visibleItems.size),
             style = MaterialTheme.typography.titleMedium,
         )
         Text(
-            text = "OBI raportuje: ${state.reportedTotalCount} wyników",
+            text = stringResource(R.string.manual_search_reported_total, state.reportedTotalCount),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1136,7 +1180,7 @@ private fun ManualSearchResults(
                         )
                     }
                     Text(
-                        text = "OBIK: ${item.obik}",
+                        text = stringResource(R.string.product_obik, item.obik),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -1148,7 +1192,7 @@ private fun ManualSearchResults(
                 onClick = onShowMore,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Pokaż więcej")
+                Text(stringResource(R.string.show_more))
             }
         }
     }
@@ -1172,6 +1216,33 @@ private fun formatLocalTime(createdAt: Long): String =
     Instant.ofEpochMilli(createdAt)
         .atZone(ZoneId.systemDefault())
         .format(CHAT_TIME_FORMATTER)
+
+@Composable
+private fun advisorErrorText(error: AdvisorError): String =
+    stringResource(
+        when (error) {
+            AdvisorError.NOT_CONFIGURED -> R.string.advisor_error_not_configured
+            AdvisorError.NETWORK -> R.string.advisor_error_network
+            AdvisorError.SERVICE -> R.string.advisor_error_service
+            AdvisorError.PROTOCOL -> R.string.advisor_error_protocol
+            AdvisorError.OBI -> R.string.advisor_error_obi
+            AdvisorError.TOO_MANY_TOOLS -> R.string.advisor_error_too_many_tools
+            AdvisorError.INPUT -> R.string.advisor_error_input
+        },
+    )
+
+@Composable
+private fun searchErrorText(error: SearchUiError): String =
+    stringResource(
+        when (error) {
+            SearchUiError.INVALID_INPUT -> R.string.search_error_invalid_input
+            SearchUiError.NETWORK -> R.string.search_error_network
+            SearchUiError.NOT_FOUND -> R.string.search_error_not_found
+            SearchUiError.PRODUCT_DATA -> R.string.search_error_product_data
+            SearchUiError.SEARCH_DATA -> R.string.search_error_search_data
+            SearchUiError.LOOKUP -> R.string.search_error_lookup
+        },
+    )
 
 private fun AdvisorUiState.isRunning(): Boolean =
     this is AdvisorUiState.LoadingProxy ||
