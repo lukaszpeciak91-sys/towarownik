@@ -17,8 +17,8 @@ class ManualSearchControllerTest {
     fun `manual OBIK search stays direct and independent from advisor proxy`() = runBlocking {
         var searched = false
         val controller = ManualSearchController(
-            lookupObik = {
-                ProductLookupResult.Found(product(obik = it))
+            lookupObik = { obik, _ ->
+                ProductLookupResult.Found(product(obik = obik))
             },
             searchProducts = {
                 searched = true
@@ -46,7 +46,7 @@ class ManualSearchControllerTest {
             )
         }
         val controller = ManualSearchController(
-            lookupObik = { error("Text search must remain selectable") },
+            lookupObik = { _, _ -> error("Text search must remain selectable") },
             searchProducts = {
                 ManualProductSearchResult.Candidates(
                     items = candidates,
@@ -76,7 +76,7 @@ class ManualSearchControllerTest {
     @Test
     fun `single exact EAN candidate keeps existing verification semantics`() = runBlocking {
         val controller = ManualSearchController(
-            lookupObik = { obik ->
+            lookupObik = { obik, _ ->
                 ProductLookupResult.Found(
                     product(
                         obik = obik,
@@ -104,7 +104,7 @@ class ManualSearchControllerTest {
     @Test
     fun `single mismatched EAN candidate stays selectable`() = runBlocking {
         val controller = ManualSearchController(
-            lookupObik = { obik ->
+            lookupObik = { obik, _ ->
                 ProductLookupResult.Found(
                     product(
                         obik = obik,
@@ -134,7 +134,7 @@ class ManualSearchControllerTest {
     fun `selected candidate uses exact product url without reconstruction`() = runBlocking {
         val expectedUrl = "https://www.obi.pl/p/1234567/exact-canonical-product"
         val controller = ManualSearchController(
-            lookupObik = { obik ->
+            lookupObik = { obik, _ ->
                 ProductLookupResult.Found(
                     product(
                         obik = obik,
@@ -164,15 +164,15 @@ class ManualSearchControllerTest {
     fun `stock null zero and positive select distinct localized resources`() {
         assertEquals(
             R.string.product_stock_unknown,
-            store075StockStringRes(null),
+            stockStringRes(null),
         )
         assertEquals(
             R.string.product_stock_zero,
-            store075StockStringRes(0),
+            stockStringRes(0),
         )
         assertEquals(
             R.string.product_stock_count,
-            store075StockStringRes(7),
+            stockStringRes(7),
         )
     }
 
@@ -180,11 +180,11 @@ class ManualSearchControllerTest {
     fun `price null and present select distinct localized resources`() {
         assertEquals(
             R.string.product_price_unknown,
-            store075PriceStringRes(null),
+            priceStringRes(null),
         )
         assertEquals(
             R.string.product_price,
-            store075PriceStringRes(BigDecimal("14.99")),
+            priceStringRes(BigDecimal("14.99")),
         )
     }
 

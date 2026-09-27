@@ -75,8 +75,8 @@ class ObiDiagnosticRecorderTest {
             setCookies = listOf(
                 DiagnosticCookie("session_cookie", "www.obi.pl", "/"),
             ),
-            outgoingStore075CookieMatch = Store075CookieMatch.MATCH,
-            setCookieStore075Match = Store075CookieMatch.UNKNOWN,
+            outgoingStoreCookieMatch = StoreCookieMatch.MATCH,
+            setCookieStoreMatch = StoreCookieMatch.UNKNOWN,
         )
         recorder.recordDuration(id, 42)
         recorder.mappingTrace(id, "HTTP 404")
@@ -93,7 +93,7 @@ class ObiDiagnosticRecorderTest {
         assertTrue(report.contains("redirectUrl=REDACTED"))
         assertTrue(report.contains("outgoingCookieNames=store"))
         assertTrue(report.contains("setCookieNames=session_cookie@www.obi.pl/"))
-        assertTrue(report.contains("store075CookieMatch=true"))
+        assertTrue(report.contains("storeCookieMatch=true"))
         assertTrue(report.contains("finalStatus=404"))
         assertTrue(report.contains("UI NOT_FOUND"))
         assertFalse(report.contains("store=075"))
@@ -124,8 +124,8 @@ class ObiDiagnosticRecorderTest {
             safeInfrastructureHeaders = emptyMap(),
             outgoingCookies = emptyList(),
             setCookies = emptyList(),
-            outgoingStore075CookieMatch = Store075CookieMatch.UNKNOWN,
-            setCookieStore075Match = Store075CookieMatch.UNKNOWN,
+            outgoingStoreCookieMatch = StoreCookieMatch.UNKNOWN,
+            setCookieStoreMatch = StoreCookieMatch.UNKNOWN,
         )
         recorder.recordBodySignatures(
             id,
@@ -156,7 +156,7 @@ class ObiDiagnosticRecorderTest {
         containsCanonicalProductUrl = canonicalUrl != null,
         canonicalUrl = canonicalUrl,
         containsSelectedStore = false,
-        containsStore075 = false,
+        containsRequestedStore = false,
         recognizedProductLinkCount = 0,
         containsSearchResultsPhrase = null,
         detectedSearchResultCount = null,

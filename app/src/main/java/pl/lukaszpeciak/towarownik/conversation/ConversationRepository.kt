@@ -25,7 +25,7 @@ internal data class PersistedConversation(
     val updatedAt: Long,
     val lastResponseId: String?,
     val draft: String,
-    val storeNumber: String,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val messages: List<PersistedMessage>,
 )
 
@@ -104,8 +104,8 @@ internal class ConversationRepository(
     suspend fun beginUserTurn(
         conversationId: Long?,
         text: String,
-        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
         createdAt: Long = now(),
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     ): UserTurnStart {
         val normalized = normalizeConversationText(text)
         require(normalized.isNotBlank())

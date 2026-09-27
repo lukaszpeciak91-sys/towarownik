@@ -77,7 +77,7 @@ data class DiagnosticOperationSnapshot(
     val operation: ObiDiagnosticOperationType,
     val inputType: ObiDiagnosticInputType,
     val identifier: String,
-    val storeNumber: String?,
+    val storeNumber: String? = null,
     val timestampMillis: Long,
     val requestedUrl: String,
     val requestMethod: String,

@@ -9,7 +9,7 @@ import org.junit.Test
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticInputType
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
-import pl.lukaszpeciak.towarownik.diagnostics.Store075CookieMatch
+import pl.lukaszpeciak.towarownik.diagnostics.StoreCookieMatch
 
 class ObiDiagnosticsIntegrationTest {
     @Test
@@ -192,30 +192,30 @@ class ObiDiagnosticsIntegrationTest {
             val operation = recorder.snapshots().single()
             assertEquals(listOf(302, 200), operation.hops.map { it.status })
             assertEquals(
-                Store075CookieMatch.MATCH,
-                operation.hops[0].setCookieStore075Match,
+                StoreCookieMatch.MATCH,
+                operation.hops[0].setCookieStoreMatch,
             )
             assertEquals(
-                Store075CookieMatch.MATCH,
-                operation.hops[1].outgoingStore075CookieMatch,
+                StoreCookieMatch.MATCH,
+                operation.hops[1].outgoingStoreCookieMatch,
             )
-            assertEquals(Store075CookieMatch.MATCH, operation.store075CookieMatch)
+            assertEquals(StoreCookieMatch.MATCH, operation.storeCookieMatch)
             assertTrue(operation.outgoingCookies.any { it.name == "store" })
             assertTrue(operation.setCookies.any { it.name == "store" })
             assertTrue(operation.bodySignatures!!.containsNuxtData)
             assertEquals(true, operation.bodySignatures!!.containsSelectedStore)
-            assertEquals(true, operation.bodySignatures!!.containsStore075)
+            assertEquals(true, operation.bodySignatures!!.containsRequestedStore)
             assertTrue(operation.parserStages.contains("NUXT_JSON_PARSE_OK"))
             assertTrue(operation.parserStages.contains("PRODUCT_ID_MATCH"))
-            assertTrue(operation.parserStages.contains("STORE_075_MATCH"))
+            assertTrue(operation.parserStages.contains("STORE_MATCH"))
             assertTrue(operation.parserStages.contains("STOCK_PRESENT"))
             assertTrue(operation.parserStages.contains("PRICE_PRESENT"))
             assertTrue(operation.parserStages.contains("FINAL_PARSE_RESULT=SUCCESS"))
 
             val report = recorder.report()
-            assertTrue(report.contains("store075CookieMatch=true"))
-            assertTrue(report.contains("outgoingStore075CookieMatch=true"))
-            assertTrue(report.contains("setCookieStore075Match=true"))
+            assertTrue(report.contains("storeCookieMatch=true"))
+            assertTrue(report.contains("outgoingStoreCookieMatch=true"))
+            assertTrue(report.contains("setCookieStoreMatch=true"))
             assertFalse(report.contains("store=075"))
             assertFalse(report.contains(sessionSecret))
         }
@@ -246,12 +246,12 @@ class ObiDiagnosticsIntegrationTest {
 
             val operation = recorder.snapshots().single()
             assertEquals(
-                Store075CookieMatch.MISMATCH,
-                operation.hops.last().outgoingStore075CookieMatch,
+                StoreCookieMatch.MISMATCH,
+                operation.hops.last().outgoingStoreCookieMatch,
             )
-            assertEquals(Store075CookieMatch.MISMATCH, operation.store075CookieMatch)
+            assertEquals(StoreCookieMatch.MISMATCH, operation.storeCookieMatch)
             val report = recorder.report()
-            assertTrue(report.contains("store075CookieMatch=false"))
+            assertTrue(report.contains("storeCookieMatch=false"))
             assertFalse(report.contains("store=999"))
         }
     }
@@ -282,12 +282,12 @@ class ObiDiagnosticsIntegrationTest {
 
             val operation = recorder.snapshots().single()
             assertEquals(
-                Store075CookieMatch.UNKNOWN,
-                operation.hops.last().outgoingStore075CookieMatch,
+                StoreCookieMatch.UNKNOWN,
+                operation.hops.last().outgoingStoreCookieMatch,
             )
-            assertEquals(Store075CookieMatch.UNKNOWN, operation.store075CookieMatch)
+            assertEquals(StoreCookieMatch.UNKNOWN, operation.storeCookieMatch)
             val report = recorder.report()
-            assertTrue(report.contains("store075CookieMatch=unknown"))
+            assertTrue(report.contains("storeCookieMatch=unknown"))
             assertTrue(report.contains("session"))
             assertFalse(report.contains(secret))
         }

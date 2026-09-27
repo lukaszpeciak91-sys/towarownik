@@ -2,6 +2,7 @@ package pl.lukaszpeciak.towarownik.agent
 
 import kotlinx.coroutines.CancellationException
 import pl.lukaszpeciak.towarownik.BuildConfig
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductKey
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
@@ -52,7 +53,7 @@ internal class AdvisorController(
     suspend fun runTurn(
         input: String,
         previousResponseId: String?,
-        conversationStoreNumber: String,
+        conversationStoreNumber: String = DEFAULT_OBI_STORE_NUMBER,
         onState: (AdvisorUiState) -> Unit,
     ): AdvisorUiState {
         val normalizedInput = input.normalizeWhitespace()

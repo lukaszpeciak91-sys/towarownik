@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import java.math.BigDecimal
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductKey
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
@@ -13,7 +14,7 @@ internal const val MAX_TOOL_PRODUCTS = 5
 
 internal data class AdvisorToolArguments(
     val query: String,
-    val storeNumber: String,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val limit: Int,
 )
 
@@ -37,7 +38,7 @@ internal data class AdvisorVerifiedProduct(
 
 internal data class AdvisorVerifiedToolResult(
     val query: String,
-    val storeNumber: String,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val products: List<AdvisorVerifiedProduct>,
 )
 

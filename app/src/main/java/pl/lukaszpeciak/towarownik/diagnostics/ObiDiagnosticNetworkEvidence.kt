@@ -13,7 +13,7 @@ internal data class DiagnosticCookieEvidence(
 
 internal fun outgoingDiagnosticCookieEvidence(
     header: String?,
-    expectedStoreNumber: String?,
+    expectedStoreNumber: String? = null,
 ): DiagnosticCookieEvidence {
     var recognizedStoreCookie = false
     var storeMatchResult = false
@@ -53,7 +53,7 @@ internal fun outgoingDiagnosticCookieEvidence(
 internal fun setDiagnosticCookieEvidence(
     requestUrl: okhttp3.HttpUrl,
     responseHeaders: Headers,
-    expectedStoreNumber: String?,
+    expectedStoreNumber: String? = null,
 ): DiagnosticCookieEvidence {
     val cookies = Cookie.parseAll(requestUrl, responseHeaders)
     val recognizableStoreCookies = cookies.filter { cookie ->

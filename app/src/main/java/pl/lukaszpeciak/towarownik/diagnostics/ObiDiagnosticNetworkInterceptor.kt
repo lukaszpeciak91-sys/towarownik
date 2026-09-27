@@ -5,7 +5,7 @@ import okhttp3.Response
 
 internal data class ObiDiagnosticRequestTag(
     val operationId: Long,
-    val storeNumber: String?,
+    val storeNumber: String? = null,
 )
 
 class ObiDiagnosticNetworkInterceptor(

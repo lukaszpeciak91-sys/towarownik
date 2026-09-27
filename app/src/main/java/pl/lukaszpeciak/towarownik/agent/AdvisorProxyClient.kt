@@ -26,6 +26,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import pl.lukaszpeciak.towarownik.BuildConfig
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 
 internal class AdvisorProxyClient(
     private val appToken: String = BuildConfig.TOWAROWNIK_APP_TOKEN,
@@ -44,7 +45,7 @@ internal class AdvisorProxyClient(
 
     suspend fun start(
         message: String,
-        storeNumber: String,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
@@ -72,7 +73,7 @@ internal class AdvisorProxyClient(
     suspend fun message(
         previousResponseId: String,
         message: String,
-        storeNumber: String,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
