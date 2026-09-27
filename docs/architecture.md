@@ -200,3 +200,14 @@ Server-side instructions explicitly require a fresh `find_obi_products` call whe
 - AI usage state contains operational numeric metadata only; it stores no conversation text, prompts, tool queries/results, response/call IDs, raw reasoning, or secrets.
 - NBP USD/PLN lookup is an AI Usage UI concern only. A successful rate stores rate, effective date, and refresh time; a 24-hour cache prevents per-turn calls. Failure returns stale dated cache when present and otherwise leaves PLN unavailable.
 - User-configured Taksula budget stores a starting remaining USD amount plus cumulative-cost/unpriced-request baselines. It is explicitly not OpenAI account balance data. A below-USD-1 warning is edge-triggered and re-armed only by a budget reset/increase above the threshold.
+
+
+## Richer verified OBI product facts v0.1
+
+- Enrichment remains inside the existing exact product-page lookup. The same browser-compatible OBI response is decoded once; there is no second product fetch and no server-side OBI parser.
+- Live contract evidence across OBIK 3496072, 6743009, and 7156243 confirmed product-level paths `brand.name`, `productDescription`, `productOverview[]`, `technicalData.productDetails[] {key,value}`, and `technicalData.dimensionsAndWeight[] {key,value}` on the selected-store product object.
+- `LocalProduct` carries optional brand, optional normalized short description, and bounded `TechnicalFact(label,value)` items for the active exact lookup. Room snapshots remain unchanged and continue to persist store, OBIK, name, stock, price, trusted URL, and verification time only.
+- Model-context bounds are brand 80 chars, description 300 chars, six facts, 60-char labels, and 120-char values. These tighter limits preserve the existing 16 KiB continuation request budget at the five-product tool maximum.
+- Optional enrichment is fail-soft. Malformed or absent descriptive subsections are ignored independently; OBIK identity and selected-store structure remain required exactly as before.
+- Store authority is unchanged: stock and gross price come only from `product.store.articleData`. Descriptive and technical facts are product-level data unless OBI itself explicitly states otherwise.
+- Android serializes only bounded product context into `function_call_output`. Product URL, verifiedAt, EAN, raw HTML/Nuxt, cookies, diagnostics, and arbitrary JSON never cross to OpenAI. Final `productRefs` and the `(storeNumber, obik)` trust boundary are unchanged.
