@@ -1,5 +1,7 @@
 # Decisions
 
+Historical note: entries before the branding rename intentionally use **Towarownik** as the working product name used at that time.
+
 The following decisions are approved for V0.1:
 
 - Build a native Android application using Kotlin and Jetpack Compose.
@@ -222,3 +224,15 @@ These decisions describe the broader intended product behavior. The currently im
 - The Nepahu Studio recipient is centralized in one reporting constant. Screenshots remain a manual mail/share-client action.
 - Sensitive/internal exclusions include OpenAI response/tool IDs, `lastResponseId`, API/app tokens, Authorization headers, cookie values, raw model output/reasoning, OBI HTML/Nuxt, account IDs, IP address, and precise location.
 - There is no report backend. Proxy, OBI parser/transport, Room schema, advisor context behavior, and verified-product trust boundary remain unchanged.
+
+
+## Brand rename: Towarownik → Taksula v0.1
+
+- The public-facing product name is **Taksula**.
+- The working brand interpretation is **“ally of the customer advisor” / “sojusznik doradcy”**.
+- Brand owner/developer is **Nepahu Studio**.
+- Android `applicationId`, namespace, Kotlin/Java package declarations, repository name, database/schema identifiers, persisted technical keys, API/tool identifiers, Worker/service identifiers, signing configuration, and other upgrade-sensitive technical identity remain unchanged intentionally.
+- Existing internal symbols such as `TowarownikTheme`, `TowarownikColorTokens`, and `TowarownikSemanticColors` remain unchanged to avoid churn-only refactoring.
+- Existing launcher icon PNG assets and their technical filenames remain unchanged; no binary asset is modified.
+- The approved **Warm Modular Utility** visual system remains unchanged.
+- Google Play public title should be changed manually to **Taksula**; developer remains **Nepahu Studio**. The optional marketing line is **“Sojusznik doradcy”**.

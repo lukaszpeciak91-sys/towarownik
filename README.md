@@ -1,10 +1,10 @@
-# Towarownik
+# Taksula
 
-Towarownik is a small native Android utility for fast retail product lookup. The V0.1 flow uses one search field for a seven-digit OBIK, EAN/GTIN, or product name, then presents the selected product for OBI store 075.
+Taksula is a small native Android utility for fast retail product lookup. The V0.1 flow uses one search field for a seven-digit OBIK, EAN/GTIN, or product name, then presents the selected product for OBI store 075.
 
 ## Project status
 
-The current phase is **Problem reporting + assistant response reports v0.1**. Users can report either one exact persisted ASSISTANT response or a general app problem. Reports are created locally as bounded UTF-8 TXT files only after explicit user action and are handed to the Android system share chooser; Towarownik never sends a report automatically.
+The current phase is **Taksula branding rename v0.1**. The public-facing product name is now **Taksula** while the Android technical identity, repository, persistence contracts, proxy identifiers, signing continuity, and approved launcher icon remain unchanged.
 
 ## Technology
 
@@ -24,6 +24,20 @@ The current phase is **Problem reporting + assistant response reports v0.1**. Us
 - Kotlin coroutines: 1.10.2
 - Android resource localization: Polish default (`values/`) + English (`values-en/`)
 - Active assistant proxy: Cloudflare Worker + TypeScript under `proxy/`
+
+## Branding
+
+- Public product name: **Taksula**
+- Developer / brand owner: **Nepahu Studio**
+- Working brand interpretation: **ally of the customer advisor / sojusznik doradcy**
+- Android package/application ID intentionally remains `pl.lukaszpeciak.towarownik`.
+- Repository, Worker/service identifiers, secrets, persisted keys, signing configuration, launcher icon assets, and internal symbols are intentionally not renamed in this branding-only PR.
+
+Manual Google Play follow-up:
+- public title: **Taksula**
+- developer: **Nepahu Studio**
+- optional short marketing line: **Sojusznik doradcy**
+
 
 ## Local bootstrap and build
 
@@ -146,12 +160,12 @@ Settings also owns navigation to the existing OBI diagnostics screen; the previo
 
 ## Problem reporting
 
-Towarownik exposes two local reporting entry points: a quiet **Zgłoś / Report** action under persisted ASSISTANT responses and **Settings → Zgłoś problem / Report problem** for general issues.
+Taksula exposes two local reporting entry points: a quiet **Zgłoś / Report** action under persisted ASSISTANT responses and **Settings → Zgłoś problem / Report problem** for general issues.
 
 Contextual reports always include the exact reported persisted ASSISTANT response and its persisted verified-product snapshots. Broader conversation content is opt-in and the checkbox defaults **OFF**. When enabled, assistant-response context includes persisted messages only from the beginning of that conversation through the reported response; later messages and the unsent draft are excluded. General reporting similarly includes the current persisted conversation only after explicit opt-in.
 
 Every report includes bounded app/device/UI-locale metadata. Existing OBI diagnostics are optional evidence only when diagnostics were already enabled and already contain sanitized recorder output. When such data exists, the report form exposes a separate **Dołącz diagnostykę OBI / Include OBI diagnostics** checkbox that defaults **OFF**; diagnostic data is included only after that explicit opt-in. Reporting never enables diagnostics, starts the live probe, replays an OBI operation, calls OpenAI, or refreshes products.
 
-Generated reports live temporarily under `cacheDir/reports/` and are shared through a non-exported FileProvider exposing only that cache subdirectory. The final action creates the TXT, attaches it to an Android `ACTION_SEND` intent, pre-fills the Nepahu Studio recipient, and opens the system chooser. Towarownik does not send email itself. If the system chooser cannot be opened, the fresh report file is deleted and the UI shows a bounded share-unavailable error. Screenshots are intentionally left to the user's mail/share app.
+Generated reports live temporarily under `cacheDir/reports/` and are shared through a non-exported FileProvider exposing only that cache subdirectory. The final action creates the TXT, attaches it to an Android `ACTION_SEND` intent, pre-fills the Nepahu Studio recipient, and opens the system chooser. Taksula does not send email itself. If the system chooser cannot be opened, the fresh report file is deleted and the UI shows a bounded share-unavailable error. Screenshots are intentionally left to the user's mail/share app.
 
 Reports never include OpenAI response IDs, tool-call IDs, `lastResponseId`, API/app tokens, Authorization headers, cookie values, raw OpenAI responses/reasoning, OBI HTML/Nuxt payloads, account identifiers, IP address, or precise location. Reports are not stored in Room and there is no report backend.
