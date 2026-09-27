@@ -15,12 +15,14 @@ import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 import pl.lukaszpeciak.towarownik.product.classifyProductSearchInput
 import pl.lukaszpeciak.towarownik.product.normalizeProductSearchInput
 
-internal const val INVALID_SEARCH_MESSAGE = "Wpisz 7-cyfrowy OBIK, EAN lub nazwę produktu."
-internal const val NETWORK_ERROR_MESSAGE = "Nie udało się połączyć z OBI. Sprawdź internet i spróbuj ponownie."
-internal const val NOT_FOUND_MESSAGE = "Nie znaleziono produktu."
-internal const val DATA_ERROR_MESSAGE = "Nie udało się odczytać danych produktu z OBI."
-internal const val SEARCH_DATA_ERROR_MESSAGE = "Nie udało się odczytać wyników wyszukiwania z OBI."
-internal const val LOOKUP_ERROR_MESSAGE = "Nie udało się wyszukać produktu."
+internal enum class SearchUiError {
+    INVALID_INPUT,
+    NETWORK,
+    NOT_FOUND,
+    PRODUCT_DATA,
+    SEARCH_DATA,
+    LOOKUP,
+}
 
 internal data class SearchResultItem(
     val obik: String,
@@ -41,7 +43,7 @@ internal sealed interface ProductSearchUiState {
         val grossPrice: BigDecimal?,
     ) : ProductSearchUiState
 
-    data class Error(val message: String) : ProductSearchUiState
+    data class Error(val error: SearchUiError) : ProductSearchUiState
 }
 
 internal class ProductSearchController(
@@ -56,7 +58,7 @@ internal class ProductSearchController(
         val normalizedInput = normalizeProductSearchInput(input)
         val classified = classifyProductSearchInput(normalizedInput)
         if (classified is ProductSearchInput.Invalid) {
-            onState(ProductSearchUiState.Error(INVALID_SEARCH_MESSAGE))
+            onState(ProductSearchUiState.Error(SearchUiError.INVALID_INPUT))
             return
         }
 
@@ -68,13 +70,13 @@ internal class ProductSearchController(
                     is ProductSearchInput.Obik -> lookupObik(classified.value).toUiState()
                     is ProductSearchInput.Ean -> resolveEan(classified.value)
                     is ProductSearchInput.Text -> resolveSearch(classified.value)
-                    ProductSearchInput.Invalid -> ProductSearchUiState.Error(INVALID_SEARCH_MESSAGE)
+                    ProductSearchInput.Invalid -> ProductSearchUiState.Error(SearchUiError.INVALID_INPUT)
                 }
             }
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
-            ProductSearchUiState.Error(LOOKUP_ERROR_MESSAGE)
+            ProductSearchUiState.Error(SearchUiError.LOOKUP)
         }
 
         onState(result)
@@ -93,7 +95,7 @@ internal class ProductSearchController(
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
-            ProductSearchUiState.Error(LOOKUP_ERROR_MESSAGE)
+            ProductSearchUiState.Error(SearchUiError.LOOKUP)
         }
 
         onState(result)
@@ -114,12 +116,12 @@ internal class ProductSearchController(
                                 search.items.toSearchResults()
                             }
                         }
-                        is ProductLookupResult.InvalidObik -> ProductSearchUiState.Error(INVALID_SEARCH_MESSAGE)
+                        is ProductLookupResult.InvalidObik -> ProductSearchUiState.Error(SearchUiError.INVALID_INPUT)
                         is ProductLookupResult.Unavailable -> lookup.toUiState()
                     }
                 }
             }
-            ProductSearchResult.NotFound -> ProductSearchUiState.Error(NOT_FOUND_MESSAGE)
+            ProductSearchResult.NotFound -> ProductSearchUiState.Error(SearchUiError.NOT_FOUND)
             is ProductSearchResult.Unavailable -> search.toUiState()
         }
     }
@@ -127,7 +129,7 @@ internal class ProductSearchController(
     private fun resolveSearch(query: String): ProductSearchUiState {
         return when (val search = searchProducts(query)) {
             is ProductSearchResult.Candidates -> search.items.toSearchResults()
-            ProductSearchResult.NotFound -> ProductSearchUiState.Error(NOT_FOUND_MESSAGE)
+            ProductSearchResult.NotFound -> ProductSearchUiState.Error(SearchUiError.NOT_FOUND)
             is ProductSearchResult.Unavailable -> search.toUiState()
         }
     }
@@ -149,12 +151,12 @@ private fun ProductLookupResult.toUiState(): ProductSearchUiState = when (this) 
         stock = product.stock,
         grossPrice = product.grossPrice,
     )
-    is ProductLookupResult.InvalidObik -> ProductSearchUiState.Error(INVALID_SEARCH_MESSAGE)
+    is ProductLookupResult.InvalidObik -> ProductSearchUiState.Error(SearchUiError.INVALID_INPUT)
     is ProductLookupResult.Unavailable -> ProductSearchUiState.Error(
         when (failure) {
-            ProductLookupFailure.NETWORK -> NETWORK_ERROR_MESSAGE
-            ProductLookupFailure.NOT_FOUND -> NOT_FOUND_MESSAGE
-            ProductLookupFailure.DATA -> DATA_ERROR_MESSAGE
+            ProductLookupFailure.NETWORK -> SearchUiError.NETWORK
+            ProductLookupFailure.NOT_FOUND -> SearchUiError.NOT_FOUND
+            ProductLookupFailure.DATA -> SearchUiError.PRODUCT_DATA
         },
     )
 }
@@ -162,8 +164,8 @@ private fun ProductLookupResult.toUiState(): ProductSearchUiState = when (this) 
 private fun ProductSearchResult.Unavailable.toUiState(): ProductSearchUiState =
     ProductSearchUiState.Error(
         when (failure) {
-            ProductLookupFailure.NETWORK -> NETWORK_ERROR_MESSAGE
-            ProductLookupFailure.NOT_FOUND -> NOT_FOUND_MESSAGE
-            ProductLookupFailure.DATA -> SEARCH_DATA_ERROR_MESSAGE
+            ProductLookupFailure.NETWORK -> SearchUiError.NETWORK
+            ProductLookupFailure.NOT_FOUND -> SearchUiError.NOT_FOUND
+            ProductLookupFailure.DATA -> SearchUiError.SEARCH_DATA
         },
     )

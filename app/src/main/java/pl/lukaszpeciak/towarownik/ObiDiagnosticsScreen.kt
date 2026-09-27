@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -38,6 +39,11 @@ import pl.lukaszpeciak.towarownik.diagnostics.OBI_PROBE_CANONICAL_PRODUCT_URL
 import pl.lukaszpeciak.towarownik.diagnostics.OBI_PROBE_SEARCH_URL
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.diagnostics.ObiLiveProbeRunner
+
+private sealed interface ProbeUiStatus {
+    data object Success : ProbeUiStatus
+    data class Failure(val reason: String) : ProbeUiStatus
+}
 
 @Composable
 internal fun ObiDiagnosticsScreen(
@@ -57,9 +63,12 @@ internal fun ObiDiagnosticsScreen(
     }
     var enabled by remember { mutableStateOf(recorder.isEnabled()) }
     var probeRunning by remember { mutableStateOf(false) }
-    var probeStatus by remember { mutableStateOf<String?>(null) }
+    var probeStatus by remember { mutableStateOf<ProbeUiStatus?>(null) }
     var reportRevision by remember { mutableIntStateOf(0) }
     val report = remember(enabled, reportRevision) { recorder.report() }
+    val clipboardLabel = stringResource(R.string.diagnostics_clipboard_label)
+    val shareSubject = stringResource(R.string.diagnostics_share_subject)
+    val shareChooserTitle = stringResource(R.string.diagnostics_share_chooser)
 
     BackHandler(onBack = onBack)
 
@@ -79,11 +88,17 @@ internal fun ObiDiagnosticsScreen(
             ) {
                 Column {
                     Text(
-                        text = "Diagnostyka OBI",
+                        text = stringResource(R.string.diagnostics_title),
                         style = MaterialTheme.typography.headlineSmall,
                     )
                     Text(
-                        text = if (enabled) "Tryb diagnostyczny: ON" else "Tryb diagnostyczny: OFF",
+                        text = stringResource(
+                            if (enabled) {
+                                R.string.diagnostics_mode_on
+                            } else {
+                                R.string.diagnostics_mode_off
+                            },
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -98,8 +113,7 @@ internal fun ObiDiagnosticsScreen(
             }
 
             Text(
-                text = "Raport przechowuje maksymalnie 10 ostatnich operacji tylko w tej sesji. " +
-                    "Nie zapisuje wartości cookies ani treści odpowiedzi.",
+                text = stringResource(R.string.diagnostics_retention_notice),
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -111,10 +125,10 @@ internal fun ObiDiagnosticsScreen(
                         runCatching { probeRunner.run() }
                             .onSuccess { probe ->
                                 recorder.setLiveProbeReport(probe)
-                                probeStatus = "Test OBI zakończony."
+                                probeStatus = ProbeUiStatus.Success
                             }
                             .onFailure { error ->
-                                probeStatus = "Test OBI nie powiódł się: ${error.javaClass.simpleName}"
+                                probeStatus = ProbeUiStatus.Failure(error.javaClass.simpleName)
                             }
                         probeRunning = false
                         reportRevision += 1
@@ -123,12 +137,28 @@ internal fun ObiDiagnosticsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = enabled && !probeRunning,
             ) {
-                Text(if (probeRunning) "Test OBI trwa…" else "Uruchom test OBI")
+                Text(
+                    stringResource(
+                        if (probeRunning) {
+                            R.string.diagnostics_probe_running
+                        } else {
+                            R.string.diagnostics_run_probe
+                        },
+                    ),
+                )
             }
 
             probeStatus?.let { status ->
                 Text(
-                    text = status,
+                    text = when (status) {
+                        ProbeUiStatus.Success ->
+                            stringResource(R.string.diagnostics_probe_success)
+                        is ProbeUiStatus.Failure ->
+                            stringResource(
+                                R.string.diagnostics_probe_failure,
+                                status.reason,
+                            )
+                    },
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -141,7 +171,7 @@ internal fun ObiDiagnosticsScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Otwórz Dedra w przeglądarce")
+                Text(stringResource(R.string.diagnostics_open_dedra))
             }
 
             OutlinedButton(
@@ -152,7 +182,7 @@ internal fun ObiDiagnosticsScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Otwórz produkt 3496072 w przeglądarce")
+                Text(stringResource(R.string.diagnostics_open_product))
             }
 
             Row(
@@ -163,29 +193,29 @@ internal fun ObiDiagnosticsScreen(
                     onClick = {
                         val clipboard = context.getSystemService(ClipboardManager::class.java)
                         clipboard?.setPrimaryClip(
-                            ClipData.newPlainText("Towarownik OBI diagnostics", recorder.report()),
+                            ClipData.newPlainText(clipboardLabel, recorder.report()),
                         )
                         reportRevision += 1
                     },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Kopiuj raport")
+                    Text(stringResource(R.string.diagnostics_copy_report))
                 }
 
                 Button(
                     onClick = {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "Towarownik — diagnostyka OBI")
+                            putExtra(Intent.EXTRA_SUBJECT, shareSubject)
                             putExtra(Intent.EXTRA_TEXT, recorder.report())
                         }
                         context.startActivity(
-                            Intent.createChooser(shareIntent, "Udostępnij raport"),
+                            Intent.createChooser(shareIntent, shareChooserTitle),
                         )
                     },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Udostępnij raport")
+                    Text(stringResource(R.string.diagnostics_share_report))
                 }
             }
 
@@ -196,14 +226,14 @@ internal fun ObiDiagnosticsScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Wyczyść raport")
+                Text(stringResource(R.string.diagnostics_clear_report))
             }
 
             OutlinedButton(
                 onClick = onBack,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Powrót")
+                Text(stringResource(R.string.back))
             }
 
             SelectionContainer {

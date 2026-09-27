@@ -1,3 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Towarownik</string>
+
+    <string name="new_conversation">+ Nowa rozmowa</string>
+    <string name="search_conversations">Przeszukaj rozmowy…</string>
+    <string name="no_saved_conversations">Brak zapisanych rozmów.</string>
+    <string name="no_matching_conversations">Brak rozmów zawierających tę frazę.</string>
+    <string name="delete_conversation">Usuń rozmowę</string>
+    <string name="delete_conversation_confirm">Usunąć tę rozmowę?</string>
+    <string name="delete">Usuń</string>
+    <string name="cancel">Anuluj</string>
+
+    <string name="advisor_title">Doradca</string>
+    <string name="advisor_empty_body">Opisz, czego potrzebuje klient.</string>
+    <string name="advisor_composer_placeholder">Opisz czego potrzebuje klient…</string>
+    <string name="advisor_progress_connecting">Łączę z doradcą…</string>
+    <string name="advisor_progress_checking_obi">Sprawdzam OBI…</string>
+    <string name="advisor_progress_preparing">Przygotowuję odpowiedź…</string>
+    <string name="advisor_error_not_configured">Doradca nie jest skonfigurowany w tej wersji aplikacji.</string>
+    <string name="advisor_error_network">Nie udało się połączyć z doradcą.</string>
+    <string name="advisor_error_service">Usługa doradcy jest chwilowo niedostępna.</string>
+    <string name="advisor_error_protocol">Otrzymano nieprawidłową odpowiedź doradcy.</string>
+    <string name="advisor_error_obi">Nie udało się odczytać danych z OBI.</string>
+    <string name="advisor_error_too_many_tools">Doradca poprosił o zbyt wiele sprawdzeń OBI.</string>
+    <string name="advisor_error_input">Opisz czego potrzebuje klient.</string>
+
+    <string name="manual_search_title">Wyszukiwarka OBI</string>
+    <string name="manual_search_input_label">OBIK / EAN / nazwa</string>
+    <string name="search">Szukaj</string>
+    <string name="manual_search_progress">Szukam produktu…</string>
+    <string name="manual_search_results_range">Wyniki 1–%1$d</string>
+    <string name="manual_search_reported_total">OBI raportuje: %1$d wyników</string>
+    <string name="show_more">Pokaż więcej</string>
+    <string name="search_error_invalid_input">Wpisz 7-cyfrowy OBIK, EAN lub nazwę produktu.</string>
+    <string name="search_error_network">Nie udało się połączyć z OBI. Sprawdź internet i spróbuj ponownie.</string>
+    <string name="search_error_not_found">Nie znaleziono produktu.</string>
+    <string name="search_error_product_data">Nie udało się odczytać danych produktu z OBI.</string>
+    <string name="search_error_search_data">Nie udało się odczytać wyników wyszukiwania z OBI.</string>
+    <string name="search_error_lookup">Nie udało się wyszukać produktu.</string>
+
+    <string name="product_obik">OBIK: %1$s</string>
+    <string name="product_price">Cena Nowy Sącz: %1$s zł</string>
+    <string name="product_price_unknown">Cena Nowy Sącz: brak danych</string>
+    <string name="product_stock_count">Stan Nowy Sącz: %1$d szt.</string>
+    <string name="product_stock_zero">Stan Nowy Sącz: 0 szt. — brak na stanie</string>
+    <string name="product_stock_unknown">Stan Nowy Sącz: brak danych</string>
+    <string name="product_verified_at">Sprawdzono %1$s</string>
+    <string name="open_in_obi">Otwórz w OBI</string>
+
+    <string name="diagnostics_title">Diagnostyka OBI</string>
+    <string name="diagnostics_mode_on">Tryb diagnostyczny: ON</string>
+    <string name="diagnostics_mode_off">Tryb diagnostyczny: OFF</string>
+    <string name="diagnostics_retention_notice">Raport przechowuje maksymalnie 10 ostatnich operacji tylko w tej sesji. Nie zapisuje wartości cookies ani treści odpowiedzi.</string>
+    <string name="diagnostics_probe_success">Test OBI zakończony.</string>
+    <string name="diagnostics_probe_failure">Test OBI nie powiódł się: %1$s</string>
+    <string name="diagnostics_probe_running">Test OBI trwa…</string>
+    <string name="diagnostics_run_probe">Uruchom test OBI</string>
+    <string name="diagnostics_open_dedra">Otwórz Dedra w przeglądarce</string>
+    <string name="diagnostics_open_product">Otwórz produkt 3496072 w przeglądarce</string>
+    <string name="diagnostics_copy_report">Kopiuj raport</string>
+    <string name="diagnostics_share_report">Udostępnij raport</string>
+    <string name="diagnostics_clear_report">Wyczyść raport</string>
+    <string name="diagnostics_share_subject">Towarownik — diagnostyka OBI</string>
+    <string name="diagnostics_share_chooser">Udostępnij raport</string>
+    <string name="diagnostics_clipboard_label">Towarownik OBI diagnostics</string>
+    <string name="back">Powrót</string>
+
+    <string name="cd_open_navigation">Otwórz historię rozmów</string>
+    <string name="cd_new_conversation">Nowa rozmowa</string>
+    <string name="cd_open_obi_search">Otwórz wyszukiwarkę OBI</string>
+    <string name="cd_send_message">Wyślij wiadomość</string>
+    <string name="cd_clear_search">Wyczyść wyszukiwanie</string>
+    <string name="cd_back">Wróć</string>
+    <string name="cd_conversation_options">Opcje rozmowy</string>
 </resources>

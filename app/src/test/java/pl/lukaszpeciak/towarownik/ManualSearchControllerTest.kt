@@ -161,30 +161,30 @@ class ManualSearchControllerTest {
     }
 
     @Test
-    fun `stock zero and unknown stock have distinct display semantics`() {
+    fun `stock null zero and positive select distinct localized resources`() {
         assertEquals(
-            "Stan Nowy Sącz: 0 szt. — brak na stanie",
-            formatStore075Stock(0),
+            R.string.product_stock_unknown,
+            store075StockStringRes(null),
         )
         assertEquals(
-            "Stan Nowy Sącz: brak danych",
-            formatStore075Stock(null),
+            R.string.product_stock_zero,
+            store075StockStringRes(0),
         )
         assertEquals(
-            "Stan Nowy Sącz: 7 szt.",
-            formatStore075Stock(7),
+            R.string.product_stock_count,
+            store075StockStringRes(7),
         )
     }
 
     @Test
-    fun `unknown price stays unavailable`() {
+    fun `price null and present select distinct localized resources`() {
         assertEquals(
-            "Cena Nowy Sącz: brak danych",
-            formatStore075Price(null),
+            R.string.product_price_unknown,
+            store075PriceStringRes(null),
         )
         assertEquals(
-            "Cena Nowy Sącz: 14.99 zł",
-            formatStore075Price(BigDecimal("14.99")),
+            R.string.product_price,
+            store075PriceStringRes(BigDecimal("14.99")),
         )
     }
 

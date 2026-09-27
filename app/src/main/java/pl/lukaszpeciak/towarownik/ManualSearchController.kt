@@ -1,6 +1,5 @@
 package pl.lukaszpeciak.towarownik
 
-import java.math.BigDecimal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +50,7 @@ internal sealed interface ManualSearchUiState {
         val item: VerifiedProductUiModel,
     ) : ManualSearchUiState
 
-    data class Error(val message: String) : ManualSearchUiState
+    data class Error(val error: SearchUiError) : ManualSearchUiState
 }
 
 internal class ManualSearchController(
@@ -68,7 +67,7 @@ internal class ManualSearchController(
         val normalizedInput = normalizeProductSearchInput(input)
         val classified = classifyProductSearchInput(normalizedInput)
         if (classified is ProductSearchInput.Invalid) {
-            onState(ManualSearchUiState.Error(INVALID_SEARCH_MESSAGE))
+            onState(ManualSearchUiState.Error(SearchUiError.INVALID_INPUT))
             return
         }
 
@@ -80,13 +79,13 @@ internal class ManualSearchController(
                     is ProductSearchInput.Obik -> lookupObik(classified.value).toManualUiState()
                     is ProductSearchInput.Ean -> resolveEan(classified.value)
                     is ProductSearchInput.Text -> resolveText(classified.value)
-                    ProductSearchInput.Invalid -> ManualSearchUiState.Error(INVALID_SEARCH_MESSAGE)
+                    ProductSearchInput.Invalid -> ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
                 }
             }
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
-            ManualSearchUiState.Error(LOOKUP_ERROR_MESSAGE)
+            ManualSearchUiState.Error(SearchUiError.LOOKUP)
         }
 
         onState(result)
@@ -105,7 +104,7 @@ internal class ManualSearchController(
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
-            ManualSearchUiState.Error(LOOKUP_ERROR_MESSAGE)
+            ManualSearchUiState.Error(SearchUiError.LOOKUP)
         }
 
         onState(result)
@@ -128,7 +127,7 @@ internal class ManualSearchController(
                         }
 
                         is ProductLookupResult.InvalidObik ->
-                            ManualSearchUiState.Error(INVALID_SEARCH_MESSAGE)
+                            ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
 
                         is ProductLookupResult.Unavailable ->
                             lookup.toManualUiState()
@@ -137,7 +136,7 @@ internal class ManualSearchController(
             }
 
             ManualProductSearchResult.NotFound ->
-                ManualSearchUiState.Error(NOT_FOUND_MESSAGE)
+                ManualSearchUiState.Error(SearchUiError.NOT_FOUND)
 
             is ManualProductSearchResult.Unavailable ->
                 search.toManualUiState()
@@ -148,22 +147,12 @@ internal class ManualSearchController(
         return when (val search = searchProducts(query)) {
             is ManualProductSearchResult.Candidates -> search.toManualSearchResults()
             ManualProductSearchResult.NotFound ->
-                ManualSearchUiState.Error(NOT_FOUND_MESSAGE)
+                ManualSearchUiState.Error(SearchUiError.NOT_FOUND)
             is ManualProductSearchResult.Unavailable ->
                 search.toManualUiState()
         }
     }
 }
-
-internal fun formatStore075Stock(stock: Int?): String = when (stock) {
-    null -> "Stan Nowy Sącz: brak danych"
-    0 -> "Stan Nowy Sącz: 0 szt. — brak na stanie"
-    else -> "Stan Nowy Sącz: $stock szt."
-}
-
-internal fun formatStore075Price(price: BigDecimal?): String =
-    price?.let { "Cena Nowy Sącz: ${it.toPlainString()} zł" }
-        ?: "Cena Nowy Sącz: brak danych"
 
 private fun ManualProductSearchResult.Candidates.toManualSearchResults():
     ManualSearchUiState.SearchResults =
@@ -184,14 +173,14 @@ private fun ProductLookupResult.toManualUiState(): ManualSearchUiState = when (t
     )
 
     is ProductLookupResult.InvalidObik ->
-        ManualSearchUiState.Error(INVALID_SEARCH_MESSAGE)
+        ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
 
     is ProductLookupResult.Unavailable ->
         ManualSearchUiState.Error(
             when (failure) {
-                ProductLookupFailure.NETWORK -> NETWORK_ERROR_MESSAGE
-                ProductLookupFailure.NOT_FOUND -> NOT_FOUND_MESSAGE
-                ProductLookupFailure.DATA -> DATA_ERROR_MESSAGE
+                ProductLookupFailure.NETWORK -> SearchUiError.NETWORK
+                ProductLookupFailure.NOT_FOUND -> SearchUiError.NOT_FOUND
+                ProductLookupFailure.DATA -> SearchUiError.PRODUCT_DATA
             },
         )
 }
@@ -200,9 +189,9 @@ private fun ManualProductSearchResult.Unavailable.toManualUiState():
     ManualSearchUiState.Error =
     ManualSearchUiState.Error(
         when (failure) {
-            ProductLookupFailure.NETWORK -> NETWORK_ERROR_MESSAGE
-            ProductLookupFailure.NOT_FOUND -> NOT_FOUND_MESSAGE
-            ProductLookupFailure.DATA -> SEARCH_DATA_ERROR_MESSAGE
+            ProductLookupFailure.NETWORK -> SearchUiError.NETWORK
+            ProductLookupFailure.NOT_FOUND -> SearchUiError.NOT_FOUND
+            ProductLookupFailure.DATA -> SearchUiError.SEARCH_DATA
         },
     )
 

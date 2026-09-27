@@ -4,20 +4,15 @@ import kotlinx.coroutines.CancellationException
 import pl.lukaszpeciak.towarownik.BuildConfig
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
-internal const val ADVISOR_NOT_CONFIGURED_MESSAGE =
-    "Doradca nie jest skonfigurowany w tej wersji aplikacji."
-internal const val ADVISOR_NETWORK_ERROR_MESSAGE =
-    "Nie udało się połączyć z doradcą."
-internal const val ADVISOR_SERVICE_ERROR_MESSAGE =
-    "Usługa doradcy jest chwilowo niedostępna."
-internal const val ADVISOR_PROTOCOL_ERROR_MESSAGE =
-    "Otrzymano nieprawidłową odpowiedź doradcy."
-internal const val ADVISOR_OBI_ERROR_MESSAGE =
-    "Nie udało się odczytać danych z OBI."
-internal const val ADVISOR_TOO_MANY_TOOLS_MESSAGE =
-    "Doradca poprosił o zbyt wiele sprawdzeń OBI."
-internal const val ADVISOR_INPUT_ERROR_MESSAGE =
-    "Opisz czego potrzebuje klient."
+internal enum class AdvisorError {
+    NOT_CONFIGURED,
+    NETWORK,
+    SERVICE,
+    PROTOCOL,
+    OBI,
+    TOO_MANY_TOOLS,
+    INPUT,
+}
 
 internal sealed interface AdvisorUiState {
     data object Idle : AdvisorUiState
@@ -29,7 +24,7 @@ internal sealed interface AdvisorUiState {
         val responseId: String,
         val products: List<VerifiedProductSnapshot> = emptyList(),
     ) : AdvisorUiState
-    data class Error(val message: String) : AdvisorUiState
+    data class Error(val error: AdvisorError) : AdvisorUiState
 }
 
 internal class AdvisorController(
@@ -53,13 +48,13 @@ internal class AdvisorController(
     ): AdvisorUiState {
         val normalizedInput = input.normalizeWhitespace()
         if (normalizedInput.isBlank()) {
-            val error = AdvisorUiState.Error(ADVISOR_INPUT_ERROR_MESSAGE)
+            val error = AdvisorUiState.Error(AdvisorError.INPUT)
             onState(error)
             return error
         }
 
         if (!isConfigured()) {
-            val error = AdvisorUiState.Error(ADVISOR_NOT_CONFIGURED_MESSAGE)
+            val error = AdvisorUiState.Error(AdvisorError.NOT_CONFIGURED)
             onState(error)
             return error
         }
@@ -109,7 +104,7 @@ internal class AdvisorController(
                     val toolRequest = proxyResult
                     if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
                         val error = AdvisorUiState.Error(
-                            ADVISOR_TOO_MANY_TOOLS_MESSAGE,
+                            AdvisorError.TOO_MANY_TOOLS,
                         )
                         onState(error)
                         return error
@@ -135,7 +130,7 @@ internal class AdvisorController(
                         }
                         AdvisorToolExecutionResult.Failure -> {
                             val error = AdvisorUiState.Error(
-                                ADVISOR_OBI_ERROR_MESSAGE,
+                                AdvisorError.OBI,
                             )
                             onState(error)
                             return error
@@ -199,14 +194,14 @@ private fun AdvisorProxyCallResult.Failure.toUiError(): AdvisorUiState.Error =
     AdvisorUiState.Error(
         when (kind) {
             AdvisorProxyFailureKind.NOT_CONFIGURED ->
-                ADVISOR_NOT_CONFIGURED_MESSAGE
+                AdvisorError.NOT_CONFIGURED
             AdvisorProxyFailureKind.AUTHENTICATION,
             AdvisorProxyFailureKind.SERVICE ->
-                ADVISOR_SERVICE_ERROR_MESSAGE
+                AdvisorError.SERVICE
             AdvisorProxyFailureKind.NETWORK ->
-                ADVISOR_NETWORK_ERROR_MESSAGE
+                AdvisorError.NETWORK
             AdvisorProxyFailureKind.PROTOCOL ->
-                ADVISOR_PROTOCOL_ERROR_MESSAGE
+                AdvisorError.PROTOCOL
         },
     )
 
