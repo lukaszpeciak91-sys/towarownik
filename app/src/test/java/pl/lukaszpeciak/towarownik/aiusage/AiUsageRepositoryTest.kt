@@ -9,9 +9,14 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import pl.lukaszpeciak.towarownik.agent.AdvisorRequestType
 import pl.lukaszpeciak.towarownik.agent.AdvisorUsage
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class AiUsageRepositoryTest {
     private lateinit var repository: AiUsageRepository
 
