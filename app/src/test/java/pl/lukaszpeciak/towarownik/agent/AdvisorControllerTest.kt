@@ -637,6 +637,48 @@ class AdvisorControllerTest {
     }
 
     @Test
+    fun `store mentioned only in previous user turn does not authorize current turn`() = runBlocking {
+        var toolCalls = 0
+        var rejected = false
+        val controller = controller(
+            start = {
+                successAnswer("resp_first", "Noted")
+            },
+            message = { _, _ ->
+                successTool(
+                    "resp_tool",
+                    "call_tool",
+                    "klej",
+                    storeNumber = "074",
+                )
+            },
+            rejectedContinueCall = { _, _, _ ->
+                rejected = true
+                successAnswer("resp_final", "Need number")
+            },
+            tool = {
+                toolCalls += 1
+                verifiedResult(it.query)
+            },
+        )
+
+        val first = controller.runTurn(
+            input = "Zapamiętaj 074",
+            previousResponseId = null,
+            conversationStoreNumber = "075",
+        ) { } as AdvisorUiState.Success
+
+        controller.runTurn(
+            input = "Sprawdź tam klej",
+            previousResponseId = first.responseId,
+            conversationStoreNumber = "075",
+        ) { }
+
+        assertEquals(0, toolCalls)
+        assertTrue(rejected)
+    }
+
+    @Test
     fun `same OBIK from two stores resolves to two current turn cards`() = runBlocking {
         var continuation = 0
         val controller = controller(

@@ -2,6 +2,8 @@ package pl.lukaszpeciak.towarownik.product
 
 internal const val DEFAULT_OBI_STORE_NUMBER = "075"
 
+// Confirmed against the official OBI Poland customer-relations market list
+// on 2026-09-27. Runtime code never discovers or expands this allowlist.
 internal val SUPPORTED_OBI_STORE_NUMBERS: List<String> = listOf(
     "001", "002", "003", "004", "006", "007", "008", "009",
     "011", "012", "013", "015", "016", "017", "018", "019",

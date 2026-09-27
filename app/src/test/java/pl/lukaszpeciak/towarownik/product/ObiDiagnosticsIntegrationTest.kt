@@ -222,6 +222,50 @@ class ObiDiagnosticsIntegrationTest {
     }
 
     @Test
+    fun `requested alternate store drives cookie body and parser diagnostics`() {
+        MockWebServer().use { server ->
+            val recorder = enabledRecorder()
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .addHeader("Location", "/p/7313810")
+                    .addHeader("Set-Cookie", "store=074; Path=/"),
+            )
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .addHeader("Content-Type", "text/html")
+                    .setBody(
+                        fixture("real-7313810-store-075.html")
+                            .replace("075", "074"),
+                    ),
+            )
+            val repository = productRepository(server, recorder)
+
+            val result = repository.lookupObik(
+                "7313810",
+                storeNumber = "074",
+            )
+
+            assertTrue(result is ProductLookupResult.Found)
+            val operation = recorder.snapshots().single()
+            assertEquals("074", operation.storeNumber)
+            assertEquals(StoreCookieMatch.MATCH, operation.storeCookieMatch)
+            assertEquals(
+                true,
+                operation.bodySignatures!!.containsRequestedStore,
+            )
+            assertTrue(operation.parserStages.contains("STORE_MATCH"))
+            assertFalse(
+                operation.parserStages.contains("STORE_MATCH_FAILED"),
+            )
+            val report = recorder.report()
+            assertTrue(report.contains("storeNumber=074"))
+            assertFalse(report.contains("store=074"))
+        }
+    }
+
+    @Test
     fun `different store cookie is reported false without exposing its value`() {
         MockWebServer().use { server ->
             val recorder = enabledRecorder()

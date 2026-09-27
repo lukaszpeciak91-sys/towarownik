@@ -1189,7 +1189,7 @@ private fun ObiStoreSelector(
         ) {
             SUPPORTED_OBI_STORE_NUMBERS.forEach { storeNumber ->
                 DropdownMenuItem(
-                    text = { Text("OBI $storeNumber") },
+                    text = { Text(stringResource(R.string.obi_store_item, storeNumber)) },
                     onClick = {
                         expanded = false
                         onStoreSelected(storeNumber)

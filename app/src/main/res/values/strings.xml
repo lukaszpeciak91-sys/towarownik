@@ -13,6 +13,7 @@
 
     <string name="advisor_title">Doradca</string>
     <string name="obi_store_selector">OBI • %1$s</string>
+    <string name="obi_store_item">OBI %1$s</string>
     <string name="advisor_empty_body">Opisz, czego potrzebuje klient.</string>
     <string name="advisor_composer_placeholder">Opisz czego potrzebuje klient…</string>
     <string name="advisor_progress_connecting">Łączę z doradcą…</string>

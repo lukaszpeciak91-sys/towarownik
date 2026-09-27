@@ -41,6 +41,7 @@ class ObiStoresTest {
 
     @Test
     fun `allowlist contains only unique exact three digit values`() {
+        assertEquals(62, SUPPORTED_OBI_STORE_NUMBERS.size)
         assertEquals(
             SUPPORTED_OBI_STORE_NUMBERS.size,
             SUPPORTED_OBI_STORE_NUMBERS.distinct().size,

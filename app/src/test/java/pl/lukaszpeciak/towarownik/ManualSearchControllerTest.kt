@@ -161,6 +161,57 @@ class ManualSearchControllerTest {
     }
 
     @Test
+    fun `direct OBIK and EAN exact verification use selected store`() = runBlocking {
+        val lookedUpStores = mutableListOf<String>()
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                lookedUpStores += storeNumber
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        ean = EAN,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+            searchProducts = {
+                ManualProductSearchResult.Candidates(
+                    items = listOf(
+                        ProductSearchCandidate("7013998", "Candidate"),
+                    ),
+                    reportedTotalCount = 1,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        val direct = mutableListOf<ManualSearchUiState>()
+        controller.submit(
+            input = "7313810",
+            storeNumber = "074",
+        ) { direct += it }
+        assertEquals(
+            "074",
+            (direct.last() as ManualSearchUiState.Product)
+                .item
+                .storeNumber,
+        )
+
+        val ean = mutableListOf<ManualSearchUiState>()
+        controller.submit(
+            input = EAN,
+            storeNumber = "078",
+        ) { ean += it }
+        assertEquals(
+            "078",
+            (ean.last() as ManualSearchUiState.Product)
+                .item
+                .storeNumber,
+        )
+        assertEquals(listOf("074", "078"), lookedUpStores)
+    }
+
+    @Test
     fun `stock null zero and positive select distinct localized resources`() {
         assertEquals(
             R.string.product_stock_unknown,
@@ -192,6 +243,7 @@ class ManualSearchControllerTest {
         obik: String,
         ean: String? = null,
         productUrl: String = "https://example.invalid/p/$obik/canonical",
+        storeNumber: String = "075",
     ) = LocalProduct(
         obik = obik,
         name = "Exact synthetic product",
@@ -199,6 +251,7 @@ class ManualSearchControllerTest {
         grossPrice = BigDecimal("19.99"),
         productUrl = productUrl,
         ean = ean,
+        storeNumber = storeNumber,
     )
 
     private companion object {
