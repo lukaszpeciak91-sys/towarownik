@@ -80,6 +80,8 @@ import kotlinx.coroutines.launch
 import pl.lukaszpeciak.towarownik.agent.AdvisorController
 import pl.lukaszpeciak.towarownik.agent.AdvisorError
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
+import pl.lukaszpeciak.towarownik.aiusage.AiUsageRepository
+import pl.lukaszpeciak.towarownik.aiusage.NbpUsdPlnRateProvider
 import pl.lukaszpeciak.towarownik.conversation.ConversationDatabase
 import pl.lukaszpeciak.towarownik.conversation.ConversationRepository
 import pl.lukaszpeciak.towarownik.conversation.ConversationSummary
@@ -131,6 +133,7 @@ internal enum class AppSurface {
     ADVISOR,
     MANUAL_SEARCH,
     SETTINGS,
+    AI_USAGE,
     DIAGNOSTICS,
     REPORT,
 }
@@ -140,6 +143,7 @@ internal fun backSurface(surface: AppSurface): AppSurface =
         AppSurface.ADVISOR -> AppSurface.ADVISOR
         AppSurface.MANUAL_SEARCH -> AppSurface.ADVISOR
         AppSurface.SETTINGS -> AppSurface.ADVISOR
+        AppSurface.AI_USAGE -> AppSurface.SETTINGS
         AppSurface.DIAGNOSTICS -> AppSurface.SETTINGS
         AppSurface.REPORT -> AppSurface.ADVISOR
     }
@@ -164,6 +168,12 @@ private fun TowarownikApp() {
         ConversationRepository(
             ConversationDatabase.get(context).conversationDao(),
         )
+    }
+    val aiUsageRepository = remember {
+        AiUsageRepository.production(context)
+    }
+    val nbpUsdPlnRateProvider = remember {
+        NbpUsdPlnRateProvider.production(context)
     }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -211,6 +221,9 @@ private fun TowarownikApp() {
         mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
     }
     var advisorJob by remember { mutableStateOf<Job?>(null) }
+    var showAiBudgetWarning by rememberSaveable {
+        mutableStateOf(false)
+    }
     var draftPersistJob by remember { mutableStateOf<Job?>(null) }
     var storePersistJob by remember { mutableStateOf<Job?>(null) }
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
@@ -400,10 +413,28 @@ private fun TowarownikApp() {
             conversationRepository.load(turn.conversationId)
                 ?.let(::applyConversation)
 
+            runCatching {
+                aiUsageRepository.recordTurnStarted()
+            }
+            var toolAssistedRecorded = false
+
             val finalState = advisorController.runTurn(
                 input = submitted,
                 previousResponseId = turn.previousResponseId,
                 conversationStoreNumber = turn.storeNumber,
+                onOpenAiResponse = { usage ->
+                    runCatching {
+                        aiUsageRepository.recordOpenAiResponse(usage)
+                    }
+                },
+                onToolRequestObserved = {
+                    if (!toolAssistedRecorded) {
+                        toolAssistedRecorded = true
+                        runCatching {
+                            aiUsageRepository.recordToolAssistedTurn()
+                        }
+                    }
+                },
             ) { state ->
                 if (
                     advisorRequestGuard.isCurrent(
@@ -470,6 +501,14 @@ private fun TowarownikApp() {
                 AdvisorUiState.RunningLocalTool,
                 AdvisorUiState.WaitingForFinalAnswer -> Unit
             }
+
+            if (
+                runCatching {
+                    aiUsageRepository.consumePendingBudgetWarning()
+                }.getOrDefault(false)
+            ) {
+                showAiBudgetWarning = true
+            }
         }
     }
 
@@ -526,6 +565,10 @@ private fun TowarownikApp() {
         }
     }
 
+    fun openAiUsage() {
+        surfaceName = AppSurface.AI_USAGE.name
+    }
+
     fun openDiagnostics() {
         surfaceName = AppSurface.DIAGNOSTICS.name
     }
@@ -557,6 +600,13 @@ private fun TowarownikApp() {
 
     LaunchedEffect(Unit) {
         conversationRepository.cleanupExpiredConversations()
+        if (
+            runCatching {
+                aiUsageRepository.consumePendingBudgetWarning()
+            }.getOrDefault(false)
+        ) {
+            showAiBudgetWarning = true
+        }
 
         val savedConversationId = activeConversationId
         when {
@@ -663,8 +713,31 @@ private fun TowarownikApp() {
                 onBack = {
                     navigateBackFrom(AppSurface.SETTINGS)
                 },
+                onOpenAiUsage = ::openAiUsage,
                 onOpenDiagnostics = ::openDiagnostics,
                 onReportProblem = ::openGeneralReport,
+            )
+        }
+
+        AppSurface.AI_USAGE -> {
+            AiUsageScreen(
+                repository = aiUsageRepository,
+                rateProvider = nbpUsdPlnRateProvider,
+                onBack = {
+                    navigateBackFrom(AppSurface.AI_USAGE)
+                },
+                onBudgetChanged = {
+                    if (advisorJob?.isActive != true) {
+                        if (
+                            runCatching {
+                                aiUsageRepository
+                                    .consumePendingBudgetWarning()
+                            }.getOrDefault(false)
+                        ) {
+                            showAiBudgetWarning = true
+                        }
+                    }
+                },
             )
         }
 
@@ -743,6 +816,37 @@ private fun TowarownikApp() {
                 },
             )
         }
+    }
+
+    if (showAiBudgetWarning) {
+        AlertDialog(
+            onDismissRequest = {
+                showAiBudgetWarning = false
+            },
+            title = {
+                Text(
+                    stringResource(
+                        R.string.ai_budget_warning_title,
+                    ),
+                )
+            },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.ai_budget_warning_message,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAiBudgetWarning = false
+                    },
+                ) {
+                    Text(stringResource(R.string.ok))
+                }
+            },
+        )
     }
 }
 
