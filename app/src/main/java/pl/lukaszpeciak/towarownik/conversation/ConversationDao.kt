@@ -222,6 +222,11 @@ internal abstract class ConversationDao {
         require(products.map { it.key }.distinct().size == products.size)
         require(sources.size <= 6)
         require(sources.map { it.url }.distinct().size == sources.size)
+        require(
+            sources.all {
+                persistedWebSourceOrNull(it.title, it.url) == it
+            },
+        )
         val messageId = insertMessage(
             MessageEntity(
                 conversationId = conversationId,
