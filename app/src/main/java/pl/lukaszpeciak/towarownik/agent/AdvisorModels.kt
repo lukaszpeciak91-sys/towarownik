@@ -56,6 +56,11 @@ internal enum class AdvisorRequestType {
     CONTINUE,
 }
 
+internal data class AdvisorWebSource(
+    val title: String,
+    val url: String,
+)
+
 internal data class AdvisorUsage(
     val model: String,
     val requestType: AdvisorRequestType,
@@ -65,6 +70,7 @@ internal data class AdvisorUsage(
     val outputTokens: Long,
     val reasoningTokens: Long?,
     val totalTokens: Long,
+    val webSearchCalls: Long = 0,
     val estimatedCostUsd: BigDecimal?,
     val pricingVersion: String?,
 )
@@ -85,6 +91,7 @@ internal sealed interface AdvisorProxyResult {
         val responseId: String,
         val text: String,
         val productRefs: List<AdvisorProductRef>,
+        val sources: List<AdvisorWebSource> = emptyList(),
         val usage: AdvisorUsage? = null,
     ) : AdvisorProxyResult
 
