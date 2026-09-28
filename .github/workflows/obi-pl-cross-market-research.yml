@@ -1,0 +1,51 @@
+name: OBI PL cross-market research probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      obiks:
+        description: Comma-separated seven-digit OBIKs
+        required: true
+        default: "3496072,6743009,7156243"
+      stores:
+        description: Comma-separated three-digit OBI store numbers
+        required: true
+        default: "075,074,078"
+  push:
+    branches:
+      - research/obi-pl-cross-market-availability
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      OBIKS: ${{ inputs.obiks || '3496072,6743009,7156243' }}
+      STORES: ${{ inputs.stores || '075,074,078' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run deterministic probe tests
+        env:
+          PYTHONPATH: tools
+        run: python3 -m unittest tools/test_obi_cross_market_probe.py
+
+      - name: Run bounded live cross-market probe
+        run: |
+          set -euo pipefail
+          mkdir -p build/obi-cross-market
+          PYTHONPATH=tools python3 tools/obi_cross_market_probe.py \
+            --obiks "$OBIKS" \
+            --stores "$STORES" \
+            --out build/obi-cross-market/summary.json
+
+      - name: Upload safe research summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: obi-pl-cross-market-safe-summary
+          path: build/obi-cross-market/summary.json
+          if-no-files-found: error
+          retention-days: 3
