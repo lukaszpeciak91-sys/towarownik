@@ -148,14 +148,15 @@ The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-n
 
 ## Local conversation persistence
 
-Room schema v3 stores local conversation metadata, rendered USER/ASSISTANT messages, and store-aware verified product snapshots attached to ASSISTANT messages:
+Room schema v4 stores local conversation metadata, rendered USER/ASSISTANT messages, store-aware verified product snapshots, and normalized web sources attached to ASSISTANT messages:
 
 - conversation: id, title, createdAt, updatedAt, nullable lastResponseId, draft, storeNumber;
 - message: id, conversationId, role, text, createdAt;
 - message product: messageId, position, storeNumber, OBIK, name, nullable stock, lossless decimal price text, trusted productUrl, verifiedAt;
+- message source: messageId, position, bounded title, normalized HTTPS URL;
 - message rows cascade with conversation deletion; product snapshots cascade with their message.
 
-Schema v1 upgrades through the existing 1→2 migration and then an explicit 2→3 migration. The 2→3 step adds `Conversation.storeNumber` and `message_products.storeNumber` with deterministic default `075` for historical rows; there is no destructive fallback.
+Schema v1 upgrades through explicit 1→2, 2→3, and 3→4 migrations. The 2→3 step adds `Conversation.storeNumber` and `message_products.storeNumber` with deterministic default `075`; 3→4 adds the `message_sources` table, so historical messages migrate with zero sources. There is no destructive fallback.
 
 No API keys, app bearer tokens, OBI HTML/cookies, parser internals, raw OpenAI responses, or reasoning data are persisted.
 
