@@ -1547,7 +1547,7 @@ private fun AdvisorMessageBubble(
             modifier = Modifier.widthIn(max = 600.dp),
             shape = RoundedCornerShape(18.dp),
             color = if (isUser) {
-                warmColors.surfaceHighlight
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
             } else {
                 warmColors.surfaceRaised
             },
