@@ -123,7 +123,7 @@ class AdvisorControllerTest {
     }
 
     @Test
-    fun `two local tool calls are allowed in one user turn`() = runBlocking {
+    fun `three local tool calls are allowed in one user turn`() = runBlocking {
         var toolCalls = 0
         var continueCalls = 0
         val controller = controller(
@@ -132,10 +132,11 @@ class AdvisorControllerTest {
             },
             continueCall = { _, _, _ ->
                 continueCalls += 1
-                if (continueCalls == 1) {
-                    successTool("resp_2", "call_2", "second")
-                } else {
-                    successAnswer("resp_3", "Done")
+                when (continueCalls) {
+                    1 -> successTool("resp_2", "call_2", "second")
+                    2 -> successTool("resp_3", "call_3", "third")
+                    3 -> successAnswer("resp_4", "Done")
+                    else -> error("no extra continue expected")
                 }
             },
             tool = {
@@ -146,12 +147,12 @@ class AdvisorControllerTest {
 
         val final = controller.runTurn("test", null) { }
 
-        assertEquals(2, toolCalls)
-        assertEquals(2, continueCalls)
+        assertEquals(3, toolCalls)
+        assertEquals(3, continueCalls)
         assertEquals(
             AdvisorUiState.Success(
                 text = "Done",
-                responseId = "resp_3",
+                responseId = "resp_4",
             ),
             final,
         )
@@ -404,79 +405,7 @@ class AdvisorControllerTest {
     }
 
     @Test
-    fun `third local tool request is resolved gracefully without extra OBI work`() = runBlocking {
-        var toolCalls = 0
-        var verifiedContinues = 0
-        var limitContinues = 0
-        val controller = controller(
-            start = {
-                successTool("resp_1", "call_1", "silicone")
-            },
-            continueCall = { _, _, _ ->
-                verifiedContinues += 1
-                when (verifiedContinues) {
-                    1 -> successTool(
-                        "resp_2",
-                        "call_2",
-                        "cartridge gun",
-                    )
-                    2 -> successTool(
-                        "resp_3",
-                        "call_3",
-                        "finishing tools",
-                    )
-                    else -> error("no extra verified continue expected")
-                }
-            },
-            limitContinueCall = { responseId, callId, limit ->
-                limitContinues += 1
-                assertEquals("resp_3", responseId)
-                assertEquals("call_3", callId)
-                assertEquals("finishing tools", limit.query)
-                successAnswerRefs(
-                    "resp_final",
-                    "Use the verified silicone and gun; finishing tools were not verified.",
-                    listOf(
-                        AdvisorProductRef("075", "1000001"),
-                        AdvisorProductRef("075", "1000002"),
-                    ),
-                )
-            },
-            tool = { arguments ->
-                toolCalls += 1
-                val obik = if (toolCalls == 1) {
-                    "1000001"
-                } else {
-                    "1000002"
-                }
-                verifiedResult(
-                    arguments.query,
-                    snapshot(
-                        obik = obik,
-                        name = "Verified $toolCalls",
-                        stock = toolCalls,
-                        price = BigDecimal("10.00"),
-                    ),
-                )
-            },
-        )
-
-        val final = controller.runTurn("washbasin install", null) { }
-
-        assertEquals(2, toolCalls)
-        assertEquals(2, verifiedContinues)
-        assertEquals(1, limitContinues)
-        assertTrue(final is AdvisorUiState.Success)
-        final as AdvisorUiState.Success
-        assertEquals("resp_final", final.responseId)
-        assertEquals(
-            listOf("1000001", "1000002"),
-            final.products.map { it.obik },
-        )
-    }
-
-    @Test
-    fun `budget exhaustion cannot enter a fourth local tool loop`() = runBlocking {
+    fun `fourth local tool request is resolved gracefully without extra OBI work and keeps first three snapshots`() = runBlocking {
         var toolCalls = 0
         var verifiedContinues = 0
         var limitContinues = 0
@@ -489,12 +418,74 @@ class AdvisorControllerTest {
                 when (verifiedContinues) {
                     1 -> successTool("resp_2", "call_2", "second")
                     2 -> successTool("resp_3", "call_3", "third")
+                    3 -> successTool("resp_4", "call_4", "fourth")
+                    else -> error("no extra verified continue expected")
+                }
+            },
+            limitContinueCall = { responseId, callId, limit ->
+                limitContinues += 1
+                assertEquals("resp_4", responseId)
+                assertEquals("call_4", callId)
+                assertEquals("fourth", limit.query)
+                successAnswerRefs(
+                    "resp_final",
+                    "Use the three products already verified in this turn.",
+                    listOf(
+                        AdvisorProductRef("075", "1000001"),
+                        AdvisorProductRef("075", "1000002"),
+                        AdvisorProductRef("075", "1000003"),
+                    ),
+                )
+            },
+            tool = { arguments ->
+                toolCalls += 1
+                verifiedResult(
+                    arguments.query,
+                    snapshot(
+                        obik = (1_000_000 + toolCalls).toString(),
+                        name = "Verified $toolCalls",
+                        stock = toolCalls,
+                        price = BigDecimal("10.00"),
+                    ),
+                )
+            },
+        )
+
+        val final = controller.runTurn("test", null) { }
+
+        assertEquals(3, toolCalls)
+        assertEquals(3, verifiedContinues)
+        assertEquals(1, limitContinues)
+        assertTrue(final is AdvisorUiState.Success)
+        final as AdvisorUiState.Success
+        assertEquals("resp_final", final.responseId)
+        assertEquals(
+            listOf("1000001", "1000002", "1000003"),
+            final.products.map { it.obik },
+        )
+    }
+
+    @Test
+    fun `budget exhaustion cannot enter a fifth local tool loop`() = runBlocking {
+        var toolCalls = 0
+        var verifiedContinues = 0
+        var limitContinues = 0
+        val controller = controller(
+            start = {
+                successTool("resp_1", "call_1", "first")
+            },
+            continueCall = { _, _, _ ->
+                verifiedContinues += 1
+                when (verifiedContinues) {
+                    1 -> successTool("resp_2", "call_2", "second")
+                    2 -> successTool("resp_3", "call_3", "third")
+                    3 -> successTool("resp_4", "call_4", "fourth")
                     else -> error("no more verified continues")
                 }
             },
             limitContinueCall = { _, _, _ ->
                 limitContinues += 1
-                successTool("resp_4", "call_4", "fourth")
+                successTool("resp_5", "call_5", "fifth")
             },
             tool = {
                 toolCalls += 1
@@ -504,7 +495,8 @@ class AdvisorControllerTest {
 
         val final = controller.runTurn("test", null) { }
 
-        assertEquals(2, toolCalls)
+        assertEquals(3, toolCalls)
+        assertEquals(3, verifiedContinues)
         assertEquals(1, limitContinues)
         assertEquals(
             AdvisorUiState.Error(AdvisorError.PROTOCOL),
@@ -513,39 +505,41 @@ class AdvisorControllerTest {
     }
 
     @Test
-    fun `tool allowance resets for next user message`() = runBlocking {
+    fun `tool allowance resets to three for next user message`() = runBlocking {
         var turn = 0
+        var withinTurnContinues = 0
         var toolCalls = 0
-        var continueCalls = 0
         val controller = controller(
             start = {
                 turn = 1
+                withinTurnContinues = 0
                 successTool("resp_1a", "call_1a", "first-a")
             },
             message = { previousResponseId, _ ->
                 assertEquals("resp_1_final", previousResponseId)
                 turn = 2
+                withinTurnContinues = 0
                 successTool("resp_2a", "call_2a", "first-b")
             },
             continueCall = { _, _, _ ->
-                continueCalls += 1
-                val withinTurn = if (turn == 1) {
-                    continueCalls
-                } else {
-                    continueCalls - 2
-                }
-                if (withinTurn == 1) {
-                    if (turn == 1) {
+                withinTurnContinues += 1
+                when (withinTurnContinues) {
+                    1 -> if (turn == 1) {
                         successTool("resp_1b", "call_1b", "second-a")
                     } else {
                         successTool("resp_2b", "call_2b", "second-b")
                     }
-                } else {
-                    if (turn == 1) {
+                    2 -> if (turn == 1) {
+                        successTool("resp_1c", "call_1c", "third-a")
+                    } else {
+                        successTool("resp_2c", "call_2c", "third-b")
+                    }
+                    3 -> if (turn == 1) {
                         successAnswer("resp_1_final", "First done")
                     } else {
                         successAnswer("resp_2_final", "Second done")
                     }
+                    else -> error("no extra continue expected")
                 }
             },
             tool = {
@@ -560,7 +554,7 @@ class AdvisorControllerTest {
             (first as AdvisorUiState.Success).responseId,
         ) { }
 
-        assertEquals(4, toolCalls)
+        assertEquals(6, toolCalls)
         assertEquals(
             "resp_2_final",
             (second as AdvisorUiState.Success).responseId,
