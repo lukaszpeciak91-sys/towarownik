@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -65,12 +66,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import java.time.Instant
@@ -91,7 +94,6 @@ import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
-import pl.lukaszpeciak.towarownik.conversation.persistedWebSourceOrNull
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
@@ -466,20 +468,16 @@ private fun TowarownikApp() {
 
             when (finalState) {
                 is AdvisorUiState.Success -> {
-                    val displayText = normalizeAdvisorDisplayText(
-                        finalState.text,
+                    val display = normalizeAdvisorDisplay(
+                        raw = finalState.text,
+                        sources = finalState.sources,
                     )
                     conversationRepository.completeAssistantTurn(
                         conversationId = turn.conversationId,
-                        text = displayText,
+                        text = display.text,
                         finalResponseId = finalState.responseId,
                         products = finalState.products,
-                        sources = finalState.sources.mapNotNull {
-                            persistedWebSourceOrNull(
-                                title = it.title,
-                                url = it.url,
-                            )
-                        },
+                        sources = display.sources,
                     )
                     if (
                         advisorRequestGuard.isCurrent(
@@ -1510,14 +1508,18 @@ private fun AdvisorMessageBubble(
                 null
             },
         ) {
-            Text(
-                text = message.text,
-                modifier = Modifier.padding(
-                    horizontal = 14.dp,
-                    vertical = 10.dp,
-                ),
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            if (isUser) {
+                Text(
+                    text = message.text,
+                    modifier = Modifier.padding(
+                        horizontal = 14.dp,
+                        vertical = 10.dp,
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            } else {
+                AdvisorAnswerText(message)
+            }
         }
         Text(
             text = formatLocalTime(message.createdAt),
@@ -1569,6 +1571,102 @@ private fun AdvisorMessageBubble(
             }
         }
     }
+}
+
+@Composable
+private fun AdvisorAnswerText(
+    message: AdvisorChatMessage,
+) {
+    val mappedSources = message.sources.mapIndexedNotNull {
+            index,
+            source,
+        ->
+        val end = source.endIndex
+        if (
+            source.startIndex != null &&
+            end != null &&
+            end in 1..message.text.length
+        ) {
+            Triple(end, index + 1, source)
+        } else {
+            null
+        }
+    }.sortedWith(
+        compareBy<Triple<Int, Int, PersistedWebSource>> {
+            it.first
+        }.thenBy {
+            it.second
+        },
+    )
+
+    if (mappedSources.isEmpty()) {
+        Text(
+            text = message.text,
+            modifier = Modifier.padding(
+                horizontal = 14.dp,
+                vertical = 10.dp,
+            ),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        return
+    }
+
+    val linkColor = MaterialTheme.colorScheme.primary
+    val annotated = buildAnnotatedString {
+        var cursor = 0
+        mappedSources
+            .groupBy { it.first }
+            .toSortedMap()
+            .forEach { (end, entries) ->
+                if (end > cursor) {
+                    append(message.text.substring(cursor, end))
+                    cursor = end
+                }
+                entries.forEach { (_, number, source) ->
+                    pushStringAnnotation(
+                        tag = "source_url",
+                        annotation = source.url,
+                    )
+                    pushStyle(
+                        SpanStyle(
+                            color = linkColor,
+                            textDecoration = TextDecoration.Underline,
+                        ),
+                    )
+                    append(" [$number]")
+                    pop()
+                    pop()
+                }
+            }
+        if (cursor < message.text.length) {
+            append(message.text.substring(cursor))
+        }
+    }
+
+    val uriHandler = LocalUriHandler.current
+    ClickableText(
+        text = annotated,
+        modifier = Modifier.padding(
+            horizontal = 14.dp,
+            vertical = 10.dp,
+        ),
+        style = MaterialTheme.typography.bodyLarge,
+        onClick = { offset ->
+            annotated
+                .getStringAnnotations(
+                    tag = "source_url",
+                    start = offset,
+                    end = offset,
+                )
+                .firstOrNull()
+                ?.item
+                ?.let { url ->
+                    runCatching {
+                        uriHandler.openUri(url)
+                    }
+                }
+        },
+    )
 }
 
 @Composable
