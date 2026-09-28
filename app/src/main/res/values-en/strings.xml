@@ -26,7 +26,6 @@
     <string name="advisor_error_service">The advisor service is temporarily unavailable.</string>
     <string name="advisor_error_protocol">The advisor returned an invalid response.</string>
     <string name="advisor_error_obi">Could not read data from OBI.</string>
-    <string name="advisor_error_too_many_tools">The advisor requested too many OBI checks.</string>
     <string name="advisor_error_input">Describe what the customer needs.</string>
 
     <string name="manual_search_title">OBI search</string>
