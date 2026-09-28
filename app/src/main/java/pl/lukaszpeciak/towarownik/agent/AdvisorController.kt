@@ -154,7 +154,7 @@ internal class AdvisorController(
                                     toolRequest.callId,
                                     conversationStoreNumber,
                                     AdvisorToolContinuation.LocalToolLimitReached(
-                                        query = toolRequest.arguments.query,
+                                        queries = toolRequest.arguments.queries,
                                         storeNumber =
                                             toolRequest.arguments.storeNumber,
                                     ),
@@ -186,7 +186,7 @@ internal class AdvisorController(
                             )
                         ) {
                             AdvisorToolContinuation.RejectedStore(
-                                query = arguments.query,
+                                queries = arguments.queries,
                                 storeNumber = arguments.storeNumber,
                             )
                         } else {
@@ -205,7 +205,7 @@ internal class AdvisorController(
 
                                 AdvisorToolExecutionResult.UnsupportedStore ->
                                     AdvisorToolContinuation.RejectedStore(
-                                        query = arguments.query,
+                                        queries = arguments.queries,
                                         storeNumber = arguments.storeNumber,
                                     )
 
