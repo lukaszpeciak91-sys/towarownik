@@ -1,10 +1,15 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import java.math.BigDecimal
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.product.LocalProduct
+import pl.lukaszpeciak.towarownik.product.ProductLookupResult
+import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
+import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 class AdvisorControllerTest {
@@ -292,6 +297,110 @@ class AdvisorControllerTest {
 
         assertEquals(1, first.products.size)
         assertTrue(second.products.isEmpty())
+    }
+
+    @Test
+    fun `washbasin customer kit uses one batch and selects cards from different groups`() = runBlocking {
+        var localToolCalls = 0
+        var exactLookups = 0
+        var continuations = 0
+        val candidatesByQuery = mapOf(
+            "silikon sanitarny" to listOf(
+                ProductSearchCandidate("1000001", "Silicone A"),
+                ProductSearchCandidate("1000002", "Silicone B"),
+            ),
+            "pistolet do kartuszy" to listOf(
+                ProductSearchCandidate("1000003", "Gun"),
+            ),
+            "narzędzie do wygładzania" to listOf(
+                ProductSearchCandidate("1000004", "Finishing tool"),
+            ),
+        )
+        val localTool = FindObiProductsTool(
+            searchProducts = { query ->
+                ProductSearchResult.Candidates(
+                    checkNotNull(candidatesByQuery[query]),
+                )
+            },
+            lookupObik = { obik, storeNumber ->
+                exactLookups += 1
+                ProductLookupResult.Found(
+                    LocalProduct(
+                        obik = obik,
+                        name = "Verified $obik",
+                        stock = exactLookups,
+                        grossPrice = BigDecimal("10.00"),
+                        productUrl = "https://www.obi.pl/p/$obik/trusted",
+                        ean = null,
+                        storeNumber = storeNumber,
+                        brand = null,
+                        shortDescription = null,
+                        technicalFacts = emptyList(),
+                    ),
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+            now = { 1_000L },
+        )
+        val batchArguments = AdvisorToolArguments(
+            storeNumber = "075",
+            queries = listOf(
+                AdvisorToolQuery("silikon sanitarny", 2),
+                AdvisorToolQuery("pistolet do kartuszy", 1),
+                AdvisorToolQuery("narzędzie do wygładzania", 1),
+            ),
+        )
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.ToolRequest(
+                        responseId = "resp_batch",
+                        callId = "call_batch",
+                        arguments = batchArguments,
+                    ),
+                )
+            },
+            continueCall = { responseId, callId, result ->
+                continuations += 1
+                assertEquals("resp_batch", responseId)
+                assertEquals("call_batch", callId)
+                assertEquals(3, result.results.size)
+                assertTrue(
+                    result.results.all {
+                        it.status == AdvisorQueryResultStatus.VERIFIED
+                    },
+                )
+                successAnswerRefs(
+                    responseId = "resp_final",
+                    text = "Zweryfikowany zestaw do umywalki.",
+                    productRefs = listOf(
+                        AdvisorProductRef("075", "1000001"),
+                        AdvisorProductRef("075", "1000003"),
+                        AdvisorProductRef("075", "1000004"),
+                    ),
+                )
+            },
+            tool = { arguments ->
+                localToolCalls += 1
+                localTool.execute(arguments)
+            },
+        )
+
+        val final = controller.runTurn(
+            "Klient potrzebuje obsadzić umywalkę, potrzebuje silikonu i narzędzi",
+            null,
+        ) { }
+
+        assertEquals(1, localToolCalls)
+        assertEquals(1, continuations)
+        assertEquals(4, exactLookups)
+        assertTrue(exactLookups <= MAX_TOOL_PRODUCTS)
+        assertTrue(final is AdvisorUiState.Success)
+        final as AdvisorUiState.Success
+        assertEquals(
+            listOf("1000001", "1000003", "1000004"),
+            final.products.map { it.obik },
+        )
     }
 
     @Test
