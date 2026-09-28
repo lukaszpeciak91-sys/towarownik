@@ -92,6 +92,48 @@ class ManualSearchControllerTest {
     }
 
     @Test
+    fun `show more is blocked while visible enrichment is unfinished`() = runBlocking {
+        var lookups = 0
+        val controller = ManualSearchController(
+            lookupObik = { _, _ ->
+                lookups += 1
+                error("Show more must not lookup while visible batch is unfinished")
+            },
+            searchProducts = {
+                error("Show more must not search")
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val current = ManualSearchUiState.SearchResults(
+            items = (1..10).map { index ->
+                ManualSearchResultItem(
+                    obik = (1_000_000 + index).toString(),
+                    name = "Synthetic $index",
+                    enrichment = when (index) {
+                        1 -> ManualResultEnrichment.Loading
+                        in 2..5 -> ManualResultEnrichment.Verified(
+                            product(
+                                obik = (1_000_000 + index).toString(),
+                            ).toVerifiedProductUiModel(),
+                        )
+                        else -> ManualResultEnrichment.Pending
+                    },
+                )
+            },
+            reportedTotalCount = 10,
+            visibleCount = 5,
+        )
+        val states = mutableListOf<ManualSearchUiState>()
+
+        controller.showMore(current, "075") { states += it }
+
+        assertFalse(current.canShowMore)
+        assertEquals(0, lookups)
+        assertEquals(listOf(current), states)
+        assertEquals(5, current.visibleCount)
+    }
+
+    @Test
     fun `show more enriches only newly visible next five`() = runBlocking {
         val candidates = (1..12).map { index ->
             ProductSearchCandidate(
@@ -265,6 +307,52 @@ class ManualSearchControllerTest {
             ).product
         assertEquals(null, unknown.stock)
         assertEquals(null, unknown.grossPrice)
+    }
+
+    @Test
+    fun `verified exact product name replaces discovery candidate name`() {
+        val item = ManualSearchResultItem(
+            obik = "1234567",
+            name = "Discovery name",
+            enrichment = ManualResultEnrichment.Verified(
+                VerifiedProductUiModel(
+                    name = "Exact verified name",
+                    obik = "1234567",
+                    grossPrice = BigDecimal("10.00"),
+                    stock = 1,
+                    productUrl = "https://www.obi.pl/p/1234567/exact",
+                    storeNumber = "075",
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Exact verified name",
+            manualResultDisplayName(item),
+        )
+    }
+
+    @Test
+    fun `verified exact product name is shown when candidate name is null`() {
+        val item = ManualSearchResultItem(
+            obik = "1234567",
+            name = null,
+            enrichment = ManualResultEnrichment.Verified(
+                VerifiedProductUiModel(
+                    name = "Exact verified name",
+                    obik = "1234567",
+                    grossPrice = null,
+                    stock = null,
+                    productUrl = "https://www.obi.pl/p/1234567/exact",
+                    storeNumber = "075",
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Exact verified name",
+            manualResultDisplayName(item),
+        )
     }
 
     @Test
