@@ -45,6 +45,11 @@ export interface ProductRef {
   obik: string;
 }
 
+export interface WebSource {
+  title: string;
+  url: string;
+}
+
 export type AgentRequestType = "START" | "MESSAGE" | "CONTINUE";
 
 export interface AgentUsage {
@@ -56,6 +61,7 @@ export interface AgentUsage {
   outputTokens: number;
   reasoningTokens: number | null;
   totalTokens: number;
+  webSearchCalls: number;
   estimatedCostUsd: number | null;
   pricingVersion: string | null;
 }
@@ -66,6 +72,7 @@ export type AgentResult =
       responseId: string;
       text: string;
       productRefs: ProductRef[];
+      sources: WebSource[];
       usage?: AgentUsage;
     }
   | {
