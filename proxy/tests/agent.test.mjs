@@ -896,7 +896,6 @@ test("normalized usage is bounded and exposes no raw OpenAI internals", async ()
     "reasoningTokens",
     "requestType",
     "totalTokens",
-    "webSearchCalls",
   ].sort());
   assert.equal(JSON.stringify(body).includes("must-not-leak"), false);
 });
