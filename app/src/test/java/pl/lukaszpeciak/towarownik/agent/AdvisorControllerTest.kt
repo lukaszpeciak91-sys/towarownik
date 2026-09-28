@@ -295,20 +295,97 @@ class AdvisorControllerTest {
     }
 
     @Test
-    fun `third local tool request in same turn is rejected`() = runBlocking {
+    fun `third local tool request is resolved gracefully without extra OBI work`() = runBlocking {
         var toolCalls = 0
-        var continueCalls = 0
+        var verifiedContinues = 0
+        var limitContinues = 0
+        val controller = controller(
+            start = {
+                successTool("resp_1", "call_1", "silicone")
+            },
+            continueCall = { _, _, _ ->
+                verifiedContinues += 1
+                when (verifiedContinues) {
+                    1 -> successTool(
+                        "resp_2",
+                        "call_2",
+                        "cartridge gun",
+                    )
+                    2 -> successTool(
+                        "resp_3",
+                        "call_3",
+                        "finishing tools",
+                    )
+                    else -> error("no extra verified continue expected")
+                }
+            },
+            limitContinueCall = { responseId, callId, limit ->
+                limitContinues += 1
+                assertEquals("resp_3", responseId)
+                assertEquals("call_3", callId)
+                assertEquals("finishing tools", limit.query)
+                successAnswerRefs(
+                    "resp_final",
+                    "Use the verified silicone and gun; finishing tools were not verified.",
+                    listOf(
+                        AdvisorProductRef("075", "1000001"),
+                        AdvisorProductRef("075", "1000002"),
+                    ),
+                )
+            },
+            tool = { arguments ->
+                toolCalls += 1
+                val obik = if (toolCalls == 1) {
+                    "1000001"
+                } else {
+                    "1000002"
+                }
+                verifiedResult(
+                    arguments.query,
+                    snapshot(
+                        obik = obik,
+                        name = "Verified $toolCalls",
+                        stock = toolCalls,
+                        price = BigDecimal("10.00"),
+                    ),
+                )
+            },
+        )
+
+        val final = controller.runTurn("washbasin install", null) { }
+
+        assertEquals(2, toolCalls)
+        assertEquals(2, verifiedContinues)
+        assertEquals(1, limitContinues)
+        assertTrue(final is AdvisorUiState.Success)
+        final as AdvisorUiState.Success
+        assertEquals("resp_final", final.responseId)
+        assertEquals(
+            listOf("1000001", "1000002"),
+            final.products.map { it.obik },
+        )
+    }
+
+    @Test
+    fun `budget exhaustion cannot enter a fourth local tool loop`() = runBlocking {
+        var toolCalls = 0
+        var verifiedContinues = 0
+        var limitContinues = 0
         val controller = controller(
             start = {
                 successTool("resp_1", "call_1", "first")
             },
             continueCall = { _, _, _ ->
-                continueCalls += 1
-                when (continueCalls) {
+                verifiedContinues += 1
+                when (verifiedContinues) {
                     1 -> successTool("resp_2", "call_2", "second")
                     2 -> successTool("resp_3", "call_3", "third")
-                    else -> error("no fourth proxy call allowed")
+                    else -> error("no more verified continues")
                 }
+            },
+            limitContinueCall = { _, _, _ ->
+                limitContinues += 1
+                successTool("resp_4", "call_4", "fourth")
             },
             tool = {
                 toolCalls += 1
@@ -319,9 +396,9 @@ class AdvisorControllerTest {
         val final = controller.runTurn("test", null) { }
 
         assertEquals(2, toolCalls)
-        assertEquals(2, continueCalls)
+        assertEquals(1, limitContinues)
         assertEquals(
-            AdvisorUiState.Error(AdvisorError.TOO_MANY_TOOLS),
+            AdvisorUiState.Error(AdvisorError.PROTOCOL),
             final,
         )
     }
@@ -809,6 +886,13 @@ class AdvisorControllerTest {
         ) -> AdvisorProxyCallResult = { _, _, _ ->
             error("rejected continue not expected")
         },
+        limitContinueCall: suspend (
+            String,
+            String,
+            AdvisorToolContinuation.LocalToolLimitReached,
+        ) -> AdvisorProxyCallResult = { _, _, _ ->
+            error("limit continue not expected")
+        },
         tool: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult = {
             error("tool not expected")
         },
@@ -836,6 +920,12 @@ class AdvisorControllerTest {
                     )
                 is AdvisorToolContinuation.RejectedStore ->
                     rejectedContinueCall(
+                        responseId,
+                        callId,
+                        continuation,
+                    )
+                is AdvisorToolContinuation.LocalToolLimitReached ->
+                    limitContinueCall(
                         responseId,
                         callId,
                         continuation,
