@@ -1571,6 +1571,66 @@ test("continue rejects unknown tool name", async () => {
   assert.equal(fake.captures.length, 0);
 });
 
+test("local tool limit continuation disables find_obi_products and can finish", async () => {
+  const fake = fakeOpenAI(
+    answerPayload(
+      "Use already verified products and general guidance.",
+      ["1234567"],
+    ),
+  );
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.result = {
+    query: "third category",
+    storeNumber: "075",
+    rejection: "local_tool_limit_reached",
+  };
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const normalized = await responseJson(response);
+  assert.equal(normalized.type, "answer");
+  const capture = fake.captures[0];
+  assert.deepEqual(capture.body.tools, [WEB_SEARCH_TOOL]);
+  assert.equal(capture.body.tool_choice, "auto");
+  assert.deepEqual(
+    JSON.parse(capture.body.input[0].output),
+    body.result,
+  );
+});
+
+test("local tool limit continuation rejects another application function call", async () => {
+  const fake = fakeOpenAI(
+    toolPayload(
+      '{"query":"fourth category","storeNumber":"075","limit":1}',
+    ),
+  );
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.result = {
+    query: "third category",
+    storeNumber: "075",
+    rejection: "local_tool_limit_reached",
+  };
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(
+    await responseJson(response),
+    { error: "upstream_failure" },
+  );
+  assert.equal(fake.captures[0].body.tools.length, 1);
+  assert.deepEqual(fake.captures[0].body.tools[0], WEB_SEARCH_TOOL);
+});
+
 test("continue accepts enriched verified product facts and forwards them unchanged", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
@@ -1965,6 +2025,22 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   assert.match(
     instructions,
     /this particular detail is not confirmed/i,
+  );
+  assert.match(
+    instructions,
+    /at most 2 find_obi_products calls per USER turn/i,
+  );
+  assert.match(
+    instructions,
+    /Plan and prioritize those calls carefully/i,
+  );
+  assert.match(
+    instructions,
+    /After two calls, do not request another OBI lookup/i,
+  );
+  assert.match(
+    instructions,
+    /local_tool_limit_reached.*produce the final answer/i,
   );
   assert.match(
     instructions,
