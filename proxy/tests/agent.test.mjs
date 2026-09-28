@@ -467,6 +467,7 @@ test("structured OpenAI answer is normalized and raw response is not forwarded",
       { storeNumber: "075", obik: "1234567" },
       { storeNumber: "075", obik: "7654321" },
     ],
+    webSearchCalls: 0,
   });
   assert.equal(JSON.stringify(body).includes("usage"), false);
   assert.equal(JSON.stringify(body).includes("internal"), false);
@@ -492,7 +493,6 @@ test("valid OpenAI usage is normalized with cached and reasoning detail", async 
     outputTokens: 100,
     reasoningTokens: 50,
     totalTokens: 1_100,
-    webSearchCalls: 0,
     estimatedCostUsd: 0.000114,
     pricingVersion: CURRENT_MODEL_PRICING.pricingVersion,
   });
@@ -509,6 +509,7 @@ test("reasoning tokens are output detail and are not double charged", async () =
     ),
   );
 
+  assert.equal(body.webSearchCalls, 0);
   assert.equal(body.usage.outputTokens, 100);
   assert.equal(body.usage.reasoningTokens, 50);
   assert.equal(body.usage.estimatedCostUsd, 0.000114);
@@ -956,6 +957,7 @@ test("valid known function call becomes normalized tool_request", async () => {
         limit: 5,
       },
     },
+    webSearchCalls: 0,
   });
 });
 
@@ -964,6 +966,9 @@ test("web_search_call plus final message preserves bounded citation metadata", a
     text: "Verified technical detail.",
     productRefs: [],
   });
+  const citationStart = structured.indexOf("Verified technical detail.");
+  const citationEnd =
+    citationStart + "Verified technical detail.".length;
   const fake = fakeOpenAI(
     withUsage({
       id: "resp_web_answer",
@@ -991,8 +996,8 @@ test("web_search_call plus final message preserves bounded citation metadata", a
               annotations: [
                 {
                   type: "url_citation",
-                  start_index: 0,
-                  end_index: 8,
+                  start_index: citationStart,
+                  end_index: citationEnd,
                   title: " Manufacturer  Manual ",
                   url: "https://manufacturer.example/manual",
                 },
@@ -1017,9 +1022,11 @@ test("web_search_call plus final message preserves bounded citation metadata", a
     {
       title: "Manufacturer Manual",
       url: "https://manufacturer.example/manual",
+      startIndex: 0,
+      endIndex: "Verified technical detail.".length,
     },
   ]);
-  assert.equal(body.usage.webSearchCalls, 1);
+  assert.equal(body.webSearchCalls, 1);
   assert.equal(body.usage.estimatedCostUsd, 0.010114);
   const serialized = JSON.stringify(body);
   assert.equal(serialized.includes("private query"), false);
@@ -1060,7 +1067,7 @@ test("web_search_call plus application function call remains a local tool reques
 
   assert.equal(body.type, "tool_request");
   assert.equal(body.tool.callId, "call_after_web");
-  assert.equal(body.usage.webSearchCalls, 1);
+  assert.equal(body.webSearchCalls, 1);
   assert.equal(body.usage.estimatedCostUsd, 0.010114);
 });
 
@@ -1133,6 +1140,8 @@ test("citation normalization deduplicates limits and filters unsafe URLs", async
 
   assert.equal(body.sources.length, 6);
   assert.equal(body.sources[0].url, "https://one.example/a");
+  assert.equal(body.sources[0].startIndex, null);
+  assert.equal(body.sources[0].endIndex, null);
   assert.equal(
     body.sources.filter(
       (source) => source.url === "https://one.example/a",
@@ -1177,8 +1186,121 @@ test("availability of web_search does not count as a search call or fee", async 
     ),
   );
 
-  assert.equal(body.usage.webSearchCalls, 0);
+  assert.equal(body.webSearchCalls, 0);
   assert.equal(body.usage.estimatedCostUsd, 0.000114);
+});
+
+test("completed web search is counted when usage is missing", async () => {
+  const structured = answerPayload("Web answer");
+  const payload = {
+    ...structured,
+    output: [
+      {
+        type: "web_search_call",
+        id: "ws_missing_usage",
+        status: "completed",
+        action: { type: "search", query: "q" },
+      },
+      ...structured.output,
+    ],
+  };
+  const fake = fakeOpenAI(payload);
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "verify" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.webSearchCalls, 1);
+  assert.equal(Object.hasOwn(body, "usage"), false);
+});
+
+test("completed web search is counted when usage is malformed", async () => {
+  const structured = answerPayload("Web answer");
+  const payload = {
+    ...structured,
+    model: OPENAI_MODEL,
+    usage: {
+      input_tokens: "bad",
+      output_tokens: 1,
+      total_tokens: 1,
+    },
+    output: [
+      {
+        type: "web_search_call",
+        id: "ws_bad_usage",
+        status: "completed",
+        action: { type: "search", query: "q" },
+      },
+      ...structured.output,
+    ],
+  };
+  const fake = fakeOpenAI(payload);
+  const worker = createWorker(fake.fetch);
+
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "verify" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.webSearchCalls, 1);
+  assert.equal(Object.hasOwn(body, "usage"), false);
+});
+
+test("citation offsets map safely through structured JSON string escapes", async () => {
+  const answerText = 'Parametr "A" ma wartość 10.';
+  const structured = JSON.stringify({
+    text: answerText,
+    productRefs: [],
+  });
+  const rawFragment = 'Parametr \\"A\\" ma wartość 10.';
+  const rawStart = structured.indexOf(rawFragment);
+  const rawEnd = rawStart + rawFragment.length;
+  const fake = fakeOpenAI({
+    id: "resp_citation_escape",
+    output_text: structured,
+    output: [
+      {
+        type: "message",
+        content: [
+          {
+            type: "output_text",
+            text: structured,
+            annotations: [
+              {
+                type: "url_citation",
+                start_index: rawStart,
+                end_index: rawEnd,
+                title: "Manual",
+                url: "https://manufacturer.example/manual",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const worker = createWorker(fake.fetch);
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "verify" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.deepEqual(body.sources, [
+    {
+      title: "Manual",
+      url: "https://manufacturer.example/manual",
+      startIndex: 0,
+      endIndex: answerText.length,
+    },
+  ]);
 });
 
 test("unknown model after a completed search remains unpriced but preserves search count", async () => {
@@ -1206,7 +1328,7 @@ test("unknown model after a completed search remains unpriced but preserves sear
     ),
   );
 
-  assert.equal(body.usage.webSearchCalls, 1);
+  assert.equal(body.webSearchCalls, 1);
   assert.equal(body.usage.estimatedCostUsd, null);
   assert.equal(body.usage.pricingVersion, null);
 });
@@ -1737,6 +1859,7 @@ test("generic tool carries one explicit store number", async () => {
         limit: 3,
       },
     },
+    webSearchCalls: 0,
   });
 });
 
