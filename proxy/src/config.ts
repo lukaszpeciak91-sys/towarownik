@@ -88,7 +88,7 @@ export const AGENT_INSTRUCTIONS =
   "OBI lookup; answer using products already verified in this USER turn plus relevant general guidance. If a tool " +
   "result reports local_tool_limit_reached, produce the final answer without requesting find_obi_products again " +
   "and briefly note any category that could not be verified within the local lookup budget when that matters to " +
-  "the answer. Current stock and price must be freshly verified when relevant; "
+  "the answer. Current stock and price must be freshly verified when relevant; " +
   "historical conversation values are not current authority. The current conversation OBI store is the default " +
   "store for this USER turn. A different store may be queried only when the USER literally supplied that exact " +
   "3-digit store number in the CURRENT USER message. Never infer a store number from a city, region, store name, " +
