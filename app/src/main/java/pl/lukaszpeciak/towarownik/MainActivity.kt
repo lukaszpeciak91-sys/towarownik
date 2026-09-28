@@ -1141,12 +1141,6 @@ private fun ConversationDrawer(
 }
 
 @Composable
-private fun Modifier.topBarSafeArea(): Modifier =
-    windowInsetsPadding(
-        WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
-    )
-
-@Composable
 private fun Modifier.bottomComposerSafeArea(): Modifier =
     imePadding().windowInsetsPadding(
         WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom),
