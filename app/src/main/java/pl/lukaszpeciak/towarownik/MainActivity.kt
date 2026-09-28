@@ -1140,6 +1140,16 @@ private fun ConversationDrawer(
     }
 }
 
+private fun Modifier.topBarSafeArea(): Modifier =
+    windowInsetsPadding(
+        WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
+    )
+
+private fun Modifier.bottomComposerSafeArea(): Modifier =
+    imePadding().windowInsetsPadding(
+        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom),
+    )
+
 @Composable
 private fun AdvisorChatScreen(
     advisorCase: AdvisorCaseUiState,
@@ -1265,9 +1275,7 @@ private fun AdvisorTopBar(
     onStoreSelected: (String) -> Unit,
 ) {
     Surface(
-        modifier = Modifier.windowInsetsPadding(
-            WindowInsets.safeDrawing.only(WindowInsetsSides.Top),
-        ),
+        modifier = Modifier.topBarSafeArea(),
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
@@ -1391,13 +1399,7 @@ private fun AdvisorComposer(
     val warmColors = MaterialTheme.towarownikColors
 
     Surface(
-        modifier = Modifier
-            .imePadding()
-            .windowInsetsPadding(
-                WindowInsets.safeDrawing.only(
-                    WindowInsetsSides.Bottom,
-                ),
-            ),
+        modifier = Modifier.bottomComposerSafeArea(),
         color = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
@@ -1943,6 +1945,7 @@ private fun ManualSearchTopBar(
     onBack: () -> Unit,
 ) {
     Surface(
+        modifier = Modifier.topBarSafeArea(),
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
