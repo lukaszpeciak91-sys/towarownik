@@ -220,12 +220,18 @@ export function normalizeOpenAIResponse(
         callId: call.call_id,
         arguments: argumentsValue,
       },
+      webSearchCalls,
       ...(usage ? { usage } : {}),
     };
   }
 
-  const answer = parseStructuredAnswer(extractAnswerText(payload));
-  const sources = extractWebSources(payload.output);
+  const rawAnswerText = extractAnswerText(payload);
+  const answer = parseStructuredAnswer(rawAnswerText);
+  const sources = extractWebSources(
+    payload.output,
+    rawAnswerText,
+    answer.textBoundaryMap,
+  );
 
   return {
     type: "answer",
@@ -233,6 +239,7 @@ export function normalizeOpenAIResponse(
     text: answer.text,
     productRefs: answer.productRefs,
     ...(sources.length ? { sources } : {}),
+    webSearchCalls,
     ...(usage ? { usage } : {}),
   };
 }
@@ -300,7 +307,6 @@ function parseUsage(
       outputTokens,
       reasoningTokens,
       totalTokens,
-      webSearchCalls,
       estimatedCostUsd: pricing?.estimatedCostUsd ?? null,
       pricingVersion: pricing?.pricingVersion ?? null,
     };
@@ -396,6 +402,7 @@ function parseStructuredAnswer(
 ): {
   text: string;
   productRefs: ProductRef[];
+  textBoundaryMap: Map<number, number>;
 } {
   if (!raw) {
     throw new UpstreamFailureError();
@@ -428,6 +435,11 @@ function parseStructuredAnswer(
   if (!text || text.length > MAX_ANSWER_CHARS) {
     throw new UpstreamFailureError();
   }
+  const textBoundaryMap = mapStructuredTextBoundaries(
+    raw,
+    parsed.text,
+    text,
+  );
 
   if (
     !Array.isArray(parsed.productRefs) ||
@@ -467,36 +479,38 @@ function parseStructuredAnswer(
   return {
     text,
     productRefs: deduplicated,
+    textBoundaryMap,
   };
 }
 
 function extractAnswerText(payload: Record<string, unknown>): string | null {
-  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
-    return payload.output_text.trim();
-  }
-
   const output = payload.output;
-  if (!Array.isArray(output)) return null;
+  if (Array.isArray(output)) {
+    const parts: string[] = [];
+    for (const item of output) {
+      if (!isRecord(item) || item.type !== "message" || !Array.isArray(item.content)) {
+        continue;
+      }
 
-  const parts: string[] = [];
-  for (const item of output) {
-    if (!isRecord(item) || item.type !== "message" || !Array.isArray(item.content)) {
-      continue;
-    }
-
-    for (const content of item.content) {
-      if (
-        isRecord(content) &&
-        content.type === "output_text" &&
-        typeof content.text === "string"
-      ) {
-        parts.push(content.text);
+      for (const content of item.content) {
+        if (
+          isRecord(content) &&
+          content.type === "output_text" &&
+          typeof content.text === "string"
+        ) {
+          parts.push(content.text);
+        }
       }
     }
+
+    const joined = parts.join("");
+    if (joined.trim()) return joined;
   }
 
-  const joined = parts.join("").trim();
-  return joined || null;
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
+    return payload.output_text;
+  }
+  return null;
 }
 
 function countCompletedWebSearchCalls(
@@ -518,9 +532,16 @@ function countCompletedWebSearchCalls(
   return count;
 }
 
-function extractWebSources(output: unknown[]): WebSource[] {
+function extractWebSources(
+  output: unknown[],
+  rawAnswerText: string | null,
+  textBoundaryMap: Map<number, number>,
+): WebSource[] {
   const sources: WebSource[] = [];
-  const seen = new Set<string>();
+  const indexByUrl = new Map<string, number>();
+  const canMapInline =
+    rawAnswerText !== null &&
+    !containsSurrogatePair(rawAnswerText);
 
   for (const item of output) {
     if (!isRecord(item) || item.type !== "message" || !Array.isArray(item.content)) {
@@ -530,10 +551,14 @@ function extractWebSources(output: unknown[]): WebSource[] {
       if (
         !isRecord(content) ||
         content.type !== "output_text" ||
+        typeof content.text !== "string" ||
         !Array.isArray(content.annotations)
       ) {
         continue;
       }
+      const contentCanMap =
+        canMapInline && content.text === rawAnswerText;
+
       for (const annotation of content.annotations) {
         if (
           !isRecord(annotation) ||
@@ -544,14 +569,60 @@ function extractWebSources(output: unknown[]): WebSource[] {
           continue;
         }
         const url = normalizeHttpsUrl(annotation.url);
-        if (!url || seen.has(url)) continue;
+        if (!url) continue;
         const title = annotation.title
           .replace(/\s+/g, " ")
           .trim()
           .slice(0, MAX_WEB_CITATION_TITLE_CHARS);
         if (!title) continue;
-        seen.add(url);
-        sources.push({ title, url });
+
+        let startIndex: number | null = null;
+        let endIndex: number | null = null;
+        if (
+          contentCanMap &&
+          Number.isSafeInteger(annotation.start_index) &&
+          Number.isSafeInteger(annotation.end_index)
+        ) {
+          const rawStart = annotation.start_index as number;
+          const rawEnd = annotation.end_index as number;
+          const mappedStart = textBoundaryMap.get(rawStart);
+          const mappedEnd = textBoundaryMap.get(rawEnd);
+          if (
+            rawStart >= 0 &&
+            rawEnd > rawStart &&
+            mappedStart !== undefined &&
+            mappedEnd !== undefined &&
+            mappedEnd > mappedStart
+          ) {
+            startIndex = mappedStart;
+            endIndex = mappedEnd;
+          }
+        }
+
+        const existingIndex = indexByUrl.get(url);
+        if (existingIndex !== undefined) {
+          const existing = sources[existingIndex];
+          if (
+            existing.startIndex === null &&
+            startIndex !== null &&
+            endIndex !== null
+          ) {
+            sources[existingIndex] = {
+              ...existing,
+              startIndex,
+              endIndex,
+            };
+          }
+          continue;
+        }
+
+        indexByUrl.set(url, sources.length);
+        sources.push({
+          title,
+          url,
+          startIndex,
+          endIndex,
+        });
         if (sources.length >= MAX_WEB_CITATIONS) {
           return sources;
         }
@@ -559,6 +630,112 @@ function extractWebSources(output: unknown[]): WebSource[] {
     }
   }
   return sources;
+}
+
+function mapStructuredTextBoundaries(
+  raw: string,
+  parsedText: string,
+  trimmedText: string,
+): Map<number, number> {
+  const match = /"text"\s*:\s*"/.exec(raw);
+  if (!match) return new Map();
+
+  const quoteIndex = match.index + match[0].length - 1;
+  const token = parseJsonStringToken(raw, quoteIndex);
+  if (!token || token.decoded !== parsedText) {
+    return new Map();
+  }
+
+  const leadingTrim =
+    parsedText.length - parsedText.trimStart().length;
+  const trailingBoundary = leadingTrim + trimmedText.length;
+  const mapped = new Map<number, number>();
+  for (const [rawBoundary, decodedBoundary] of token.boundaries) {
+    if (
+      decodedBoundary >= leadingTrim &&
+      decodedBoundary <= trailingBoundary
+    ) {
+      mapped.set(
+        rawBoundary,
+        decodedBoundary - leadingTrim,
+      );
+    }
+  }
+  return mapped;
+}
+
+function parseJsonStringToken(
+  raw: string,
+  quoteIndex: number,
+): {
+  decoded: string;
+  boundaries: Map<number, number>;
+} | null {
+  if (raw[quoteIndex] !== '"') return null;
+
+  const boundaries = new Map<number, number>();
+  let position = quoteIndex + 1;
+  let decodedLength = 0;
+  boundaries.set(position, decodedLength);
+
+  while (position < raw.length) {
+    const char = raw[position];
+    if (char === '"') {
+      try {
+        const decoded = JSON.parse(
+          raw.slice(quoteIndex, position + 1),
+        );
+        return typeof decoded === "string"
+          ? { decoded, boundaries }
+          : null;
+      } catch {
+        return null;
+      }
+    }
+
+    if (char === "\\") {
+      const escapeType = raw[position + 1];
+      if (escapeType === undefined) return null;
+      const escapeLength = escapeType === "u" ? 6 : 2;
+      const end = position + escapeLength;
+      if (end > raw.length) return null;
+      let decodedFragment: unknown;
+      try {
+        decodedFragment = JSON.parse(
+          '"' + raw.slice(position, end) + '"',
+        );
+      } catch {
+        return null;
+      }
+      if (typeof decodedFragment !== "string") return null;
+      decodedLength += decodedFragment.length;
+      position = end;
+      boundaries.set(position, decodedLength);
+      continue;
+    }
+
+    decodedLength += 1;
+    position += 1;
+    boundaries.set(position, decodedLength);
+  }
+
+  return null;
+}
+
+function containsSurrogatePair(value: string): boolean {
+  for (let index = 0; index < value.length - 1; index += 1) {
+    const first = value.charCodeAt(index);
+    const second = value.charCodeAt(index + 1);
+    if (
+      first >= 0xd800 &&
+      first <= 0xdbff &&
+      second >= 0xdc00 &&
+      second <= 0xdfff
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function normalizeHttpsUrl(raw: string): string | null {
