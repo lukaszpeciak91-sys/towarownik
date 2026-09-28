@@ -597,27 +597,45 @@ def safe_transport(
 def probe_pair(
     store: str,
     obik: str,
+    *,
+    prime_session: bool = False,
 ) -> dict[str, Any]:
+    opener = make_opener()
+    prime_transport = None
+    if prime_session:
+        prime = fetch(
+            opener,
+            full_page_url(store, obik),
+            HTML_ACCEPT,
+        )
+        prime_transport = safe_transport(prime)
+
     raw = fetch(
-        make_opener(),
+        opener,
         availability_url(store, obik),
         JSON_ACCEPT,
     )
     result = {
         "store": store,
         "obik": obik,
+        "sessionPrimed": prime_session,
         **safe_transport(raw),
     }
-    if (
-        raw.get("httpStatus") == 200
-        and not raw.get("challengeDetected")
-    ):
-        result.update(
-            parse_availability(
-                raw["body"],
-                obik,
-            ),
+    if prime_transport is not None:
+        result["primeTransport"] = prime_transport
+
+    if raw.get("httpStatus") == 200:
+        parsed = parse_availability(
+            raw["body"],
+            obik,
         )
+        result.update(parsed)
+        if (
+            parsed.get("semantic")
+            in ("malformed_json", "unexpected_json")
+            and raw.get("challengeDetected")
+        ):
+            result["semantic"] = "challenge_or_unexpected_payload"
     else:
         result["semantic"] = (
             "blocked_or_http_failure"
@@ -631,22 +649,19 @@ def crosscheck_pair(
     store: str,
     obik: str,
 ) -> dict[str, Any]:
-    lightweight = probe_pair(store, obik)
-    raw = fetch(
-        make_opener(),
+    opener = make_opener()
+    full_raw = fetch(
+        opener,
         full_page_url(store, obik),
         HTML_ACCEPT,
     )
     full = {
-        "transport": safe_transport(raw),
+        "transport": safe_transport(full_raw),
     }
-    if (
-        raw.get("httpStatus") == 200
-        and not raw.get("challengeDetected")
-    ):
+    if full_raw.get("httpStatus") == 200:
         full.update(
             full_page_fact(
-                raw["body"].decode(
+                full_raw["body"].decode(
                     "utf-8",
                     "replace",
                 ),
@@ -657,7 +672,38 @@ def crosscheck_pair(
     else:
         full["semantic"] = (
             "blocked_or_http_failure"
-            if raw.get("httpStatus") is not None
+            if full_raw.get("httpStatus") is not None
+            else "transport_failure"
+        )
+
+    light_raw = fetch(
+        opener,
+        availability_url(store, obik),
+        JSON_ACCEPT,
+    )
+    lightweight = {
+        "store": store,
+        "obik": obik,
+        "sessionPrimed": True,
+        "primeTransport": safe_transport(full_raw),
+        **safe_transport(light_raw),
+    }
+    if light_raw.get("httpStatus") == 200:
+        parsed = parse_availability(
+            light_raw["body"],
+            obik,
+        )
+        lightweight.update(parsed)
+        if (
+            parsed.get("semantic")
+            in ("malformed_json", "unexpected_json")
+            and light_raw.get("challengeDetected")
+        ):
+            lightweight["semantic"] = "challenge_or_unexpected_payload"
+    else:
+        lightweight["semantic"] = (
+            "blocked_or_http_failure"
+            if light_raw.get("httpStatus") is not None
             else "transport_failure"
         )
 
@@ -742,10 +788,7 @@ def discover_ui_endpoints(
             url,
             "*/*",
         )
-        if (
-            raw.get("httpStatus") != 200
-            or raw.get("challengeDetected")
-        ):
+        if raw.get("httpStatus") != 200:
             failures += 1
             continue
         scanned += 1
@@ -899,6 +942,18 @@ def main() -> int:
                 ),
             )
 
+    primed_sample = [
+        probe_pair(
+            store,
+            obik,
+            prime_session=True,
+        )
+        for store, obik in zip(
+            stores[:3],
+            obiks[:3],
+        )
+    ]
+
     selected = list(
         zip(
             stores[:3],
@@ -918,12 +973,7 @@ def main() -> int:
         ),
         HTML_ACCEPT,
     )
-    if (
-        discovery_raw.get("httpStatus") == 200
-        and not discovery_raw.get(
-            "challengeDetected",
-        )
-    ):
+    if discovery_raw.get("httpStatus") == 200:
         ui_discovery = discover_ui_endpoints(
             discovery_raw["body"].decode(
                 "utf-8",
@@ -985,6 +1035,7 @@ def main() -> int:
             "{storeNumber}?articleNumbers={OBIK}"
         ),
         "matrix": matrix,
+        "primedSample": primed_sample,
         "crossChecks": cross_checks,
         "storeDirectory": directory,
         "uiEndpointDiscovery": ui_discovery,
