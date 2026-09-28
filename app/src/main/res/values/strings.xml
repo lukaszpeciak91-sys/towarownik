@@ -26,6 +26,7 @@
     <string name="advisor_error_obi">Nie udało się odczytać danych z OBI.</string>
     <string name="advisor_error_too_many_tools">Doradca poprosił o zbyt wiele sprawdzeń OBI.</string>
     <string name="advisor_error_input">Opisz czego potrzebuje klient.</string>
+    <string name="advisor_sources">Źródła</string>
 
     <string name="manual_search_title">Wyszukiwarka OBI</string>
     <string name="manual_search_input_label">OBIK / EAN / nazwa</string>
