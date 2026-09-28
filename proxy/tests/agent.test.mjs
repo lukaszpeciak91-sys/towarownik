@@ -894,6 +894,7 @@ test("normalized usage is bounded and exposes no raw OpenAI internals", async ()
     "reasoningTokens",
     "requestType",
     "totalTokens",
+    "webSearchCalls",
   ].sort());
   assert.equal(JSON.stringify(body).includes("must-not-leak"), false);
 });
@@ -1854,7 +1855,7 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
     instructions,
     /Reply naturally in the language used by the user in the current conversation/i,
   );
-  assert.equal(instructions.includes("web_search"), false);
+  assert.equal(instructions.includes("web_search"), true);
 });
 
 test("final advisor behavior does not change model reasoning tools or structured output", async () => {
@@ -1878,8 +1879,10 @@ test("final advisor behavior does not change model reasoning tools or structured
   assert.equal(capture.body.tools[0].name, "find_obi_products");
   assert.equal(
     capture.body.tools.some((tool) => tool.type === "web_search"),
-    false,
+    true,
   );
+  assert.equal(capture.body.tool_choice, "auto");
+  assert.equal(capture.body.max_tool_calls, 1);
   assert.deepEqual(capture.body.text, {
     format: FINAL_ANSWER_FORMAT,
   });
