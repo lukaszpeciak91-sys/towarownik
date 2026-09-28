@@ -90,6 +90,11 @@ internal abstract class ConversationDao {
         products: List<MessageProductEntity>,
     )
 
+    @Insert
+    protected abstract suspend fun insertMessageSources(
+        sources: List<MessageSourceEntity>,
+    )
+
     @Query("DELETE FROM messages WHERE id = :messageId")
     protected abstract suspend fun deleteMessage(
         messageId: Long,
@@ -210,10 +215,13 @@ internal abstract class ConversationDao {
         createdAt: Long,
         lastResponseId: String,
         products: List<VerifiedProductSnapshot>,
+        sources: List<PersistedWebSource> = emptyList(),
     ) {
         checkNotNull(getConversation(conversationId))
         require(products.size <= 5)
         require(products.map { it.key }.distinct().size == products.size)
+        require(sources.size <= 6)
+        require(sources.map { it.url }.distinct().size == sources.size)
         val messageId = insertMessage(
             MessageEntity(
                 conversationId = conversationId,
@@ -235,6 +243,18 @@ internal abstract class ConversationDao {
                         productUrl = product.productUrl,
                         verifiedAt = product.verifiedAt,
                         storeNumber = product.storeNumber,
+                    )
+                },
+            )
+        }
+        if (sources.isNotEmpty()) {
+            insertMessageSources(
+                sources.mapIndexed { position, source ->
+                    MessageSourceEntity(
+                        messageId = messageId,
+                        position = position,
+                        title = source.title,
+                        url = source.url,
                     )
                 },
             )
