@@ -77,7 +77,10 @@ or:
   "tool":{
     "name":"find_obi_products",
     "callId":"...",
-    "arguments":{"query":"...","limit":5}
+    "arguments":{
+      "storeNumber":"075",
+      "queries":[{"query":"...","limit":5}]
+    }
   }
 }
 ```
@@ -93,10 +96,10 @@ The Worker uses native `fetch` against the Responses API. It declares the existi
 Exactly one application-defined function is declared:
 
 ```text
-find_obi_products(query, limit)
+find_obi_products(storeNumber, queries[])
 ```
 
-`storeNumber` is an explicit three-digit string and `limit` is at most 5. The Worker validates shape and model-produced arguments and returns the tool request to Android; Android owns supported-store authorization and executes OBI lookup.
+`storeNumber` is one explicit three-digit string shared by the whole batch. `queries` contains 1–5 `{query, limit}` entries, every limit is at least 1, and the sum of all limits is at most 5. The Worker validates shape and model-produced arguments and returns the tool request to Android; Android owns supported-store authorization and executes OBI lookup.
 
 ## Usage and pricing telemetry
 
@@ -167,13 +170,13 @@ Android remains authoritative for:
 - local stock;
 - local price.
 
-When OpenAI requests `find_obi_products`, Android uses its existing OBI repositories and returns only a compact verified result containing the query, authorized store context, and up to five products. OBI HTML, Nuxt payloads, cookies, and parser internals are never accepted as the tool result or forwarded to OpenAI.
+When OpenAI requests `find_obi_products`, Android uses its existing OBI repositories and returns a compact grouped result for the requested queries plus the authorized store context. Groups report `verified`, `not_found`, or `unavailable`; successful groups are preserved independently and the entire call contains at most five verified products / exact lookup attempts by requested budget. OBI HTML, Nuxt payloads, cookies, and parser internals are never accepted as the tool result or forwarded to OpenAI.
 
 The Worker stores no conversation state in Cloudflare storage. Android persists only the final answer response ID for a conversation. New USER turns call `/v1/agent/message`; tool outputs inside that turn continue through `/v1/agent/continue`. Using `previous_response_id` avoids manually replaying the local transcript, but earlier chain input tokens remain billable.
 
 ## Limits and failure mapping
 
-The start and message request bodies are bounded to 4 KiB and each normalized user message to 2,000 characters. Message continuation also bounds the previous response ID. The continue request body is bounded to 16 KiB, product count to 5, tool query/product-name strings to 200 characters, and OBIK to exactly seven digits.
+The start and message request bodies are bounded to 4 KiB and each normalized user message to 2,000 characters. Message continuation also bounds the previous response ID. The continue request body is bounded to 16 KiB, grouped product count to 5, query-group count to 5, total requested query limits to 5, tool query/product-name strings to 200 characters, and OBIK to exactly seven digits.
 
 Client validation failures return bounded `400` or `413` JSON. Authentication failures return `401`. Missing Worker configuration returns `503`. OpenAI transport, non-success status, unknown tool output, or malformed OpenAI JSON returns bounded `502`. Raw upstream response bodies are not exposed and the Worker adds no application retry.
 
