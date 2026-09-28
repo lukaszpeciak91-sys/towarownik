@@ -259,6 +259,7 @@ internal class AdvisorProxyClient(
                         "text",
                         "productRefs",
                     ),
+                    optional = setOf("usage", "sources"),
                 )
                 val text = root["text"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf {
@@ -637,8 +638,8 @@ internal class AdvisorProxyClient(
     private fun requireEnvelopeKeys(
         objectValue: JsonObject,
         required: Set<String>,
+        optional: Set<String> = setOf("usage"),
     ) {
-        val optional = setOf("usage", "sources")
         require(
             objectValue.keys.containsAll(required) &&
                 objectValue.keys.all {
