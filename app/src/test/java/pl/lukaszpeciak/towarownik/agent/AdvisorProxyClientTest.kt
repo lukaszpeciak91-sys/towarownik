@@ -284,6 +284,120 @@ class AdvisorProxyClientTest {
     }
 
     @Test
+    fun `answer sources parse as bounded clickable https metadata`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_sources",
+                      "text":"Web answer",
+                      "productRefs":[],
+                      "sources":[
+                        {
+                          "title":"Manufacturer manual",
+                          "url":"https://manufacturer.example/manual"
+                        },
+                        {
+                          "title":"Manufacturer manual duplicate",
+                          "url":"https://manufacturer.example/manual"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_sources",
+                        text = "Web answer",
+                        productRefs = emptyList(),
+                        sources = listOf(
+                            AdvisorWebSource(
+                                title = "Manufacturer manual",
+                                url = "https://manufacturer.example/manual",
+                            ),
+                        ),
+                    ),
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `unsafe source URL makes normalized proxy contract fail closed`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_bad_source",
+                      "text":"Answer",
+                      "productRefs":[],
+                      "sources":[
+                        {
+                          "title":"Unsafe",
+                          "url":"http://example.com/source"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.PROTOCOL,
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `tool request rejects unexpected source metadata`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"tool_request",
+                      "responseId":"resp_tool_sources",
+                      "tool":{
+                        "name":"find_obi_products",
+                        "callId":"call_tool_sources",
+                        "arguments":{
+                          "query":"klej",
+                          "storeNumber":"075",
+                          "limit":1
+                        }
+                      },
+                      "sources":[
+                        {
+                          "title":"Unexpected",
+                          "url":"https://example.com/"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.PROTOCOL,
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
     fun `usage envelope parses independently from answer content`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(
@@ -303,8 +417,9 @@ class AdvisorProxyClientTest {
                         "outputTokens":100,
                         "reasoningTokens":50,
                         "totalTokens":1100,
-                        "estimatedCostUsd":0.000253,
-                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v1"
+                        "webSearchCalls":1,
+                        "estimatedCostUsd":0.0101165,
+                        "pricingVersion":"openai-gpt-6-luna-2026-09-28-web-v1"
                       }
                     }
                     """.trimIndent(),
@@ -328,10 +443,11 @@ class AdvisorProxyClientTest {
                             outputTokens = 100,
                             reasoningTokens = 50,
                             totalTokens = 1_100,
+                            webSearchCalls = 1,
                             estimatedCostUsd =
-                                BigDecimal("0.000253"),
+                                BigDecimal("0.0101165"),
                             pricingVersion =
-                                "openai-gpt-6-luna-2026-09-27-v1",
+                                "openai-gpt-6-luna-2026-09-28-web-v1",
                         ),
                     ),
                 ),
@@ -360,8 +476,9 @@ class AdvisorProxyClientTest {
                         "outputTokens":1,
                         "reasoningTokens":0,
                         "totalTokens":1,
+                        "webSearchCalls":0,
                         "estimatedCostUsd":0.0000012,
-                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v1"
+                        "pricingVersion":"openai-gpt-6-luna-2026-09-28-web-v1"
                       }
                     }
                     """.trimIndent(),
@@ -402,6 +519,7 @@ class AdvisorProxyClientTest {
                         "outputTokens":10,
                         "reasoningTokens":0,
                         "totalTokens":110,
+                        "webSearchCalls":0,
                         "estimatedCostUsd":null,
                         "pricingVersion":null
                       }
