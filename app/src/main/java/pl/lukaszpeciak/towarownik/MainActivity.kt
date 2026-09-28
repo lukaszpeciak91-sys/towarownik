@@ -573,6 +573,7 @@ private fun TowarownikApp() {
     fun showMoreManualResults() {
         val current = manualState as?
             ManualSearchUiState.SearchResults ?: return
+        if (!current.canShowMore) return
         val storeNumber = selectedStoreNumber
         manualRequestGuard.invalidate()
         val generation = manualRequestGuard.token()
@@ -2075,7 +2076,7 @@ private fun ManualSearchResults(
                     ),
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    item.name?.let { name ->
+                    manualResultDisplayName(item)?.let { name ->
                         Text(
                             text = name,
                             style = MaterialTheme.typography.titleMedium,
