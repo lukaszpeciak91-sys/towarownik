@@ -33,6 +33,10 @@
     <string name="manual_search_input_label">OBIK / EAN / product name</string>
     <string name="search">Search</string>
     <string name="manual_search_progress">Searching for product…</string>
+    <string name="manual_search_store">OBI store: %1$s</string>
+    <string name="manual_search_enriching">Loading stock and price…</string>
+    <string name="manual_search_enrichment_failed">Could not load stock and price</string>
+    <string name="manual_search_retry_exact">Try again</string>
     <string name="manual_search_results_range">Results 1–%1$d</string>
     <string name="manual_search_reported_total">OBI result count: %1$d</string>
     <string name="show_more">Show more</string>

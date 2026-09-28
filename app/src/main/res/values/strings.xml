@@ -33,6 +33,10 @@
     <string name="manual_search_input_label">OBIK / EAN / nazwa</string>
     <string name="search">Szukaj</string>
     <string name="manual_search_progress">Szukam produktu…</string>
+    <string name="manual_search_store">Market OBI: %1$s</string>
+    <string name="manual_search_enriching">Pobieram stan i cenę…</string>
+    <string name="manual_search_enrichment_failed">Nie udało się pobrać stanu i ceny</string>
+    <string name="manual_search_retry_exact">Spróbuj ponownie</string>
     <string name="manual_search_results_range">Wyniki 1–%1$d</string>
     <string name="manual_search_reported_total">OBI raportuje: %1$d wyników</string>
     <string name="show_more">Pokaż więcej</string>

@@ -19,7 +19,7 @@ internal val ManualSearchUiStateSaver = Saver<ManualSearchUiState, String>(
     restore = { raw -> decodeManualSearchState(raw) },
 )
 
-private fun encodeManualSearchState(state: ManualSearchUiState): String {
+internal fun encodeManualSearchState(state: ManualSearchUiState): String {
     val persistable = if (state is ManualSearchUiState.Loading) {
         ManualSearchUiState.Idle
     } else {
@@ -58,6 +58,13 @@ private fun encodeManualSearchState(state: ManualSearchUiState): String {
                         ?: JsonNull,
                 )
                 put("url", persistable.item.productUrl)
+                put("store", persistable.item.storeNumber)
+                put(
+                    "verifiedAt",
+                    persistable.item.verifiedAt
+                        ?.let(::JsonPrimitive)
+                        ?: JsonNull,
+                )
             }
 
             is ManualSearchUiState.SearchResults -> {
@@ -67,7 +74,10 @@ private fun encodeManualSearchState(state: ManualSearchUiState): String {
                 put(
                     "items",
                     buildJsonArray {
-                        persistable.items.forEach { item ->
+                        persistable.items.forEachIndexed {
+                                index,
+                                item,
+                            ->
                             add(
                                 buildJsonObject {
                                     put("obik", item.obik)
@@ -77,6 +87,68 @@ private fun encodeManualSearchState(state: ManualSearchUiState): String {
                                             ?.let(::JsonPrimitive)
                                             ?: JsonNull,
                                     )
+                                    put("store", item.storeNumber)
+                                    when (
+                                        val enrichment =
+                                            item.enrichment
+                                    ) {
+                                        ManualResultEnrichment.Pending,
+                                        ManualResultEnrichment.Loading -> {
+                                            put(
+                                                "enrichment",
+                                                if (
+                                                    index <
+                                                        persistable.visibleCount
+                                                ) {
+                                                    "unavailable"
+                                                } else {
+                                                    "pending"
+                                                },
+                                            )
+                                        }
+
+                                        ManualResultEnrichment.Unavailable -> {
+                                            put(
+                                                "enrichment",
+                                                "unavailable",
+                                            )
+                                        }
+
+                                        is ManualResultEnrichment.Verified -> {
+                                            put(
+                                                "enrichment",
+                                                "verified",
+                                            )
+                                            put(
+                                                "verifiedName",
+                                                enrichment.product.name,
+                                            )
+                                            put(
+                                                "verifiedStore",
+                                                enrichment.product.storeNumber,
+                                            )
+                                            put(
+                                                "verifiedUrl",
+                                                enrichment.product.productUrl,
+                                            )
+                                            put(
+                                                "verifiedStock",
+                                                enrichment.product.stock
+                                                    ?.let(::JsonPrimitive)
+                                                    ?: JsonNull,
+                                            )
+                                            put(
+                                                "verifiedPrice",
+                                                enrichment.product.grossPrice
+                                                    ?.let {
+                                                        JsonPrimitive(
+                                                            it.toPlainString(),
+                                                        )
+                                                    }
+                                                    ?: JsonNull,
+                                            )
+                                        }
+                                    }
                                 },
                             )
                         }
@@ -87,7 +159,7 @@ private fun encodeManualSearchState(state: ManualSearchUiState): String {
     }.toString()
 }
 
-private fun decodeManualSearchState(raw: String): ManualSearchUiState =
+internal fun decodeManualSearchState(raw: String): ManualSearchUiState =
     runCatching {
         val root = Json.parseToJsonElement(raw) as JsonObject
         when (root["type"]?.jsonPrimitive?.contentOrNull) {
@@ -115,6 +187,16 @@ private fun decodeManualSearchState(raw: String): ManualSearchUiState =
                         ?.jsonPrimitive
                         ?.intOrNull,
                     productUrl = checkNotNull(root["url"]?.jsonPrimitive?.contentOrNull),
+                    storeNumber = root["store"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?: pl.lukaszpeciak.towarownik.product
+                            .DEFAULT_OBI_STORE_NUMBER,
+                    verifiedAt = root["verifiedAt"]
+                        ?.takeUnless { it is JsonNull }
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.toLongOrNull(),
                 ),
             )
             "results" -> {
@@ -129,9 +211,72 @@ private fun decodeManualSearchState(raw: String): ManualSearchUiState =
                             ?.takeUnless { it is JsonNull }
                             ?.jsonPrimitive
                             ?.contentOrNull
+                        val storeNumber = item["store"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: pl.lukaszpeciak.towarownik.product
+                                .DEFAULT_OBI_STORE_NUMBER
+                        val enrichment = when (
+                            item["enrichment"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                        ) {
+                            "verified" -> {
+                                val verifiedName =
+                                    item["verifiedName"]
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                val verifiedUrl =
+                                    item["verifiedUrl"]
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                val verifiedStore =
+                                    item["verifiedStore"]
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                if (
+                                    verifiedName != null &&
+                                    verifiedUrl != null &&
+                                    verifiedStore != null
+                                ) {
+                                    ManualResultEnrichment.Verified(
+                                        VerifiedProductUiModel(
+                                            name = verifiedName,
+                                            obik = obik,
+                                            grossPrice =
+                                                item["verifiedPrice"]
+                                                    ?.takeUnless {
+                                                        it is JsonNull
+                                                    }
+                                                    ?.jsonPrimitive
+                                                    ?.contentOrNull
+                                                    ?.let(::BigDecimal),
+                                            stock =
+                                                item["verifiedStock"]
+                                                    ?.takeUnless {
+                                                        it is JsonNull
+                                                    }
+                                                    ?.jsonPrimitive
+                                                    ?.intOrNull,
+                                            productUrl = verifiedUrl,
+                                            storeNumber = verifiedStore,
+                                        ),
+                                    )
+                                } else {
+                                    ManualResultEnrichment.Pending
+                                }
+                            }
+
+                            "unavailable" ->
+                                ManualResultEnrichment.Unavailable
+
+                            else -> ManualResultEnrichment.Pending
+                        }
                         ManualSearchResultItem(
                             obik = obik,
                             name = name,
+                            storeNumber = storeNumber,
+                            enrichment = enrichment,
                         )
                     }
                     .orEmpty()
