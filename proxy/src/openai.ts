@@ -101,6 +101,10 @@ export async function continueAgent(
   apiKey: string,
   upstreamFetch: UpstreamFetch,
 ): Promise<AgentResult> {
+  const localToolAvailable =
+    !("rejection" in result) ||
+    result.rejection !== "local_tool_limit_reached";
+
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
@@ -124,7 +128,9 @@ export async function continueAgent(
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
+      tools: localToolAvailable
+        ? [OBI_TOOL, WEB_SEARCH_TOOL]
+        : [WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
