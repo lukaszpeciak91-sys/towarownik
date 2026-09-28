@@ -19,7 +19,7 @@ internal val ManualSearchUiStateSaver = Saver<ManualSearchUiState, String>(
     restore = { raw -> decodeManualSearchState(raw) },
 )
 
-private fun encodeManualSearchState(state: ManualSearchUiState): String {
+internal fun encodeManualSearchState(state: ManualSearchUiState): String {
     val persistable = if (state is ManualSearchUiState.Loading) {
         ManualSearchUiState.Idle
     } else {
@@ -149,7 +149,7 @@ private fun encodeManualSearchState(state: ManualSearchUiState): String {
     }.toString()
 }
 
-private fun decodeManualSearchState(raw: String): ManualSearchUiState =
+internal fun decodeManualSearchState(raw: String): ManualSearchUiState =
     runCatching {
         val root = Json.parseToJsonElement(raw) as JsonObject
         when (root["type"]?.jsonPrimitive?.contentOrNull) {
