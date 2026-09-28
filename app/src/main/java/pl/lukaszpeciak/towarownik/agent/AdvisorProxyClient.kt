@@ -258,6 +258,7 @@ internal class AdvisorProxyClient(
                         "responseId",
                         "text",
                         "productRefs",
+                        "webSearchCalls",
                     ),
                     optional = setOf("usage", "sources"),
                 )
@@ -293,11 +294,17 @@ internal class AdvisorProxyClient(
                     }
                     ?.takeIf { it.size <= MAX_TOOL_PRODUCTS }
                     ?: error("Invalid selected products")
+                val webSearchCalls =
+                    root.requireWebSearchCallCount()
                 AdvisorProxyResult.Answer(
                     responseId = responseId,
                     text = text,
                     productRefs = productRefs.distinctBy { it.key },
-                    sources = parseSourcesOrEmpty(root["sources"]),
+                    sources = parseSourcesOrEmpty(
+                        root["sources"],
+                        answerLength = text.length,
+                    ),
+                    webSearchCalls = webSearchCalls,
                     usage = parseUsageOrNull(root["usage"]),
                 )
             }
@@ -305,7 +312,12 @@ internal class AdvisorProxyClient(
             "tool_request" -> {
                 requireEnvelopeKeys(
                     root,
-                    required = setOf("type", "responseId", "tool"),
+                    required = setOf(
+                        "type",
+                        "responseId",
+                        "tool",
+                        "webSearchCalls",
+                    ),
                     optional = setOf("usage"),
                 )
                 val tool = root["tool"] as? JsonObject
@@ -345,6 +357,7 @@ internal class AdvisorProxyClient(
                         storeNumber = storeNumber,
                         limit = limit,
                     ),
+                    webSearchCalls = root.requireWebSearchCallCount(),
                     usage = parseUsageOrNull(root["usage"]),
                 )
             }
@@ -498,7 +511,6 @@ internal class AdvisorProxyClient(
                     "outputTokens",
                     "reasoningTokens",
                     "totalTokens",
-                    "webSearchCalls",
                     "estimatedCostUsd",
                     "pricingVersion",
                 ),
@@ -530,10 +542,6 @@ internal class AdvisorProxyClient(
             val reasoningTokens =
                 usage.optionalTokenCount("reasoningTokens")
             val totalTokens = usage.requireTokenCount("totalTokens")
-            val webSearchCalls = usage.requireTokenCount(
-                "webSearchCalls",
-            ).takeIf { it <= MAX_WEB_SEARCH_CALLS }
-                ?: error("Invalid web search call count")
 
             require(
                 cachedInputTokens == null ||
@@ -579,7 +587,6 @@ internal class AdvisorProxyClient(
                 outputTokens = outputTokens,
                 reasoningTokens = reasoningTokens,
                 totalTokens = totalTokens,
-                webSearchCalls = webSearchCalls,
                 estimatedCostUsd = estimatedCostUsd,
                 pricingVersion = pricingVersion,
             )
@@ -602,6 +609,7 @@ internal class AdvisorProxyClient(
 
     private fun parseSourcesOrEmpty(
         raw: kotlinx.serialization.json.JsonElement?,
+        answerLength: Int,
     ): List<AdvisorWebSource> {
         if (raw == null || raw is JsonNull) return emptyList()
         val array = raw as? JsonArray ?: error("Invalid sources")
@@ -610,7 +618,15 @@ internal class AdvisorProxyClient(
         return array.mapNotNull { element ->
             val source = element as? JsonObject
                 ?: error("Invalid source")
-            requireExactKeys(source, setOf("title", "url"))
+            requireExactKeys(
+                source,
+                setOf(
+                    "title",
+                    "url",
+                    "startIndex",
+                    "endIndex",
+                ),
+            )
             val title = source["title"]
                 ?.jsonPrimitive
                 ?.contentOrNull
@@ -628,13 +644,46 @@ internal class AdvisorProxyClient(
                 ?.takeIf { it.scheme == "https" }
                 ?.toString()
                 ?: error("Invalid source URL")
+            val startIndex = source.optionalCitationIndex("startIndex")
+            val endIndex = source.optionalCitationIndex("endIndex")
+            require(
+                (startIndex == null && endIndex == null) ||
+                    (
+                        startIndex != null &&
+                            endIndex != null &&
+                            startIndex >= 0 &&
+                            endIndex > startIndex &&
+                            endIndex <= answerLength
+                    ),
+            )
             if (!seen.add(url)) {
                 null
             } else {
-                AdvisorWebSource(title = title, url = url)
+                AdvisorWebSource(
+                    title = title,
+                    url = url,
+                    startIndex = startIndex,
+                    endIndex = endIndex,
+                )
             }
         }
     }
+
+    private fun JsonObject.optionalCitationIndex(
+        key: String,
+    ): Int? {
+        val value = get(key) ?: error("Missing citation index")
+        if (value is JsonNull) return null
+        return value.jsonPrimitive.intOrNull
+            ?: error("Invalid citation index")
+    }
+
+    private fun JsonObject.requireWebSearchCallCount(): Long =
+        get("webSearchCalls")
+            ?.jsonPrimitive
+            ?.longOrNull
+            ?.takeIf { it in 0..MAX_WEB_SEARCH_CALLS }
+            ?: error("Invalid web search call count")
 
     private fun requireEnvelopeKeys(
         objectValue: JsonObject,
