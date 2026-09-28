@@ -585,6 +585,43 @@ class AdvisorProxyClientTest {
     }
 
     @Test
+    fun `local tool limit continuation serializes bounded machine result`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(answerResponse())
+
+            val result = client(server, FAKE_TOKEN).continueTurn(
+                responseId = "resp_third",
+                callId = "call_third",
+                storeNumber = "075",
+                continuation =
+                    AdvisorToolContinuation.LocalToolLimitReached(
+                        query = "finishing tools",
+                        storeNumber = "075",
+                    ),
+            )
+
+            assertTrue(result is AdvisorProxyCallResult.Success)
+            val requestBody = Json.parseToJsonElement(
+                server.takeRequest().body.readUtf8(),
+            ).jsonObject
+            val continuationResult =
+                requestBody["result"] as JsonObject
+            assertEquals(
+                "local_tool_limit_reached",
+                continuationResult["rejection"]
+                    ?.jsonPrimitive
+                    ?.content,
+            )
+            assertEquals(
+                "finishing tools",
+                continuationResult["query"]
+                    ?.jsonPrimitive
+                    ?.content,
+            )
+        }
+    }
+
+    @Test
     fun `malformed store fails locally before request`() = runBlocking {
         MockWebServer().use { server ->
             val result = client(server, FAKE_TOKEN).start(
