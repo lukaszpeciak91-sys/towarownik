@@ -12,7 +12,6 @@ internal enum class AdvisorError {
     SERVICE,
     PROTOCOL,
     OBI,
-    TOO_MANY_TOOLS,
     INPUT,
 }
 
