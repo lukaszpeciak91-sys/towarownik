@@ -25,6 +25,7 @@ internal sealed interface AdvisorUiState {
         val text: String,
         val responseId: String,
         val products: List<VerifiedProductSnapshot> = emptyList(),
+        val sources: List<AdvisorWebSource> = emptyList(),
     ) : AdvisorUiState
     data class Error(val error: AdvisorError) : AdvisorUiState
 }
@@ -125,6 +126,7 @@ internal class AdvisorController(
                         text = proxyResult.text,
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
+                        sources = proxyResult.sources,
                     ).also(onState)
                 }
 
