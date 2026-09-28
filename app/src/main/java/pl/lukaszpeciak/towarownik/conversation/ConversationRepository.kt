@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.conversation
 
 import java.math.BigDecimal
+import java.net.URI
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
@@ -29,12 +30,60 @@ internal data class PersistedConversation(
     val messages: List<PersistedMessage>,
 )
 
+internal data class PersistedWebSource(
+    val title: String,
+    val url: String,
+    val startIndex: Int? = null,
+    val endIndex: Int? = null,
+)
+
+internal fun persistedWebSourceOrNull(
+    title: String,
+    url: String,
+    startIndex: Int? = null,
+    endIndex: Int? = null,
+): PersistedWebSource? {
+    val normalizedTitle = title
+        .replace(CONVERSATION_WHITESPACE, " ")
+        .trim()
+        .takeIf { it.isNotEmpty() && it.length <= 200 }
+        ?: return null
+    if (url.length !in 1..2048) return null
+    val uri = runCatching { URI(url) }.getOrNull() ?: return null
+    if (
+        uri.scheme?.lowercase() != "https" ||
+        uri.host.isNullOrBlank()
+    ) {
+        return null
+    }
+    if (
+        !(
+            (startIndex == null && endIndex == null) ||
+                (
+                    startIndex != null &&
+                        endIndex != null &&
+                        startIndex >= 0 &&
+                        endIndex > startIndex
+                )
+        )
+    ) {
+        return null
+    }
+    return PersistedWebSource(
+        title = normalizedTitle,
+        url = url,
+        startIndex = startIndex,
+        endIndex = endIndex,
+    )
+}
+
 internal data class PersistedMessage(
     val id: Long,
     val role: String,
     val text: String,
     val createdAt: Long,
     val products: List<VerifiedProductSnapshot>,
+    val sources: List<PersistedWebSource> = emptyList(),
 )
 
 internal data class UserTurnStart(
@@ -156,6 +205,7 @@ internal class ConversationRepository(
         finalResponseId: String,
         createdAt: Long = now(),
         products: List<VerifiedProductSnapshot> = emptyList(),
+        sources: List<PersistedWebSource> = emptyList(),
     ) {
         dao.completeAssistantTurn(
             conversationId = conversationId,
@@ -163,6 +213,7 @@ internal class ConversationRepository(
             createdAt = createdAt,
             lastResponseId = finalResponseId,
             products = products,
+            sources = sources,
         )
     }
 
@@ -253,6 +304,16 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 productUrl = product.productUrl,
                                 verifiedAt = product.verifiedAt,
                                 storeNumber = product.storeNumber,
+                            )
+                        },
+                    sources = item.sources
+                        .sortedBy { it.position }
+                        .mapNotNull { source ->
+                            persistedWebSourceOrNull(
+                                title = source.title,
+                                url = source.url,
+                                startIndex = source.startIndex,
+                                endIndex = source.endIndex,
                             )
                         },
                 )

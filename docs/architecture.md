@@ -37,7 +37,7 @@ The UI locale remains independent from advisor/model language. No locale field i
 
 ## Problem reporting boundary
 
-Problem reporting is local and user-controlled. There are two entry points: an exact persisted ASSISTANT-message report from the advisor transcript and a general report from Settings. The UI carries a nullable persisted message ID only so the report flow can re-resolve the authoritative Room message before generation; Room schema v2 is unchanged.
+Problem reporting is local and user-controlled. There are two entry points: an exact persisted ASSISTANT-message report from the advisor transcript and a general report from Settings. The UI carries a nullable persisted message ID only so the report flow can re-resolve the authoritative Room message before generation. Web-source persistence is independent of reporting; normalized sources are not automatically copied into problem-report evidence.
 
 A contextual report resolves the requested conversation/message from `ConversationRepository`, confirms that the message belongs to that conversation and has role `ASSISTANT`, and reads its persisted verified-product snapshots. With conversation inclusion OFF (the default), no unrelated transcript is included. With inclusion ON, context is sliced from the beginning through the reported response only. General reports include the current persisted conversation only after explicit opt-in. Draft text is not part of report evidence.
 
@@ -81,7 +81,7 @@ OpenAI must receive only compact structured results produced by the app. OBI HTM
 
 The proxy now exposes a public `GET /health` plus authenticated `POST /v1/agent/start`, `POST /v1/agent/message`, and `POST /v1/agent/continue`. The AI endpoints require the shared Internal-Testing `TOWAROWNIK_APP_TOKEN`; the OpenAI credential remains Worker-only as `OPENAI_API_KEY`.
 
-The Worker calls the OpenAI Responses API with a centralized `gpt-6-luna` configuration, low reasoning effort, the final server-controlled Taksula advisor instructions, a bounded output budget, and exactly one strict application-defined function: `find_obi_products(query, storeNumber, limit)`. No OpenAI built-in tools are enabled.
+The Worker calls the OpenAI Responses API with a centralized `gpt-6-luna` configuration, low reasoning effort, the final server-controlled Taksula advisor instructions, a bounded output budget, the strict application function `find_obi_products(query, storeNumber, limit)`, and the Responses built-in `{type:"web_search"}`. Tool choice is automatic and `max_tool_calls=1` bounds built-in use per Responses request; Android's independent two-local-function-calls-per-USER-turn limit is unchanged.
 
 When the model returns that function call, the Worker validates the tool name and arguments and returns a normalized `tool_request` envelope to Android. Android executes the existing OBI search/exact store-`075` lookup and later sends only the compact verified result to `/v1/agent/continue`. The Worker continues with `previous_response_id` and a matching `function_call_output`, resending the stable server-controlled instructions/tool declaration. It does not store conversation state in Cloudflare storage.
 
@@ -107,7 +107,7 @@ transaction: ASSISTANT message + replace lastResponseId
 
 The first USER turn has no previous response and uses `/v1/agent/start`. Later turns use the last successfully completed final answer response ID. Tool request response IDs are used only transiently for `/continue`; call IDs are never persisted. A new conversation starts with no response ID.
 
-Room schema v3 contains `conversations`, `messages`, and `message_products`. Conversation→message and message→product foreign keys use CASCADE deletion. The v1→v2 migration creates only the new product table/index and preserves existing conversations/messages. Room stores rendered USER/ASSISTANT text, timestamps, local title, draft, nullable final `lastResponseId`, and selected verified product snapshots. Snapshot gross price is stored as decimal text to avoid floating-point precision loss; the trusted exact `productUrl` and `verifiedAt` are stored locally for historical display. Room still does not store secrets, OBI payloads, raw OpenAI responses, or reasoning data.
+Room schema v4 contains `conversations`, `messages`, `message_products`, and the narrowly scoped `message_sources` relation. Conversation→message, message→product, and message→source foreign keys use CASCADE deletion. Explicit migrations preserve historical conversations/messages/products and add zero source rows for pre-v4 messages. Room stores rendered USER/ASSISTANT text, timestamps, local title, draft, nullable final `lastResponseId`, selected verified product snapshots, and at most six normalized HTTPS citation links with optional validated answer-span indices for an ASSISTANT message. Snapshot gross price is stored as decimal text to avoid floating-point precision loss; trusted product URLs/verification times remain local. Room still does not store secrets, OBI payloads, raw OpenAI/search responses, queries, or reasoning data.
 
 During a USER turn, every successful exact `LocalProduct` result yields two deliberately separate views: a compact tool result with one `storeNumber` plus `{obik,name,brand?,shortDescription?,technicalFacts[],stock,price}` products sent to OpenAI, and local-only verified snapshots `{storeNumber,obik,name,stock,grossPrice,productUrl,verifiedAt}`. `productUrl` and `verifiedAt` are never sent upstream. `AdvisorController` accumulates snapshots only inside the current `runTurn`, keyed by `(storeNumber, obik)`, and resolves final model-selected `productRefs` only against that set. Unknown references are ignored; they never cause a lookup. Requested ordering is retained and duplicate composite references cannot create duplicate cards.
 
@@ -222,4 +222,18 @@ Server-side instructions define Taksula as a practical home-improvement retail p
 - Clearly unrelated general-chat requests receive a short role redirect; borderline practical home-improvement topics remain in scope.
 - Response language follows the user's current conversation language where practical. Android locale/persisted-history behavior remains unchanged.
 - Structured output, productRefs, Android current-turn snapshot resolution, tool/product limits, multi-store authorization, GPT-6 Luna/low reasoning, and usage/cost accounting remain unchanged.
-- No OpenAI built-in tools are enabled. Selective `web_search` remains the next separate milestone.
+- Selective Responses `web_search` is now the only enabled OpenAI built-in tool; deep research, file search, image search, MCP, streaming, and background mode remain absent.
+
+
+## Selective web search v0.1
+
+- Search is supplemental, not a replacement for model knowledge or the Android OBI tool. General technical questions should normally use model knowledge; focused search is available for explicit relevant web requests, inherently current external information, or a missing important SKU-specific fact after OBI verification.
+- Current OBI stock, price, store availability, and product-card eligibility remain Android-local authority. Search-visible OBI/manufacturer/retailer pages cannot override those facts, and web-discovered products cannot enter `productRefs`.
+- Built-in configuration is `{type:"web_search"}`, `tool_choice:"auto"`, `max_tool_calls:1` per Responses request. Application function continuations still use `previous_response_id` and Android retains its max-two-local-function-calls USER-turn budget.
+- Output normalization tolerates reasoning items, `web_search_call`, message items, and one application `function_call`. Only application function calls are returned as Android tool requests; raw web-search objects/actions/query metadata never cross the proxy boundary.
+- Final web evidence is sourced exclusively from actual OpenAI `url_citation` annotations. Normalization accepts HTTPS only, deduplicates URL order, and caps six sources, 200-char titles, and 2048-char URLs. Android validates those bounds again.
+- Room schema v4 adds only `message_sources(messageId,position,title,url)` with message FK cascade. Assistant text, verified product snapshots, sources, and final response ID commit in one DAO transaction. Historical v3 messages migrate with zero sources and history reopens citations without network access.
+- Source UI is a compact clickable list below the assistant answer. Inline annotation offsets are intentionally not fabricated or remapped through the structured JSON text boundary.
+- Web pages are untrusted external reference data. Server instructions reject page attempts to change role/tool/trust rules, disclose secrets, or exfiltrate unrelated conversation data.
+- Usage telemetry adds `webSearchCalls`. The current pricing version adds USD 0.01 per completed search action to the existing token cost. Tool availability alone does not count as a call; unknown/unpriceable model usage remains unpriced.
+- Existing advisor call timeout remains unchanged at 30 seconds because built-in search is limited to one action and no background/deep-research flow is introduced.

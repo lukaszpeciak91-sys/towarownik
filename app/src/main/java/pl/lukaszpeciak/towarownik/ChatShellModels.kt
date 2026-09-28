@@ -16,7 +16,9 @@ import kotlinx.serialization.json.put
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
+import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 
 internal enum class ChatMessageRole {
@@ -29,6 +31,7 @@ internal data class AdvisorChatMessage(
     val text: String,
     val createdAt: Long,
     val products: List<VerifiedProductUiModel> = emptyList(),
+    val sources: List<PersistedWebSource> = emptyList(),
     val persistedMessageId: Long? = null,
 )
 
@@ -63,6 +66,7 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                 products = message.products.map { product ->
                     product.toVerifiedProductUiModel()
                 },
+                sources = message.sources,
                 persistedMessageId = message.id,
             )
         },
@@ -88,6 +92,96 @@ internal fun normalizeAdvisorDisplayText(raw: String): String =
         .replace("`", "")
         .trim()
 
+internal data class NormalizedAdvisorDisplay(
+    val text: String,
+    val sources: List<PersistedWebSource>,
+)
+
+internal fun normalizeAdvisorDisplay(
+    raw: String,
+    sources: List<AdvisorWebSource>,
+): NormalizedAdvisorDisplay {
+    val removed = BooleanArray(raw.length)
+
+    fun removeRange(start: Int, endExclusive: Int) {
+        for (index in start until endExclusive.coerceAtMost(raw.length)) {
+            removed[index] = true
+        }
+    }
+
+    MARKDOWN_HEADING.findAll(raw).forEach { match ->
+        removeRange(
+            start = match.range.first,
+            endExclusive = match.range.last + 1,
+        )
+    }
+
+    listOf("**", "__", "`").forEach { marker ->
+        var searchFrom = 0
+        while (searchFrom < raw.length) {
+            val index = raw.indexOf(marker, startIndex = searchFrom)
+            if (index < 0) break
+            removeRange(index, index + marker.length)
+            searchFrom = index + marker.length
+        }
+    }
+
+    val boundaryMap = IntArray(raw.length + 1)
+    val untrimmed = StringBuilder(raw.length)
+    var outputIndex = 0
+    for (index in raw.indices) {
+        boundaryMap[index] = outputIndex
+        if (!removed[index]) {
+            untrimmed.append(raw[index])
+            outputIndex += 1
+        }
+    }
+    boundaryMap[raw.length] = outputIndex
+
+    val untrimmedText = untrimmed.toString()
+    val text = untrimmedText.trim()
+    val leadingTrim =
+        untrimmedText.length - untrimmedText.trimStart().length
+    val trailingBoundary = leadingTrim + text.length
+
+    val persistedSources = sources.mapNotNull { source ->
+        val mappedRange = if (
+            source.startIndex != null &&
+            source.endIndex != null &&
+            source.startIndex in 0..raw.length &&
+            source.endIndex in 0..raw.length &&
+            source.endIndex > source.startIndex
+        ) {
+            val start = boundaryMap[source.startIndex]
+            val end = boundaryMap[source.endIndex]
+            if (
+                start >= leadingTrim &&
+                end <= trailingBoundary &&
+                end > start
+            ) {
+                (start - leadingTrim) to (end - leadingTrim)
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+
+        pl.lukaszpeciak.towarownik.conversation
+            .persistedWebSourceOrNull(
+                title = source.title,
+                url = source.url,
+                startIndex = mappedRange?.first,
+                endIndex = mappedRange?.second,
+            )
+    }
+
+    return NormalizedAdvisorDisplay(
+        text = text,
+        sources = persistedSources,
+    )
+}
+
 internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
     buildJsonObject {
         put("draft", state.draft)
@@ -100,6 +194,31 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                             put("role", message.role.name)
                             put("text", message.text)
                             put("createdAt", message.createdAt)
+                            put(
+                                "sources",
+                                buildJsonArray {
+                                    message.sources.forEach { source ->
+                                        add(
+                                            buildJsonObject {
+                                                put("title", source.title)
+                                                put("url", source.url)
+                                                put(
+                                                    "startIndex",
+                                                    source.startIndex
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
+                                                put(
+                                                    "endIndex",
+                                                    source.endIndex
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
+                                            },
+                                        )
+                                    }
+                                },
+                            )
                             put(
                                 "persistedMessageId",
                                 message.persistedMessageId
@@ -167,6 +286,38 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                     ?.jsonPrimitive
                     ?.longOrNull
                     ?: return@mapNotNull null
+                val sources = (objectValue["sources"] as? JsonArray)
+                    ?.mapNotNull { sourceElement ->
+                        val source = sourceElement as? JsonObject
+                            ?: return@mapNotNull null
+                        val title = source["title"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: return@mapNotNull null
+                        val url = source["url"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: return@mapNotNull null
+                        val startIndex = source["startIndex"]
+                            ?.let { value ->
+                                if (value is JsonNull) null
+                                else value.jsonPrimitive.intOrNull
+                            }
+                        val endIndex = source["endIndex"]
+                            ?.let { value ->
+                                if (value is JsonNull) null
+                                else value.jsonPrimitive.intOrNull
+                            }
+                        pl.lukaszpeciak.towarownik.conversation
+                            .persistedWebSourceOrNull(
+                                title = title,
+                                url = url,
+                                startIndex = startIndex,
+                                endIndex = endIndex,
+                            )
+                            ?: return@mapNotNull null
+                    }
+                    .orEmpty()
                 val products = (objectValue["products"] as? JsonArray)
                     ?.mapNotNull { productElement ->
                         val product = productElement as? JsonObject
@@ -209,6 +360,7 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                     text = text,
                     createdAt = createdAt,
                     products = products,
+                    sources = sources,
                     persistedMessageId = objectValue["persistedMessageId"]
                         ?.jsonPrimitive
                         ?.longOrNull,

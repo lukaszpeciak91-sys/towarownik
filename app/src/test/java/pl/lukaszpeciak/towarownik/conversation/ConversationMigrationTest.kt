@@ -84,6 +84,102 @@ class ConversationMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 3 to 4 gives historical messages zero sources and cascades new sources`() {
+        val context =
+            ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase(DB_V3_NAME)
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(DB_V3_NAME)
+                .callback(
+                    object : SupportSQLiteOpenHelper.Callback(3) {
+                        override fun onCreate(
+                            db: SupportSQLiteDatabase,
+                        ) {
+                            createV2Schema(db)
+                            db.execSQL(
+                                "ALTER TABLE conversations " +
+                                    "ADD COLUMN storeNumber TEXT NOT NULL DEFAULT '075'",
+                            )
+                            db.execSQL(
+                                "ALTER TABLE message_products " +
+                                    "ADD COLUMN storeNumber TEXT NOT NULL DEFAULT '075'",
+                            )
+                        }
+
+                        override fun onUpgrade(
+                            db: SupportSQLiteDatabase,
+                            oldVersion: Int,
+                            newVersion: Int,
+                        ) = Unit
+                    },
+                )
+                .build(),
+        )
+
+        try {
+            val db = helper.writableDatabase
+            db.execSQL("PRAGMA foreign_keys=ON")
+            db.execSQL(
+                "INSERT INTO conversations " +
+                    "(id,title,createdAt,updatedAt,lastResponseId,draft,storeNumber) " +
+                    "VALUES (1,'old',1,1,NULL,'','075')",
+            )
+            db.execSQL(
+                "INSERT INTO messages " +
+                    "(id,conversationId,role,text,createdAt) " +
+                    "VALUES (1,1,'ASSISTANT','answer',1)",
+            )
+
+            MIGRATION_3_4.migrate(db)
+
+            assertEquals(
+                "0",
+                queryText(
+                    db,
+                    "SELECT COUNT(*) FROM message_sources " +
+                        "WHERE messageId=1",
+                ),
+            )
+
+            db.execSQL(
+                "INSERT INTO message_sources " +
+                    "(messageId,position,title,url,startIndex,endIndex) " +
+                    "VALUES (1,0,'Manual','https://example.com/manual',0,6)",
+            )
+            assertEquals(
+                "1",
+                queryText(
+                    db,
+                    "SELECT COUNT(*) FROM message_sources " +
+                        "WHERE messageId=1",
+                ),
+            )
+            assertEquals(
+                "6",
+                queryText(
+                    db,
+                    "SELECT endIndex FROM message_sources " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+
+            db.execSQL("DELETE FROM messages WHERE id=1")
+            assertEquals(
+                "0",
+                queryText(
+                    db,
+                    "SELECT COUNT(*) FROM message_sources",
+                ),
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(DB_V3_NAME)
+        }
+    }
+
     private fun createV2Schema(db: SupportSQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE conversations (" +
@@ -119,5 +215,6 @@ class ConversationMigrationTest {
 
     private companion object {
         const val DB_NAME = "conversation-migration-v2-v3-test.db"
+        const val DB_V3_NAME = "conversation-migration-v3-v4-test.db"
     }
 }

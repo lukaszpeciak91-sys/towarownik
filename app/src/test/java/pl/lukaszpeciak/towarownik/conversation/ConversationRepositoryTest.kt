@@ -154,6 +154,90 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `assistant sources persist reopen and cascade with conversation deletion`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Sprawdź instrukcję producenta",
+            createdAt = 100L,
+        )
+        val sources = listOf(
+            PersistedWebSource(
+                title = "Manufacturer manual",
+                url = "https://manufacturer.example/manual",
+                startIndex = 0,
+                endIndex = 8,
+            ),
+            PersistedWebSource(
+                title = "Technical sheet",
+                url = "https://manufacturer.example/spec",
+            ),
+        )
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Verified web answer",
+            finalResponseId = "resp_web",
+            createdAt = 200L,
+            sources = sources,
+        )
+
+        database.close()
+        openDatabase()
+
+        val restored = requireNotNull(
+            repository.load(started.conversationId),
+        )
+        assertEquals(
+            sources,
+            restored.messages.last().sources,
+        )
+        assertEquals(2, messageSourceCount(started.conversationId))
+
+        assertTrue(
+            repository.deleteConversation(started.conversationId),
+        )
+        assertEquals(0, allMessageSourceCount())
+    }
+
+    @Test
+    fun `web source model accepts only bounded https URLs`() {
+        assertEquals(
+            PersistedWebSource(
+                title = "Manufacturer manual",
+                url = "https://manufacturer.example/manual",
+            ),
+            persistedWebSourceOrNull(
+                title = "  Manufacturer   manual ",
+                url = "https://manufacturer.example/manual",
+            ),
+        )
+        assertNull(
+            persistedWebSourceOrNull(
+                title = "Unsafe",
+                url = "http://manufacturer.example/manual",
+            ),
+        )
+        assertNull(
+            persistedWebSourceOrNull(
+                title = "Bad",
+                url = "not-a-url",
+            ),
+        )
+        assertNull(
+            persistedWebSourceOrNull(
+                title = "T".repeat(201),
+                url = "https://manufacturer.example/manual",
+            ),
+        )
+        assertNull(
+            persistedWebSourceOrNull(
+                title = "Valid",
+                url = "https://manufacturer.example/" +
+                    "x".repeat(2_048),
+            ),
+        )
+    }
+
+    @Test
     fun `messages preserve chronological ordering and timestamps`() = runBlocking {
         val first = repository.beginUserTurn(
             null,
@@ -844,6 +928,34 @@ class ConversationRepositoryTest {
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
     )
+
+    private fun allMessageSourceCount(): Int {
+        val cursor = database.openHelper.readableDatabase.query(
+            "SELECT COUNT(*) FROM message_sources",
+        )
+        return cursor.use {
+            check(it.moveToFirst())
+            it.getInt(0)
+        }
+    }
+
+    private fun messageSourceCount(
+        conversationId: Long,
+    ): Int {
+        val cursor = database.openHelper.readableDatabase.query(
+            """
+            SELECT COUNT(*) FROM message_sources
+            WHERE messageId IN (
+                SELECT id FROM messages WHERE conversationId = ?
+            )
+            """.trimIndent(),
+            arrayOf(conversationId),
+        )
+        return cursor.use {
+            check(it.moveToFirst())
+            it.getInt(0)
+        }
+    }
 
     private fun messageProductCount(
         conversationId: Long,

@@ -7,11 +7,16 @@ import {
   MAX_MODEL_NAME_CHARS,
   MAX_SELECTED_PRODUCT_REFS,
   MAX_USAGE_TOKEN_COUNT,
+  MAX_WEB_CITATIONS,
+  MAX_WEB_CITATION_TITLE_CHARS,
+  MAX_WEB_CITATION_URL_CHARS,
+  MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
   OBI_TOOL,
+  WEB_SEARCH_TOOL,
 } from "./config.js";
 import { InvalidRequestError, parseToolArguments } from "./validation.js";
 import type {
@@ -20,6 +25,7 @@ import type {
   AgentUsage,
   ProductRef,
   ToolContinuationResult,
+  WebSource,
   UpstreamFetch,
 } from "./types.js";
 
@@ -41,11 +47,13 @@ export async function startAgent(
       },
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
+      tool_choice: "auto",
+      max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL],
+      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
@@ -71,11 +79,13 @@ export async function messageAgent(
       },
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
+      tool_choice: "auto",
+      max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL],
+      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
@@ -108,11 +118,13 @@ export async function continueAgent(
       },
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
+      tool_choice: "auto",
+      max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL],
+      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
@@ -163,11 +175,12 @@ export function normalizeOpenAIResponse(
   }
 
   const responseId = boundedUpstreamId(payload.id);
-  const usage = parseUsage(payload, requestType);
   if (!Array.isArray(payload.output)) {
     throw new UpstreamFailureError();
   }
 
+  const webSearchCalls = countCompletedWebSearchCalls(payload.output);
+  const usage = parseUsage(payload, requestType, webSearchCalls);
   const functionCalls = payload.output.filter(
     (item): item is Record<string, unknown> =>
       isRecord(item) && item.type === "function_call",
@@ -207,17 +220,26 @@ export function normalizeOpenAIResponse(
         callId: call.call_id,
         arguments: argumentsValue,
       },
+      webSearchCalls,
       ...(usage ? { usage } : {}),
     };
   }
 
-  const answer = parseStructuredAnswer(extractAnswerText(payload));
+  const rawAnswerText = extractAnswerText(payload);
+  const answer = parseStructuredAnswer(rawAnswerText);
+  const sources = extractWebSources(
+    payload.output,
+    rawAnswerText,
+    answer.textBoundaryMap,
+  );
 
   return {
     type: "answer",
     responseId,
     text: answer.text,
     productRefs: answer.productRefs,
+    ...(sources.length ? { sources } : {}),
+    webSearchCalls,
     ...(usage ? { usage } : {}),
   };
 }
@@ -225,6 +247,7 @@ export function normalizeOpenAIResponse(
 function parseUsage(
   payload: Record<string, unknown>,
   requestType: AgentRequestType,
+  webSearchCalls: number,
 ): AgentUsage | undefined {
   try {
     const model = boundedModelName(payload.model);
@@ -272,6 +295,7 @@ function parseUsage(
       cachedInputTokens,
       cacheWriteTokens,
       outputTokens,
+      webSearchCalls,
     );
 
     return {
@@ -297,12 +321,15 @@ function priceUsage(
   cachedInputTokens: number | null,
   cacheWriteTokens: number | null,
   outputTokens: number,
+  webSearchCalls: number,
 ): { estimatedCostUsd: number; pricingVersion: string } | null {
   if (
     model !== CURRENT_MODEL_PRICING.model ||
     cachedInputTokens === null ||
     cacheWriteTokens === null ||
-    cachedInputTokens + cacheWriteTokens > inputTokens
+    cachedInputTokens + cacheWriteTokens > inputTokens ||
+    webSearchCalls < 0 ||
+    webSearchCalls > MAX_WEB_SEARCH_CALLS_PER_RESPONSE
   ) {
     return null;
   }
@@ -317,7 +344,9 @@ function priceUsage(
     BigInt(ordinaryInputTokens) * rates.uncachedInput +
     BigInt(cachedInputTokens) * rates.cachedInput +
     BigInt(cacheWriteTokens) * rates.cacheWriteInput +
-    BigInt(outputTokens) * rates.output;
+    BigInt(outputTokens) * rates.output +
+    BigInt(webSearchCalls) *
+      CURRENT_MODEL_PRICING.webSearchNanoUsdPerCall;
 
   return {
     estimatedCostUsd: Number(formatNanoUsd(nanoUsd)),
@@ -373,6 +402,7 @@ function parseStructuredAnswer(
 ): {
   text: string;
   productRefs: ProductRef[];
+  textBoundaryMap: Map<number, number>;
 } {
   if (!raw) {
     throw new UpstreamFailureError();
@@ -405,6 +435,11 @@ function parseStructuredAnswer(
   if (!text || text.length > MAX_ANSWER_CHARS) {
     throw new UpstreamFailureError();
   }
+  const textBoundaryMap = mapStructuredTextBoundaries(
+    raw,
+    parsed.text,
+    text,
+  );
 
   if (
     !Array.isArray(parsed.productRefs) ||
@@ -444,36 +479,280 @@ function parseStructuredAnswer(
   return {
     text,
     productRefs: deduplicated,
+    textBoundaryMap,
   };
 }
 
 function extractAnswerText(payload: Record<string, unknown>): string | null {
-  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
-    return payload.output_text.trim();
+  const output = payload.output;
+  if (Array.isArray(output)) {
+    const parts: string[] = [];
+    for (const item of output) {
+      if (!isRecord(item) || item.type !== "message" || !Array.isArray(item.content)) {
+        continue;
+      }
+
+      for (const content of item.content) {
+        if (
+          isRecord(content) &&
+          content.type === "output_text" &&
+          typeof content.text === "string"
+        ) {
+          parts.push(content.text);
+        }
+      }
+    }
+
+    const joined = parts.join("");
+    if (joined.trim()) return joined;
   }
 
-  const output = payload.output;
-  if (!Array.isArray(output)) return null;
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
+    return payload.output_text;
+  }
+  return null;
+}
 
-  const parts: string[] = [];
+function countCompletedWebSearchCalls(
+  output: unknown[],
+): number {
+  let count = 0;
+  for (const item of output) {
+    if (
+      !isRecord(item) ||
+      item.type !== "web_search_call" ||
+      item.status !== "completed" ||
+      !isRecord(item.action) ||
+      item.action.type !== "search"
+    ) {
+      continue;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function extractWebSources(
+  output: unknown[],
+  rawAnswerText: string | null,
+  textBoundaryMap: Map<number, number>,
+): WebSource[] {
+  const sources: WebSource[] = [];
+  const indexByUrl = new Map<string, number>();
+  const canMapInline =
+    rawAnswerText !== null &&
+    !containsSurrogatePair(rawAnswerText);
+
   for (const item of output) {
     if (!isRecord(item) || item.type !== "message" || !Array.isArray(item.content)) {
       continue;
     }
-
     for (const content of item.content) {
       if (
-        isRecord(content) &&
-        content.type === "output_text" &&
-        typeof content.text === "string"
+        !isRecord(content) ||
+        content.type !== "output_text" ||
+        typeof content.text !== "string" ||
+        !Array.isArray(content.annotations)
       ) {
-        parts.push(content.text);
+        continue;
+      }
+      const contentCanMap =
+        canMapInline && content.text === rawAnswerText;
+
+      for (const annotation of content.annotations) {
+        if (
+          !isRecord(annotation) ||
+          annotation.type !== "url_citation" ||
+          typeof annotation.url !== "string" ||
+          typeof annotation.title !== "string"
+        ) {
+          continue;
+        }
+        const url = normalizeHttpsUrl(annotation.url);
+        if (!url) continue;
+        const title = annotation.title
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, MAX_WEB_CITATION_TITLE_CHARS);
+        if (!title) continue;
+
+        let startIndex: number | null = null;
+        let endIndex: number | null = null;
+        if (
+          contentCanMap &&
+          Number.isSafeInteger(annotation.start_index) &&
+          Number.isSafeInteger(annotation.end_index)
+        ) {
+          const rawStart = annotation.start_index as number;
+          const rawEnd = annotation.end_index as number;
+          const mappedStart = textBoundaryMap.get(rawStart);
+          const mappedEnd = textBoundaryMap.get(rawEnd);
+          if (
+            rawStart >= 0 &&
+            rawEnd > rawStart &&
+            mappedStart !== undefined &&
+            mappedEnd !== undefined &&
+            mappedEnd > mappedStart
+          ) {
+            startIndex = mappedStart;
+            endIndex = mappedEnd;
+          }
+        }
+
+        const existingIndex = indexByUrl.get(url);
+        if (existingIndex !== undefined) {
+          const existing = sources[existingIndex];
+          if (
+            existing.startIndex === null &&
+            startIndex !== null &&
+            endIndex !== null
+          ) {
+            sources[existingIndex] = {
+              ...existing,
+              startIndex,
+              endIndex,
+            };
+          }
+          continue;
+        }
+
+        indexByUrl.set(url, sources.length);
+        sources.push({
+          title,
+          url,
+          startIndex,
+          endIndex,
+        });
+        if (sources.length >= MAX_WEB_CITATIONS) {
+          return sources;
+        }
       }
     }
   }
+  return sources;
+}
 
-  const joined = parts.join("").trim();
-  return joined || null;
+function mapStructuredTextBoundaries(
+  raw: string,
+  parsedText: string,
+  trimmedText: string,
+): Map<number, number> {
+  const match = /"text"\s*:\s*"/.exec(raw);
+  if (!match) return new Map();
+
+  const quoteIndex = match.index + match[0].length - 1;
+  const token = parseJsonStringToken(raw, quoteIndex);
+  if (!token || token.decoded !== parsedText) {
+    return new Map();
+  }
+
+  const leadingTrim =
+    parsedText.length - parsedText.trimStart().length;
+  const trailingBoundary = leadingTrim + trimmedText.length;
+  const mapped = new Map<number, number>();
+  for (const [rawBoundary, decodedBoundary] of token.boundaries) {
+    if (
+      decodedBoundary >= leadingTrim &&
+      decodedBoundary <= trailingBoundary
+    ) {
+      mapped.set(
+        rawBoundary,
+        decodedBoundary - leadingTrim,
+      );
+    }
+  }
+  return mapped;
+}
+
+function parseJsonStringToken(
+  raw: string,
+  quoteIndex: number,
+): {
+  decoded: string;
+  boundaries: Map<number, number>;
+} | null {
+  if (raw[quoteIndex] !== '"') return null;
+
+  const boundaries = new Map<number, number>();
+  let position = quoteIndex + 1;
+  let decodedLength = 0;
+  boundaries.set(position, decodedLength);
+
+  while (position < raw.length) {
+    const char = raw[position];
+    if (char === '"') {
+      try {
+        const decoded = JSON.parse(
+          raw.slice(quoteIndex, position + 1),
+        );
+        return typeof decoded === "string"
+          ? { decoded, boundaries }
+          : null;
+      } catch {
+        return null;
+      }
+    }
+
+    if (char === "\\") {
+      const escapeType = raw[position + 1];
+      if (escapeType === undefined) return null;
+      const escapeLength = escapeType === "u" ? 6 : 2;
+      const end = position + escapeLength;
+      if (end > raw.length) return null;
+      let decodedFragment: unknown;
+      try {
+        decodedFragment = JSON.parse(
+          '"' + raw.slice(position, end) + '"',
+        );
+      } catch {
+        return null;
+      }
+      if (typeof decodedFragment !== "string") return null;
+      decodedLength += decodedFragment.length;
+      position = end;
+      boundaries.set(position, decodedLength);
+      continue;
+    }
+
+    decodedLength += 1;
+    position += 1;
+    boundaries.set(position, decodedLength);
+  }
+
+  return null;
+}
+
+function containsSurrogatePair(value: string): boolean {
+  for (let index = 0; index < value.length - 1; index += 1) {
+    const first = value.charCodeAt(index);
+    const second = value.charCodeAt(index + 1);
+    if (
+      first >= 0xd800 &&
+      first <= 0xdbff &&
+      second >= 0xdc00 &&
+      second <= 0xdfff
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function normalizeHttpsUrl(raw: string): string | null {
+  if (raw.length === 0 || raw.length > MAX_WEB_CITATION_URL_CHARS) {
+    return null;
+  }
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return null;
+    const normalized = url.toString();
+    if (normalized.length > MAX_WEB_CITATION_URL_CHARS) {
+      return null;
+    }
+    return normalized;
+  } catch {
+    return null;
+  }
 }
 
 function boundedUpstreamId(value: unknown): string {

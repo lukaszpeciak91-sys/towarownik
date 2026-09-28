@@ -73,6 +73,30 @@ internal data class MessageProductEntity(
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
 )
 
+@Entity(
+    tableName = "message_sources",
+    primaryKeys = ["messageId", "position"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MessageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["messageId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index("messageId"),
+    ],
+)
+internal data class MessageSourceEntity(
+    val messageId: Long,
+    val position: Int,
+    val title: String,
+    val url: String,
+    val startIndex: Int?,
+    val endIndex: Int?,
+)
+
 internal data class MessageWithProducts(
     @Embedded
     val message: MessageEntity,
@@ -81,6 +105,11 @@ internal data class MessageWithProducts(
         entityColumn = "messageId",
     )
     val products: List<MessageProductEntity>,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "messageId",
+    )
+    val sources: List<MessageSourceEntity> = emptyList(),
 )
 
 internal data class ConversationWithMessages(

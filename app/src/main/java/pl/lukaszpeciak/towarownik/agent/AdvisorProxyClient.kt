@@ -21,6 +21,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -258,6 +259,11 @@ internal class AdvisorProxyClient(
                         "text",
                         "productRefs",
                     ),
+                    optional = setOf(
+                        "usage",
+                        "sources",
+                        "webSearchCalls",
+                    ),
                 )
                 val text = root["text"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf {
@@ -291,10 +297,17 @@ internal class AdvisorProxyClient(
                     }
                     ?.takeIf { it.size <= MAX_TOOL_PRODUCTS }
                     ?: error("Invalid selected products")
+                val webSearchCalls =
+                    root.requireWebSearchCallCount()
                 AdvisorProxyResult.Answer(
                     responseId = responseId,
                     text = text,
                     productRefs = productRefs.distinctBy { it.key },
+                    sources = parseSourcesOrEmpty(
+                        root["sources"],
+                        answerLength = text.length,
+                    ),
+                    webSearchCalls = webSearchCalls,
                     usage = parseUsageOrNull(root["usage"]),
                 )
             }
@@ -302,7 +315,12 @@ internal class AdvisorProxyClient(
             "tool_request" -> {
                 requireEnvelopeKeys(
                     root,
-                    required = setOf("type", "responseId", "tool"),
+                    required = setOf(
+                        "type",
+                        "responseId",
+                        "tool",
+                    ),
+                    optional = setOf("usage", "webSearchCalls"),
                 )
                 val tool = root["tool"] as? JsonObject
                     ?: error("Missing tool")
@@ -341,6 +359,7 @@ internal class AdvisorProxyClient(
                         storeNumber = storeNumber,
                         limit = limit,
                     ),
+                    webSearchCalls = root.requireWebSearchCallCount(),
                     usage = parseUsageOrNull(root["usage"]),
                 )
             }
@@ -590,13 +609,94 @@ internal class AdvisorProxyClient(
             ?: error("Invalid optional token count")
     }
 
+    private fun parseSourcesOrEmpty(
+        raw: kotlinx.serialization.json.JsonElement?,
+        answerLength: Int,
+    ): List<AdvisorWebSource> {
+        if (raw == null || raw is JsonNull) return emptyList()
+        val array = raw as? JsonArray ?: error("Invalid sources")
+        require(array.size <= MAX_WEB_SOURCES)
+        val seen = mutableSetOf<String>()
+        return array.mapNotNull { element ->
+            val source = element as? JsonObject
+                ?: error("Invalid source")
+            requireExactKeys(
+                source,
+                setOf(
+                    "title",
+                    "url",
+                    "startIndex",
+                    "endIndex",
+                ),
+            )
+            val title = source["title"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.normalizeWhitespace()
+                ?.takeIf {
+                    it.isNotBlank() &&
+                        it.length <= MAX_WEB_SOURCE_TITLE_CHARS
+                }
+                ?: error("Invalid source title")
+            val url = source["url"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.takeIf { it.length <= MAX_WEB_SOURCE_URL_CHARS }
+                ?.toHttpUrlOrNull()
+                ?.takeIf { it.scheme == "https" }
+                ?.toString()
+                ?: error("Invalid source URL")
+            val startIndex = source.optionalCitationIndex("startIndex")
+            val endIndex = source.optionalCitationIndex("endIndex")
+            require(
+                (startIndex == null && endIndex == null) ||
+                    (
+                        startIndex != null &&
+                            endIndex != null &&
+                            startIndex >= 0 &&
+                            endIndex > startIndex &&
+                            endIndex <= answerLength
+                    ),
+            )
+            if (!seen.add(url)) {
+                null
+            } else {
+                AdvisorWebSource(
+                    title = title,
+                    url = url,
+                    startIndex = startIndex,
+                    endIndex = endIndex,
+                )
+            }
+        }
+    }
+
+    private fun JsonObject.optionalCitationIndex(
+        key: String,
+    ): Int? {
+        val value = get(key) ?: error("Missing citation index")
+        if (value is JsonNull) return null
+        return value.jsonPrimitive.intOrNull
+            ?: error("Invalid citation index")
+    }
+
+    private fun JsonObject.requireWebSearchCallCount(): Long {
+        val value = get("webSearchCalls") ?: return 0
+        return value.jsonPrimitive.longOrNull
+            ?.takeIf { it in 0..MAX_WEB_SEARCH_CALLS }
+            ?: error("Invalid web search call count")
+    }
+
     private fun requireEnvelopeKeys(
         objectValue: JsonObject,
         required: Set<String>,
+        optional: Set<String> = setOf("usage"),
     ) {
         require(
-            objectValue.keys == required ||
-                objectValue.keys == required + "usage",
+            objectValue.keys.containsAll(required) &&
+                objectValue.keys.all {
+                    it in required || it in optional
+                },
         )
     }
 
@@ -625,5 +725,9 @@ internal class AdvisorProxyClient(
         const val MAX_PRICING_VERSION_CHARS = 100
         const val MAX_MONEY_CHARS = 32
         const val MAX_USAGE_TOKENS = 10_000_000_000L
+        const val MAX_WEB_SEARCH_CALLS = 1L
+        const val MAX_WEB_SOURCES = 6
+        const val MAX_WEB_SOURCE_TITLE_CHARS = 200
+        const val MAX_WEB_SOURCE_URL_CHARS = 2048
     }
 }

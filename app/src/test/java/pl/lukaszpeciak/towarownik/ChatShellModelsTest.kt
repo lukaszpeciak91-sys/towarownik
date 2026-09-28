@@ -6,6 +6,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
+import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
+import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 
 class ChatShellModelsTest {
     @Test
@@ -86,6 +88,68 @@ class ChatShellModelsTest {
             "https://www.obi.pl/p/1234567/trusted-exact",
             verifiedProductOpenUrl(restored.messages.single().products.single()),
         )
+    }
+
+    @Test
+    fun `web sources survive save and restore with https URL unchanged`() {
+        val source = PersistedWebSource(
+            title = "Manufacturer manual",
+            url = "https://manufacturer.example/manual",
+            startIndex = 6,
+            endIndex = 12,
+        )
+        val completed = AdvisorCaseUiState(
+            messages = listOf(
+                AdvisorChatMessage(
+                    role = ChatMessageRole.ASSISTANT,
+                    text = "Cited answer.",
+                    createdAt = 200L,
+                    sources = listOf(source),
+                    persistedMessageId = 88L,
+                ),
+            ),
+        )
+
+        val restored = restoreAdvisorCase(saveAdvisorCase(completed))
+
+        assertEquals(listOf(source), restored.messages.single().sources)
+    }
+
+    @Test
+    fun `citation spans remap through display normalization without guessing`() {
+        val raw = "**Moc:** 600 W i regulacja."
+        val start = raw.indexOf("600 W")
+        val end = start + "600 W".length
+
+        val normalized = normalizeAdvisorDisplay(
+            raw = raw,
+            sources = listOf(
+                AdvisorWebSource(
+                    title = "Manufacturer manual",
+                    url = "https://manufacturer.example/manual",
+                    startIndex = start,
+                    endIndex = end,
+                ),
+                AdvisorWebSource(
+                    title = "Fallback source",
+                    url = "https://manufacturer.example/fallback",
+                    startIndex = null,
+                    endIndex = null,
+                ),
+            ),
+        )
+
+        assertEquals("Moc: 600 W i regulacja.", normalized.text)
+        assertEquals(
+            normalized.text.indexOf("600 W"),
+            normalized.sources[0].startIndex,
+        )
+        assertEquals(
+            normalized.text.indexOf("600 W") + "600 W".length,
+            normalized.sources[0].endIndex,
+        )
+        assertNull(normalized.sources[1].startIndex)
+        assertNull(normalized.sources[1].endIndex)
     }
 
     @Test

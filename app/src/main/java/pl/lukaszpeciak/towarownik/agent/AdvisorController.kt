@@ -25,6 +25,7 @@ internal sealed interface AdvisorUiState {
         val text: String,
         val responseId: String,
         val products: List<VerifiedProductSnapshot> = emptyList(),
+        val sources: List<AdvisorWebSource> = emptyList(),
     ) : AdvisorUiState
     data class Error(val error: AdvisorError) : AdvisorUiState
 }
@@ -54,7 +55,7 @@ internal class AdvisorController(
         input: String,
         previousResponseId: String?,
         conversationStoreNumber: String = DEFAULT_OBI_STORE_NUMBER,
-        onOpenAiResponse: (AdvisorUsage?) -> Unit = {},
+        onOpenAiResponse: (AdvisorUsage?, Long) -> Unit = { _, _ -> },
         onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
     ): AdvisorUiState {
@@ -98,8 +99,10 @@ internal class AdvisorController(
         var proxyResult = when (initialCall) {
             is AdvisorProxyCallResult.Success -> {
                 observeUsageSafely(
-                    initialCall.result.usageOrNull(),
-                    onOpenAiResponse,
+                    usage = initialCall.result.usageOrNull(),
+                    webSearchCalls =
+                        initialCall.result.webSearchCalls(),
+                    callback = onOpenAiResponse,
                 )
                 initialCall.result
             }
@@ -125,6 +128,7 @@ internal class AdvisorController(
                         text = proxyResult.text,
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
+                        sources = proxyResult.sources,
                     ).also(onState)
                 }
 
@@ -191,8 +195,10 @@ internal class AdvisorController(
                     ) {
                         is AdvisorProxyCallResult.Success -> {
                             observeUsageSafely(
-                                continued.result.usageOrNull(),
-                                onOpenAiResponse,
+                                usage = continued.result.usageOrNull(),
+                                webSearchCalls =
+                                    continued.result.webSearchCalls(),
+                                callback = onOpenAiResponse,
                             )
                             continued.result
                         }
@@ -206,10 +212,11 @@ internal class AdvisorController(
 
     private fun observeUsageSafely(
         usage: AdvisorUsage?,
-        callback: (AdvisorUsage?) -> Unit,
+        webSearchCalls: Long,
+        callback: (AdvisorUsage?, Long) -> Unit,
     ) {
         runCatching {
-            callback(usage)
+            callback(usage, webSearchCalls)
         }
     }
 
@@ -267,6 +274,12 @@ private fun AdvisorProxyResult.usageOrNull(): AdvisorUsage? =
     when (this) {
         is AdvisorProxyResult.Answer -> usage
         is AdvisorProxyResult.ToolRequest -> usage
+    }
+
+private fun AdvisorProxyResult.webSearchCalls(): Long =
+    when (this) {
+        is AdvisorProxyResult.Answer -> webSearchCalls
+        is AdvisorProxyResult.ToolRequest -> webSearchCalls
     }
 
 private fun AdvisorProxyCallResult.Failure.toUiError():

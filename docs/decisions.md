@@ -299,3 +299,18 @@ These decisions describe the broader intended product behavior. The currently im
 - Reply naturally in the user's conversation language where practical; no Android locale or persisted-history translation architecture changes.
 - Keep `gpt-6-luna`, low reasoning, one `find_obi_products` tool, structured final output, productRefs trust boundary, tool/product limits, multi-store rules, persistence, UI, parser, and pricing unchanged.
 - Do not enable `web_search` or any OpenAI built-in tool here. Next milestone: selective OpenAI `web_search`.
+
+
+## Selective web search for Taksula v0.1
+
+- Enable only the current Responses built-in `web_search`, never `web_search_preview`. Use automatic tool choice and one built-in call per Responses request; do not force browsing on ordinary technical questions.
+- Preserve the existing application-function contract and Android two-local-call USER-turn limit independently of the built-in-tool limit.
+- Search may fill an important missing SKU-specific technical fact, satisfy an explicit relevant online/current-information request, or verify inherently current non-OBI information. Broader optional research should not browse reflexively.
+- Local verified OBI remains absolute authority for current OBI stock, price, selected-store availability, and card/productRef eligibility. Web evidence cannot create trusted product cards.
+- Prefer manufacturer product pages/manuals/datasheets for SKU specifications, then authoritative industry/specialist sources; retailer evidence is secondary and community content is experience/opinion. Do not silently hide meaningful source conflicts.
+- Treat searched pages as untrusted data. Their instructions never override Taksula's role, tool rules, trust hierarchy, or privacy boundaries.
+- Preserve citations only from actual Responses `url_citation` annotations. Normalize max six unique HTTPS sources (title <=200, URL <=2048), never model-authored plain-text URLs, raw web results, queries, or search metadata.
+- Preserve annotation spans only when the real OpenAI start/end offsets can be mapped exactly through the structured JSON `text` string and Android display normalization. Never infer a position. Persist nullable spans with dedicated Room v4 `message_sources` rows that cascade with messages; no generic source/knowledge framework is introduced.
+- Render safely mapped citations as small clickable inline numbered markers and keep the compact clickable source list as fallback for unmappable sources and navigation.
+- Pricing version becomes `openai-gpt-6-luna-2026-09-28-web-v1`; add USD 0.01 per completed search action to existing token cost. Completed search actions are counted directly from Responses output independently of optional token usage. Availability alone is zero search calls; missing/malformed or otherwise unpriceable usage preserves the search count while cost remains a lower bound.
+- This completes the currently planned AI capability stage. No deep research, streaming, background mode, fallback routing, RAG, MCP, file/image search, another retailer, or autonomous agent framework is introduced.

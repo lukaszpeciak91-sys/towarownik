@@ -284,6 +284,130 @@ class AdvisorProxyClientTest {
     }
 
     @Test
+    fun `answer sources parse as bounded clickable https metadata`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_sources",
+                      "text":"Web answer",
+                      "productRefs":[],
+                      "webSearchCalls":1,
+                      "sources":[
+                        {
+                          "title":"Manufacturer manual",
+                          "url":"https://manufacturer.example/manual",
+                          "startIndex":0,
+                          "endIndex":3
+                        },
+                        {
+                          "title":"Manufacturer manual duplicate",
+                          "url":"https://manufacturer.example/manual",
+                          "startIndex":0,
+                          "endIndex":3
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_sources",
+                        text = "Web answer",
+                        productRefs = emptyList(),
+                        sources = listOf(
+                            AdvisorWebSource(
+                                title = "Manufacturer manual",
+                                url = "https://manufacturer.example/manual",
+                                startIndex = 0,
+                                endIndex = 3,
+                            ),
+                        ),
+                        webSearchCalls = 1,
+                    ),
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `unsafe source URL makes normalized proxy contract fail closed`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_bad_source",
+                      "text":"Answer",
+                      "productRefs":[],
+                      "sources":[
+                        {
+                          "title":"Unsafe",
+                          "url":"http://example.com/source",
+                          "startIndex":null,
+                          "endIndex":null
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.PROTOCOL,
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `tool request rejects unexpected source metadata`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"tool_request",
+                      "responseId":"resp_tool_sources",
+                      "tool":{
+                        "name":"find_obi_products",
+                        "callId":"call_tool_sources",
+                        "arguments":{
+                          "query":"klej",
+                          "storeNumber":"075",
+                          "limit":1
+                        }
+                      },
+                      "sources":[
+                        {
+                          "title":"Unexpected",
+                          "url":"https://example.com/"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.PROTOCOL,
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
     fun `usage envelope parses independently from answer content`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(
@@ -294,6 +418,7 @@ class AdvisorProxyClientTest {
                       "responseId":"resp_usage",
                       "text":"Measured",
                       "productRefs":[],
+                      "webSearchCalls":1,
                       "usage":{
                         "model":"gpt-6-luna",
                         "requestType":"START",
@@ -303,8 +428,8 @@ class AdvisorProxyClientTest {
                         "outputTokens":100,
                         "reasoningTokens":50,
                         "totalTokens":1100,
-                        "estimatedCostUsd":0.000253,
-                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v1"
+                        "estimatedCostUsd":0.0101165,
+                        "pricingVersion":"openai-gpt-6-luna-2026-09-28-web-v1"
                       }
                     }
                     """.trimIndent(),
@@ -329,10 +454,11 @@ class AdvisorProxyClientTest {
                             reasoningTokens = 50,
                             totalTokens = 1_100,
                             estimatedCostUsd =
-                                BigDecimal("0.000253"),
+                                BigDecimal("0.0101165"),
                             pricingVersion =
-                                "openai-gpt-6-luna-2026-09-27-v1",
+                                "openai-gpt-6-luna-2026-09-28-web-v1",
                         ),
+                        webSearchCalls = 1,
                     ),
                 ),
                 result,
@@ -351,6 +477,7 @@ class AdvisorProxyClientTest {
                       "responseId":"resp_usage_bad",
                       "text":"Still usable",
                       "productRefs":[],
+                      "webSearchCalls":1,
                       "usage":{
                         "model":"gpt-6-luna",
                         "requestType":"START",
@@ -361,7 +488,7 @@ class AdvisorProxyClientTest {
                         "reasoningTokens":0,
                         "totalTokens":1,
                         "estimatedCostUsd":0.0000012,
-                        "pricingVersion":"openai-gpt-6-luna-2026-09-27-v1"
+                        "pricingVersion":"openai-gpt-6-luna-2026-09-28-web-v1"
                       }
                     }
                     """.trimIndent(),
@@ -374,6 +501,7 @@ class AdvisorProxyClientTest {
                         responseId = "resp_usage_bad",
                         text = "Still usable",
                         productRefs = emptyList(),
+                        webSearchCalls = 1,
                         usage = null,
                     ),
                 ),
@@ -416,6 +544,38 @@ class AdvisorProxyClientTest {
                         responseId = "resp_bad_cache_sum",
                         text = "Still usable",
                         productRefs = emptyList(),
+                        usage = null,
+                    ),
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `missing usage preserves independent web search count`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_missing_usage_search",
+                      "text":"Still useful",
+                      "productRefs":[],
+                      "webSearchCalls":1
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_missing_usage_search",
+                        text = "Still useful",
+                        productRefs = emptyList(),
+                        webSearchCalls = 1,
                         usage = null,
                     ),
                 ),

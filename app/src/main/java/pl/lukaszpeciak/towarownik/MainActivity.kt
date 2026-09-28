@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -64,11 +65,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import java.time.Instant
@@ -88,6 +93,7 @@ import pl.lukaszpeciak.towarownik.conversation.ConversationSummary
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
@@ -422,9 +428,12 @@ private fun TowarownikApp() {
                 input = submitted,
                 previousResponseId = turn.previousResponseId,
                 conversationStoreNumber = turn.storeNumber,
-                onOpenAiResponse = { usage ->
+                onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
-                        aiUsageRepository.recordOpenAiResponse(usage)
+                        aiUsageRepository.recordOpenAiResponse(
+                            usage = usage,
+                            webSearchCalls = webSearchCalls,
+                        )
                     }
                 },
                 onToolRequestObserved = {
@@ -459,14 +468,16 @@ private fun TowarownikApp() {
 
             when (finalState) {
                 is AdvisorUiState.Success -> {
-                    val displayText = normalizeAdvisorDisplayText(
-                        finalState.text,
+                    val display = normalizeAdvisorDisplay(
+                        raw = finalState.text,
+                        sources = finalState.sources,
                     )
                     conversationRepository.completeAssistantTurn(
                         conversationId = turn.conversationId,
-                        text = displayText,
+                        text = display.text,
                         finalResponseId = finalState.responseId,
                         products = finalState.products,
+                        sources = display.sources,
                     )
                     if (
                         advisorRequestGuard.isCurrent(
@@ -477,7 +488,7 @@ private fun TowarownikApp() {
                     ) {
                         conversationRepository.load(turn.conversationId)
                             ?.let(::applyConversation)
-                        advisorState = finalState.copy(text = displayText)
+                        advisorState = finalState.copy(text = display.text)
                     }
                 }
 
@@ -1497,14 +1508,18 @@ private fun AdvisorMessageBubble(
                 null
             },
         ) {
-            Text(
-                text = message.text,
-                modifier = Modifier.padding(
-                    horizontal = 14.dp,
-                    vertical = 10.dp,
-                ),
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            if (isUser) {
+                Text(
+                    text = message.text,
+                    modifier = Modifier.padding(
+                        horizontal = 14.dp,
+                        vertical = 10.dp,
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            } else {
+                AdvisorAnswerText(message)
+            }
         }
         Text(
             text = formatLocalTime(message.createdAt),
@@ -1519,6 +1534,11 @@ private fun AdvisorMessageBubble(
             message.products.forEach { product ->
                 Spacer(modifier = Modifier.height(8.dp))
                 VerifiedProductCard(product)
+            }
+
+            if (message.sources.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                AdvisorWebSources(message.sources)
             }
 
             message.persistedMessageId?.let { messageId ->
@@ -1548,6 +1568,139 @@ private fun AdvisorMessageBubble(
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdvisorAnswerText(
+    message: AdvisorChatMessage,
+) {
+    val mappedSources = message.sources.mapIndexedNotNull {
+            index,
+            source,
+        ->
+        val end = source.endIndex
+        if (
+            source.startIndex != null &&
+            end != null &&
+            end in 1..message.text.length
+        ) {
+            Triple(end, index + 1, source)
+        } else {
+            null
+        }
+    }.sortedWith(
+        compareBy<Triple<Int, Int, PersistedWebSource>> {
+            it.first
+        }.thenBy {
+            it.second
+        },
+    )
+
+    if (mappedSources.isEmpty()) {
+        Text(
+            text = message.text,
+            modifier = Modifier.padding(
+                horizontal = 14.dp,
+                vertical = 10.dp,
+            ),
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        return
+    }
+
+    val linkColor = MaterialTheme.colorScheme.primary
+    val annotated = buildAnnotatedString {
+        var cursor = 0
+        mappedSources
+            .groupBy { it.first }
+            .toSortedMap()
+            .forEach { (end, entries) ->
+                if (end > cursor) {
+                    append(message.text.substring(cursor, end))
+                    cursor = end
+                }
+                entries.forEach { (_, number, source) ->
+                    pushStringAnnotation(
+                        tag = "source_url",
+                        annotation = source.url,
+                    )
+                    pushStyle(
+                        SpanStyle(
+                            color = linkColor,
+                            textDecoration = TextDecoration.Underline,
+                        ),
+                    )
+                    append(" [$number]")
+                    pop()
+                    pop()
+                }
+            }
+        if (cursor < message.text.length) {
+            append(message.text.substring(cursor))
+        }
+    }
+
+    val uriHandler = LocalUriHandler.current
+    ClickableText(
+        text = annotated,
+        modifier = Modifier.padding(
+            horizontal = 14.dp,
+            vertical = 10.dp,
+        ),
+        style = MaterialTheme.typography.bodyLarge,
+        onClick = { offset ->
+            annotated
+                .getStringAnnotations(
+                    tag = "source_url",
+                    start = offset,
+                    end = offset,
+                )
+                .firstOrNull()
+                ?.item
+                ?.let { url ->
+                    runCatching {
+                        uriHandler.openUri(url)
+                    }
+                }
+        },
+    )
+}
+
+@Composable
+private fun AdvisorWebSources(
+    sources: List<PersistedWebSource>,
+) {
+    val uriHandler = LocalUriHandler.current
+    Column(
+        modifier = Modifier.widthIn(max = 600.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.advisor_sources),
+            modifier = Modifier.padding(horizontal = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        sources.forEachIndexed { index, source ->
+            TextButton(
+                onClick = {
+                    runCatching {
+                        uriHandler.openUri(source.url)
+                    }
+                },
+                contentPadding = PaddingValues(
+                    horizontal = 6.dp,
+                    vertical = 1.dp,
+                ),
+            ) {
+                Text(
+                    text = (index + 1).toString() + ". " + source.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
     }
