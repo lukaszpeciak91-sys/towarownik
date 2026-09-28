@@ -570,6 +570,28 @@ private fun TowarownikApp() {
         }
     }
 
+    fun showMoreManualResults() {
+        val current = manualState as?
+            ManualSearchUiState.SearchResults ?: return
+        val storeNumber = selectedStoreNumber
+        manualRequestGuard.invalidate()
+        val generation = manualRequestGuard.token()
+        manualJob?.cancel()
+        manualJob = scope.launch {
+            manualSearchController.showMore(
+                current = current,
+                storeNumber = storeNumber,
+            ) { state ->
+                if (
+                    manualRequestGuard.isTokenCurrent(generation) &&
+                    selectedStoreNumber == storeNumber
+                ) {
+                    manualState = state
+                }
+            }
+        }
+    }
+
     fun openManualSearch() {
         surfaceName = AppSurface.MANUAL_SEARCH.name
     }
@@ -712,12 +734,8 @@ private fun TowarownikApp() {
                     }
                 },
                 onSelectResult = ::selectManualResult,
-                onShowMore = {
-                    val current = manualState
-                    if (current is ManualSearchUiState.SearchResults) {
-                        manualState = current.showMore()
-                    }
-                },
+                onShowMore = ::showMoreManualResults,
+                storeNumber = selectedStoreNumber,
                 onBack = {
                     navigateBackFrom(AppSurface.MANUAL_SEARCH)
                 },
@@ -1809,6 +1827,7 @@ private fun ManualObiSearchScreen(
     onClear: () -> Unit,
     onSelectResult: (ManualSearchResultItem) -> Unit,
     onShowMore: () -> Unit,
+    storeNumber: String,
     onBack: () -> Unit,
 ) {
     val isLoading = state is ManualSearchUiState.Loading
@@ -1837,6 +1856,15 @@ private fun ManualObiSearchScreen(
                     ),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                Text(
+                    text = stringResource(
+                        R.string.manual_search_store,
+                        storeNumber,
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+
                 OutlinedTextField(
                     value = query,
                     onValueChange = onQueryChange,
@@ -2030,27 +2058,22 @@ private fun ManualSearchResults(
         )
 
         state.visibleItems.forEach { item ->
-            OutlinedButton(
-                onClick = { onSelectResult(item) },
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
+                color = warmColors.surfaceRaised,
+                contentColor = MaterialTheme.colorScheme.onSurface,
                 border = BorderStroke(
                     1.dp,
                     MaterialTheme.colorScheme.outline,
                 ),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = warmColors.surfaceRaised,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                contentPadding = PaddingValues(
-                    horizontal = 14.dp,
-                    vertical = 12.dp,
-                ),
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.Start,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(
+                        horizontal = 14.dp,
+                        vertical = 12.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     item.name?.let { name ->
                         Text(
@@ -2059,10 +2082,84 @@ private fun ManualSearchResults(
                         )
                     }
                     Text(
-                        text = stringResource(R.string.product_obik, item.obik),
+                        text = stringResource(
+                            R.string.product_obik,
+                            item.obik,
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color =
+                            MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Text(
+                        text = stringResource(
+                            R.string.product_store,
+                            item.storeNumber,
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+
+                    when (val enrichment = item.enrichment) {
+                        ManualResultEnrichment.Pending,
+                        ManualResultEnrichment.Loading -> {
+                            Row(
+                                horizontalArrangement =
+                                    Arrangement.spacedBy(8.dp),
+                                verticalAlignment =
+                                    Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.manual_search_enriching,
+                                    ),
+                                    style =
+                                        MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+
+                        ManualResultEnrichment.Unavailable -> {
+                            Text(
+                                text = stringResource(
+                                    R.string.manual_search_enrichment_failed,
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color =
+                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            OutlinedButton(
+                                onClick = { onSelectResult(item) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    stringResource(
+                                        R.string.manual_search_retry_exact,
+                                    ),
+                                )
+                            }
+                        }
+
+                        is ManualResultEnrichment.Verified -> {
+                            val product = enrichment.product
+                            Text(
+                                text = formatStoreStock(product.stock),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Text(
+                                text = formatStorePrice(
+                                    product.grossPrice,
+                                ),
+                                style =
+                                    MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            ManualVerifiedProductLink(product)
+                        }
+                    }
                 }
             }
         }
@@ -2083,6 +2180,36 @@ private fun ManualSearchResults(
                 Text(stringResource(R.string.show_more))
             }
         }
+    }
+}
+
+@Composable
+private fun ManualVerifiedProductLink(
+    product: VerifiedProductUiModel,
+) {
+    val context = LocalContext.current
+    OutlinedButton(
+        onClick = {
+            runCatching {
+                context.startActivity(
+                    android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse(
+                            verifiedProductOpenUrl(product),
+                        ),
+                    ),
+                )
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Text(stringResource(R.string.open_in_obi))
+        Spacer(modifier = Modifier.width(6.dp))
+        Icon(
+            painter = painterResource(R.drawable.ic_open_in_new_24),
+            contentDescription = null,
+        )
     }
 }
 
