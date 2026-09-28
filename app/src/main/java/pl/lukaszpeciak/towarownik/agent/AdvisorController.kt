@@ -111,6 +111,7 @@ internal class AdvisorController(
         }
 
         var toolCalls = 0
+        var localToolLimitContinuationSent = false
         var toolAssistedObserved = false
         val verifiedByKey =
             linkedMapOf<VerifiedProductKey, VerifiedProductSnapshot>()
@@ -139,9 +140,42 @@ internal class AdvisorController(
                         observeToolSafely(onToolRequestObserved)
                     }
                     if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
-                        return AdvisorUiState.Error(
-                            AdvisorError.TOO_MANY_TOOLS,
-                        ).also(onState)
+                        if (localToolLimitContinuationSent) {
+                            return AdvisorUiState.Error(
+                                AdvisorError.PROTOCOL,
+                            ).also(onState)
+                        }
+                        localToolLimitContinuationSent = true
+                        onState(AdvisorUiState.WaitingForFinalAnswer)
+                        proxyResult = when (
+                            val continued = safeProxyCall {
+                                continueAgent(
+                                    toolRequest.responseId,
+                                    toolRequest.callId,
+                                    conversationStoreNumber,
+                                    AdvisorToolContinuation.LocalToolLimitReached(
+                                        query = toolRequest.arguments.query,
+                                        storeNumber =
+                                            toolRequest.arguments.storeNumber,
+                                    ),
+                                )
+                            }
+                        ) {
+                            is AdvisorProxyCallResult.Success -> {
+                                observeUsageSafely(
+                                    usage =
+                                        continued.result.usageOrNull(),
+                                    webSearchCalls =
+                                        continued.result.webSearchCalls(),
+                                    callback = onOpenAiResponse,
+                                )
+                                continued.result
+                            }
+
+                            is AdvisorProxyCallResult.Failure ->
+                                return continued.toUiError().also(onState)
+                        }
+                        continue
                     }
                     toolCalls += 1
 
