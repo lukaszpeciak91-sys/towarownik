@@ -111,11 +111,11 @@ Android test version: **0.1.10 (11)**.
 
 - current Responses `web_search` is available selectively alongside `find_obi_products`, with `tool_choice=auto` and `max_tool_calls=1` for built-ins;
 - OBI remains authoritative for current stock/price/store availability and only Android-verified current-turn snapshots may enter productRefs/cards;
-- final answers preserve at most six normalized HTTPS sources from actual OpenAI url_citation annotations; raw web output/query metadata never reaches Android;
-- Room schema v4 persists message sources with cascade so reopened web-derived answers retain clickable citations offline;
+- final answers preserve at most six normalized HTTPS sources from actual OpenAI url_citation annotations; real annotation offsets are mapped only when exact, safely mapped citations render as clickable inline markers, and unmappable sources remain in the compact fallback source list;
+- Room schema v4 persists message source URL/title plus nullable validated answer spans with cascade so reopened web-derived answers retain inline/fallback citations offline;
 - searched pages are explicitly untrusted reference data and cannot alter role/tool/trust/privacy rules;
-- AI Usage now counts completed web searches and current pricing adds USD 0.01 per search action on top of model token cost;
-- web availability alone does not count as a call and existing unpriced/known-minimum budget semantics remain unchanged;
+- AI Usage counts completed web searches independently from optional token usage; current pricing adds USD 0.01 per search action when cost is priceable;
+- web availability alone does not count as a call, while missing/malformed usage still preserves the actual search count and keeps existing unpriced/known-minimum budget semantics;
 - no deep research/background/streaming/file search/image search/RAG/MCP/general autonomous agent behavior is added.
 
 ## Next implementation milestone
