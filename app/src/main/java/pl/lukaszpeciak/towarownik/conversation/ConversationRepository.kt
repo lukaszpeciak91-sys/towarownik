@@ -312,6 +312,8 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                             persistedWebSourceOrNull(
                                 title = source.title,
                                 url = source.url,
+                                startIndex = source.startIndex,
+                                endIndex = source.endIndex,
                             )
                         },
                 )
