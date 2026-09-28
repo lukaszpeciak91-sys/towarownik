@@ -37,6 +37,7 @@ export const MAX_WEB_CITATION_URL_CHARS = 2048;
 
 export const LOCAL_TOOL_NAME = "find_obi_products";
 export const MAX_TOOL_PRODUCTS = 5;
+export const MAX_TOOL_QUERIES = 5;
 export const MAX_TOOL_QUERY_CHARS = 200;
 export const MAX_PRODUCT_NAME_CHARS = 200;
 export const MAX_PRODUCT_BRAND_CHARS = 80;
@@ -77,12 +78,17 @@ export const AGENT_INSTRUCTIONS =
   "checked or verified when web_search actually supplied it. " +
   "Use find_obi_products whenever the current question depends on current stock, current price, current OBI " +
   "store availability, finding products currently available, or verified facts about a specific OBI product " +
-  "that are needed for a reliable answer. You have at most 2 find_obi_products calls per USER turn. Plan and " +
-  "prioritize those calls carefully, grouping related product needs into concise searches when practical. After " +
-  "two calls, do not request another OBI lookup; answer using products already verified in this USER turn plus " +
-  "relevant general guidance. If a tool result reports local_tool_limit_reached, produce the final answer without " +
-  "requesting find_obi_products again and briefly note any category that could not be verified within the local " +
-  "lookup budget when that matters to the answer. Current stock and price must be freshly verified when relevant; " +
+  "that are needed for a reliable answer. You have at most 2 find_obi_products calls per USER turn. Each call has " +
+  "one storeNumber and a bounded queries list: at most 5 query entries and at most 5 requested products in total " +
+  "across all query limits. For requests asking what a customer needs or what can be sold for a task, first reason " +
+  "about the small practical set of necessary product categories, prioritize the essential ones, and group those " +
+  "categories into ONE find_obi_products call whenever they fit this bounded contract. Do not spend one local call " +
+  "per category when the categories can be batched. Use the second local call only when genuinely needed for " +
+  "refinement, an important missing category, or follow-up verification. After two calls, do not request another " +
+  "OBI lookup; answer using products already verified in this USER turn plus relevant general guidance. If a tool " +
+  "result reports local_tool_limit_reached, produce the final answer without requesting find_obi_products again " +
+  "and briefly note any category that could not be verified within the local lookup budget when that matters to " +
+  "the answer. Current stock and price must be freshly verified when relevant; "
   "historical conversation values are not current authority. The current conversation OBI store is the default " +
   "store for this USER turn. A different store may be queried only when the USER literally supplied that exact " +
   "3-digit store number in the CURRENT USER message. Never infer a store number from a city, region, store name, " +
@@ -131,29 +137,47 @@ export const OBI_TOOL = {
   type: "function",
   name: LOCAL_TOOL_NAME,
   description:
-    "Ask the Android app to find verified OBI products for one explicit 3-digit store number.",
+    "Ask the Android app to find grouped verified OBI products for one explicit 3-digit store number. Batch related customer-kit categories into one call when possible.",
   strict: true,
   parameters: {
     type: "object",
     properties: {
-      query: {
-        type: "string",
-        description: "Concise product search phrase for the Android app.",
-      },
       storeNumber: {
         type: "string",
         pattern: "^[0-9]{3}$",
         description:
-          "One explicit OBI store number. Use the current conversation store by default.",
+          "One explicit OBI store number shared by every query in this call. Use the current conversation store by default.",
       },
-      limit: {
-        type: "integer",
-        minimum: 1,
-        maximum: MAX_TOOL_PRODUCTS,
-        description: "Maximum number of verified products to return.",
+      queries: {
+        type: "array",
+        minItems: 1,
+        maxItems: MAX_TOOL_QUERIES,
+        description:
+          "One to five product-category searches. The sum of all limits must be at most 5.",
+        items: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              minLength: 1,
+              maxLength: MAX_TOOL_QUERY_CHARS,
+              description:
+                "Concise product search phrase for one requested category.",
+            },
+            limit: {
+              type: "integer",
+              minimum: 1,
+              maximum: MAX_TOOL_PRODUCTS,
+              description:
+                "Maximum verified products for this category. All query limits together must sum to at most 5.",
+            },
+          },
+          required: ["query", "limit"],
+          additionalProperties: false,
+        },
       },
     },
-    required: ["query", "storeNumber", "limit"],
+    required: ["storeNumber", "queries"],
     additionalProperties: false,
   },
 } as const;
