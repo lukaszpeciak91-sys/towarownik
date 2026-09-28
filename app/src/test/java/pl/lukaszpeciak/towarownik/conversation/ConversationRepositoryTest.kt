@@ -164,6 +164,8 @@ class ConversationRepositoryTest {
             PersistedWebSource(
                 title = "Manufacturer manual",
                 url = "https://manufacturer.example/manual",
+                startIndex = 0,
+                endIndex = 8,
             ),
             PersistedWebSource(
                 title = "Technical sheet",
