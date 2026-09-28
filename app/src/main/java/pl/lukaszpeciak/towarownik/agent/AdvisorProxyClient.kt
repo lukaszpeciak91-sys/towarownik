@@ -258,9 +258,12 @@ internal class AdvisorProxyClient(
                         "responseId",
                         "text",
                         "productRefs",
+                    ),
+                    optional = setOf(
+                        "usage",
+                        "sources",
                         "webSearchCalls",
                     ),
-                    optional = setOf("usage", "sources"),
                 )
                 val text = root["text"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf {
@@ -316,9 +319,8 @@ internal class AdvisorProxyClient(
                         "type",
                         "responseId",
                         "tool",
-                        "webSearchCalls",
                     ),
-                    optional = setOf("usage"),
+                    optional = setOf("usage", "webSearchCalls"),
                 )
                 val tool = root["tool"] as? JsonObject
                     ?: error("Missing tool")
@@ -678,12 +680,12 @@ internal class AdvisorProxyClient(
             ?: error("Invalid citation index")
     }
 
-    private fun JsonObject.requireWebSearchCallCount(): Long =
-        get("webSearchCalls")
-            ?.jsonPrimitive
-            ?.longOrNull
+    private fun JsonObject.requireWebSearchCallCount(): Long {
+        val value = get("webSearchCalls") ?: return 0
+        return value.jsonPrimitive.longOrNull
             ?.takeIf { it in 0..MAX_WEB_SEARCH_CALLS }
             ?: error("Invalid web search call count")
+    }
 
     private fun requireEnvelopeKeys(
         objectValue: JsonObject,
