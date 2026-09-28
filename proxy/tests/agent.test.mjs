@@ -317,9 +317,16 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
     MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
   );
   assert.equal(capture.body.tools[0].strict, true);
-  assert.deepEqual(capture.body.tools[0].parameters.required, ["query", "storeNumber", "limit"]);
+  assert.deepEqual(
+    capture.body.tools[0].parameters.required,
+    ["storeNumber", "queries"],
+  );
   assert.equal(capture.body.tools[0].parameters.additionalProperties, false);
-  assert.equal(capture.body.tools[0].parameters.properties.limit.maximum, 5);
+  assert.equal(capture.body.tools[0].parameters.properties.queries.maxItems, 5);
+  assert.equal(
+    capture.body.tools[0].parameters.properties.queries.items.properties.limit.maximum,
+    5,
+  );
 });
 
 test("web_search is available selectively with automatic tool choice and one built-in call", async () => {
