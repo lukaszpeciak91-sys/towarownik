@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
+import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 
 class ChatShellModelsTest {
     @Test
@@ -86,6 +87,29 @@ class ChatShellModelsTest {
             "https://www.obi.pl/p/1234567/trusted-exact",
             verifiedProductOpenUrl(restored.messages.single().products.single()),
         )
+    }
+
+    @Test
+    fun `web sources survive save and restore with https URL unchanged`() {
+        val source = PersistedWebSource(
+            title = "Manufacturer manual",
+            url = "https://manufacturer.example/manual",
+        )
+        val completed = AdvisorCaseUiState(
+            messages = listOf(
+                AdvisorChatMessage(
+                    role = ChatMessageRole.ASSISTANT,
+                    text = "Cited answer.",
+                    createdAt = 200L,
+                    sources = listOf(source),
+                    persistedMessageId = 88L,
+                ),
+            ),
+        )
+
+        val restored = restoreAdvisorCase(saveAdvisorCase(completed))
+
+        assertEquals(listOf(source), restored.messages.single().sources)
     }
 
     @Test
