@@ -232,7 +232,7 @@ export function normalizeOpenAIResponse(
     responseId,
     text: answer.text,
     productRefs: answer.productRefs,
-    sources,
+    ...(sources.length ? { sources } : {}),
     ...(usage ? { usage } : {}),
   };
 }
