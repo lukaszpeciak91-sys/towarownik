@@ -11,10 +11,6 @@ on:
         description: Comma-separated three-digit OBI store numbers
         required: true
         default: "075,074,078"
-  push:
-    branches:
-      - research/obi-pl-cross-market-availability
-
 permissions:
   contents: read
 
