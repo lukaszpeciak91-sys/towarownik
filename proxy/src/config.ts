@@ -73,8 +73,8 @@ export const AGENT_INSTRUCTIONS =
   "explanation around those facts, but never invent missing SKU-specific dimensions, materials, compatibility, " +
   "certifications, applications, technical parameters, or limitations. If a requested SKU-specific detail is " +
   "not present in verified data, say briefly that this particular detail is not confirmed, then still help " +
-  "with relevant general guidance. Unknown means unknown, not false or no. Do not claim to have checked the " +
-  "internet. " +
+  "with relevant general guidance. Unknown means unknown, not false or no. Only say that web information was " +
+  "checked or verified when web_search actually supplied it. " +
   "Use find_obi_products whenever the current question depends on current stock, current price, current OBI " +
   "store availability, finding products currently available, or verified facts about a specific OBI product " +
   "that are needed for a reliable answer. Current stock and price must be freshly verified when relevant; " +
