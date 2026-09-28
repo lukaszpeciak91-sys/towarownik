@@ -846,7 +846,7 @@ class AdvisorProxyClientTest {
     }
 
     @Test
-    fun `worst case three byte rich continuation is trimmed below proxy byte limit without changing authoritative facts`() = runBlocking {
+    fun `worst case grouped three byte continuation trims optional facts but keeps every product identity`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(answerResponse())
             val threeByte = "漢"
@@ -866,6 +866,13 @@ class AdvisorProxyClientTest {
                     },
                 )
             }
+            val grouped = products.mapIndexed { index, product ->
+                AdvisorVerifiedQueryResult(
+                    query = threeByte.repeat(200),
+                    status = AdvisorQueryResultStatus.VERIFIED,
+                    products = listOf(product),
+                )
+            }
 
             val result = client(server, FAKE_TOKEN).continueTurn(
                 responseId = threeByte.repeat(256),
@@ -873,9 +880,8 @@ class AdvisorProxyClientTest {
                 storeNumber = "075",
                 continuation = AdvisorToolContinuation.Verified(
                     AdvisorVerifiedToolResult(
-                        query = threeByte.repeat(200),
                         storeNumber = "075",
-                        products = products,
+                        results = grouped,
                     ),
                 ),
             )
@@ -891,10 +897,20 @@ class AdvisorProxyClientTest {
             val groups =
                 resultBody["results"] as
                     kotlinx.serialization.json.JsonArray
-            val group = groups.single() as JsonObject
-            val serializedProducts =
-                group["products"] as
-                    kotlinx.serialization.json.JsonArray
+            assertEquals(5, groups.size)
+            val serializedProducts = groups.flatMap { element ->
+                val group = element as JsonObject
+                assertEquals(
+                    "verified",
+                    group["status"]?.jsonPrimitive?.content,
+                )
+                assertEquals(
+                    threeByte.repeat(200),
+                    group["query"]?.jsonPrimitive?.content,
+                )
+                (group["products"] as
+                    kotlinx.serialization.json.JsonArray).toList()
+            }
 
             assertEquals(5, serializedProducts.size)
             serializedProducts.forEachIndexed { index, element ->
