@@ -279,6 +279,7 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
     responseId: "resp_test_answer",
     text: "Use a verified local lookup.",
     productRefs: [],
+    webSearchCalls: 0,
   });
   assert.equal(fake.captures.length, 1);
 
@@ -1476,6 +1477,7 @@ test("valid continue sends previous_response_id and function_call_output", async
     responseId: "resp_test_answer",
     text: "Final synthetic answer",
     productRefs: [],
+    webSearchCalls: 0,
   });
 
   const capture = fake.captures[0];
@@ -1518,6 +1520,7 @@ test("tool assisted structured answer exposes selected product refs only", async
       { storeNumber: "075", obik: "1234567" },
       { storeNumber: "075", obik: "7654321" },
     ],
+    webSearchCalls: 0,
   });
 });
 
