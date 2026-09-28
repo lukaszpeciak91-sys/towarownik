@@ -85,6 +85,11 @@ internal sealed interface AdvisorToolContinuation {
         val query: String,
         val storeNumber: String,
     ) : AdvisorToolContinuation
+
+    data class LocalToolLimitReached(
+        val query: String,
+        val storeNumber: String,
+    ) : AdvisorToolContinuation
 }
 
 internal sealed interface AdvisorProxyResult {
