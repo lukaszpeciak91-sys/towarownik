@@ -29,12 +29,18 @@ internal data class PersistedConversation(
     val messages: List<PersistedMessage>,
 )
 
+internal data class PersistedWebSource(
+    val title: String,
+    val url: String,
+)
+
 internal data class PersistedMessage(
     val id: Long,
     val role: String,
     val text: String,
     val createdAt: Long,
     val products: List<VerifiedProductSnapshot>,
+    val sources: List<PersistedWebSource> = emptyList(),
 )
 
 internal data class UserTurnStart(
@@ -156,6 +162,7 @@ internal class ConversationRepository(
         finalResponseId: String,
         createdAt: Long = now(),
         products: List<VerifiedProductSnapshot> = emptyList(),
+        sources: List<PersistedWebSource> = emptyList(),
     ) {
         dao.completeAssistantTurn(
             conversationId = conversationId,
@@ -163,6 +170,7 @@ internal class ConversationRepository(
             createdAt = createdAt,
             lastResponseId = finalResponseId,
             products = products,
+            sources = sources,
         )
     }
 
@@ -253,6 +261,14 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 productUrl = product.productUrl,
                                 verifiedAt = product.verifiedAt,
                                 storeNumber = product.storeNumber,
+                            )
+                        },
+                    sources = item.sources
+                        .sortedBy { it.position }
+                        .map { source ->
+                            PersistedWebSource(
+                                title = source.title,
+                                url = source.url,
                             )
                         },
                 )
