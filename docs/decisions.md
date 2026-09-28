@@ -301,6 +301,19 @@ These decisions describe the broader intended product behavior. The currently im
 - Do not enable `web_search` or any OpenAI built-in tool here. Next milestone: selective OpenAI `web_search`.
 
 
+## Retail-advisor mindset + task-oriented OBI tool use v0.2
+
+- Keep the existing multi-query `find_obi_products(storeNumber, queries[])` contract and Android hard guard `MAX_LOCAL_TOOL_CALLS_PER_TURN = 2`; the guard remains infrastructure safety, not the model's retail-planning budget.
+- Remove explicit "you have at most 2 calls" / "use the second call" reasoning from normal advisor instructions. The model should use verified OBI lookup whenever current assortment, stock, price, store availability, or concrete selection is useful, batch related categories aggressively, prefer one well-planned batch, and avoid skipping necessary verification merely to conserve a call.
+- For job/goal and explicit complete-kit intent, identify a small practical category set, separate essentials from optional convenience items, proactively verify the important categories, and explain briefly what selected items are for. Do not require one user confirmation per category and do not generate exhaustive shopping lists.
+- For a single product/category request, answer/select that item first. Useful complements may be offered briefly, but do not search them until the user asks unless the original request already asks for a complete kit. Accepted complements should be batched.
+- Direct current price/stock questions stay direct and do not trigger routine cross-sell.
+- Preserve distinct evidence semantics: stock `0` = confirmed unavailable in that verified store; null stock = unknown; `not_found` = no verified match; `unavailable` = retrieval could not establish the fact. Never collapse unknown/failure into "brak".
+- When a requested verified item has stock zero or an exact requested item is not found, Taksula may verify a reasonable substitute in the current store and may offer another-market checking. Do not invent another store number or availability; another market remains authorized only after the user supplies its exact supported three-digit number in the current turn.
+- Keep `local_tool_limit_reached` graceful if the Android hard guard is reached. Preserve grouped results, partial group failures, continuation byte budget, web search, current-turn `productRefs` trust, and composite `(storeNumber, obik)` identity.
+- Do not add cross-market scanning, distance logic, a new availability tool, parser/manual-search/Room changes, RAG, or other retailer integrations in this iteration.
+
+
 ## Selective web search for Taksula v0.1
 
 - Enable only the current Responses built-in `web_search`, never `web_search_preview`. Use automatic tool choice and one built-in call per Responses request; do not force browsing on ordinary technical questions.
