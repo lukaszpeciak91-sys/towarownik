@@ -144,6 +144,23 @@ internal class AdvisorProxyClient(
                         )
                     },
                 ).takeIf(::fitsContinueByteBudget)
+            is AdvisorToolContinuation.LocalToolLimitReached ->
+                buildContinueBody(
+                    responseId = responseId,
+                    callId = callId,
+                    storeNumber = storeNumber,
+                    result = buildJsonObject {
+                        put("query", continuation.query)
+                        put(
+                            "storeNumber",
+                            continuation.storeNumber,
+                        )
+                        put(
+                            "rejection",
+                            "local_tool_limit_reached",
+                        )
+                    },
+                ).takeIf(::fitsContinueByteBudget)
         } ?: return AdvisorProxyCallResult.Failure(
             AdvisorProxyFailureKind.PROTOCOL,
         )
