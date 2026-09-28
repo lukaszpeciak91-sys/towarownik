@@ -14,14 +14,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -1136,6 +1141,12 @@ private fun ConversationDrawer(
 }
 
 @Composable
+private fun Modifier.bottomComposerSafeArea(): Modifier =
+    imePadding().windowInsetsPadding(
+        WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom),
+    )
+
+@Composable
 private fun AdvisorChatScreen(
     advisorCase: AdvisorCaseUiState,
     state: AdvisorUiState,
@@ -1154,6 +1165,7 @@ private fun AdvisorChatScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             AdvisorTopBar(
                 onOpenDrawer = onOpenDrawer,
@@ -1177,50 +1189,71 @@ private fun AdvisorChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentAlignment = Alignment.TopCenter,
+            contentAlignment = Alignment.Center,
         ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .widthIn(max = 720.dp),
-                contentPadding = PaddingValues(
-                    horizontal = 16.dp,
-                    vertical = 20.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+            if (
+                advisorCase.messages.isEmpty() &&
+                state is AdvisorUiState.Idle
             ) {
-                if (advisorCase.messages.isEmpty() && state is AdvisorUiState.Idle) {
-                    item {
-                        EmptyAdvisorState()
-                    }
-                }
-
-                items(advisorCase.messages) { message ->
-                    AdvisorMessageBubble(
-                        message = message,
-                        onReportAssistantMessage =
-                            onReportAssistantMessage,
-                    )
-                }
-
-                when (state) {
-                    AdvisorUiState.Idle,
-                    is AdvisorUiState.Success -> Unit
-
-                    AdvisorUiState.LoadingProxy -> item {
-                        AdvisorProgressBubble(stringResource(R.string.advisor_progress_connecting))
-                    }
-
-                    AdvisorUiState.RunningLocalTool -> item {
-                        AdvisorProgressBubble(stringResource(R.string.advisor_progress_checking_obi))
-                    }
-
-                    AdvisorUiState.WaitingForFinalAnswer -> item {
-                        AdvisorProgressBubble(stringResource(R.string.advisor_progress_preparing))
+                EmptyAdvisorState(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 720.dp)
+                        .padding(horizontal = 16.dp),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 720.dp),
+                    contentPadding = PaddingValues(
+                        horizontal = 16.dp,
+                        vertical = 20.dp,
+                    ),
+                    verticalArrangement =
+                        Arrangement.spacedBy(12.dp),
+                ) {
+                    items(advisorCase.messages) { message ->
+                        AdvisorMessageBubble(
+                            message = message,
+                            onReportAssistantMessage =
+                                onReportAssistantMessage,
+                        )
                     }
 
-                    is AdvisorUiState.Error -> item {
-                        AdvisorErrorBubble(advisorErrorText(state.error))
+                    when (state) {
+                        AdvisorUiState.Idle,
+                        is AdvisorUiState.Success -> Unit
+
+                        AdvisorUiState.LoadingProxy -> item {
+                            AdvisorProgressBubble(
+                                stringResource(
+                                    R.string.advisor_progress_connecting,
+                                ),
+                            )
+                        }
+
+                        AdvisorUiState.RunningLocalTool -> item {
+                            AdvisorProgressBubble(
+                                stringResource(
+                                    R.string.advisor_progress_checking_obi,
+                                ),
+                            )
+                        }
+
+                        AdvisorUiState.WaitingForFinalAnswer -> item {
+                            AdvisorProgressBubble(
+                                stringResource(
+                                    R.string.advisor_progress_preparing,
+                                ),
+                            )
+                        }
+
+                        is AdvisorUiState.Error -> item {
+                            AdvisorErrorBubble(
+                                advisorErrorText(state.error),
+                            )
+                        }
                     }
                 }
             }
@@ -1238,6 +1271,7 @@ private fun AdvisorTopBar(
     onStoreSelected: (String) -> Unit,
 ) {
     Surface(
+        modifier = Modifier.topBarSafeArea(),
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
@@ -1361,6 +1395,7 @@ private fun AdvisorComposer(
     val warmColors = MaterialTheme.towarownikColors
 
     Surface(
+        modifier = Modifier.bottomComposerSafeArea(),
         color = MaterialTheme.colorScheme.surface,
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
@@ -1372,7 +1407,6 @@ private fun AdvisorComposer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 720.dp)
-                    .imePadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Bottom,
@@ -1444,11 +1478,11 @@ private fun AdvisorComposer(
 }
 
 @Composable
-private fun EmptyAdvisorState() {
+private fun EmptyAdvisorState(
+    modifier: Modifier = Modifier,
+) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 72.dp),
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -1907,6 +1941,7 @@ private fun ManualSearchTopBar(
     onBack: () -> Unit,
 ) {
     Surface(
+        modifier = Modifier.topBarSafeArea(),
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {

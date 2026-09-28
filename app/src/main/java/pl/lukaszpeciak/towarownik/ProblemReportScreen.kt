@@ -370,6 +370,7 @@ private fun ProblemReportTopBar(
     enabled: Boolean,
 ) {
     Surface(
+        modifier = Modifier.topBarSafeArea(),
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
