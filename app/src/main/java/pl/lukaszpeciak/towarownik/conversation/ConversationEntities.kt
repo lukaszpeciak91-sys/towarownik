@@ -107,7 +107,7 @@ internal data class MessageWithProducts(
         parentColumn = "id",
         entityColumn = "messageId",
     )
-    val sources: List<MessageSourceEntity>,
+    val sources: List<MessageSourceEntity> = emptyList(),
 )
 
 internal data class ConversationWithMessages(
