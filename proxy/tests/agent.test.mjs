@@ -2143,6 +2143,10 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   );
   assert.match(
     instructions,
+    /Think like a useful in-store sales advisor/i,
+  );
+  assert.match(
+    instructions,
     /use normal model knowledge for general technical explanations/i,
   );
   assert.match(
@@ -2163,27 +2167,35 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   );
   assert.match(
     instructions,
+    /Use find_obi_products whenever verified current OBI assortment, stock, price, store availability, or concrete product selection is useful/i,
+  );
+  assert.match(
+    instructions,
+    /Batch related categories aggressively into one well-planned multi-query request/i,
+  );
+  assert.match(
+    instructions,
+    /Use as few local calls as practical, but do not avoid necessary verification merely to save a tool call/i,
+  );
+  assert.match(
+    instructions,
+    /One well-planned multi-query batch is preferred over many narrow calls/i,
+  );
+  assert.doesNotMatch(
+    instructions,
     /at most 2 find_obi_products calls per USER turn/i,
   );
-  assert.match(
+  assert.doesNotMatch(
     instructions,
-    /group those categories into ONE find_obi_products call/i,
+    /Use the second local call/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /After two calls/i,
   );
   assert.match(
     instructions,
-    /Do not spend one local call per category/i,
-  );
-  assert.match(
-    instructions,
-    /Use the second local call only when genuinely needed/i,
-  );
-  assert.match(
-    instructions,
-    /After two calls, do not request another OBI lookup/i,
-  );
-  assert.match(
-    instructions,
-    /local_tool_limit_reached.*produce the final answer/i,
+    /local_tool_limit_reached.*do not request find_obi_products again/i,
   );
   assert.match(
     instructions,
@@ -2210,6 +2222,137 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
     /Reply naturally in the language used by the user in the current conversation/i,
   );
   assert.equal(instructions.includes("web_search"), true);
+});
+
+test('A task kit contract — "Klient chce położyć płytki i nie wie czego potrzebuje."', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /When the USER describes a job or goal rather than one specific SKU/i,
+  );
+  assert.match(
+    instructions,
+    /small practical set of product categories needed to complete that job/i,
+  );
+  assert.match(
+    instructions,
+    /Distinguish essentials from optional convenience items/i,
+  );
+  assert.match(
+    instructions,
+    /batch the important categories into find_obi_products/i,
+  );
+  assert.match(
+    instructions,
+    /return concrete verified products from the active store/i,
+  );
+  assert.match(
+    instructions,
+    /explain briefly what each selected item is for/i,
+  );
+});
+
+test('B complete sales kit contract — "Co mogę sprzedać klientowi do uszczelnienia umywalki?"', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /If the intent is clearly a complete kit, what the customer needs, what can be sold for the job/i,
+  );
+  assert.match(
+    instructions,
+    /build the practical kit proactively without requiring separate confirmation for every category/i,
+  );
+  assert.match(
+    instructions,
+    /do not create an absurd or exhaustive shopping list/i,
+  );
+});
+
+test('C single product contract — "Potrzebuję farby do łazienki."', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /When the USER asks about one product or one product category, answer or select that requested item first/i,
+  );
+  assert.match(
+    instructions,
+    /Do not automatically search complementary categories/i,
+  );
+  assert.match(
+    instructions,
+    /you may briefly offer them without being pushy/i,
+  );
+  assert.match(
+    instructions,
+    /Search those complementary categories only when the USER asks for them/i,
+  );
+});
+
+test('D accepted complements contract — "Tak, dobierz też grunt, wałek i folię."', () => {
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /If the USER accepts complementary items, batch the requested complementary categories together in one find_obi_products request where practical/i,
+  );
+});
+
+test("E zero stock contract suggests current-store alternative without inventing other stores", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /Stock 0 means the product is confirmed unavailable in that verified store/i,
+  );
+  assert.match(
+    instructions,
+    /consider and verify a reasonable substitute in the CURRENT store/i,
+  );
+  assert.match(
+    instructions,
+    /offer to check another OBI market/i,
+  );
+  assert.match(
+    instructions,
+    /do not invent another market number or claim availability there/i,
+  );
+  assert.match(
+    instructions,
+    /query another market only after the USER supplies its exact supported 3-digit market number/i,
+  );
+});
+
+test("F unknown stock contract never converts null availability into zero", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /Null stock means availability is unknown/i,
+  );
+  assert.match(
+    instructions,
+    /must never be described as zero, out of stock, or unavailable/i,
+  );
+  assert.match(
+    instructions,
+    /A not_found query result means no verified matching product was found for that query; it does not mean stock zero/i,
+  );
+  assert.match(
+    instructions,
+    /An unavailable query result means retrieval could not establish the fact/i,
+  );
+});
+
+test('G direct price-stock contract — "Jaki jest stan i cena OBIK X?"', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /For a direct factual question about the current price or stock of a specific OBIK or product/i,
+  );
+  assert.match(
+    instructions,
+    /verify the requested product and answer that question directly without unnecessary cross-sell/i,
+  );
+  assert.match(
+    instructions,
+    /Do not append a generic offer for more products to every answer/i,
+  );
 });
 
 test("final advisor behavior does not change model reasoning tools or structured output", async () => {
