@@ -49,16 +49,28 @@ internal sealed interface ManualSearchUiState {
         val visibleItems: List<ManualSearchResultItem>
             get() = items.take(visibleCount)
 
+        val hasVisibleEnrichmentInFlight: Boolean
+            get() = visibleItems.any {
+                it.enrichment is ManualResultEnrichment.Pending ||
+                    it.enrichment is ManualResultEnrichment.Loading
+            }
+
         val canShowMore: Boolean
-            get() = visibleCount < items.size
+            get() =
+                visibleCount < items.size &&
+                    !hasVisibleEnrichmentInFlight
 
         fun showMore(): SearchResults =
-            copy(
-                visibleCount = minOf(
-                    visibleCount + MANUAL_RESULTS_PAGE_SIZE,
-                    items.size,
-                ),
-            )
+            if (!canShowMore) {
+                this
+            } else {
+                copy(
+                    visibleCount = minOf(
+                        visibleCount + MANUAL_RESULTS_PAGE_SIZE,
+                        items.size,
+                    ),
+                )
+            }
     }
 
     data class Product(
@@ -128,6 +140,10 @@ internal class ManualSearchController(
         storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
         onState: (ManualSearchUiState) -> Unit,
     ) {
+        if (!current.canShowMore) {
+            onState(current)
+            return
+        }
         val expanded = current.showMore()
         enrichRange(
             initial = expanded,
@@ -289,6 +305,14 @@ internal class ManualSearchController(
         }
     }
 }
+
+internal fun manualResultDisplayName(
+    item: ManualSearchResultItem,
+): String? =
+    (item.enrichment as? ManualResultEnrichment.Verified)
+        ?.product
+        ?.name
+        ?: item.name
 
 private fun ManualProductSearchResult.Candidates.toManualSearchResults(
     storeNumber: String,
