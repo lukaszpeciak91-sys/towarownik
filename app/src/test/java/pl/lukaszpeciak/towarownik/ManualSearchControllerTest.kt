@@ -38,15 +38,24 @@ class ManualSearchControllerTest {
     }
 
     @Test
-    fun `manual text search exposes candidates in chunks of five`() = runBlocking {
+    fun `first five visible text results are enriched for active store`() = runBlocking {
         val candidates = (1..12).map { index ->
             ProductSearchCandidate(
                 obik = (1_000_000 + index).toString(),
                 name = "Synthetic $index",
             )
         }
+        val lookups = mutableListOf<Pair<String, String>>()
         val controller = ManualSearchController(
-            lookupObik = { _, _ -> error("Text search must remain selectable") },
+            lookupObik = { obik, storeNumber ->
+                lookups += obik to storeNumber
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
             searchProducts = {
                 ManualProductSearchResult.Candidates(
                     items = candidates,
@@ -57,20 +66,205 @@ class ManualSearchControllerTest {
         )
         val states = mutableListOf<ManualSearchUiState>()
 
-        controller.submit("synthetic") { states += it }
+        controller.submit(
+            input = "synthetic",
+            storeNumber = "074",
+        ) { states += it }
 
-        var results = states.last() as ManualSearchUiState.SearchResults
+        val results = states.last() as ManualSearchUiState.SearchResults
         assertEquals(706, results.reportedTotalCount)
         assertEquals(5, results.visibleItems.size)
-        assertTrue(results.canShowMore)
+        assertEquals(
+            candidates.take(5).map { it.obik },
+            lookups.map { it.first },
+        )
+        assertTrue(lookups.all { it.second == "074" })
+        assertTrue(
+            results.visibleItems.all {
+                it.enrichment is ManualResultEnrichment.Verified
+            },
+        )
+        assertTrue(
+            results.items.drop(5).all {
+                it.enrichment is ManualResultEnrichment.Pending
+            },
+        )
+    }
 
-        results = results.showMore()
-        assertEquals(10, results.visibleItems.size)
-        assertTrue(results.canShowMore)
+    @Test
+    fun `show more enriches only newly visible next five`() = runBlocking {
+        val candidates = (1..12).map { index ->
+            ProductSearchCandidate(
+                obik = (1_000_000 + index).toString(),
+                name = "Synthetic $index",
+            )
+        }
+        val lookups = mutableListOf<String>()
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                lookups += obik
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+            searchProducts = {
+                ManualProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = 12,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val initialStates = mutableListOf<ManualSearchUiState>()
+        controller.submit("synthetic", "075") {
+            initialStates += it
+        }
+        val initial =
+            initialStates.last() as ManualSearchUiState.SearchResults
+        assertEquals(5, lookups.size)
 
-        results = results.showMore()
-        assertEquals(12, results.visibleItems.size)
-        assertFalse(results.canShowMore)
+        val moreStates = mutableListOf<ManualSearchUiState>()
+        controller.showMore(initial, "075") {
+            moreStates += it
+        }
+
+        val expanded =
+            moreStates.last() as ManualSearchUiState.SearchResults
+        assertEquals(10, expanded.visibleCount)
+        assertEquals(
+            candidates.take(10).map { it.obik },
+            lookups,
+        )
+        assertTrue(
+            expanded.items.take(10).all {
+                it.enrichment is ManualResultEnrichment.Verified
+            },
+        )
+        assertTrue(
+            expanded.items.drop(10).all {
+                it.enrichment is ManualResultEnrichment.Pending
+            },
+        )
+    }
+
+    @Test
+    fun `one exact enrichment failure does not destroy result list`() = runBlocking {
+        val candidates = (1..5).map { index ->
+            ProductSearchCandidate(
+                obik = (1_000_000 + index).toString(),
+                name = "Synthetic $index",
+            )
+        }
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                if (obik == "1000003") {
+                    ProductLookupResult.Unavailable(
+                        failure = pl.lukaszpeciak.towarownik.product
+                            .ProductLookupFailure.NETWORK,
+                        reason = "synthetic",
+                    )
+                } else {
+                    ProductLookupResult.Found(
+                        product(
+                            obik = obik,
+                            storeNumber = storeNumber,
+                        ),
+                    )
+                }
+            },
+            searchProducts = {
+                ManualProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = 5,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val states = mutableListOf<ManualSearchUiState>()
+
+        controller.submit("synthetic", "075") { states += it }
+
+        val results =
+            states.last() as ManualSearchUiState.SearchResults
+        assertEquals(5, results.items.size)
+        assertTrue(
+            results.items[2].enrichment is
+                ManualResultEnrichment.Unavailable,
+        )
+        assertTrue(
+            results.items.filterIndexed { index, _ -> index != 2 }
+                .all {
+                    it.enrichment is
+                        ManualResultEnrichment.Verified
+                },
+        )
+    }
+
+    @Test
+    fun `verified enrichment preserves zero and unknown store facts and trusted url`() = runBlocking {
+        val candidates = listOf(
+            ProductSearchCandidate("1000001", "Zero"),
+            ProductSearchCandidate("1000002", "Unknown"),
+        )
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                ProductLookupResult.Found(
+                    if (obik == "1000001") {
+                        product(
+                            obik = obik,
+                            stock = 0,
+                            grossPrice = BigDecimal("29.99"),
+                            productUrl =
+                                "https://www.obi.pl/p/$obik/trusted",
+                            storeNumber = storeNumber,
+                        )
+                    } else {
+                        product(
+                            obik = obik,
+                            stock = null,
+                            grossPrice = null,
+                            productUrl =
+                                "https://www.obi.pl/p/$obik/trusted",
+                            storeNumber = storeNumber,
+                        )
+                    },
+                )
+            },
+            searchProducts = {
+                ManualProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = 2,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val states = mutableListOf<ManualSearchUiState>()
+
+        controller.submit("synthetic", "075") { states += it }
+
+        val results =
+            states.last() as ManualSearchUiState.SearchResults
+        val zero = (
+            results.items[0].enrichment as
+                ManualResultEnrichment.Verified
+            ).product
+        assertEquals(0, zero.stock)
+        assertEquals(BigDecimal("29.99"), zero.grossPrice)
+        assertEquals(
+            "https://www.obi.pl/p/1000001/trusted",
+            zero.productUrl,
+        )
+        assertEquals("075", zero.storeNumber)
+
+        val unknown = (
+            results.items[1].enrichment as
+                ManualResultEnrichment.Verified
+            ).product
+        assertEquals(null, unknown.stock)
+        assertEquals(null, unknown.grossPrice)
     }
 
     @Test
@@ -244,11 +438,13 @@ class ManualSearchControllerTest {
         ean: String? = null,
         productUrl: String = "https://example.invalid/p/$obik/canonical",
         storeNumber: String = "075",
+        stock: Int? = 4,
+        grossPrice: BigDecimal? = BigDecimal("19.99"),
     ) = LocalProduct(
         obik = obik,
         name = "Exact synthetic product",
-        stock = 4,
-        grossPrice = BigDecimal("19.99"),
+        stock = stock,
+        grossPrice = grossPrice,
         productUrl = productUrl,
         ean = ean,
         storeNumber = storeNumber,
