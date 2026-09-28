@@ -133,14 +133,25 @@ internal class AdvisorProxyClient(
                     callId = callId,
                     storeNumber = storeNumber,
                     result = buildJsonObject {
-                        put("query", continuation.query)
-                        put(
-                            "storeNumber",
-                            continuation.storeNumber,
-                        )
+                        put("storeNumber", continuation.storeNumber)
+                        put("queries", continuation.queries.toJson())
                         put(
                             "rejection",
                             "store_not_authorized",
+                        )
+                    },
+                ).takeIf(::fitsContinueByteBudget)
+            is AdvisorToolContinuation.LocalToolLimitReached ->
+                buildContinueBody(
+                    responseId = responseId,
+                    callId = callId,
+                    storeNumber = storeNumber,
+                    result = buildJsonObject {
+                        put("storeNumber", continuation.storeNumber)
+                        put("queries", continuation.queries.toJson())
+                        put(
+                            "rejection",
+                            "local_tool_limit_reached",
                         )
                     },
                 ).takeIf(::fitsContinueByteBudget)
@@ -337,27 +348,51 @@ internal class AdvisorProxyClient(
                     ?: error("Invalid call id")
                 val arguments = tool["arguments"] as? JsonObject
                     ?: error("Missing tool arguments")
-                requireExactKeys(arguments, setOf("query", "storeNumber", "limit"))
-                val query = arguments["query"]?.jsonPrimitive?.contentOrNull
-                    ?.normalizeWhitespace()
-                    ?.takeIf { it.isNotBlank() && it.length <= MAX_QUERY_CHARS }
-                    ?: error("Invalid tool query")
+                requireExactKeys(arguments, setOf("storeNumber", "queries"))
                 val storeNumber = arguments["storeNumber"]
                     ?.jsonPrimitive
                     ?.contentOrNull
                     ?.takeIf(STORE_NUMBER_PATTERN::matches)
                     ?: error("Invalid tool store")
-                val limit = arguments["limit"]?.jsonPrimitive?.intOrNull
-                    ?.takeIf { it in 1..MAX_TOOL_PRODUCTS }
-                    ?: error("Invalid tool limit")
+                val queries = arguments["queries"]
+                    ?.jsonArray
+                    ?.map { element ->
+                        val requested = element as? JsonObject
+                            ?: error("Invalid tool query entry")
+                        requireExactKeys(requested, setOf("query", "limit"))
+                        val query = requested["query"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?.normalizeWhitespace()
+                            ?.takeIf {
+                                it.isNotBlank() &&
+                                    it.length <= MAX_QUERY_CHARS
+                            }
+                            ?: error("Invalid tool query")
+                        val limit = requested["limit"]
+                            ?.jsonPrimitive
+                            ?.intOrNull
+                            ?.takeIf { it in 1..MAX_TOOL_PRODUCTS }
+                            ?: error("Invalid tool limit")
+                        AdvisorToolQuery(
+                            query = query,
+                            limit = limit,
+                        )
+                    }
+                    ?.takeIf {
+                        it.isNotEmpty() &&
+                            it.size <= MAX_TOOL_QUERIES &&
+                            it.sumOf(AdvisorToolQuery::limit) <=
+                            MAX_TOOL_PRODUCTS
+                    }
+                    ?: error("Invalid tool queries")
 
                 AdvisorProxyResult.ToolRequest(
                     responseId = responseId,
                     callId = callId,
                     arguments = AdvisorToolArguments(
-                        query = query,
                         storeNumber = storeNumber,
-                        limit = limit,
+                        queries = queries,
                     ),
                     webSearchCalls = root.requireWebSearchCallCount(),
                     usage = parseUsageOrNull(root["usage"]),
@@ -374,60 +409,88 @@ internal class AdvisorProxyClient(
         storeNumber: String,
         result: AdvisorVerifiedToolResult,
     ): JsonObject? {
-        var products = result.products
+        var grouped = result.results
+
         fun currentBody(): JsonObject =
             buildContinueBody(
                 responseId = responseId,
                 callId = callId,
                 storeNumber = storeNumber,
-                result = result.copy(products = products).toJson(),
+                result = result.copy(results = grouped).toJson(),
             )
+
+        fun updateProduct(
+            groupIndex: Int,
+            productIndex: Int,
+            transform: (AdvisorVerifiedProduct) -> AdvisorVerifiedProduct,
+        ) {
+            grouped = grouped.toMutableList().also { groups ->
+                val group = groups[groupIndex]
+                val products = group.products.toMutableList()
+                products[productIndex] = transform(products[productIndex])
+                groups[groupIndex] = group.copy(products = products)
+            }
+        }
 
         var body = currentBody()
         if (fitsContinueByteBudget(body)) {
             return body
         }
 
-        for (index in products.indices.reversed()) {
-            while (products[index].technicalFacts.isNotEmpty()) {
-                products = products.toMutableList().also { mutable ->
-                    val product = mutable[index]
-                    mutable[index] = product.copy(
-                        technicalFacts =
-                            product.technicalFacts.dropLast(1),
-                    )
-                }
-                body = currentBody()
-                if (fitsContinueByteBudget(body)) {
-                    return body
-                }
-            }
-        }
-
-        for (index in products.indices.reversed()) {
-            if (products[index].shortDescription != null) {
-                products = products.toMutableList().also { mutable ->
-                    mutable[index] = mutable[index].copy(
-                        shortDescription = null,
-                    )
-                }
-                body = currentBody()
-                if (fitsContinueByteBudget(body)) {
-                    return body
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                while (
+                    grouped[groupIndex]
+                        .products[productIndex]
+                        .technicalFacts
+                        .isNotEmpty()
+                ) {
+                    updateProduct(groupIndex, productIndex) { product ->
+                        product.copy(
+                            technicalFacts =
+                                product.technicalFacts.dropLast(1),
+                        )
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) {
+                        return body
+                    }
                 }
             }
         }
 
-        for (index in products.indices.reversed()) {
-            if (products[index].brand != null) {
-                products = products.toMutableList().also { mutable ->
-                    mutable[index] = mutable[index].copy(
-                        brand = null,
-                    )
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                if (
+                    grouped[groupIndex]
+                        .products[productIndex]
+                        .shortDescription != null
+                ) {
+                    updateProduct(groupIndex, productIndex) { product ->
+                        product.copy(shortDescription = null)
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) {
+                        return body
+                    }
                 }
-                body = currentBody()
-                if (fitsContinueByteBudget(body)) {
-                    return body
+            }
+        }
+
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                if (
+                    grouped[groupIndex]
+                        .products[productIndex]
+                        .brand != null
+                ) {
+                    updateProduct(groupIndex, productIndex) { product ->
+                        product.copy(brand = null)
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) {
+                        return body
+                    }
                 }
             }
         }
@@ -456,15 +519,49 @@ internal class AdvisorProxyClient(
             .toByteArray(Charsets.UTF_8)
             .size <= MAX_CONTINUE_REQUEST_BYTES
 
+    private fun List<AdvisorToolQuery>.toJson(): JsonArray =
+        buildJsonArray {
+            forEach { requested ->
+                add(
+                    buildJsonObject {
+                        put("query", requested.query)
+                        put("limit", requested.limit)
+                    },
+                )
+            }
+        }
+
     private fun AdvisorVerifiedToolResult.toJson(): JsonObject =
         buildJsonObject {
-            put("query", query)
             put("storeNumber", storeNumber)
             put(
-                "products",
+                "results",
                 buildJsonArray {
-                    products.forEach { product ->
-                        add(product.toJson())
+                    results.forEach { group ->
+                        add(
+                            buildJsonObject {
+                                put("query", group.query)
+                                put(
+                                    "status",
+                                    when (group.status) {
+                                        AdvisorQueryResultStatus.VERIFIED ->
+                                            "verified"
+                                        AdvisorQueryResultStatus.NOT_FOUND ->
+                                            "not_found"
+                                        AdvisorQueryResultStatus.UNAVAILABLE ->
+                                            "unavailable"
+                                    },
+                                )
+                                put(
+                                    "products",
+                                    buildJsonArray {
+                                        group.products.forEach { product ->
+                                            add(product.toJson())
+                                        }
+                                    },
+                                )
+                            },
+                        )
                     }
                 },
             )

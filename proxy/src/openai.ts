@@ -58,6 +58,7 @@ export async function startAgent(
     apiKey,
     upstreamFetch,
     "START",
+    true,
   );
 }
 
@@ -90,6 +91,7 @@ export async function messageAgent(
     apiKey,
     upstreamFetch,
     "MESSAGE",
+    true,
   );
 }
 
@@ -101,6 +103,10 @@ export async function continueAgent(
   apiKey: string,
   upstreamFetch: UpstreamFetch,
 ): Promise<AgentResult> {
+  const localToolAvailable =
+    !("rejection" in result) ||
+    result.rejection !== "local_tool_limit_reached";
+
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
@@ -124,11 +130,14 @@ export async function continueAgent(
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
+      tools: localToolAvailable
+        ? [OBI_TOOL, WEB_SEARCH_TOOL]
+        : [WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
     "CONTINUE",
+    localToolAvailable,
   );
 }
 
@@ -137,6 +146,7 @@ async function requestOpenAI(
   apiKey: string,
   upstreamFetch: UpstreamFetch,
   requestType: AgentRequestType,
+  allowLocalTool: boolean,
 ): Promise<AgentResult> {
   let response: Response;
   try {
@@ -163,12 +173,17 @@ async function requestOpenAI(
     throw new UpstreamFailureError();
   }
 
-  return normalizeOpenAIResponse(payload, requestType);
+  return normalizeOpenAIResponse(
+    payload,
+    requestType,
+    allowLocalTool,
+  );
 }
 
 export function normalizeOpenAIResponse(
   payload: unknown,
   requestType: AgentRequestType = "START",
+  allowLocalTool = true,
 ): AgentResult {
   if (!isRecord(payload)) {
     throw new UpstreamFailureError();
@@ -191,6 +206,9 @@ export function normalizeOpenAIResponse(
   }
 
   if (functionCalls.length === 1) {
+    if (!allowLocalTool) {
+      throw new UpstreamFailureError();
+    }
     const call = functionCalls[0];
     if (
       call.name !== LOCAL_TOOL_NAME ||

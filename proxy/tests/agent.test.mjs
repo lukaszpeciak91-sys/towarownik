@@ -86,7 +86,7 @@ function withUsage(payload, overrides = {}) {
   };
 }
 
-function toolPayload(argumentsJson = '{"query":"synthetic query","storeNumber":"075","limit":5}', name = LOCAL_TOOL_NAME) {
+function toolPayload(argumentsJson = '{"storeNumber":"075","queries":[{"query":"synthetic query","limit":5}]}', name = LOCAL_TOOL_NAME) {
   return {
     id: "resp_test_tool",
     output: [
@@ -138,19 +138,24 @@ function validContinueBody(overrides = {}) {
     storeNumber: "075",
     tool: LOCAL_TOOL_NAME,
     result: {
-      query: "synthetic query",
       storeNumber: "075",
-      products: [
+      results: [
         {
-          obik: "1234567",
-          name: "Synthetic product",
-          brand: "Synthetic Brand",
-          shortDescription: "Compact verified description.",
-          technicalFacts: [
-            { label: "Moc", value: "600 W" },
+          query: "synthetic query",
+          status: "verified",
+          products: [
+            {
+              obik: "1234567",
+              name: "Synthetic product",
+              brand: "Synthetic Brand",
+              shortDescription: "Compact verified description.",
+              technicalFacts: [
+                { label: "Moc", value: "600 W" },
+              ],
+              stock: 3,
+              price: 19.99,
+            },
           ],
-          stock: 3,
-          price: 19.99,
         },
       ],
     },
@@ -312,9 +317,16 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
     MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
   );
   assert.equal(capture.body.tools[0].strict, true);
-  assert.deepEqual(capture.body.tools[0].parameters.required, ["query", "storeNumber", "limit"]);
+  assert.deepEqual(
+    capture.body.tools[0].parameters.required,
+    ["storeNumber", "queries"],
+  );
   assert.equal(capture.body.tools[0].parameters.additionalProperties, false);
-  assert.equal(capture.body.tools[0].parameters.properties.limit.maximum, 5);
+  assert.equal(capture.body.tools[0].parameters.properties.queries.maxItems, 5);
+  assert.equal(
+    capture.body.tools[0].parameters.properties.queries.items.properties.limit.maximum,
+    5,
+  );
 });
 
 test("web_search is available selectively with automatic tool choice and one built-in call", async () => {
@@ -936,7 +948,7 @@ test("structured final output rejects more than five selected product refs", asy
 });
 
 test("valid known function call becomes normalized tool_request", async () => {
-  const fake = fakeOpenAI(toolPayload('{"query":"  moisture   absorber ","storeNumber":"075","limit":5}'));
+  const fake = fakeOpenAI(toolPayload('{"storeNumber":"075","queries":[{"query":"  moisture   absorber ","limit":5}]}'));
   const worker = createWorker(fake.fetch);
 
   const response = await worker.fetch(
@@ -952,13 +964,99 @@ test("valid known function call becomes normalized tool_request", async () => {
       name: LOCAL_TOOL_NAME,
       callId: "call_test_tool",
       arguments: {
-        query: "moisture absorber",
         storeNumber: "075",
-        limit: 5,
+        queries: [
+          { query: "moisture absorber", limit: 5 },
+        ],
       },
     },
     webSearchCalls: 0,
   });
+});
+
+test("five query groups with limit one are accepted", async () => {
+  const fake = fakeOpenAI(
+    toolPayload(JSON.stringify({
+      storeNumber: "075",
+      queries: Array.from(
+        { length: 5 },
+        (_, index) => ({ query: `category ${index + 1}`, limit: 1 }),
+      ),
+    })),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", { message: "build a kit" }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const body = await responseJson(response);
+  assert.equal(body.type, "tool_request");
+  assert.equal(body.tool.arguments.queries.length, 5);
+  assert.equal(
+    body.tool.arguments.queries.reduce(
+      (sum, query) => sum + query.limit,
+      0,
+    ),
+    5,
+  );
+});
+
+test("tool rejects total requested limits above five", async () => {
+  const fake = fakeOpenAI(
+    toolPayload(
+      '{"storeNumber":"075","queries":[{"query":"one","limit":3},{"query":"two","limit":3}]}',
+    ),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", { message: "build a kit" }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 502);
+});
+
+test("tool rejects more than five query groups", async () => {
+  const fake = fakeOpenAI(
+    toolPayload(JSON.stringify({
+      storeNumber: "075",
+      queries: Array.from(
+        { length: 6 },
+        (_, index) => ({ query: `category ${index + 1}`, limit: 1 }),
+      ),
+    })),
+  );
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", { message: "build a kit" }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 502);
+});
+
+test("tool rejects blank and oversized queries", async () => {
+  for (const query of ["   ", "x".repeat(201)]) {
+    const fake = fakeOpenAI(
+      toolPayload(JSON.stringify({
+        storeNumber: "075",
+        queries: [{ query, limit: 1 }],
+      })),
+    );
+    const worker = createWorker(fake.fetch);
+
+    const response = await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "build a kit" }),
+      configuredEnv,
+    );
+
+    assert.equal(response.status, 502);
+  }
 });
 
 test("web_search_call plus final message preserves bounded citation metadata", async () => {
@@ -1051,7 +1149,7 @@ test("web_search_call plus application function call remains a local tool reques
           call_id: "call_after_web",
           name: LOCAL_TOOL_NAME,
           arguments:
-            '{"query":"klej","storeNumber":"075","limit":2}',
+            '{"storeNumber":"075","queries":[{"query":"klej","limit":2}]}',
         },
       ],
     }),
@@ -1334,7 +1432,7 @@ test("unknown model after a completed search remains unpriced but preserves sear
 });
 
 test("unknown model function call is a bounded upstream failure", async () => {
-  const fake = fakeOpenAI(toolPayload('{"query":"x","storeNumber":"075","limit":1}', "unknown_tool"));
+  const fake = fakeOpenAI(toolPayload('{"storeNumber":"075","queries":[{"query":"x","limit":1}]}', "unknown_tool"));
   const worker = createWorker(fake.fetch);
 
   const response = await worker.fetch(
@@ -1347,7 +1445,7 @@ test("unknown model function call is a bounded upstream failure", async () => {
 });
 
 test("malformed model function arguments are a bounded upstream failure", async () => {
-  const fake = fakeOpenAI(toolPayload('{"query":"x","storeNumber":"075","limit":99}'));
+  const fake = fakeOpenAI(toolPayload('{"storeNumber":"075","queries":[{"query":"x","limit":99}]}'));
   const worker = createWorker(fake.fetch);
 
   const response = await worker.fetch(
@@ -1524,7 +1622,7 @@ test("tool assisted structured answer exposes selected product refs only", async
 });
 
 test("continue can return another normalized local tool request", async () => {
-  const fake = fakeOpenAI(toolPayload('{"query":"second synthetic query","storeNumber":"074","limit":2}'));
+  const fake = fakeOpenAI(toolPayload('{"storeNumber":"074","queries":[{"query":"second synthetic query","limit":2}]}'));
   const worker = createWorker(fake.fetch);
 
   const response = await worker.fetch(
@@ -1537,9 +1635,10 @@ test("continue can return another normalized local tool request", async () => {
   assert.equal(body.type, "tool_request");
   assert.equal(body.tool.name, LOCAL_TOOL_NAME);
   assert.deepEqual(body.tool.arguments, {
-    query: "second synthetic query",
     storeNumber: "074",
-    limit: 2,
+    queries: [
+      { query: "second synthetic query", limit: 2 },
+    ],
   });
 });
 
@@ -1571,6 +1670,95 @@ test("continue rejects unknown tool name", async () => {
   assert.equal(fake.captures.length, 0);
 });
 
+test("local tool limit continuation disables find_obi_products and can finish", async () => {
+  const fake = fakeOpenAI(
+    answerPayload(
+      "Use already verified products and general guidance.",
+      ["1234567"],
+    ),
+  );
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.result = {
+    storeNumber: "075",
+    queries: [{ query: "third category", limit: 1 }],
+    rejection: "local_tool_limit_reached",
+  };
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const normalized = await responseJson(response);
+  assert.equal(normalized.type, "answer");
+  const capture = fake.captures[0];
+  assert.deepEqual(capture.body.tools, [WEB_SEARCH_TOOL]);
+  assert.equal(capture.body.tool_choice, "auto");
+  assert.deepEqual(
+    JSON.parse(capture.body.input[0].output),
+    body.result,
+  );
+});
+
+test("local tool limit continuation rejects another application function call", async () => {
+  const fake = fakeOpenAI(
+    toolPayload(
+      '{"storeNumber":"075","queries":[{"query":"fourth category","limit":1}]}',
+    ),
+  );
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.result = {
+    storeNumber: "075",
+    queries: [{ query: "third category", limit: 1 }],
+    rejection: "local_tool_limit_reached",
+  };
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(
+    await responseJson(response),
+    { error: "upstream_failure" },
+  );
+  assert.equal(fake.captures[0].body.tools.length, 1);
+  assert.deepEqual(fake.captures[0].body.tools[0], WEB_SEARCH_TOOL);
+});
+
+test("continue preserves verified, unavailable, and not_found groups independently", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const body = validContinueBody();
+  body.result.results.push(
+    {
+      query: "pistolet",
+      status: "unavailable",
+      products: [],
+    },
+    {
+      query: "wygładzanie",
+      status: "not_found",
+      products: [],
+    },
+  );
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/continue", body),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const output = JSON.parse(
+    fake.captures[0].body.input[0].output,
+  );
+  assert.deepEqual(output, body.result);
+});
+
 test("continue accepts enriched verified product facts and forwards them unchanged", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
@@ -1585,16 +1773,16 @@ test("continue accepts enriched verified product facts and forwards them unchang
   const output = JSON.parse(
     fake.captures[0].body.input[0].output,
   );
-  assert.deepEqual(output.products[0], body.result.products[0]);
+  assert.deepEqual(output.results[0].products[0], body.result.results[0].products[0]);
 });
 
 test("continue accepts null and empty optional rich product facts", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
-  body.result.products[0].brand = null;
-  body.result.products[0].shortDescription = null;
-  body.result.products[0].technicalFacts = [];
+  body.result.results[0].products[0].brand = null;
+  body.result.results[0].products[0].shortDescription = null;
+  body.result.results[0].products[0].technicalFacts = [];
 
   const response = await worker.fetch(
     jsonRequest("/v1/agent/continue", body),
@@ -1609,7 +1797,7 @@ test("continue rejects unexpected raw product payload structures", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
-  body.result.products[0].rawNuxt = { secret: "raw" };
+  body.result.results[0].products[0].rawNuxt = { secret: "raw" };
 
   const response = await worker.fetch(
     jsonRequest("/v1/agent/continue", body),
@@ -1653,7 +1841,7 @@ test("continue enforces compact rich product bounds", async () => {
     const fake = fakeOpenAI(answerPayload());
     const worker = createWorker(fake.fetch);
     const body = validContinueBody();
-    mutate(body.result.products[0]);
+    mutate(body.result.results[0].products[0]);
 
     const response = await worker.fetch(
       jsonRequest("/v1/agent/continue", body),
@@ -1669,12 +1857,18 @@ test("continue rejects more than five products", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
-  body.result.products = Array.from({ length: 6 }, (_, index) => ({
-    obik: String(1_000_000 + index),
-    name: `Synthetic product ${index}`,
-    stock: 1,
-    price: 1,
-  }));
+  body.result.results[0].products = Array.from(
+    { length: 6 },
+    (_, index) => ({
+      obik: String(1_000_000 + index),
+      name: `Synthetic product ${index}`,
+      brand: null,
+      shortDescription: null,
+      technicalFacts: [],
+      stock: 1,
+      price: 1,
+    }),
+  );
 
   const response = await worker.fetch(
     jsonRequest("/v1/agent/continue", body),
@@ -1689,7 +1883,7 @@ test("continue rejects malformed OBIK", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
-  body.result.products[0].obik = "123";
+  body.result.results[0].products[0].obik = "123";
 
   const response = await worker.fetch(
     jsonRequest("/v1/agent/continue", body),
@@ -1704,7 +1898,7 @@ test("continue rejects negative stock", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
-  body.result.products[0].stock = -1;
+  body.result.results[0].products[0].stock = -1;
 
   const response = await worker.fetch(
     jsonRequest("/v1/agent/continue", body),
@@ -1719,7 +1913,7 @@ test("continue accepts null stock", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
-  body.result.products[0].stock = null;
+  body.result.results[0].products[0].stock = null;
 
   const response = await worker.fetch(
     jsonRequest("/v1/agent/continue", body),
@@ -1734,7 +1928,7 @@ test("continue accepts null price", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
-  body.result.products[0].price = null;
+  body.result.results[0].products[0].price = null;
 
   const response = await worker.fetch(
     jsonRequest("/v1/agent/continue", body),
@@ -1749,7 +1943,7 @@ test("continue rejects malformed negative price", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
-  body.result.products[0].price = -0.01;
+  body.result.results[0].products[0].price = -0.01;
 
   const response = await worker.fetch(
     jsonRequest("/v1/agent/continue", body),
@@ -1835,7 +2029,7 @@ test("selected conversation store is carried into dynamic instructions", async (
 test("generic tool carries one explicit store number", async () => {
   const fake = fakeOpenAI(
     toolPayload(
-      '{"query":"klej","storeNumber":"074","limit":3}',
+      '{"storeNumber":"074","queries":[{"query":"klej","limit":3}]}',
     ),
   );
   const worker = createWorker(fake.fetch);
@@ -1856,9 +2050,10 @@ test("generic tool carries one explicit store number", async () => {
       name: "find_obi_products",
       callId: "call_test_tool",
       arguments: {
-        query: "klej",
         storeNumber: "074",
-        limit: 3,
+        queries: [
+          { query: "klej", limit: 3 },
+        ],
       },
     },
     webSearchCalls: 0,
@@ -1887,7 +2082,7 @@ test("continue retains conversation store and compact result store context", asy
   assert.equal(output.storeNumber, "074");
   assert.equal(
     Object.prototype.hasOwnProperty.call(
-      output.products[0],
+      output.results[0].products[0],
       "storeNumber",
     ),
     false,
@@ -1899,8 +2094,8 @@ test("continue accepts bounded store rejection without products", async () => {
   const worker = createWorker(fake.fetch);
   const body = validContinueBody();
   body.result = {
-    query: "klej",
     storeNumber: "999",
+    queries: [{ query: "klej", limit: 1 }],
     rejection: "store_not_authorized",
   };
 
@@ -1948,6 +2143,10 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   );
   assert.match(
     instructions,
+    /Think like a useful in-store sales advisor/i,
+  );
+  assert.match(
+    instructions,
     /use normal model knowledge for general technical explanations/i,
   );
   assert.match(
@@ -1965,6 +2164,42 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   assert.match(
     instructions,
     /this particular detail is not confirmed/i,
+  );
+  assert.match(
+    instructions,
+    /Use find_obi_products whenever verified current OBI assortment, stock, price, store availability, or concrete product selection is useful/i,
+  );
+  assert.match(
+    instructions,
+    /Batch related categories aggressively into one well-planned multi-query request/i,
+  );
+  assert.match(
+    instructions,
+    /Use as few local calls as practical, but do not avoid necessary verification merely to save a tool call/i,
+  );
+  assert.match(
+    instructions,
+    /One well-planned multi-query batch is preferred over many narrow calls/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /at most 2 find_obi_products calls per USER turn/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /Use the second local call/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /After two calls/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /you have 3 calls|save your 3 calls|you may only search 3 times|at most 3 find_obi_products calls/i,
+  );
+  assert.match(
+    instructions,
+    /local_tool_limit_reached.*do not request find_obi_products again/i,
   );
   assert.match(
     instructions,
@@ -1991,6 +2226,137 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
     /Reply naturally in the language used by the user in the current conversation/i,
   );
   assert.equal(instructions.includes("web_search"), true);
+});
+
+test('A task kit contract — "Klient chce położyć płytki i nie wie czego potrzebuje."', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /When the USER describes a job or goal rather than one specific SKU/i,
+  );
+  assert.match(
+    instructions,
+    /small practical set of product categories needed to complete that job/i,
+  );
+  assert.match(
+    instructions,
+    /Distinguish essentials from optional convenience items/i,
+  );
+  assert.match(
+    instructions,
+    /batch the important categories into find_obi_products/i,
+  );
+  assert.match(
+    instructions,
+    /return concrete verified products from the active store/i,
+  );
+  assert.match(
+    instructions,
+    /explain briefly what each selected item is for/i,
+  );
+});
+
+test('B complete sales kit contract — "Co mogę sprzedać klientowi do uszczelnienia umywalki?"', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /If the intent is clearly a complete kit, what the customer needs, what can be sold for the job/i,
+  );
+  assert.match(
+    instructions,
+    /build the practical kit proactively without requiring separate confirmation for every category/i,
+  );
+  assert.match(
+    instructions,
+    /do not create an absurd or exhaustive shopping list/i,
+  );
+});
+
+test('C single product contract — "Potrzebuję farby do łazienki."', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /When the USER asks about one product or one product category, answer or select that requested item first/i,
+  );
+  assert.match(
+    instructions,
+    /Do not automatically search complementary categories/i,
+  );
+  assert.match(
+    instructions,
+    /you may briefly offer them without being pushy/i,
+  );
+  assert.match(
+    instructions,
+    /Search those complementary categories only when the USER asks for them/i,
+  );
+});
+
+test('D accepted complements contract — "Tak, dobierz też grunt, wałek i folię."', () => {
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /If the USER accepts complementary items, batch the requested complementary categories together in one find_obi_products request where practical/i,
+  );
+});
+
+test("E zero stock contract suggests current-store alternative without inventing other stores", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /Stock 0 means the product is confirmed unavailable in that verified store/i,
+  );
+  assert.match(
+    instructions,
+    /consider and verify a reasonable substitute in the CURRENT store/i,
+  );
+  assert.match(
+    instructions,
+    /offer to check another OBI market/i,
+  );
+  assert.match(
+    instructions,
+    /do not invent another market number or claim availability there/i,
+  );
+  assert.match(
+    instructions,
+    /query another market only after the USER supplies its exact supported 3-digit market number/i,
+  );
+});
+
+test("F unknown stock contract never converts null availability into zero", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /Null stock means availability is unknown/i,
+  );
+  assert.match(
+    instructions,
+    /must never be described as zero, out of stock, or unavailable/i,
+  );
+  assert.match(
+    instructions,
+    /A not_found query result means no verified matching product was found for that query; it does not mean stock zero/i,
+  );
+  assert.match(
+    instructions,
+    /An unavailable query result means retrieval could not establish the fact/i,
+  );
+});
+
+test('G direct price-stock contract — "Jaki jest stan i cena OBIK X?"', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  assert.match(
+    instructions,
+    /For a direct factual question about the current price or stock of a specific OBIK or product/i,
+  );
+  assert.match(
+    instructions,
+    /verify the requested product and answer that question directly without unnecessary cross-sell/i,
+  );
+  assert.match(
+    instructions,
+    /Do not append a generic offer for more products to every answer/i,
+  );
 });
 
 test("final advisor behavior does not change model reasoning tools or structured output", async () => {

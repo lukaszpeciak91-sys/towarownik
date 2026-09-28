@@ -25,10 +25,7 @@ internal class FindObiProductsTool(
     suspend fun execute(
         arguments: AdvisorToolArguments,
     ): AdvisorToolExecutionResult {
-        if (
-            arguments.query.isBlank() ||
-            arguments.limit !in 1..MAX_TOOL_PRODUCTS
-        ) {
+        if (!arguments.isValidBatch()) {
             return AdvisorToolExecutionResult.Failure
         }
         if (!isSupportedObiStoreNumber(arguments.storeNumber)) {
@@ -46,104 +43,129 @@ internal class FindObiProductsTool(
         }
     }
 
+    private fun AdvisorToolArguments.isValidBatch(): Boolean =
+        queries.isNotEmpty() &&
+            queries.size <= MAX_TOOL_QUERIES &&
+            queries.sumOf { it.limit } <= MAX_TOOL_PRODUCTS &&
+            queries.all {
+                it.query.isNotBlank() &&
+                    it.query.length <= MAX_TOOL_QUERY_CHARS &&
+                    it.limit in 1..MAX_TOOL_PRODUCTS
+            }
+
     private fun executeBlocking(
         arguments: AdvisorToolArguments,
     ): AdvisorToolExecutionResult {
-        return when (val search = searchProducts(arguments.query)) {
-            ProductSearchResult.NotFound -> success(
-                arguments = arguments,
-                products = emptyList(),
-                snapshots = emptyList(),
-            )
+        val groupedResults = mutableListOf<AdvisorVerifiedQueryResult>()
+        val snapshots = mutableListOf<VerifiedProductSnapshot>()
 
-            is ProductSearchResult.Unavailable ->
-                AdvisorToolExecutionResult.Failure
+        arguments.queries.forEach { requested ->
+            val search = try {
+                searchProducts(requested.query)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+                groupedResults += unavailable(requested.query)
+                return@forEach
+            }
 
-            is ProductSearchResult.Candidates -> {
-                val verified = mutableListOf<AdvisorVerifiedProduct>()
-                val snapshots = mutableListOf<VerifiedProductSnapshot>()
-                var lookupFailed = false
+            when (search) {
+                ProductSearchResult.NotFound -> {
+                    groupedResults += notFound(requested.query)
+                }
 
-                search.items
-                    .take(arguments.limit.coerceAtMost(MAX_TOOL_PRODUCTS))
-                    .forEach { candidate ->
-                        val lookup = try {
-                            lookupObik(
-                                candidate.obik,
-                                arguments.storeNumber,
-                            )
-                        } catch (exception: CancellationException) {
-                            throw exception
-                        } catch (_: Exception) {
-                            lookupFailed = true
-                            return@forEach
-                        }
+                is ProductSearchResult.Unavailable -> {
+                    groupedResults += unavailable(requested.query)
+                }
 
-                        when (lookup) {
-                            is ProductLookupResult.Found -> {
-                                val product = lookup.product
-                                verified += AdvisorVerifiedProduct(
-                                    obik = product.obik,
-                                    name = product.name,
-                                    brand = product.brand,
-                                    shortDescription =
-                                        product.shortDescription,
-                                    technicalFacts =
-                                        product.technicalFacts.map {
-                                            AdvisorTechnicalFact(
-                                                label = it.label,
-                                                value = it.value,
-                                            )
-                                        },
-                                    stock = product.stock,
-                                    price = product.grossPrice,
+                is ProductSearchResult.Candidates -> {
+                    val verified = mutableListOf<AdvisorVerifiedProduct>()
+                    var lookupFailed = false
+
+                    search.items
+                        .take(requested.limit)
+                        .forEach { candidate ->
+                            val lookup = try {
+                                lookupObik(
+                                    candidate.obik,
+                                    arguments.storeNumber,
                                 )
-                                snapshots +=
-                                    product.toVerifiedProductSnapshot(
-                                        verifiedAt = now(),
-                                    )
+                            } catch (exception: CancellationException) {
+                                throw exception
+                            } catch (_: Exception) {
+                                lookupFailed = true
+                                return@forEach
                             }
 
-                            is ProductLookupResult.InvalidStore ->
-                                return AdvisorToolExecutionResult.UnsupportedStore
+                            when (lookup) {
+                                is ProductLookupResult.Found -> {
+                                    val product = lookup.product
+                                    verified += AdvisorVerifiedProduct(
+                                        obik = product.obik,
+                                        name = product.name,
+                                        brand = product.brand,
+                                        shortDescription =
+                                            product.shortDescription,
+                                        technicalFacts =
+                                            product.technicalFacts.map {
+                                                AdvisorTechnicalFact(
+                                                    label = it.label,
+                                                    value = it.value,
+                                                )
+                                            },
+                                        stock = product.stock,
+                                        price = product.grossPrice,
+                                    )
+                                    snapshots +=
+                                        product.toVerifiedProductSnapshot(
+                                            verifiedAt = now(),
+                                        )
+                                }
 
-                            is ProductLookupResult.InvalidObik,
-                            is ProductLookupResult.Unavailable ->
-                                lookupFailed = true
+                                is ProductLookupResult.InvalidStore ->
+                                    return AdvisorToolExecutionResult.UnsupportedStore
+
+                                is ProductLookupResult.InvalidObik,
+                                is ProductLookupResult.Unavailable ->
+                                    lookupFailed = true
+                            }
                         }
+
+                    groupedResults += when {
+                        verified.isNotEmpty() ->
+                            AdvisorVerifiedQueryResult(
+                                query = requested.query,
+                                status = AdvisorQueryResultStatus.VERIFIED,
+                                products = verified,
+                            )
+
+                        lookupFailed -> unavailable(requested.query)
+                        else -> notFound(requested.query)
                     }
-
-                when {
-                    verified.isNotEmpty() -> success(
-                        arguments = arguments,
-                        products = verified,
-                        snapshots = snapshots,
-                    )
-
-                    lookupFailed ->
-                        AdvisorToolExecutionResult.Failure
-
-                    else -> success(
-                        arguments = arguments,
-                        products = emptyList(),
-                        snapshots = emptyList(),
-                    )
                 }
             }
         }
-    }
 
-    private fun success(
-        arguments: AdvisorToolArguments,
-        products: List<AdvisorVerifiedProduct>,
-        snapshots: List<VerifiedProductSnapshot>,
-    ): AdvisorToolExecutionResult.Success =
-        AdvisorToolExecutionResult.Success(
+        return AdvisorToolExecutionResult.Success(
             result = AdvisorVerifiedToolResult(
-                query = arguments.query,
                 storeNumber = arguments.storeNumber,
-                products = products,
+                results = groupedResults,
             ),
             snapshots = snapshots,
+        )
+    }
+
+    private fun notFound(query: String): AdvisorVerifiedQueryResult =
+        AdvisorVerifiedQueryResult(
+            query = query,
+            status = AdvisorQueryResultStatus.NOT_FOUND,
+            products = emptyList(),
+        )
+
+    private fun unavailable(query: String): AdvisorVerifiedQueryResult =
+        AdvisorVerifiedQueryResult(
+            query = query,
+            status = AdvisorQueryResultStatus.UNAVAILABLE,
+            products = emptyList(),
         )
 }

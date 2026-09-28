@@ -3,10 +3,14 @@ export interface Env {
   TOWAROWNIK_APP_TOKEN?: string;
 }
 
-export interface ToolArguments {
+export interface ToolQuery {
   query: string;
-  storeNumber: string;
   limit: number;
+}
+
+export interface ToolArguments {
+  storeNumber: string;
+  queries: ToolQuery[];
 }
 
 export interface TechnicalFact {
@@ -24,21 +28,38 @@ export interface VerifiedProduct {
   price: number | null;
 }
 
-export interface VerifiedToolResult {
+export type VerifiedQueryStatus =
+  | "verified"
+  | "not_found"
+  | "unavailable";
+
+export interface VerifiedQueryResult {
   query: string;
-  storeNumber: string;
+  status: VerifiedQueryStatus;
   products: VerifiedProduct[];
 }
 
-export interface RejectedToolResult {
-  query: string;
+export interface VerifiedToolResult {
   storeNumber: string;
+  results: VerifiedQueryResult[];
+}
+
+export interface RejectedToolResult {
+  storeNumber: string;
+  queries: ToolQuery[];
   rejection: "store_not_authorized";
+}
+
+export interface LocalToolLimitResult {
+  storeNumber: string;
+  queries: ToolQuery[];
+  rejection: "local_tool_limit_reached";
 }
 
 export type ToolContinuationResult =
   | VerifiedToolResult
-  | RejectedToolResult;
+  | RejectedToolResult
+  | LocalToolLimitResult;
 
 export interface ProductRef {
   storeNumber: string;

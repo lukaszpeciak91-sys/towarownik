@@ -9,14 +9,40 @@ internal const val ADVISOR_PROXY_BASE_URL =
     "https://towarownik-proxy.lukaszpeciak91.workers.dev"
 
 internal const val FIND_OBI_PRODUCTS = "find_obi_products"
-internal const val MAX_LOCAL_TOOL_CALLS_PER_TURN = 2
+internal const val MAX_LOCAL_TOOL_CALLS_PER_TURN = 3
 internal const val MAX_TOOL_PRODUCTS = 5
+internal const val MAX_TOOL_QUERIES = 5
+internal const val MAX_TOOL_QUERY_CHARS = 200
 
-internal data class AdvisorToolArguments(
+internal data class AdvisorToolQuery(
     val query: String,
-    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val limit: Int,
 )
+
+internal data class AdvisorToolArguments(
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val queries: List<AdvisorToolQuery>,
+) {
+    constructor(
+        query: String,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        limit: Int,
+    ) : this(
+        storeNumber = storeNumber,
+        queries = listOf(
+            AdvisorToolQuery(
+                query = query,
+                limit = limit,
+            ),
+        ),
+    )
+
+    val query: String
+        get() = queries.joinToString(" | ") { it.query }
+
+    val limit: Int
+        get() = queries.sumOf { it.limit }
+}
 
 internal data class AdvisorProductRef(
     val storeNumber: String,
@@ -44,11 +70,47 @@ internal data class AdvisorVerifiedProduct(
     val technicalFacts: List<AdvisorTechnicalFact> = emptyList(),
 )
 
-internal data class AdvisorVerifiedToolResult(
+internal enum class AdvisorQueryResultStatus {
+    VERIFIED,
+    NOT_FOUND,
+    UNAVAILABLE,
+}
+
+internal data class AdvisorVerifiedQueryResult(
     val query: String,
-    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val status: AdvisorQueryResultStatus,
     val products: List<AdvisorVerifiedProduct>,
 )
+
+internal data class AdvisorVerifiedToolResult(
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val results: List<AdvisorVerifiedQueryResult>,
+) {
+    constructor(
+        query: String,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        products: List<AdvisorVerifiedProduct>,
+    ) : this(
+        storeNumber = storeNumber,
+        results = listOf(
+            AdvisorVerifiedQueryResult(
+                query = query,
+                status = if (products.isEmpty()) {
+                    AdvisorQueryResultStatus.NOT_FOUND
+                } else {
+                    AdvisorQueryResultStatus.VERIFIED
+                },
+                products = products,
+            ),
+        ),
+    )
+
+    val query: String
+        get() = results.joinToString(" | ") { it.query }
+
+    val products: List<AdvisorVerifiedProduct>
+        get() = results.flatMap { it.products }
+}
 
 internal enum class AdvisorRequestType {
     START,
@@ -82,9 +144,46 @@ internal sealed interface AdvisorToolContinuation {
     ) : AdvisorToolContinuation
 
     data class RejectedStore(
-        val query: String,
+        val queries: List<AdvisorToolQuery>,
         val storeNumber: String,
-    ) : AdvisorToolContinuation
+    ) : AdvisorToolContinuation {
+        constructor(
+            query: String,
+            storeNumber: String,
+        ) : this(
+            queries = listOf(
+                AdvisorToolQuery(
+                    query = query,
+                    limit = 1,
+                ),
+            ),
+            storeNumber = storeNumber,
+        )
+
+        val query: String
+            get() = queries.joinToString(" | ") { it.query }
+    }
+
+    data class LocalToolLimitReached(
+        val queries: List<AdvisorToolQuery>,
+        val storeNumber: String,
+    ) : AdvisorToolContinuation {
+        constructor(
+            query: String,
+            storeNumber: String,
+        ) : this(
+            queries = listOf(
+                AdvisorToolQuery(
+                    query = query,
+                    limit = 1,
+                ),
+            ),
+            storeNumber = storeNumber,
+        )
+
+        val query: String
+            get() = queries.joinToString(" | ") { it.query }
+    }
 }
 
 internal sealed interface AdvisorProxyResult {

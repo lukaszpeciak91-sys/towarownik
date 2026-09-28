@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -217,7 +218,7 @@ class AdvisorProxyClientTest {
                           "tool":{
                             "name":"find_obi_products",
                             "callId":"call_1",
-                            "arguments":{"query":"klej montażowy","storeNumber":"074","limit":5}
+                            "arguments":{"storeNumber":"074","queries":[{"query":"klej montażowy","limit":5}]}
                           }
                         }
                         """.trimIndent(),
@@ -382,9 +383,8 @@ class AdvisorProxyClientTest {
                         "name":"find_obi_products",
                         "callId":"call_tool_sources",
                         "arguments":{
-                          "query":"klej",
                           "storeNumber":"075",
-                          "limit":1
+                          "queries":[{"query":"klej","limit":1}]
                         }
                       },
                       "sources":[
@@ -585,6 +585,49 @@ class AdvisorProxyClientTest {
     }
 
     @Test
+    fun `local tool limit continuation serializes bounded machine result`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(answerResponse())
+
+            val result = client(server, FAKE_TOKEN).continueTurn(
+                responseId = "resp_third",
+                callId = "call_third",
+                storeNumber = "075",
+                continuation =
+                    AdvisorToolContinuation.LocalToolLimitReached(
+                        query = "finishing tools",
+                        storeNumber = "075",
+                    ),
+            )
+
+            assertTrue(result is AdvisorProxyCallResult.Success)
+            val requestBody = Json.parseToJsonElement(
+                server.takeRequest().body.readUtf8(),
+            ).jsonObject
+            val continuationResult =
+                requestBody["result"] as JsonObject
+            assertEquals(
+                "local_tool_limit_reached",
+                continuationResult["rejection"]
+                    ?.jsonPrimitive
+                    ?.content,
+            )
+            val queries =
+                continuationResult["queries"] as
+                    kotlinx.serialization.json.JsonArray
+            val query = queries.single() as JsonObject
+            assertEquals(
+                "finishing tools",
+                query["query"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                1,
+                query["limit"]?.jsonPrimitive?.intOrNull,
+            )
+        }
+    }
+
+    @Test
     fun `malformed store fails locally before request`() = runBlocking {
         MockWebServer().use { server ->
             val result = client(server, FAKE_TOKEN).start(
@@ -632,7 +675,7 @@ class AdvisorProxyClientTest {
                       "tool":{
                         "name":"find_obi_products",
                         "callId":"call_1",
-                        "arguments":{"query":"klej","storeNumber":"075","limit":6}
+                        "arguments":{"storeNumber":"075","queries":[{"query":"klej","limit":6}]}
                       }
                     }
                     """.trimIndent(),
@@ -747,14 +790,28 @@ class AdvisorProxyClientTest {
 
             val resultBody = body["result"] as JsonObject
             assertEquals(
-                setOf("query", "storeNumber", "products"),
+                setOf("storeNumber", "results"),
                 resultBody.keys,
             )
             assertEquals(
                 "074",
                 resultBody["storeNumber"]?.jsonPrimitive?.content,
             )
-            val products = resultBody["products"] as kotlinx.serialization.json.JsonArray
+            val groups =
+                resultBody["results"] as
+                    kotlinx.serialization.json.JsonArray
+            val group = groups.single() as JsonObject
+            assertEquals(
+                setOf("query", "status", "products"),
+                group.keys,
+            )
+            assertEquals(
+                "verified",
+                group["status"]?.jsonPrimitive?.content,
+            )
+            val products =
+                group["products"] as
+                    kotlinx.serialization.json.JsonArray
             val product = products.single() as JsonObject
             assertEquals(
                 setOf(
@@ -789,7 +846,7 @@ class AdvisorProxyClientTest {
     }
 
     @Test
-    fun `worst case three byte rich continuation is trimmed below proxy byte limit without changing authoritative facts`() = runBlocking {
+    fun `worst case grouped three byte continuation trims optional facts but keeps every product identity`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(answerResponse())
             val threeByte = "漢"
@@ -809,6 +866,13 @@ class AdvisorProxyClientTest {
                     },
                 )
             }
+            val grouped = products.mapIndexed { index, product ->
+                AdvisorVerifiedQueryResult(
+                    query = threeByte.repeat(200),
+                    status = AdvisorQueryResultStatus.VERIFIED,
+                    products = listOf(product),
+                )
+            }
 
             val result = client(server, FAKE_TOKEN).continueTurn(
                 responseId = threeByte.repeat(256),
@@ -816,9 +880,8 @@ class AdvisorProxyClientTest {
                 storeNumber = "075",
                 continuation = AdvisorToolContinuation.Verified(
                     AdvisorVerifiedToolResult(
-                        query = threeByte.repeat(200),
                         storeNumber = "075",
-                        products = products,
+                        results = grouped,
                     ),
                 ),
             )
@@ -831,9 +894,23 @@ class AdvisorProxyClientTest {
                 request.body.readUtf8(),
             ).jsonObject
             val resultBody = body["result"] as JsonObject
-            val serializedProducts =
-                resultBody["products"] as
+            val groups =
+                resultBody["results"] as
                     kotlinx.serialization.json.JsonArray
+            assertEquals(5, groups.size)
+            val serializedProducts = groups.flatMap { element ->
+                val group = element as JsonObject
+                assertEquals(
+                    "verified",
+                    group["status"]?.jsonPrimitive?.content,
+                )
+                assertEquals(
+                    threeByte.repeat(200),
+                    group["query"]?.jsonPrimitive?.content,
+                )
+                (group["products"] as
+                    kotlinx.serialization.json.JsonArray).toList()
+            }
 
             assertEquals(5, serializedProducts.size)
             serializedProducts.forEachIndexed { index, element ->

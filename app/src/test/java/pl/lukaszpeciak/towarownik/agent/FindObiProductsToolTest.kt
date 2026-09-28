@@ -36,7 +36,7 @@ class FindObiProductsToolTest {
     }
 
     @Test
-    fun `search unavailable is tool failure not empty result`() = runBlocking {
+    fun `search unavailable is represented honestly inside its group`() = runBlocking {
         val tool = tool(
             search = {
                 ProductSearchResult.Unavailable(
@@ -47,10 +47,15 @@ class FindObiProductsToolTest {
             lookup = { _, _ -> error("lookup must not run") },
         )
 
+        val result = tool.execute(arguments()) as
+            AdvisorToolExecutionResult.Success
+
         assertEquals(
-            AdvisorToolExecutionResult.Failure,
-            tool.execute(arguments()),
+            AdvisorQueryResultStatus.UNAVAILABLE,
+            result.result.results.single().status,
         )
+        assertTrue(result.result.results.single().products.isEmpty())
+        assertTrue(result.snapshots.isEmpty())
     }
 
     @Test
@@ -234,10 +239,15 @@ class FindObiProductsToolTest {
             },
         )
 
+        val result = tool.execute(arguments()) as
+            AdvisorToolExecutionResult.Success
+
         assertEquals(
-            AdvisorToolExecutionResult.Failure,
-            tool.execute(arguments()),
+            AdvisorQueryResultStatus.UNAVAILABLE,
+            result.result.results.single().status,
         )
+        assertTrue(result.result.products.isEmpty())
+        assertTrue(result.snapshots.isEmpty())
     }
 
     @Test
@@ -273,7 +283,7 @@ class FindObiProductsToolTest {
     }
 
     @Test
-    fun `all exact lookups fail so result is failure not verified empty`() = runBlocking {
+    fun `all exact lookup failures remain unavailable not verified empty`() = runBlocking {
         val tool = tool(
             search = {
                 ProductSearchResult.Candidates(
@@ -291,9 +301,201 @@ class FindObiProductsToolTest {
             },
         )
 
+        val result = tool.execute(arguments(limit = 2)) as
+            AdvisorToolExecutionResult.Success
+
+        assertEquals(
+            AdvisorQueryResultStatus.UNAVAILABLE,
+            result.result.results.single().status,
+        )
+        assertTrue(result.result.products.isEmpty())
+    }
+
+    @Test
+    fun `washbasin kit batch verifies several categories within one five lookup budget`() = runBlocking {
+        var exactLookups = 0
+        val candidatesByQuery = mapOf(
+            "silikon sanitarny" to listOf(
+                ProductSearchCandidate("1000001", "Silicone A"),
+                ProductSearchCandidate("1000002", "Silicone B"),
+            ),
+            "pistolet do kartuszy" to listOf(
+                ProductSearchCandidate("1000003", "Gun"),
+            ),
+            "narzędzie do wygładzania" to listOf(
+                ProductSearchCandidate("1000004", "Finishing tool"),
+            ),
+        )
+        val tool = tool(
+            search = { query ->
+                ProductSearchResult.Candidates(
+                    checkNotNull(candidatesByQuery[query]),
+                )
+            },
+            lookup = { obik, storeNumber ->
+                exactLookups += 1
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        name = "Verified $obik",
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(
+            AdvisorToolArguments(
+                storeNumber = "075",
+                queries = listOf(
+                    AdvisorToolQuery("silikon sanitarny", 2),
+                    AdvisorToolQuery("pistolet do kartuszy", 1),
+                    AdvisorToolQuery("narzędzie do wygładzania", 1),
+                ),
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(4, exactLookups)
+        assertTrue(exactLookups <= MAX_TOOL_PRODUCTS)
+        assertEquals(3, result.result.results.size)
+        assertTrue(
+            result.result.results.all {
+                it.status == AdvisorQueryResultStatus.VERIFIED
+            },
+        )
+        assertEquals(
+            listOf("1000001", "1000002", "1000003", "1000004"),
+            result.snapshots.map { it.obik },
+        )
+    }
+
+    @Test
+    fun `one failed batch group does not discard verified groups`() = runBlocking {
+        val tool = tool(
+            search = { query ->
+                when (query) {
+                    "silikon" -> ProductSearchResult.Candidates(
+                        listOf(ProductSearchCandidate("1000001", null)),
+                    )
+                    "pistolet" -> ProductSearchResult.Unavailable(
+                        ProductLookupFailure.NETWORK,
+                        "synthetic",
+                    )
+                    else -> ProductSearchResult.NotFound
+                }
+            },
+            lookup = { obik, storeNumber ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(
+            batchArguments(
+                AdvisorToolQuery("silikon", 1),
+                AdvisorToolQuery("pistolet", 1),
+                AdvisorToolQuery("wygładzanie", 1),
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(
+            listOf(
+                AdvisorQueryResultStatus.VERIFIED,
+                AdvisorQueryResultStatus.UNAVAILABLE,
+                AdvisorQueryResultStatus.NOT_FOUND,
+            ),
+            result.result.results.map { it.status },
+        )
+        assertEquals(listOf("1000001"), result.snapshots.map { it.obik })
+    }
+
+    @Test
+    fun `five query groups with limit one are accepted`() = runBlocking {
+        var searches = 0
+        val tool = tool(
+            search = {
+                searches += 1
+                ProductSearchResult.NotFound
+            },
+            lookup = { _, _ -> error("lookup must not run") },
+        )
+
+        val result = tool.execute(
+            AdvisorToolArguments(
+                storeNumber = "075",
+                queries = (1..5).map {
+                    AdvisorToolQuery("query $it", 1)
+                },
+            ),
+        )
+
+        assertTrue(result is AdvisorToolExecutionResult.Success)
+        assertEquals(5, searches)
+    }
+
+    @Test
+    fun `batch rejects total requested limits above five`() = runBlocking {
+        val tool = tool(
+            search = { error("search must not run") },
+            lookup = { _, _ -> error("lookup must not run") },
+        )
+
         assertEquals(
             AdvisorToolExecutionResult.Failure,
-            tool.execute(arguments(limit = 2)),
+            tool.execute(
+                batchArguments(
+                    AdvisorToolQuery("one", 3),
+                    AdvisorToolQuery("two", 3),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `batch rejects more than five query groups`() = runBlocking {
+        val tool = tool(
+            search = { error("search must not run") },
+            lookup = { _, _ -> error("lookup must not run") },
+        )
+
+        assertEquals(
+            AdvisorToolExecutionResult.Failure,
+            tool.execute(
+                AdvisorToolArguments(
+                    storeNumber = "075",
+                    queries = (1..6).map {
+                        AdvisorToolQuery("query $it", 1)
+                    },
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `batch rejects blank and oversized query`() = runBlocking {
+        val tool = tool(
+            search = { error("search must not run") },
+            lookup = { _, _ -> error("lookup must not run") },
+        )
+
+        assertEquals(
+            AdvisorToolExecutionResult.Failure,
+            tool.execute(batchArguments(AdvisorToolQuery("   ", 1))),
+        )
+        assertEquals(
+            AdvisorToolExecutionResult.Failure,
+            tool.execute(
+                batchArguments(
+                    AdvisorToolQuery(
+                        "x".repeat(MAX_TOOL_QUERY_CHARS + 1),
+                        1,
+                    ),
+                ),
+            ),
         )
     }
 
@@ -509,6 +711,14 @@ class FindObiProductsToolTest {
         query = query,
         storeNumber = storeNumber,
         limit = limit,
+    )
+
+    private fun batchArguments(
+        vararg queries: AdvisorToolQuery,
+        storeNumber: String = "075",
+    ) = AdvisorToolArguments(
+        storeNumber = storeNumber,
+        queries = queries.toList(),
     )
 
     private fun product(

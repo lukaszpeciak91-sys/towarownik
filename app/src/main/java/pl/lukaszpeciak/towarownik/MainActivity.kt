@@ -2253,7 +2253,6 @@ private fun advisorErrorText(error: AdvisorError): String =
             AdvisorError.SERVICE -> R.string.advisor_error_service
             AdvisorError.PROTOCOL -> R.string.advisor_error_protocol
             AdvisorError.OBI -> R.string.advisor_error_obi
-            AdvisorError.TOO_MANY_TOOLS -> R.string.advisor_error_too_many_tools
             AdvisorError.INPUT -> R.string.advisor_error_input
         },
     )

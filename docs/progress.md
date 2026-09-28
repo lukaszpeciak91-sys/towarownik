@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Selective web search for Taksula v0.1**
+**Retail-advisor mindset + task-oriented OBI tool use v0.2**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, richer verified OBI product facts, and final Taksula advisor behavior are complete. The current iteration adds one selective bounded Responses web-search capability with persisted citations while preserving the OBI/store/productRef trust boundary.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, richer verified OBI product facts, final Taksula behavior, selective web search, graceful local-tool exhaustion, and multi-query OBI lookup are complete. The current iteration changes only advisor behavior/tool philosophy: task-oriented kit building, restrained complementary sales, strict zero/unknown/failure wording, and retail-driven multi-query use while preserving all infrastructure guards and trust boundaries.
 
 Implemented direction:
 
@@ -19,7 +19,7 @@ Implemented direction:
 - follow-up turns use authenticated `/v1/agent/message` with the stored final `lastResponseId`;
 - tool responses still use `/v1/agent/continue`;
 - only the final answer response ID replaces the persisted conversation context;
-- local tool allowance is two calls per USER turn and resets on every new USER message;
+- local tool allowance is three calls per USER turn and resets on every new USER message;
 - interrupted USER-only tails recover to editable draft without automatic resend;
 - switching/new conversation cancels active work and stale callbacks are rejected;
 - current OBI facts continue to be refreshed through the existing Android local tool;
@@ -73,7 +73,9 @@ Implemented direction:
 - one canonical Android allowlist contains confirmed OBI Poland store numbers; new conversations default to `075`;
 - the advisor top bar exposes a compact conversation store selector; unsaved selection remains transient until first send;
 - direct OBIK and selected EAN/text candidates exact-verify against the active selected store while search discovery remains store-independent;
-- the single advisor OBI tool is now `find_obi_products(query, storeNumber, limit)`;
+- the single advisor OBI tool is now `find_obi_products(storeNumber, queries[])`: one shared store, at most five query groups, and at most five requested exact lookups in total per batch;
+- customer-kit requests can verify several categories in one local call, with grouped `verified` / `not_found` / `unavailable` results and successful groups retained independently;
+- the per-USER-turn ceiling is three local OBI calls; a fourth requested batch performs zero OBI work, returns `local_tool_limit_reached`, and forces the final continuation to proceed without `find_obi_products`;
 - Android authorizes alternate tool stores only when a supported exact three-digit token occurs literally in the current USER message, with exact digit boundaries;
 - START/MESSAGE/CONTINUE carry the immutable turn-store context to the proxy, while the full allowlist remains Android-local;
 - unsupported/unauthorized store tool requests fail closed before OBI and never substitute `075`;
@@ -99,15 +101,15 @@ Android test version: **0.1.10 (11)**.
 - message-product snapshots/cards/reports remain unchanged; rich facts are transient model context only;
 - raw OBI HTML/Nuxt, URLs, EAN, cookies, diagnostics, and verification timestamps remain outside OpenAI tool results.
 
-- final Taksula instructions define a practical home-improvement retail product/technical advisor rather than a generic assistant;
-- ordinary general technical knowledge is allowed without forcing an OBI lookup;
-- specific OBI SKU/current-store claims remain under the verified tool trust hierarchy and missing SKU-specific facts are not invented;
-- current stock/price still require fresh verification when relevant and historical values remain non-authoritative;
-- richer product facts are used selectively rather than dumped;
-- clearly unrelated general chat is briefly redirected while borderline practical home-improvement questions remain in scope;
-- conversation language is followed naturally where practical without changing Android locale/persistence behavior;
-- GPT-6 Luna, low reasoning, tool/schema/productRefs boundaries, tool/product limits, multi-store rules, pricing, UI, persistence, and parser remain unchanged;
-- selective Responses web_search is enabled with automatic choice and max one built-in call per response; ordinary technical questions should not browse reflexively.
+- final Taksula instructions define a practical in-store home-improvement retail advisor rather than a literal product-answer bot;
+- job/goal and complete-kit requests trigger a small essentials-first category plan, aggressive multi-query batching, concrete verified active-store selections, and brief explanations of what each selected item is for;
+- single-product/category requests stay focused on the requested item; obvious complements may be offered briefly but are searched only after user acceptance unless the original request already asks for a full kit;
+- accepted complements are batched together where practical, while direct current price/stock questions remain direct and avoid unnecessary cross-sell;
+- model-facing instructions do not expose the numerical local-tool guard; Android independently enforces three local calls per USER turn and graceful `local_tool_limit_reached`;
+- stock `0`, null stock, grouped `not_found`, and grouped `unavailable` remain distinct evidence states and must produce distinct wording;
+- zero-stock/not-found requested items may lead to a verified current-store substitute and an offer to check another market, but no other-market number or availability is invented;
+- ordinary general technical knowledge remains allowed, specific OBI SKU/current-store claims remain under the verified tool trust hierarchy, and missing SKU-specific facts are not invented;
+- GPT-6 Luna, low reasoning, multi-query/schema/productRefs boundaries, hard tool/product limits, multi-store authorization, web search, pricing, UI, persistence, and parser remain unchanged.
 
 - current Responses `web_search` is available selectively alongside `find_obi_products`, with `tool_choice=auto` and `max_tool_calls=1` for built-ins;
 - OBI remains authoritative for current stock/price/store availability and only Android-verified current-turn snapshots may enter productRefs/cards;

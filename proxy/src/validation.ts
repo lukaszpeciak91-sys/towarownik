@@ -10,15 +10,19 @@ import {
   MAX_PRODUCT_FACT_VALUE_CHARS,
   MAX_RESPONSE_ID_CHARS,
   MAX_TOOL_PRODUCTS,
+  MAX_TOOL_QUERIES,
   MAX_TOOL_QUERY_CHARS,
   START_BODY_MAX_BYTES,
   START_MESSAGE_MAX_CHARS,
 } from "./config.js";
 import type {
+  LocalToolLimitResult,
   RejectedToolResult,
   ToolArguments,
   ToolContinuationResult,
+  ToolQuery,
   VerifiedProduct,
+  VerifiedQueryResult,
   VerifiedToolResult,
 } from "./types.js";
 
@@ -139,28 +143,49 @@ export function parseToolArguments(raw: string): ToolArguments {
 
   const object = exactObject(
     value,
-    ["query", "storeNumber", "limit"],
+    ["storeNumber", "queries"],
   );
-  const query = normalizeWhitespace(
-    boundedString(object.query, MAX_TOOL_QUERY_CHARS),
-  );
-  const storeNumber = validateStoreNumber(object.storeNumber);
 
+  return {
+    storeNumber: validateStoreNumber(object.storeNumber),
+    queries: validateToolQueries(object.queries),
+  };
+}
+
+function validateToolQueries(value: unknown): ToolQuery[] {
   if (
-    !query ||
-    typeof object.limit !== "number" ||
-    !Number.isInteger(object.limit) ||
-    object.limit < 1 ||
-    object.limit > MAX_TOOL_PRODUCTS
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > MAX_TOOL_QUERIES
   ) {
     throw new InvalidRequestError();
   }
 
-  return {
-    query,
-    storeNumber,
-    limit: object.limit,
-  };
+  const queries = value.map((entry): ToolQuery => {
+    const object = exactObject(entry, ["query", "limit"]);
+    const query = normalizedToolQuery(object.query);
+    if (
+      typeof object.limit !== "number" ||
+      !Number.isInteger(object.limit) ||
+      object.limit < 1 ||
+      object.limit > MAX_TOOL_PRODUCTS
+    ) {
+      throw new InvalidRequestError();
+    }
+    return {
+      query,
+      limit: object.limit,
+    };
+  });
+
+  if (
+    queries.reduce((sum, query) => sum + query.limit, 0) >
+    MAX_TOOL_PRODUCTS
+  ) {
+    throw new InvalidRequestError();
+  }
+
+  return queries;
 }
 
 function validateToolContinuationResult(
@@ -170,7 +195,7 @@ function validateToolContinuationResult(
     throw new InvalidRequestError();
   }
 
-  if ("products" in value) {
+  if ("results" in value) {
     return validateVerifiedToolResult(value);
   }
   if ("rejection" in value) {
@@ -184,41 +209,101 @@ function validateVerifiedToolResult(
 ): VerifiedToolResult {
   const object = exactObject(
     value,
-    ["query", "storeNumber", "products"],
+    ["storeNumber", "results"],
   );
-  const query = normalizedToolQuery(object.query);
   const storeNumber = validateStoreNumber(object.storeNumber);
 
   if (
-    !Array.isArray(object.products) ||
-    object.products.length > MAX_TOOL_PRODUCTS
+    !Array.isArray(object.results) ||
+    object.results.length < 1 ||
+    object.results.length > MAX_TOOL_QUERIES
   ) {
     throw new InvalidRequestError();
   }
 
-  return {
-    query,
-    storeNumber,
-    products: object.products.map(validateProduct),
-  };
-}
-
-function validateRejectedToolResult(
-  value: unknown,
-): RejectedToolResult {
-  const object = exactObject(
-    value,
-    ["query", "storeNumber", "rejection"],
+  const results = object.results.map(validateVerifiedQueryResult);
+  const productCount = results.reduce(
+    (sum, result) => sum + result.products.length,
+    0,
   );
-  if (object.rejection !== "store_not_authorized") {
+  if (productCount > MAX_TOOL_PRODUCTS) {
     throw new InvalidRequestError();
   }
 
   return {
-    query: normalizedToolQuery(object.query),
-    storeNumber: validateStoreNumber(object.storeNumber),
-    rejection: "store_not_authorized",
+    storeNumber,
+    results,
   };
+}
+
+function validateVerifiedQueryResult(
+  value: unknown,
+): VerifiedQueryResult {
+  const object = exactObject(
+    value,
+    ["query", "status", "products"],
+  );
+  const query = normalizedToolQuery(object.query);
+  if (!Array.isArray(object.products)) {
+    throw new InvalidRequestError();
+  }
+  const products = object.products.map(validateProduct);
+
+  if (object.status === "verified") {
+    if (products.length < 1) {
+      throw new InvalidRequestError();
+    }
+    return {
+      query,
+      status: "verified",
+      products,
+    };
+  }
+
+  if (
+    object.status === "not_found" ||
+    object.status === "unavailable"
+  ) {
+    if (products.length !== 0) {
+      throw new InvalidRequestError();
+    }
+    return {
+      query,
+      status: object.status,
+      products: [],
+    };
+  }
+
+  throw new InvalidRequestError();
+}
+
+function validateRejectedToolResult(
+  value: unknown,
+): RejectedToolResult | LocalToolLimitResult {
+  const object = exactObject(
+    value,
+    ["storeNumber", "queries", "rejection"],
+  );
+  const storeNumber = validateStoreNumber(object.storeNumber);
+  const queries = validateToolQueries(object.queries);
+
+  if (object.rejection === "store_not_authorized") {
+    return {
+      storeNumber,
+      queries,
+      rejection: "store_not_authorized",
+    };
+  }
+
+  if (object.rejection === "local_tool_limit_reached") {
+    return {
+      storeNumber,
+      queries,
+      rejection: "local_tool_limit_reached",
+    };
+  }
+
+  throw new InvalidRequestError();
 }
 
 function validatedMessage(value: unknown): string {

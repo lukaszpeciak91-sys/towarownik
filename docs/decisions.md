@@ -149,7 +149,7 @@ These decisions describe the broader intended product behavior. The currently im
 - Only a final ASSISTANT answer response ID is persisted as `lastResponseId`. Tool response IDs/call IDs are transient. New conversations start with null context.
 - The Worker adds authenticated `POST /v1/agent/message`; it accepts only `previousResponseId` and the new message, while model/instructions/tools/reasoning/output budget remain server-controlled.
 - `previous_response_id` is used for normal follow-up turns instead of replaying the entire local transcript. This does not make prior context free; previous chain input tokens remain billable.
-- `MAX_LOCAL_TOOL_CALLS_PER_TURN = 2`. Every USER message starts with a fresh allowance; the product limit remains 5. Manual human search remains independently bounded at 25 parsed candidates.
+- `MAX_LOCAL_TOOL_CALLS_PER_TURN = 3`. Every USER message starts with a fresh allowance; the product limit remains 5. Manual human search remains independently bounded at 25 parsed candidates.
 - Current OBI stock/price/availability questions must refresh through `find_available_obi_075`; historical conversation values are not current truth.
 - Interrupted trailing USER messages are transactionally recovered into editable draft text without advancing `lastResponseId` and without automatic network retry.
 - Completing a turn commits the ASSISTANT message and replacement final `lastResponseId` in one Room transaction.
@@ -245,7 +245,7 @@ These decisions describe the broader intended product behavior. The currently im
 - A new unsaved conversation may hold a transient store choice without creating an empty Room row; the selected store is persisted with the first USER message.
 - Room schema advances v2→v3 by adding `conversations.storeNumber` and `message_products.storeNumber`, both defaulting historical rows to `075`. No destructive migration is allowed.
 - Verified snapshot identity is `(storeNumber, obik)`, not OBIK alone. Historical snapshots retain their original store even if the conversation selector changes later.
-- The advisor has one generic tool: `find_obi_products(query, storeNumber, limit)`. There are no per-store tools or repositories. Existing limits stay at five products per call and two local tool calls per USER turn.
+- The advisor has one generic tool: `find_obi_products(storeNumber, queries[])`. There are no per-store tools or repositories. One batch has one shared store, at most five query groups, and `sum(limit) <= 5`, preserving the maximum of five exact lookups per local call. Android still executes at most three local batches per USER turn; a fourth requested batch does zero OBI work and resolves through `local_tool_limit_reached` before a final continuation without the local tool.
 - Android captures an immutable turn-store snapshot and exact supported three-digit store tokens literally present in the current USER message. A tool store is authorized only when it equals the conversation store or is both allowlisted and literally present in that current message. Previous turns, city/region/store names, unsupported numbers, and digits embedded in longer numbers do not authorize it.
 - Rejected store tool calls fail closed before OBI and return bounded `store_not_authorized` continuation data; no silent fallback or fabricated empty result exists.
 - The proxy receives the selected conversation store on START/MESSAGE/CONTINUE, validates only exact three-digit syntax, and adds the current store as small dynamic instruction context without receiving the full allowlist.
@@ -299,6 +299,19 @@ These decisions describe the broader intended product behavior. The currently im
 - Reply naturally in the user's conversation language where practical; no Android locale or persisted-history translation architecture changes.
 - Keep `gpt-6-luna`, low reasoning, one `find_obi_products` tool, structured final output, productRefs trust boundary, tool/product limits, multi-store rules, persistence, UI, parser, and pricing unchanged.
 - Do not enable `web_search` or any OpenAI built-in tool here. Next milestone: selective OpenAI `web_search`.
+
+
+## Retail-advisor mindset + task-oriented OBI tool use v0.2
+
+- Keep the existing multi-query `find_obi_products(storeNumber, queries[])` contract and Android hard guard `MAX_LOCAL_TOOL_CALLS_PER_TURN = 3`; the guard remains infrastructure safety, not the model's retail-planning budget.
+- Remove explicit "you have at most 2 calls" / "use the second call" reasoning from normal advisor instructions. The model should use verified OBI lookup whenever current assortment, stock, price, store availability, or concrete selection is useful, batch related categories aggressively, prefer one well-planned batch, and avoid skipping necessary verification merely to conserve a call.
+- For job/goal and explicit complete-kit intent, identify a small practical category set, separate essentials from optional convenience items, proactively verify the important categories, and explain briefly what selected items are for. Do not require one user confirmation per category and do not generate exhaustive shopping lists.
+- For a single product/category request, answer/select that item first. Useful complements may be offered briefly, but do not search them until the user asks unless the original request already asks for a complete kit. Accepted complements should be batched.
+- Direct current price/stock questions stay direct and do not trigger routine cross-sell.
+- Preserve distinct evidence semantics: stock `0` = confirmed unavailable in that verified store; null stock = unknown; `not_found` = no verified match; `unavailable` = retrieval could not establish the fact. Never collapse unknown/failure into "brak".
+- When a requested verified item has stock zero or an exact requested item is not found, Taksula may verify a reasonable substitute in the current store and may offer another-market checking. Do not invent another store number or availability; another market remains authorized only after the user supplies its exact supported three-digit number in the current turn.
+- Keep `local_tool_limit_reached` graceful if the Android hard guard is reached. Preserve grouped results, partial group failures, continuation byte budget, web search, current-turn `productRefs` trust, and composite `(storeNumber, obik)` identity.
+- Do not add cross-market scanning, distance logic, a new availability tool, parser/manual-search/Room changes, RAG, or other retailer integrations in this iteration.
 
 
 ## Selective web search for Taksula v0.1
