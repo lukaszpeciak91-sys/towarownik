@@ -206,7 +206,7 @@ function validateVerifiedToolResult(
 
 function validateRejectedToolResult(
   value: unknown,
-): RejectedToolResult {
+): RejectedToolResult | LocalToolLimitResult {
   const object = exactObject(
     value,
     ["query", "storeNumber", "rejection"],
