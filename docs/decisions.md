@@ -286,3 +286,16 @@ These decisions describe the broader intended product behavior. The currently im
 - Preserve the existing continuation transport budget with bounds: brand 80, description 220, at most six facts, label 60, value 100.
 - Minimal instruction change only: OBI-supplied rich facts are verified product-page facts; absent properties remain unknown, not false.
 - Next stages remain final Taksula advisor instructions/persona, then optional OpenAI `web_search`.
+
+
+## Final Taksula advisor behavior v0.1
+
+- Replace the temporary generic retail assistant instructions with the final Taksula role: a concise practical product/technical advisor for home-improvement retail staff.
+- Do not over-block ordinary technical knowledge. Model knowledge may answer general installation, product-type, material-compatibility, tool-selection, and troubleshooting questions without a verified OBI source.
+- Apply strict verification only to specific SKU/current-store claims. `find_obi_products` facts are authoritative for OBIK, name, store, stock, price, and supplied product-page facts; missing SKU-specific dimensions/materials/compatibility/certifications/applications/parameters/limitations must not be invented.
+- Fresh current stock/price verification remains mandatory when relevant, and historical conversation values remain non-authoritative for current store facts.
+- Use richer OBI facts selectively for the question; do not dump technicalFacts or repeat marketing copy. Unknown means unknown.
+- Clearly unrelated general chat gets a brief redirect toward product/technical retail support rather than a verbose refusal. Borderline practical home-improvement topics remain in scope.
+- Reply naturally in the user's conversation language where practical; no Android locale or persisted-history translation architecture changes.
+- Keep `gpt-6-luna`, low reasoning, one `find_obi_products` tool, structured final output, productRefs trust boundary, tool/product limits, multi-store rules, persistence, UI, parser, and pricing unchanged.
+- Do not enable `web_search` or any OpenAI built-in tool here. Next milestone: selective OpenAI `web_search`.
