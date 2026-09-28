@@ -294,14 +294,19 @@ class AdvisorProxyClientTest {
                       "responseId":"resp_sources",
                       "text":"Web answer",
                       "productRefs":[],
+                      "webSearchCalls":1,
                       "sources":[
                         {
                           "title":"Manufacturer manual",
-                          "url":"https://manufacturer.example/manual"
+                          "url":"https://manufacturer.example/manual",
+                          "startIndex":0,
+                          "endIndex":3
                         },
                         {
                           "title":"Manufacturer manual duplicate",
-                          "url":"https://manufacturer.example/manual"
+                          "url":"https://manufacturer.example/manual",
+                          "startIndex":0,
+                          "endIndex":3
                         }
                       ]
                     }
@@ -319,8 +324,11 @@ class AdvisorProxyClientTest {
                             AdvisorWebSource(
                                 title = "Manufacturer manual",
                                 url = "https://manufacturer.example/manual",
+                                startIndex = 0,
+                                endIndex = 3,
                             ),
                         ),
+                        webSearchCalls = 1,
                     ),
                 ),
                 client(server, FAKE_TOKEN).start("test"),
@@ -342,7 +350,9 @@ class AdvisorProxyClientTest {
                       "sources":[
                         {
                           "title":"Unsafe",
-                          "url":"http://example.com/source"
+                          "url":"http://example.com/source",
+                          "startIndex":null,
+                          "endIndex":null
                         }
                       ]
                     }
@@ -408,6 +418,7 @@ class AdvisorProxyClientTest {
                       "responseId":"resp_usage",
                       "text":"Measured",
                       "productRefs":[],
+                      "webSearchCalls":1,
                       "usage":{
                         "model":"gpt-6-luna",
                         "requestType":"START",
@@ -417,7 +428,6 @@ class AdvisorProxyClientTest {
                         "outputTokens":100,
                         "reasoningTokens":50,
                         "totalTokens":1100,
-                        "webSearchCalls":1,
                         "estimatedCostUsd":0.0101165,
                         "pricingVersion":"openai-gpt-6-luna-2026-09-28-web-v1"
                       }
@@ -443,12 +453,12 @@ class AdvisorProxyClientTest {
                             outputTokens = 100,
                             reasoningTokens = 50,
                             totalTokens = 1_100,
-                            webSearchCalls = 1,
                             estimatedCostUsd =
                                 BigDecimal("0.0101165"),
                             pricingVersion =
                                 "openai-gpt-6-luna-2026-09-28-web-v1",
                         ),
+                        webSearchCalls = 1,
                     ),
                 ),
                 result,
@@ -467,6 +477,7 @@ class AdvisorProxyClientTest {
                       "responseId":"resp_usage_bad",
                       "text":"Still usable",
                       "productRefs":[],
+                      "webSearchCalls":1,
                       "usage":{
                         "model":"gpt-6-luna",
                         "requestType":"START",
@@ -476,7 +487,6 @@ class AdvisorProxyClientTest {
                         "outputTokens":1,
                         "reasoningTokens":0,
                         "totalTokens":1,
-                        "webSearchCalls":0,
                         "estimatedCostUsd":0.0000012,
                         "pricingVersion":"openai-gpt-6-luna-2026-09-28-web-v1"
                       }
@@ -491,6 +501,7 @@ class AdvisorProxyClientTest {
                         responseId = "resp_usage_bad",
                         text = "Still usable",
                         productRefs = emptyList(),
+                        webSearchCalls = 1,
                         usage = null,
                     ),
                 ),
@@ -519,7 +530,6 @@ class AdvisorProxyClientTest {
                         "outputTokens":10,
                         "reasoningTokens":0,
                         "totalTokens":110,
-                        "webSearchCalls":0,
                         "estimatedCostUsd":null,
                         "pricingVersion":null
                       }
@@ -534,6 +544,38 @@ class AdvisorProxyClientTest {
                         responseId = "resp_bad_cache_sum",
                         text = "Still usable",
                         productRefs = emptyList(),
+                        usage = null,
+                    ),
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `missing usage preserves independent web search count`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse().setBody(
+                    """
+                    {
+                      "type":"answer",
+                      "responseId":"resp_missing_usage_search",
+                      "text":"Still useful",
+                      "productRefs":[],
+                      "webSearchCalls":1
+                    }
+                    """.trimIndent(),
+                ),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.Answer(
+                        responseId = "resp_missing_usage_search",
+                        text = "Still useful",
+                        productRefs = emptyList(),
+                        webSearchCalls = 1,
                         usage = null,
                     ),
                 ),
