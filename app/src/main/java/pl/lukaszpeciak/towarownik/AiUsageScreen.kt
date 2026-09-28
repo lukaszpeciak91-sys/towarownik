@@ -116,6 +116,10 @@ internal fun AiUsageScreen(
                     stringResource(R.string.ai_usage_tool_turns),
                     snapshot.toolAssistedTurns.toString(),
                 )
+                UsageMetricRow(
+                    stringResource(R.string.ai_usage_web_searches),
+                    snapshot.webSearchCalls.toString(),
+                )
             }
 
             UsageCard(
