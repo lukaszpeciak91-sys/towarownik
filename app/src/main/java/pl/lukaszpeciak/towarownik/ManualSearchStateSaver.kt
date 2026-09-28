@@ -74,7 +74,10 @@ internal fun encodeManualSearchState(state: ManualSearchUiState): String {
                 put(
                     "items",
                     buildJsonArray {
-                        persistable.items.forEach { item ->
+                        persistable.items.forEachIndexed {
+                                index,
+                                item,
+                            ->
                             add(
                                 buildJsonObject {
                                     put("obik", item.obik)
@@ -93,7 +96,14 @@ internal fun encodeManualSearchState(state: ManualSearchUiState): String {
                                         ManualResultEnrichment.Loading -> {
                                             put(
                                                 "enrichment",
-                                                "pending",
+                                                if (
+                                                    index <
+                                                        persistable.visibleCount
+                                                ) {
+                                                    "unavailable"
+                                                } else {
+                                                    "pending"
+                                                },
                                             )
                                         }
 
