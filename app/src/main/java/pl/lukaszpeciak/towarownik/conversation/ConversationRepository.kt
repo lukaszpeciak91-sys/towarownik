@@ -33,11 +33,15 @@ internal data class PersistedConversation(
 internal data class PersistedWebSource(
     val title: String,
     val url: String,
+    val startIndex: Int? = null,
+    val endIndex: Int? = null,
 )
 
 internal fun persistedWebSourceOrNull(
     title: String,
     url: String,
+    startIndex: Int? = null,
+    endIndex: Int? = null,
 ): PersistedWebSource? {
     val normalizedTitle = title
         .replace(CONVERSATION_WHITESPACE, " ")
@@ -52,9 +56,24 @@ internal fun persistedWebSourceOrNull(
     ) {
         return null
     }
+    if (
+        !(
+            (startIndex == null && endIndex == null) ||
+                (
+                    startIndex != null &&
+                        endIndex != null &&
+                        startIndex >= 0 &&
+                        endIndex > startIndex
+                )
+        )
+    ) {
+        return null
+    }
     return PersistedWebSource(
         title = normalizedTitle,
         url = url,
+        startIndex = startIndex,
+        endIndex = endIndex,
     )
 }
 
