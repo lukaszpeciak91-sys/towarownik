@@ -83,12 +83,20 @@ internal class AiUsageRepository(
         }
     }
 
-    fun recordOpenAiResponse(usage: AdvisorUsage?) {
+    fun recordOpenAiResponse(
+        usage: AdvisorUsage?,
+        webSearchCalls: Long = 0,
+    ) {
+        require(webSearchCalls in 0..1)
         mutate { state ->
             val withRequest = state.copy(
                 trackingStartedAt =
                     state.trackingStartedAt ?: now(),
                 requests = Math.addExact(state.requests, 1L),
+                webSearchCalls = Math.addExact(
+                    state.webSearchCalls,
+                    webSearchCalls,
+                ),
             )
             val updated = if (usage == null) {
                 withRequest.copy(
@@ -96,7 +104,10 @@ internal class AiUsageRepository(
                         Math.addExact(withRequest.unpricedRequests, 1L),
                 )
             } else {
-                withRequest.addUsage(usage)
+                withRequest.addUsage(
+                    usage = usage,
+                    webSearchCalls = webSearchCalls,
+                )
             }
             updated.refreshBudgetWarning()
         }
@@ -139,6 +150,7 @@ internal class AiUsageRepository(
 
     private fun UsageState.addUsage(
         usage: AdvisorUsage,
+        webSearchCalls: Long,
     ): UsageState {
         val cost = usage.estimatedCostUsd
         val existingModel =
@@ -190,7 +202,7 @@ internal class AiUsageRepository(
             webSearchCalls =
                 Math.addExact(
                     existingModel.webSearchCalls,
-                    usage.webSearchCalls,
+                    webSearchCalls,
                 ),
             estimatedCostUsd =
                 existingModel.estimatedCostUsd +
@@ -229,8 +241,6 @@ internal class AiUsageRepository(
                     reasoningReportedRequests
                 },
             totalTokens = Math.addExact(totalTokens, usage.totalTokens),
-            webSearchCalls =
-                Math.addExact(webSearchCalls, usage.webSearchCalls),
             estimatedCostUsd =
                 estimatedCostUsd + (cost ?: BigDecimal.ZERO),
             unpricedRequests =
