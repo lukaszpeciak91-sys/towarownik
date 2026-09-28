@@ -48,6 +48,8 @@ export interface ProductRef {
 export interface WebSource {
   title: string;
   url: string;
+  startIndex: number | null;
+  endIndex: number | null;
 }
 
 export type AgentRequestType = "START" | "MESSAGE" | "CONTINUE";
@@ -61,7 +63,6 @@ export interface AgentUsage {
   outputTokens: number;
   reasoningTokens: number | null;
   totalTokens: number;
-  webSearchCalls: number;
   estimatedCostUsd: number | null;
   pricingVersion: string | null;
 }
@@ -73,6 +74,7 @@ export type AgentResult =
       text: string;
       productRefs: ProductRef[];
       sources?: WebSource[];
+      webSearchCalls: number;
       usage?: AgentUsage;
     }
   | {
@@ -83,6 +85,7 @@ export type AgentResult =
         callId: string;
         arguments: ToolArguments;
       };
+      webSearchCalls: number;
       usage?: AgentUsage;
     };
 
