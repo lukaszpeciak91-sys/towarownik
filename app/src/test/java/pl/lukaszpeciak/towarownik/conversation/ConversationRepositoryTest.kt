@@ -193,7 +193,7 @@ class ConversationRepositoryTest {
         assertTrue(
             repository.deleteConversation(started.conversationId),
         )
-        assertEquals(0, messageSourceCount(started.conversationId))
+        assertEquals(0, allMessageSourceCount())
     }
 
     @Test
@@ -926,6 +926,16 @@ class ConversationRepositoryTest {
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
     )
+
+    private fun allMessageSourceCount(): Int {
+        val cursor = database.openHelper.readableDatabase.query(
+            "SELECT COUNT(*) FROM message_sources",
+        )
+        return cursor.use {
+            check(it.moveToFirst())
+            it.getInt(0)
+        }
+    }
 
     private fun messageSourceCount(
         conversationId: Long,
