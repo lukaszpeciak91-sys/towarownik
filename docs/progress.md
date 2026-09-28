@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Richer verified OBI product facts v0.1**
+**Final Taksula advisor behavior v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, and the GPT-6 Luna swap are complete. The current iteration enriches exact verified OBI product lookup with bounded product-page facts for model context while preserving store authority, visible-card authority, and the existing transport/search architecture.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, and richer verified OBI product facts are complete. The current iteration replaces the temporary generic advisor instructions with the final Taksula product/technical retail behavior while keeping tools, model, UI, persistence, pricing, and OBI parsing unchanged.
 
 Implemented direction:
 
@@ -99,15 +99,22 @@ Android test version: **0.1.10 (11)**.
 - message-product snapshots/cards/reports remain unchanged; rich facts are transient model context only;
 - raw OBI HTML/Nuxt, URLs, EAN, cookies, diagnostics, and verification timestamps remain outside OpenAI tool results.
 
+- final Taksula instructions define a practical home-improvement retail product/technical advisor rather than a generic assistant;
+- ordinary general technical knowledge is allowed without forcing an OBI lookup;
+- specific OBI SKU/current-store claims remain under the verified tool trust hierarchy and missing SKU-specific facts are not invented;
+- current stock/price still require fresh verification when relevant and historical values remain non-authoritative;
+- richer product facts are used selectively rather than dumped;
+- clearly unrelated general chat is briefly redirected while borderline practical home-improvement questions remain in scope;
+- conversation language is followed naturally where practical without changing Android locale/persistence behavior;
+- GPT-6 Luna, low reasoning, tool/schema/productRefs boundaries, tool/product limits, multi-store rules, pricing, UI, persistence, and parser remain unchanged;
+- OpenAI web_search remains disabled.
+
 ## Next implementation milestone
 
-After richer verified OBI product facts, proceed with final advisor instructions/persona as a separate measured iteration, then optional OpenAI web_search. Context compaction and privacy-policy content remain separate work.
-
-The final advisor persona/instructions and any context compaction should remain separate measured iterations.
+Next: selective OpenAI web_search as a separate measured iteration. Context compaction and privacy-policy content remain separate work.
 
 ## Not started
 
-- Final advisor persona/prompt
 - Context summarization/compaction
 - Explicit continue-as-new-context fallback
 - Strong per-device/user identity
