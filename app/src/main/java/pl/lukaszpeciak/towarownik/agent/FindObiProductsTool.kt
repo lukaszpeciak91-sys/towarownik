@@ -85,6 +85,16 @@ internal class FindObiProductsTool(
                                 verified += AdvisorVerifiedProduct(
                                     obik = product.obik,
                                     name = product.name,
+                                    brand = product.brand,
+                                    shortDescription =
+                                        product.shortDescription,
+                                    technicalFacts =
+                                        product.technicalFacts.map {
+                                            AdvisorTechnicalFact(
+                                                label = it.label,
+                                                value = it.value,
+                                            )
+                                        },
                                     stock = product.stock,
                                     price = product.grossPrice,
                                 )

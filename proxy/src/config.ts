@@ -34,6 +34,11 @@ export const LOCAL_TOOL_NAME = "find_obi_products";
 export const MAX_TOOL_PRODUCTS = 5;
 export const MAX_TOOL_QUERY_CHARS = 200;
 export const MAX_PRODUCT_NAME_CHARS = 200;
+export const MAX_PRODUCT_BRAND_CHARS = 80;
+export const MAX_PRODUCT_DESCRIPTION_CHARS = 220;
+export const MAX_PRODUCT_TECHNICAL_FACTS = 6;
+export const MAX_PRODUCT_FACT_LABEL_CHARS = 60;
+export const MAX_PRODUCT_FACT_VALUE_CHARS = 100;
 
 export const START_BODY_MAX_BYTES = 4 * 1024;
 export const START_MESSAGE_MAX_CHARS = 2_000;
@@ -56,7 +61,10 @@ export const AGENT_INSTRUCTIONS =
   "null stock means unknown; null price means unknown. In the structured final answer, productRefs may " +
   "reference only products verified by find_obi_products during the current USER turn. If a tool result " +
   "reports store_not_authorized, do not guess or substitute a store; ask for the exact supported 3-digit " +
-  "market number when clarification is needed.";
+  "market number when clarification is needed. Product-page facts returned by find_obi_products are verified " +
+  "OBI facts for that specific product; use them when relevant but never invent missing technical properties. " +
+  "Treat missing facts as unknown, not as false or no. Stock and price are current selected-store facts; " +
+  "descriptive and technical product facts are product-level facts unless the supplied source explicitly says otherwise.";
 
 export function agentInstructionsForStore(storeNumber: string): string {
   return AGENT_INSTRUCTIONS +

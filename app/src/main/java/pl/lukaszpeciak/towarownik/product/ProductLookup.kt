@@ -4,6 +4,11 @@ import java.math.BigDecimal
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 
+data class TechnicalFact(
+    val label: String,
+    val value: String,
+)
+
 data class LocalProduct(
     val obik: String,
     val name: String,
@@ -12,6 +17,9 @@ data class LocalProduct(
     val productUrl: String,
     internal val ean: String?,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val brand: String? = null,
+    val shortDescription: String? = null,
+    val technicalFacts: List<TechnicalFact> = emptyList(),
 )
 
 enum class ProductLookupFailure {

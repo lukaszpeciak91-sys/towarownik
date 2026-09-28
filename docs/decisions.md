@@ -274,3 +274,15 @@ These decisions describe the broader intended product behavior. The currently im
 - Existing GPT-5.6 Luna usage remains historical per-model baseline data. Global totals and configured local Taksula budget continue without reset; the latest measured model changes only when measured GPT-6 usage arrives.
 - No fallback to GPT-5.6 is introduced. Unknown model pricing remains unpriced rather than inferred.
 - Next measured product work remains richer OBI facts → final advisor instructions/persona → optional OpenAI `web_search`.
+
+
+## Richer verified OBI product facts v0.1
+
+- Add model context only from structured fields proven in the current live decoded OBI product payload; do not infer unsupported fields or scrape rendered page text when structured data exists.
+- Implement nullable brand from `brand.name`, bounded normalized description from `productDescription`, and bounded technical facts from `productOverview[]` plus `technicalData.productDetails[]` / `dimensionsAndWeight[]`.
+- Do not create a separate `applications` field in this iteration: live proof did not show one stable structured applications section. Uses and explicit limitations stated by OBI remain available through the bounded product description.
+- Preserve current stock/price authority and multi-store rules. Rich product facts do not authorize stores, replace selected-store stock/price, or alter composite verified identity.
+- Keep rich facts transient and model-facing. Do not migrate Room or expand visible product cards/reports merely to persist advisor-only context.
+- Preserve the existing continuation transport budget with bounds: brand 80, description 220, at most six facts, label 60, value 100.
+- Minimal instruction change only: OBI-supplied rich facts are verified product-page facts; absent properties remain unknown, not false.
+- Next stages remain final Taksula advisor instructions/persona, then optional OpenAI `web_search`.

@@ -543,6 +543,15 @@ class AdvisorProxyClientTest {
                     AdvisorVerifiedProduct(
                         obik = "1234567",
                         name = "Synthetic product",
+                        brand = "Synthetic Brand",
+                        shortDescription =
+                            "Verified compact description.",
+                        technicalFacts = listOf(
+                            AdvisorTechnicalFact(
+                                label = "Moc",
+                                value = "600 W",
+                            ),
+                        ),
                         stock = 0,
                         price = BigDecimal("14.99"),
                     ),
@@ -588,14 +597,110 @@ class AdvisorProxyClientTest {
             val products = resultBody["products"] as kotlinx.serialization.json.JsonArray
             val product = products.single() as JsonObject
             assertEquals(
-                setOf("obik", "name", "stock", "price"),
+                setOf(
+                    "obik",
+                    "name",
+                    "brand",
+                    "shortDescription",
+                    "technicalFacts",
+                    "stock",
+                    "price",
+                ),
                 product.keys,
             )
             assertFalse(raw.contains("html", ignoreCase = true))
             assertFalse(raw.contains("cookie", ignoreCase = true))
+            assertEquals(
+                "Synthetic Brand",
+                product["brand"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                "Verified compact description.",
+                product["shortDescription"]
+                    ?.jsonPrimitive
+                    ?.content,
+            )
             assertFalse(raw.contains("productUrl", ignoreCase = true))
             assertFalse(raw.contains("verifiedAt", ignoreCase = true))
+            assertFalse(raw.contains("articleEanEcms", ignoreCase = true))
+            assertFalse(raw.contains("__NUXT_DATA__", ignoreCase = true))
             assertFalse(raw.contains(FAKE_TOKEN))
+        }
+    }
+
+    @Test
+    fun `worst case three byte rich continuation is trimmed below proxy byte limit without changing authoritative facts`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(answerResponse())
+            val threeByte = "漢"
+            val products = (1..5).map { index ->
+                AdvisorVerifiedProduct(
+                    obik = (1_000_000 + index).toString(),
+                    name = threeByte.repeat(200),
+                    stock = index,
+                    price = BigDecimal(index.toString() + ".99"),
+                    brand = threeByte.repeat(80),
+                    shortDescription = threeByte.repeat(220),
+                    technicalFacts = (1..6).map {
+                        AdvisorTechnicalFact(
+                            label = threeByte.repeat(60),
+                            value = threeByte.repeat(100),
+                        )
+                    },
+                )
+            }
+
+            val result = client(server, FAKE_TOKEN).continueTurn(
+                responseId = threeByte.repeat(256),
+                callId = threeByte.repeat(256),
+                storeNumber = "075",
+                continuation = AdvisorToolContinuation.Verified(
+                    AdvisorVerifiedToolResult(
+                        query = threeByte.repeat(200),
+                        storeNumber = "075",
+                        products = products,
+                    ),
+                ),
+            )
+
+            assertTrue(result is AdvisorProxyCallResult.Success)
+            val request = server.takeRequest()
+            assertTrue(request.body.size < 16L * 1024L)
+
+            val body = Json.parseToJsonElement(
+                request.body.readUtf8(),
+            ).jsonObject
+            val resultBody = body["result"] as JsonObject
+            val serializedProducts =
+                resultBody["products"] as
+                    kotlinx.serialization.json.JsonArray
+
+            assertEquals(5, serializedProducts.size)
+            serializedProducts.forEachIndexed { index, element ->
+                val product = element as JsonObject
+                assertEquals(
+                    (1_000_001 + index).toString(),
+                    product["obik"]?.jsonPrimitive?.content,
+                )
+                assertEquals(
+                    threeByte.repeat(200),
+                    product["name"]?.jsonPrimitive?.content,
+                )
+                assertEquals(
+                    index + 1,
+                    product["stock"]?.jsonPrimitive?.content?.toIntOrNull(),
+                )
+                assertEquals(
+                    (index + 1).toString() + ".99",
+                    product["price"]?.jsonPrimitive?.content,
+                )
+            }
+
+            val retainedFactCount = serializedProducts.sumOf { element ->
+                ((element as JsonObject)["technicalFacts"] as
+                    kotlinx.serialization.json.JsonArray).size
+            }
+            assertTrue(retainedFactCount < 30)
         }
     }
 
