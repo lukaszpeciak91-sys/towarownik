@@ -156,6 +156,36 @@ class AiUsageRepositoryTest {
     }
 
     @Test
+    fun `web search calls aggregate across multiple OpenAI responses with exact known cost`() {
+        repository.recordOpenAiResponse(
+            usage(
+                requestType = AdvisorRequestType.START,
+                webSearchCalls = 0,
+                cost = "0.0001",
+            ),
+        )
+        repository.recordOpenAiResponse(
+            usage(
+                requestType = AdvisorRequestType.CONTINUE,
+                webSearchCalls = 1,
+                cost = "0.0102",
+            ),
+        )
+
+        val snapshot = repository.snapshot()
+        assertEquals(2L, snapshot.requests)
+        assertEquals(1L, snapshot.webSearchCalls)
+        assertEquals(
+            1L,
+            snapshot.models.single().webSearchCalls,
+        )
+        assertEquals(
+            BigDecimal("0.0103"),
+            snapshot.estimatedCostUsd,
+        )
+    }
+
+    @Test
     fun `earlier successful response remains after later turn failure`() {
         repository.recordTurnStarted()
         repository.recordOpenAiResponse(
@@ -322,9 +352,10 @@ class AiUsageRepositoryTest {
         output: Long = 10,
         reasoning: Long? = 0,
         total: Long = 110,
+        webSearchCalls: Long = 0,
         cost: String? = "0.0001",
         pricingVersion: String =
-            "openai-gpt-6-luna-2026-09-27-v1",
+            "openai-gpt-6-luna-2026-09-28-web-v1",
     ): AdvisorUsage =
         AdvisorUsage(
             model = model,
@@ -335,6 +366,7 @@ class AiUsageRepositoryTest {
             outputTokens = output,
             reasoningTokens = reasoning,
             totalTokens = total,
+            webSearchCalls = webSearchCalls,
             estimatedCostUsd = cost?.let(::BigDecimal),
             pricingVersion = pricingVersion,
         )
