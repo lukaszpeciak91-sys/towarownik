@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Final Taksula advisor behavior v0.1**
+**Selective web search for Taksula v0.1**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, and richer verified OBI product facts are complete. The current iteration replaces the temporary generic advisor instructions with the final Taksula product/technical retail behavior while keeping tools, model, UI, persistence, pricing, and OBI parsing unchanged.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, richer verified OBI product facts, and final Taksula advisor behavior are complete. The current iteration adds one selective bounded Responses web-search capability with persisted citations while preserving the OBI/store/productRef trust boundary.
 
 Implemented direction:
 
@@ -107,11 +107,20 @@ Android test version: **0.1.10 (11)**.
 - clearly unrelated general chat is briefly redirected while borderline practical home-improvement questions remain in scope;
 - conversation language is followed naturally where practical without changing Android locale/persistence behavior;
 - GPT-6 Luna, low reasoning, tool/schema/productRefs boundaries, tool/product limits, multi-store rules, pricing, UI, persistence, and parser remain unchanged;
-- OpenAI web_search remains disabled.
+- selective Responses web_search is enabled with automatic choice and max one built-in call per response; ordinary technical questions should not browse reflexively.
+
+- current Responses `web_search` is available selectively alongside `find_obi_products`, with `tool_choice=auto` and `max_tool_calls=1` for built-ins;
+- OBI remains authoritative for current stock/price/store availability and only Android-verified current-turn snapshots may enter productRefs/cards;
+- final answers preserve at most six normalized HTTPS sources from actual OpenAI url_citation annotations; raw web output/query metadata never reaches Android;
+- Room schema v4 persists message sources with cascade so reopened web-derived answers retain clickable citations offline;
+- searched pages are explicitly untrusted reference data and cannot alter role/tool/trust/privacy rules;
+- AI Usage now counts completed web searches and current pricing adds USD 0.01 per search action on top of model token cost;
+- web availability alone does not count as a call and existing unpriced/known-minimum budget semantics remain unchanged;
+- no deep research/background/streaming/file search/image search/RAG/MCP/general autonomous agent behavior is added.
 
 ## Next implementation milestone
 
-Next: selective OpenAI web_search as a separate measured iteration. Context compaction and privacy-policy content remain separate work.
+The currently planned AI capability stage is complete after this selective web-search iteration. Context compaction and privacy-policy content remain separate future work.
 
 ## Not started
 
@@ -120,7 +129,6 @@ Next: selective OpenAI web_search as a separate measured iteration. Context comp
 - Strong per-device/user identity
 - General chat
 - Additional agent tools
-- OpenAI built-in tools
 - Streaming
 - Server-side OBI implementation
 - Camera barcode scanning
