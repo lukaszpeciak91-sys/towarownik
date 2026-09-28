@@ -97,6 +97,8 @@ internal val MIGRATION_3_4 = object : Migration(3, 4) {
                 `position` INTEGER NOT NULL,
                 `title` TEXT NOT NULL,
                 `url` TEXT NOT NULL,
+                `startIndex` INTEGER,
+                `endIndex` INTEGER,
                 PRIMARY KEY(`messageId`, `position`),
                 FOREIGN KEY(`messageId`) REFERENCES `messages`(`id`)
                     ON UPDATE NO ACTION ON DELETE CASCADE
