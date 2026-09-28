@@ -21,6 +21,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -295,6 +296,7 @@ internal class AdvisorProxyClient(
                     responseId = responseId,
                     text = text,
                     productRefs = productRefs.distinctBy { it.key },
+                    sources = parseSourcesOrEmpty(root["sources"]),
                     usage = parseUsageOrNull(root["usage"]),
                 )
             }
@@ -494,6 +496,7 @@ internal class AdvisorProxyClient(
                     "outputTokens",
                     "reasoningTokens",
                     "totalTokens",
+                    "webSearchCalls",
                     "estimatedCostUsd",
                     "pricingVersion",
                 ),
@@ -525,6 +528,10 @@ internal class AdvisorProxyClient(
             val reasoningTokens =
                 usage.optionalTokenCount("reasoningTokens")
             val totalTokens = usage.requireTokenCount("totalTokens")
+            val webSearchCalls = usage.requireTokenCount(
+                "webSearchCalls",
+            ).takeIf { it <= MAX_WEB_SEARCH_CALLS }
+                ?: error("Invalid web search call count")
 
             require(
                 cachedInputTokens == null ||
@@ -570,6 +577,7 @@ internal class AdvisorProxyClient(
                 outputTokens = outputTokens,
                 reasoningTokens = reasoningTokens,
                 totalTokens = totalTokens,
+                webSearchCalls = webSearchCalls,
                 estimatedCostUsd = estimatedCostUsd,
                 pricingVersion = pricingVersion,
             )
@@ -590,13 +598,52 @@ internal class AdvisorProxyClient(
             ?: error("Invalid optional token count")
     }
 
+    private fun parseSourcesOrEmpty(
+        raw: kotlinx.serialization.json.JsonElement?,
+    ): List<AdvisorWebSource> {
+        if (raw == null || raw is JsonNull) return emptyList()
+        val array = raw as? JsonArray ?: error("Invalid sources")
+        require(array.size <= MAX_WEB_SOURCES)
+        val seen = mutableSetOf<String>()
+        return array.mapNotNull { element ->
+            val source = element as? JsonObject
+                ?: error("Invalid source")
+            requireExactKeys(source, setOf("title", "url"))
+            val title = source["title"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.normalizeWhitespace()
+                ?.takeIf {
+                    it.isNotBlank() &&
+                        it.length <= MAX_WEB_SOURCE_TITLE_CHARS
+                }
+                ?: error("Invalid source title")
+            val url = source["url"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.takeIf { it.length <= MAX_WEB_SOURCE_URL_CHARS }
+                ?.toHttpUrlOrNull()
+                ?.takeIf { it.scheme == "https" }
+                ?.toString()
+                ?: error("Invalid source URL")
+            if (!seen.add(url)) {
+                null
+            } else {
+                AdvisorWebSource(title = title, url = url)
+            }
+        }
+    }
+
     private fun requireEnvelopeKeys(
         objectValue: JsonObject,
         required: Set<String>,
     ) {
+        val optional = setOf("usage", "sources")
         require(
-            objectValue.keys == required ||
-                objectValue.keys == required + "usage",
+            objectValue.keys.containsAll(required) &&
+                objectValue.keys.all {
+                    it in required || it in optional
+                },
         )
     }
 
@@ -625,5 +672,9 @@ internal class AdvisorProxyClient(
         const val MAX_PRICING_VERSION_CHARS = 100
         const val MAX_MONEY_CHARS = 32
         const val MAX_USAGE_TOKENS = 10_000_000_000L
+        const val MAX_WEB_SEARCH_CALLS = 1L
+        const val MAX_WEB_SOURCES = 6
+        const val MAX_WEB_SOURCE_TITLE_CHARS = 200
+        const val MAX_WEB_SOURCE_URL_CHARS = 2048
     }
 }
