@@ -27,6 +27,7 @@ internal data class AiUsageModelTotals(
     val outputTokens: Long,
     val reasoningTokens: Long?,
     val totalTokens: Long,
+    val webSearchCalls: Long,
     val estimatedCostUsd: BigDecimal,
 )
 
@@ -47,6 +48,7 @@ internal data class AiUsageSnapshot(
     val outputTokens: Long,
     val reasoningTokens: Long?,
     val totalTokens: Long,
+    val webSearchCalls: Long,
     val estimatedCostUsd: BigDecimal,
     val unpricedRequests: Long,
     val models: List<AiUsageModelTotals>,
@@ -185,6 +187,11 @@ internal class AiUsageRepository(
                 },
             totalTokens =
                 Math.addExact(existingModel.totalTokens, usage.totalTokens),
+            webSearchCalls =
+                Math.addExact(
+                    existingModel.webSearchCalls,
+                    usage.webSearchCalls,
+                ),
             estimatedCostUsd =
                 existingModel.estimatedCostUsd +
                     (cost ?: BigDecimal.ZERO),
@@ -222,6 +229,8 @@ internal class AiUsageRepository(
                     reasoningReportedRequests
                 },
             totalTokens = Math.addExact(totalTokens, usage.totalTokens),
+            webSearchCalls =
+                Math.addExact(webSearchCalls, usage.webSearchCalls),
             estimatedCostUsd =
                 estimatedCostUsd + (cost ?: BigDecimal.ZERO),
             unpricedRequests =
@@ -294,6 +303,7 @@ internal class AiUsageRepository(
                     reasoningReportedRequests > 0
                 },
             totalTokens = totalTokens,
+            webSearchCalls = webSearchCalls,
             estimatedCostUsd = estimatedCostUsd,
             unpricedRequests = unpricedRequests,
             models = models.values
@@ -317,6 +327,7 @@ internal class AiUsageRepository(
                                 model.reasoningReportedRequests > 0
                             },
                         totalTokens = model.totalTokens,
+                        webSearchCalls = model.webSearchCalls,
                         estimatedCostUsd = model.estimatedCostUsd,
                     )
                 },
@@ -379,6 +390,7 @@ private data class UsageState(
     val reasoningTokens: Long = 0,
     val reasoningReportedRequests: Long = 0,
     val totalTokens: Long = 0,
+    val webSearchCalls: Long = 0,
     val estimatedCostUsd: BigDecimal = BigDecimal.ZERO,
     val unpricedRequests: Long = 0,
     val models: Map<String, ModelState> = emptyMap(),
@@ -397,6 +409,7 @@ private data class ModelState(
     val reasoningTokens: Long = 0,
     val reasoningReportedRequests: Long = 0,
     val totalTokens: Long = 0,
+    val webSearchCalls: Long = 0,
     val estimatedCostUsd: BigDecimal = BigDecimal.ZERO,
 )
 
@@ -433,6 +446,7 @@ private fun encodeState(state: UsageState): String =
             state.reasoningReportedRequests,
         )
         put("totalTokens", state.totalTokens)
+        put("webSearchCalls", state.webSearchCalls)
         put("estimatedCostUsd", state.estimatedCostUsd.toPlainString())
         put("unpricedRequests", state.unpricedRequests)
         put(
@@ -472,6 +486,7 @@ private fun encodeState(state: UsageState): String =
                                     model.reasoningReportedRequests,
                                 )
                                 put("totalTokens", model.totalTokens)
+                                put("webSearchCalls", model.webSearchCalls)
                                 put(
                                     "estimatedCostUsd",
                                     model.estimatedCostUsd
@@ -538,6 +553,8 @@ private fun decodeState(raw: String): UsageState? =
                             "reasoningReportedRequests",
                         ),
                     totalTokens = model.requireLong("totalTokens"),
+                    webSearchCalls =
+                        model.optionalNonNegativeLong("webSearchCalls"),
                     estimatedCostUsd =
                         model.requireDecimal("estimatedCostUsd"),
                 )
@@ -572,6 +589,8 @@ private fun decodeState(raw: String): UsageState? =
             reasoningReportedRequests =
                 root.requireLong("reasoningReportedRequests"),
             totalTokens = root.requireLong("totalTokens"),
+            webSearchCalls =
+                root.optionalNonNegativeLong("webSearchCalls"),
             estimatedCostUsd =
                 root.requireDecimal("estimatedCostUsd"),
             unpricedRequests =
