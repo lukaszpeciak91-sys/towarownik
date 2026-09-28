@@ -160,16 +160,16 @@ class AiUsageRepositoryTest {
         repository.recordOpenAiResponse(
             usage(
                 requestType = AdvisorRequestType.START,
-                webSearchCalls = 0,
                 cost = "0.0001",
             ),
+            webSearchCalls = 0,
         )
         repository.recordOpenAiResponse(
             usage(
                 requestType = AdvisorRequestType.CONTINUE,
-                webSearchCalls = 1,
                 cost = "0.0102",
             ),
+            webSearchCalls = 1,
         )
 
         val snapshot = repository.snapshot()
@@ -183,6 +183,20 @@ class AiUsageRepositoryTest {
             BigDecimal("0.0103"),
             snapshot.estimatedCostUsd,
         )
+    }
+
+    @Test
+    fun `search count survives missing usage while cost remains unpriced`() {
+        repository.recordOpenAiResponse(
+            usage = null,
+            webSearchCalls = 1,
+        )
+
+        val snapshot = repository.snapshot()
+        assertEquals(1L, snapshot.requests)
+        assertEquals(1L, snapshot.webSearchCalls)
+        assertEquals(1L, snapshot.unpricedRequests)
+        assertTrue(snapshot.models.isEmpty())
     }
 
     @Test
@@ -352,7 +366,6 @@ class AiUsageRepositoryTest {
         output: Long = 10,
         reasoning: Long? = 0,
         total: Long = 110,
-        webSearchCalls: Long = 0,
         cost: String? = "0.0001",
         pricingVersion: String =
             "openai-gpt-6-luna-2026-09-28-web-v1",
@@ -366,7 +379,6 @@ class AiUsageRepositoryTest {
             outputTokens = output,
             reasoningTokens = reasoning,
             totalTokens = total,
-            webSearchCalls = webSearchCalls,
             estimatedCostUsd = cost?.let(::BigDecimal),
             pricingVersion = pricingVersion,
         )
