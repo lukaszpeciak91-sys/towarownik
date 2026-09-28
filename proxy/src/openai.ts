@@ -568,7 +568,11 @@ function normalizeHttpsUrl(raw: string): string | null {
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:") return null;
-    return url.toString();
+    const normalized = url.toString();
+    if (normalized.length > MAX_WEB_CITATION_URL_CHARS) {
+      return null;
+    }
+    return normalized;
   } catch {
     return null;
   }
