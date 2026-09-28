@@ -1505,7 +1505,6 @@ private fun AdvisorComposer(
     }
 }
 
-@Composable
 private val EMPTY_ADVISOR_PROMPTS = listOf(
     R.string.advisor_empty_prompt_sell,
     R.string.advisor_empty_prompt_customer,
@@ -2327,6 +2326,7 @@ private fun AdvisorChatPreview() {
             storeSelectorEnabled = true,
             onStoreSelected = {},
             onReportAssistantMessage = {},
+            emptyPromptIndex = 0,
         )
     }
 }
