@@ -90,6 +90,7 @@ import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
+import pl.lukaszpeciak.towarownik.conversation.persistedWebSourceOrNull
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
@@ -469,8 +470,8 @@ private fun TowarownikApp() {
                         text = displayText,
                         finalResponseId = finalState.responseId,
                         products = finalState.products,
-                        sources = finalState.sources.map {
-                            PersistedWebSource(
+                        sources = finalState.sources.mapNotNull {
+                            persistedWebSourceOrNull(
                                 title = it.title,
                                 url = it.url,
                             )
