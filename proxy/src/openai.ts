@@ -58,6 +58,7 @@ export async function startAgent(
     apiKey,
     upstreamFetch,
     "START",
+    true,
   );
 }
 
@@ -90,6 +91,7 @@ export async function messageAgent(
     apiKey,
     upstreamFetch,
     "MESSAGE",
+    true,
   );
 }
 
@@ -135,6 +137,7 @@ export async function continueAgent(
     apiKey,
     upstreamFetch,
     "CONTINUE",
+    localToolAvailable,
   );
 }
 
@@ -143,6 +146,7 @@ async function requestOpenAI(
   apiKey: string,
   upstreamFetch: UpstreamFetch,
   requestType: AgentRequestType,
+  allowLocalTool: boolean,
 ): Promise<AgentResult> {
   let response: Response;
   try {
@@ -169,12 +173,17 @@ async function requestOpenAI(
     throw new UpstreamFailureError();
   }
 
-  return normalizeOpenAIResponse(payload, requestType);
+  return normalizeOpenAIResponse(
+    payload,
+    requestType,
+    allowLocalTool,
+  );
 }
 
 export function normalizeOpenAIResponse(
   payload: unknown,
   requestType: AgentRequestType = "START",
+  allowLocalTool = true,
 ): AgentResult {
   if (!isRecord(payload)) {
     throw new UpstreamFailureError();
@@ -197,6 +206,9 @@ export function normalizeOpenAIResponse(
   }
 
   if (functionCalls.length === 1) {
+    if (!allowLocalTool) {
+      throw new UpstreamFailureError();
+    }
     const call = functionCalls[0];
     if (
       call.name !== LOCAL_TOOL_NAME ||
