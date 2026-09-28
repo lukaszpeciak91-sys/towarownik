@@ -7,11 +7,16 @@ import {
   MAX_MODEL_NAME_CHARS,
   MAX_SELECTED_PRODUCT_REFS,
   MAX_USAGE_TOKEN_COUNT,
+  MAX_WEB_CITATIONS,
+  MAX_WEB_CITATION_TITLE_CHARS,
+  MAX_WEB_CITATION_URL_CHARS,
+  MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
   OBI_TOOL,
+  WEB_SEARCH_TOOL,
 } from "./config.js";
 import { InvalidRequestError, parseToolArguments } from "./validation.js";
 import type {
@@ -20,6 +25,7 @@ import type {
   AgentUsage,
   ProductRef,
   ToolContinuationResult,
+  WebSource,
   UpstreamFetch,
 } from "./types.js";
 
@@ -41,11 +47,13 @@ export async function startAgent(
       },
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
+      tool_choice: "auto",
+      max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL],
+      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
@@ -71,11 +79,13 @@ export async function messageAgent(
       },
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
+      tool_choice: "auto",
+      max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL],
+      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
@@ -108,11 +118,13 @@ export async function continueAgent(
       },
       max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
+      tool_choice: "auto",
+      max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL],
+      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
@@ -163,11 +175,12 @@ export function normalizeOpenAIResponse(
   }
 
   const responseId = boundedUpstreamId(payload.id);
-  const usage = parseUsage(payload, requestType);
   if (!Array.isArray(payload.output)) {
     throw new UpstreamFailureError();
   }
 
+  const webSearchCalls = countCompletedWebSearchCalls(payload.output);
+  const usage = parseUsage(payload, requestType, webSearchCalls);
   const functionCalls = payload.output.filter(
     (item): item is Record<string, unknown> =>
       isRecord(item) && item.type === "function_call",
@@ -212,12 +225,14 @@ export function normalizeOpenAIResponse(
   }
 
   const answer = parseStructuredAnswer(extractAnswerText(payload));
+  const sources = extractWebSources(payload.output);
 
   return {
     type: "answer",
     responseId,
     text: answer.text,
     productRefs: answer.productRefs,
+    sources,
     ...(usage ? { usage } : {}),
   };
 }
@@ -225,6 +240,7 @@ export function normalizeOpenAIResponse(
 function parseUsage(
   payload: Record<string, unknown>,
   requestType: AgentRequestType,
+  webSearchCalls: number,
 ): AgentUsage | undefined {
   try {
     const model = boundedModelName(payload.model);
@@ -272,6 +288,7 @@ function parseUsage(
       cachedInputTokens,
       cacheWriteTokens,
       outputTokens,
+      webSearchCalls,
     );
 
     return {
@@ -283,6 +300,7 @@ function parseUsage(
       outputTokens,
       reasoningTokens,
       totalTokens,
+      webSearchCalls,
       estimatedCostUsd: pricing?.estimatedCostUsd ?? null,
       pricingVersion: pricing?.pricingVersion ?? null,
     };
@@ -297,12 +315,15 @@ function priceUsage(
   cachedInputTokens: number | null,
   cacheWriteTokens: number | null,
   outputTokens: number,
+  webSearchCalls: number,
 ): { estimatedCostUsd: number; pricingVersion: string } | null {
   if (
     model !== CURRENT_MODEL_PRICING.model ||
     cachedInputTokens === null ||
     cacheWriteTokens === null ||
-    cachedInputTokens + cacheWriteTokens > inputTokens
+    cachedInputTokens + cacheWriteTokens > inputTokens ||
+    webSearchCalls < 0 ||
+    webSearchCalls > MAX_WEB_SEARCH_CALLS_PER_RESPONSE
   ) {
     return null;
   }
@@ -317,7 +338,9 @@ function priceUsage(
     BigInt(ordinaryInputTokens) * rates.uncachedInput +
     BigInt(cachedInputTokens) * rates.cachedInput +
     BigInt(cacheWriteTokens) * rates.cacheWriteInput +
-    BigInt(outputTokens) * rates.output;
+    BigInt(outputTokens) * rates.output +
+    BigInt(webSearchCalls) *
+      CURRENT_MODEL_PRICING.webSearchNanoUsdPerCall;
 
   return {
     estimatedCostUsd: Number(formatNanoUsd(nanoUsd)),
@@ -474,6 +497,81 @@ function extractAnswerText(payload: Record<string, unknown>): string | null {
 
   const joined = parts.join("").trim();
   return joined || null;
+}
+
+function countCompletedWebSearchCalls(
+  output: unknown[],
+): number {
+  let count = 0;
+  for (const item of output) {
+    if (
+      !isRecord(item) ||
+      item.type !== "web_search_call" ||
+      item.status !== "completed" ||
+      !isRecord(item.action) ||
+      item.action.type !== "search"
+    ) {
+      continue;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function extractWebSources(output: unknown[]): WebSource[] {
+  const sources: WebSource[] = [];
+  const seen = new Set<string>();
+
+  for (const item of output) {
+    if (!isRecord(item) || item.type !== "message" || !Array.isArray(item.content)) {
+      continue;
+    }
+    for (const content of item.content) {
+      if (
+        !isRecord(content) ||
+        content.type !== "output_text" ||
+        !Array.isArray(content.annotations)
+      ) {
+        continue;
+      }
+      for (const annotation of content.annotations) {
+        if (
+          !isRecord(annotation) ||
+          annotation.type !== "url_citation" ||
+          typeof annotation.url !== "string" ||
+          typeof annotation.title !== "string"
+        ) {
+          continue;
+        }
+        const url = normalizeHttpsUrl(annotation.url);
+        if (!url || seen.has(url)) continue;
+        const title = annotation.title
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, MAX_WEB_CITATION_TITLE_CHARS);
+        if (!title) continue;
+        seen.add(url);
+        sources.push({ title, url });
+        if (sources.length >= MAX_WEB_CITATIONS) {
+          return sources;
+        }
+      }
+    }
+  }
+  return sources;
+}
+
+function normalizeHttpsUrl(raw: string): string | null {
+  if (raw.length === 0 || raw.length > MAX_WEB_CITATION_URL_CHARS) {
+    return null;
+  }
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function boundedUpstreamId(value: unknown): string {
