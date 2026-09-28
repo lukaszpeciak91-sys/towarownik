@@ -426,9 +426,12 @@ private fun TowarownikApp() {
                 input = submitted,
                 previousResponseId = turn.previousResponseId,
                 conversationStoreNumber = turn.storeNumber,
-                onOpenAiResponse = { usage ->
+                onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
-                        aiUsageRepository.recordOpenAiResponse(usage)
+                        aiUsageRepository.recordOpenAiResponse(
+                            usage = usage,
+                            webSearchCalls = webSearchCalls,
+                        )
                     }
                 },
                 onToolRequestObserved = {
