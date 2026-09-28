@@ -72,7 +72,7 @@ export type AgentResult =
       responseId: string;
       text: string;
       productRefs: ProductRef[];
-      sources: WebSource[];
+      sources?: WebSource[];
       usage?: AgentUsage;
     }
   | {
