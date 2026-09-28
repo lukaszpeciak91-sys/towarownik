@@ -306,6 +306,7 @@ internal class AdvisorProxyClient(
                 requireEnvelopeKeys(
                     root,
                     required = setOf("type", "responseId", "tool"),
+                    optional = setOf("usage"),
                 )
                 val tool = root["tool"] as? JsonObject
                     ?: error("Missing tool")
