@@ -18,7 +18,6 @@ import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
-import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 
 internal enum class ChatMessageRole {
@@ -67,12 +66,6 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                     product.toVerifiedProductUiModel()
                 },
                 sources = message.sources,
-                sources = message.sources.map {
-                    AdvisorWebSource(
-                        title = it.title,
-                        url = it.url,
-                    )
-                },
                 persistedMessageId = message.id,
             )
         },
@@ -128,19 +121,6 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                 message.persistedMessageId
                                     ?.let(::JsonPrimitive)
                                     ?: JsonNull,
-                            )
-                            put(
-                                "sources",
-                                buildJsonArray {
-                                    message.sources.forEach { source ->
-                                        add(
-                                            buildJsonObject {
-                                                put("title", source.title)
-                                                put("url", source.url)
-                                            },
-                                        )
-                                    }
-                                },
                             )
                             put(
                                 "products",
@@ -260,30 +240,11 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                         )
                     }
                     .orEmpty()
-                val sources = (objectValue["sources"] as? JsonArray)
-                    ?.mapNotNull { sourceElement ->
-                        val source = sourceElement as? JsonObject
-                            ?: return@mapNotNull null
-                        val title = source["title"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            ?: return@mapNotNull null
-                        val url = source["url"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            ?: return@mapNotNull null
-                        AdvisorWebSource(
-                            title = title,
-                            url = url,
-                        )
-                    }
-                    .orEmpty()
                 AdvisorChatMessage(
                     role = role,
                     text = text,
                     createdAt = createdAt,
                     products = products,
-                    sources = sources,
                     sources = sources,
                     persistedMessageId = objectValue["persistedMessageId"]
                         ?.jsonPrimitive
