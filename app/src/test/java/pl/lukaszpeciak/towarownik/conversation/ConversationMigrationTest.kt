@@ -146,8 +146,8 @@ class ConversationMigrationTest {
 
             db.execSQL(
                 "INSERT INTO message_sources " +
-                    "(messageId,position,title,url) " +
-                    "VALUES (1,0,'Manual','https://example.com/manual')",
+                    "(messageId,position,title,url,startIndex,endIndex) " +
+                    "VALUES (1,0,'Manual','https://example.com/manual',0,6)",
             )
             assertEquals(
                 "1",
@@ -155,6 +155,14 @@ class ConversationMigrationTest {
                     db,
                     "SELECT COUNT(*) FROM message_sources " +
                         "WHERE messageId=1",
+                ),
+            )
+            assertEquals(
+                "6",
+                queryText(
+                    db,
+                    "SELECT endIndex FROM message_sources " +
+                        "WHERE messageId=1 AND position=0",
                 ),
             )
 
