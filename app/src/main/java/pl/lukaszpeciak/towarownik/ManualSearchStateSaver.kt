@@ -77,6 +77,61 @@ private fun encodeManualSearchState(state: ManualSearchUiState): String {
                                             ?.let(::JsonPrimitive)
                                             ?: JsonNull,
                                     )
+                                    put("store", item.storeNumber)
+                                    when (
+                                        val enrichment =
+                                            item.enrichment
+                                    ) {
+                                        ManualResultEnrichment.Pending,
+                                        ManualResultEnrichment.Loading -> {
+                                            put(
+                                                "enrichment",
+                                                "pending",
+                                            )
+                                        }
+
+                                        ManualResultEnrichment.Unavailable -> {
+                                            put(
+                                                "enrichment",
+                                                "unavailable",
+                                            )
+                                        }
+
+                                        is ManualResultEnrichment.Verified -> {
+                                            put(
+                                                "enrichment",
+                                                "verified",
+                                            )
+                                            put(
+                                                "verifiedName",
+                                                enrichment.product.name,
+                                            )
+                                            put(
+                                                "verifiedStore",
+                                                enrichment.product.storeNumber,
+                                            )
+                                            put(
+                                                "verifiedUrl",
+                                                enrichment.product.productUrl,
+                                            )
+                                            put(
+                                                "verifiedStock",
+                                                enrichment.product.stock
+                                                    ?.let(::JsonPrimitive)
+                                                    ?: JsonNull,
+                                            )
+                                            put(
+                                                "verifiedPrice",
+                                                enrichment.product.grossPrice
+                                                    ?.let {
+                                                        JsonPrimitive(
+                                                            it.toPlainString(),
+                                                        )
+                                                    }
+                                                    ?: JsonNull,
+                                            )
+                                        }
+                                    }
                                 },
                             )
                         }
@@ -129,9 +184,72 @@ private fun decodeManualSearchState(raw: String): ManualSearchUiState =
                             ?.takeUnless { it is JsonNull }
                             ?.jsonPrimitive
                             ?.contentOrNull
+                        val storeNumber = item["store"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: pl.lukaszpeciak.towarownik.product
+                                .DEFAULT_OBI_STORE_NUMBER
+                        val enrichment = when (
+                            item["enrichment"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                        ) {
+                            "verified" -> {
+                                val verifiedName =
+                                    item["verifiedName"]
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                val verifiedUrl =
+                                    item["verifiedUrl"]
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                val verifiedStore =
+                                    item["verifiedStore"]
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                if (
+                                    verifiedName != null &&
+                                    verifiedUrl != null &&
+                                    verifiedStore != null
+                                ) {
+                                    ManualResultEnrichment.Verified(
+                                        VerifiedProductUiModel(
+                                            name = verifiedName,
+                                            obik = obik,
+                                            grossPrice =
+                                                item["verifiedPrice"]
+                                                    ?.takeUnless {
+                                                        it is JsonNull
+                                                    }
+                                                    ?.jsonPrimitive
+                                                    ?.contentOrNull
+                                                    ?.let(::BigDecimal),
+                                            stock =
+                                                item["verifiedStock"]
+                                                    ?.takeUnless {
+                                                        it is JsonNull
+                                                    }
+                                                    ?.jsonPrimitive
+                                                    ?.intOrNull,
+                                            productUrl = verifiedUrl,
+                                            storeNumber = verifiedStore,
+                                        ),
+                                    )
+                                } else {
+                                    ManualResultEnrichment.Pending
+                                }
+                            }
+
+                            "unavailable" ->
+                                ManualResultEnrichment.Unavailable
+
+                            else -> ManualResultEnrichment.Pending
+                        }
                         ManualSearchResultItem(
                             obik = obik,
                             name = name,
+                            storeNumber = storeNumber,
+                            enrichment = enrichment,
                         )
                     }
                     .orEmpty()
