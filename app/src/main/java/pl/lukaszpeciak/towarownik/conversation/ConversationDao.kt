@@ -224,7 +224,16 @@ internal abstract class ConversationDao {
         require(sources.map { it.url }.distinct().size == sources.size)
         require(
             sources.all {
-                persistedWebSourceOrNull(it.title, it.url) == it
+                persistedWebSourceOrNull(
+                    title = it.title,
+                    url = it.url,
+                    startIndex = it.startIndex,
+                    endIndex = it.endIndex,
+                ) == it &&
+                    (
+                        it.endIndex == null ||
+                            it.endIndex <= text.length
+                    )
             },
         )
         val messageId = insertMessage(
@@ -260,6 +269,8 @@ internal abstract class ConversationDao {
                         position = position,
                         title = source.title,
                         url = source.url,
+                        startIndex = source.startIndex,
+                        endIndex = source.endIndex,
                     )
                 },
             )
