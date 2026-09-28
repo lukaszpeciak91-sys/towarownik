@@ -222,6 +222,9 @@ private fun TowarownikApp() {
     var freshCaseSelected by rememberSaveable {
         mutableStateOf(false)
     }
+    var emptyPromptIndex by rememberSaveable {
+        mutableStateOf(0)
+    }
     var advisorCase by rememberSaveable(
         stateSaver = AdvisorCaseUiStateSaver,
     ) {
@@ -310,6 +313,7 @@ private fun TowarownikApp() {
             cancelAndRecoverActiveTurn()
             clearManualStoreContext()
             freshCaseSelected = true
+            emptyPromptIndex = (emptyPromptIndex + 1) % EMPTY_ADVISOR_PROMPTS.size
             activeConversationId = null
             selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
             advisorState = AdvisorUiState.Idle
@@ -351,6 +355,7 @@ private fun TowarownikApp() {
                 activeConversationId = null
                 selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
                 freshCaseSelected = true
+                emptyPromptIndex = (emptyPromptIndex + 1) % EMPTY_ADVISOR_PROMPTS.size
                 advisorState = AdvisorUiState.Idle
                 advisorCase = freshCase
                 drawerState.close()
@@ -707,6 +712,7 @@ private fun TowarownikApp() {
                         advisorJob?.isActive != true,
                     onStoreSelected = ::selectConversationStore,
                     onReportAssistantMessage = ::openAssistantReport,
+                    emptyPromptIndex = emptyPromptIndex,
                 )
             }
         }
@@ -1177,6 +1183,7 @@ private fun AdvisorChatScreen(
     storeSelectorEnabled: Boolean,
     onStoreSelected: (String) -> Unit,
     onReportAssistantMessage: (Long) -> Unit,
+    emptyPromptIndex: Int,
 ) {
     val isRunning = state.isRunning()
     val composerEnabled = isAdvisorComposerEnabled(state)
@@ -1214,6 +1221,9 @@ private fun AdvisorChatScreen(
                 state is AdvisorUiState.Idle
             ) {
                 EmptyAdvisorState(
+                    promptRes = EMPTY_ADVISOR_PROMPTS[
+                        emptyPromptIndex % EMPTY_ADVISOR_PROMPTS.size
+                    ],
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(max = 720.dp)
@@ -1495,8 +1505,17 @@ private fun AdvisorComposer(
     }
 }
 
+private val EMPTY_ADVISOR_PROMPTS = listOf(
+    R.string.advisor_empty_prompt_sell,
+    R.string.advisor_empty_prompt_customer,
+    R.string.advisor_empty_prompt_handle,
+    R.string.advisor_empty_prompt_help,
+    R.string.advisor_empty_prompt_need,
+)
+
 @Composable
 private fun EmptyAdvisorState(
+    promptRes: Int,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -1505,7 +1524,7 @@ private fun EmptyAdvisorState(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = stringResource(R.string.advisor_title),
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineSmall,
         )
         Box(
@@ -1518,7 +1537,7 @@ private fun EmptyAdvisorState(
                 ),
         )
         Text(
-            text = stringResource(R.string.advisor_empty_body),
+            text = stringResource(promptRes),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -2307,6 +2326,7 @@ private fun AdvisorChatPreview() {
             storeSelectorEnabled = true,
             onStoreSelected = {},
             onReportAssistantMessage = {},
+            emptyPromptIndex = 0,
         )
     }
 }
