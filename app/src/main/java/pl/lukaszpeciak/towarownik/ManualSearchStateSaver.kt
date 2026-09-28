@@ -58,6 +58,13 @@ private fun encodeManualSearchState(state: ManualSearchUiState): String {
                         ?: JsonNull,
                 )
                 put("url", persistable.item.productUrl)
+                put("store", persistable.item.storeNumber)
+                put(
+                    "verifiedAt",
+                    persistable.item.verifiedAt
+                        ?.let(::JsonPrimitive)
+                        ?: JsonNull,
+                )
             }
 
             is ManualSearchUiState.SearchResults -> {
@@ -170,6 +177,16 @@ private fun decodeManualSearchState(raw: String): ManualSearchUiState =
                         ?.jsonPrimitive
                         ?.intOrNull,
                     productUrl = checkNotNull(root["url"]?.jsonPrimitive?.contentOrNull),
+                    storeNumber = root["store"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?: pl.lukaszpeciak.towarownik.product
+                            .DEFAULT_OBI_STORE_NUMBER,
+                    verifiedAt = root["verifiedAt"]
+                        ?.takeUnless { it is JsonNull }
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.toLongOrNull(),
                 ),
             )
             "results" -> {
