@@ -15,6 +15,11 @@
     <string name="obi_store_selector">OBI • %1$s</string>
     <string name="obi_store_item">OBI %1$s</string>
     <string name="advisor_empty_body">Opisz, czego potrzebuje klient.</string>
+    <string name="advisor_empty_prompt_sell">Co dziś sprzedajemy?</string>
+    <string name="advisor_empty_prompt_customer">Z czym dziś przychodzi klient?</string>
+    <string name="advisor_empty_prompt_handle">Co dziś ogarniamy?</string>
+    <string name="advisor_empty_prompt_help">Jak mogę Ci pomóc z tym klientem?</string>
+    <string name="advisor_empty_prompt_need">No dobra, czego potrzebuje?</string>
     <string name="advisor_sources">Źródła</string>
     <string name="ai_usage_web_searches">Wyszukiwania w sieci</string>
     <string name="advisor_composer_placeholder">Opisz czego potrzebuje klient…</string>
