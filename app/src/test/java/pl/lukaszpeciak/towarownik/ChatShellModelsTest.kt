@@ -6,7 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
-import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
+import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
 
 class ChatShellModelsTest {
     @Test
@@ -91,7 +91,7 @@ class ChatShellModelsTest {
 
     @Test
     fun `web sources survive save and restore with https URL unchanged`() {
-        val source = PersistedWebSource(
+        val source = AdvisorWebSource(
             title = "Manufacturer manual",
             url = "https://manufacturer.example/manual",
         )
