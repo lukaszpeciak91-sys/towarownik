@@ -174,7 +174,7 @@ export const OBI_TOOL = {
   type: "function",
   name: LOCAL_TOOL_NAME,
   description:
-    "Ask the Android app to find grouped verified OBI products for one explicit 3-digit store number. Prefer one well-planned multi-query batch for related categories needed by the customer's task.",
+    "Ask the Android app to find grouped verified OBI products for one explicit 3-digit store number. Prefer one well-planned multi-query batch for related categories needed by the customer's task. For assortment or browse questions, request multiple relevant results for a category when useful instead of arbitrarily narrowing to one.",
   strict: true,
   parameters: {
     type: "object",
