@@ -4,7 +4,7 @@ Taksula is a small native Android utility for fast retail product lookup. The cu
 
 ## Project status
 
-The current phase is **Richer verified OBI product facts v0.1**. Each conversation still has one explicit supported OBI store (default `075`), while exact verified product lookup now also supplies bounded product-page facts to the advisor without changing visible-card authority or the existing multi-store authorization boundary.
+The current phase is **Final Taksula advisor behavior v0.1**. Taksula now acts as a concise practical product and technical advisor for home-improvement retail staff while preserving the existing verified OBI trust boundary, multi-store rules, and structured product-card flow.
 
 ## Technology
 
@@ -61,7 +61,7 @@ Normal pull-request CI never calls live OBI. It runs deterministic Python tests 
 
 The self-contained Cloudflare Worker project lives under `proxy/` and is an active part of the advisor architecture. `GET /health` remains public. The authenticated agent endpoints `POST /v1/agent/start`, `POST /v1/agent/message`, and `POST /v1/agent/continue` require the shared internal-testing app token and communicate with the OpenAI Responses API using the Worker-only OpenAI key.
 
-Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. The advisor has exactly one generic local tool, `find_obi_products(query, storeNumber, limit)`, capped at five products per call and two local calls per USER turn. Android validates `storeNumber` against one canonical static allowlist before any OBI request. The compact OpenAI tool payload contains one store context plus verified product OBIK, name, nullable brand/description, bounded technical facts, stock, and price; trusted product URLs, EANs, and verification timestamps remain Android-local. The human-only Wyszukiwarka OBI still parses at most 25 recognized candidates from one search response and exact-verifies a selected candidate against the active conversation store. The final advisor persona, web research, and summarization/compaction remain later milestones. AI usage/cost telemetry is now captured as the optimization baseline.
+Android OBI lookup remains local. The Worker never scrapes OBI or duplicates the Android OBI parsers/repositories. The advisor has exactly one generic local tool, `find_obi_products(query, storeNumber, limit)`, capped at five products per call and two local calls per USER turn. Android validates `storeNumber` against one canonical static allowlist before any OBI request. The compact OpenAI tool payload contains one store context plus verified product OBIK, name, nullable brand/description, bounded technical facts, stock, and price; trusted product URLs, EANs, and verification timestamps remain Android-local. The human-only Wyszukiwarka OBI still parses at most 25 recognized candidates from one search response and exact-verifies a selected candidate against the active conversation store. Selective OpenAI web research and summarization/compaction remain later milestones. AI usage/cost telemetry is now captured as the optimization baseline.
 
 Proxy checks require Node.js 22:
 
@@ -84,7 +84,17 @@ Current production advisor model is `gpt-6-luna` with low reasoning. Its server-
 
 The optional **Taksula AI budget** is user-configured local state, not OpenAI account-balance or account-credit data. Setting a remaining USD budget records the current cumulative Taksula spend as its baseline. Estimated remaining budget subtracts only later priced Taksula spend; if required cost data is unavailable, the app does not guess. Crossing below USD 1 produces one warning and re-arms only after the configured budget is reset/increased back to at least USD 1.
 
-The GPT-5.6 Luna measurements remain historical baseline data in the same per-model usage store. The advisor tool now receives compact verified product-page context from the same exact OBI lookup used for store facts. Next planned stages are: **(1)** final advisor instructions/persona, **(2)** optional OpenAI `web_search`.
+The GPT-5.6 Luna measurements remain historical baseline data in the same per-model usage store. The advisor tool receives compact verified product-page context from the same exact OBI lookup used for store facts. The current advisor behavior allows ordinary general technical knowledge while keeping SKU-specific/current-store claims under the verified OBI trust hierarchy. The next planned stage is selective OpenAI `web_search`.
+
+## Final Taksula advisor behavior
+
+Taksula is a practical product and technical advisor for retail staff in the home-improvement/building-materials domain. It may use normal model knowledge for ordinary technical explanation, installation principles, material/tool selection, compatibility reasoning, and troubleshooting; verified OBI data is not required for every general technical statement.
+
+For a specific OBI SKU or current store fact, the trust hierarchy is stricter: freshly verified `find_obi_products` data is authoritative for OBIK, name, store, stock, price, and supplied product-page facts. Missing SKU-specific dimensions, materials, compatibility, certifications, applications, parameters, or limitations must not be invented. When a requested detail is unconfirmed, Taksula states that briefly and continues with useful general guidance.
+
+Current stock and price are refreshed when relevant. Historical conversation values are not treated as current authority. Rich product facts are selected for relevance rather than dumped wholesale, and unrelated general-chat requests receive a brief redirect toward product/technical retail support. The advisor responds naturally in the user's conversation language where practical.
+
+The existing model (`gpt-6-luna`), low reasoning effort, one `find_obi_products` tool, structured `{text, productRefs}` answer, product/tool limits, current-turn store authorization, and Android snapshot/card trust boundary are unchanged. No OpenAI built-in tool or `web_search` is enabled in this iteration.
 
 ## Richer verified OBI product facts
 
