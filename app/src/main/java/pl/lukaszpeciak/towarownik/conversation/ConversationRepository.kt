@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.conversation
 
 import java.math.BigDecimal
+import java.net.URI
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
@@ -33,6 +34,29 @@ internal data class PersistedWebSource(
     val title: String,
     val url: String,
 )
+
+internal fun persistedWebSourceOrNull(
+    title: String,
+    url: String,
+): PersistedWebSource? {
+    val normalizedTitle = title
+        .replace(CONVERSATION_WHITESPACE, " ")
+        .trim()
+        .takeIf { it.isNotEmpty() && it.length <= 200 }
+        ?: return null
+    if (url.length !in 1..2048) return null
+    val uri = runCatching { URI(url) }.getOrNull() ?: return null
+    if (
+        uri.scheme?.lowercase() != "https" ||
+        uri.host.isNullOrBlank()
+    ) {
+        return null
+    }
+    return PersistedWebSource(
+        title = normalizedTitle,
+        url = url,
+    )
+}
 
 internal data class PersistedMessage(
     val id: Long,
@@ -265,8 +289,8 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                         },
                     sources = item.sources
                         .sortedBy { it.position }
-                        .map { source ->
-                            PersistedWebSource(
+                        .mapNotNull { source ->
+                            persistedWebSourceOrNull(
                                 title = source.title,
                                 url = source.url,
                             )
