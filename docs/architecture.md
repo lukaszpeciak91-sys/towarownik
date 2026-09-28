@@ -81,7 +81,7 @@ OpenAI must receive only compact structured results produced by the app. OBI HTM
 
 The proxy now exposes a public `GET /health` plus authenticated `POST /v1/agent/start`, `POST /v1/agent/message`, and `POST /v1/agent/continue`. The AI endpoints require the shared Internal-Testing `TOWAROWNIK_APP_TOKEN`; the OpenAI credential remains Worker-only as `OPENAI_API_KEY`.
 
-The Worker calls the OpenAI Responses API with a centralized `gpt-6-luna` configuration, low reasoning effort, concise temporary developer instructions, a bounded output budget, and exactly one strict application-defined function: `find_obi_products(query, storeNumber, limit)`. No OpenAI built-in tools are enabled.
+The Worker calls the OpenAI Responses API with a centralized `gpt-6-luna` configuration, low reasoning effort, the final server-controlled Taksula advisor instructions, a bounded output budget, and exactly one strict application-defined function: `find_obi_products(query, storeNumber, limit)`. No OpenAI built-in tools are enabled.
 
 When the model returns that function call, the Worker validates the tool name and arguments and returns a normalized `tool_request` envelope to Android. Android executes the existing OBI search/exact store-`075` lookup and later sends only the compact verified result to `/v1/agent/continue`. The Worker continues with `previous_response_id` and a matching `function_call_output`, resending the stable server-controlled instructions/tool declaration. It does not store conversation state in Cloudflare storage.
 
@@ -189,7 +189,7 @@ The Worker exposes authenticated turn endpoints carrying the conversation-store 
 
 Using `previous_response_id` avoids manually sending the complete local transcript on each turn, but previous context tokens in that chain are still billed as input tokens. No summarization or compaction is implemented yet.
 
-Server-side instructions explicitly require a fresh `find_obi_products` call when the current question depends on current availability, stock, price, or selecting currently available products. The conversation store is the default. Another store may be queried only when its exact supported three-digit number appeared literally in the current USER message; Android enforces that authorization independently of model instructions. Historical stock/price statements are context only, never current authority.
+Server-side instructions define Taksula as a practical home-improvement retail product/technical advisor. Ordinary general technical knowledge is allowed without a verified OBI lookup; verification becomes strict for a specific SKU or current store claim. A fresh `find_obi_products` call is required when the current question depends on current availability, stock, price, finding currently available products, or verified facts about a specific OBI product needed for a reliable answer. Verified tool facts are authoritative for that SKU, while missing SKU-specific dimensions/materials/compatibility/certifications/applications/parameters/limitations remain unknown and must not be invented. The conversation store is the default. Another store may be queried only when its exact supported three-digit number appeared literally in the current USER message; Android enforces that authorization independently of model instructions. Historical stock/price statements are context only, never current authority.
 
 
 ## AI usage observability v0.1
@@ -211,3 +211,15 @@ Server-side instructions explicitly require a fresh `find_obi_products` call whe
 - Optional enrichment is fail-soft. Malformed or absent descriptive subsections are ignored independently; OBIK identity and selected-store structure remain required exactly as before.
 - Store authority is unchanged: stock and gross price come only from `product.store.articleData`. Descriptive and technical facts are product-level data unless OBI itself explicitly states otherwise.
 - Android serializes only bounded product context into `function_call_output`. Product URL, verifiedAt, EAN, raw HTML/Nuxt, cookies, diagnostics, and arbitrary JSON never cross to OpenAI. Final `productRefs` and the `(storeNumber, obik)` trust boundary are unchanged.
+
+
+## Final Taksula advisor behavior v0.1
+
+- Scope: product selection, building/finishing materials, tools, electrical/lighting, garden/home-improvement products, applications, installation guidance, compatibility, troubleshooting, alternatives, and helping retail staff answer customer questions.
+- General technical knowledge is explicitly allowed. The advisor should answer first, remain practical/concise, ask at most one clarification when genuinely necessary, and continue helping even when a specific SKU detail is unconfirmed.
+- Specific-product trust hierarchy: verified `find_obi_products` facts are authoritative for OBIK/name/store/stock/price and supplied product-page facts; model knowledge may explain general principles around them but may not fabricate absent SKU-specific properties.
+- Rich OBI facts are selected for relevance rather than dumped or rewritten as marketing copy. Missing rich data means unknown, not negative.
+- Clearly unrelated general-chat requests receive a short role redirect; borderline practical home-improvement topics remain in scope.
+- Response language follows the user's current conversation language where practical. Android locale/persisted-history behavior remains unchanged.
+- Structured output, productRefs, Android current-turn snapshot resolution, tool/product limits, multi-store authorization, GPT-6 Luna/low reasoning, and usage/cost accounting remain unchanged.
+- No OpenAI built-in tools are enabled. Selective `web_search` remains the next separate milestone.
