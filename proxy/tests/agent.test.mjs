@@ -1506,6 +1506,96 @@ test("final productRefs preserve same OBIK in two stores", async () => {
   );
 });
 
+test("final Taksula instructions encode retail advisor trust and scope rules", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.match(
+    instructions,
+    /You are Taksula, a concise practical product and technical advisor for retail staff/i,
+  );
+  assert.match(
+    instructions,
+    /use normal model knowledge for general technical explanations/i,
+  );
+  assert.match(
+    instructions,
+    /Do not require verified OBI data for ordinary general technical knowledge/i,
+  );
+  assert.match(
+    instructions,
+    /facts supplied by find_obi_products are authoritative/i,
+  );
+  assert.match(
+    instructions,
+    /never invent missing SKU-specific dimensions, materials, compatibility, certifications, applications, technical parameters, or limitations/i,
+  );
+  assert.match(
+    instructions,
+    /this particular detail is not confirmed/i,
+  );
+  assert.match(
+    instructions,
+    /Current stock and price must be freshly verified when relevant/i,
+  );
+  assert.match(
+    instructions,
+    /historical conversation values are not current authority/i,
+  );
+  assert.match(
+    instructions,
+    /Use richer verified OBI product-page facts selectively/i,
+  );
+  assert.match(
+    instructions,
+    /instead of dumping all technicalFacts or repeating marketing copy/i,
+  );
+  assert.match(
+    instructions,
+    /For clearly unrelated topics, briefly say that Taksula is for product and technical retail support/i,
+  );
+  assert.match(
+    instructions,
+    /Reply naturally in the language used by the user in the current conversation/i,
+  );
+  assert.equal(instructions.includes("web_search"), false);
+});
+
+test("final advisor behavior does not change model reasoning tools or structured output", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", {
+      message: "Jak dobrać wiertło do betonu?",
+      storeNumber: "075",
+    }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  const capture = fake.captures[0];
+  assert.equal(capture.body.model, "gpt-6-luna");
+  assert.deepEqual(capture.body.reasoning, { effort: "low" });
+  assert.equal(capture.body.tools.length, 1);
+  assert.equal(capture.body.tools[0].type, "function");
+  assert.equal(capture.body.tools[0].name, "find_obi_products");
+  assert.equal(
+    capture.body.tools.some((tool) => tool.type === "web_search"),
+    false,
+  );
+  assert.deepEqual(capture.body.text, {
+    format: FINAL_ANSWER_FORMAT,
+  });
+  assert.deepEqual(
+    FINAL_ANSWER_FORMAT.schema.required,
+    ["text", "productRefs"],
+  );
+  assert.deepEqual(
+    FINAL_ANSWER_FORMAT.schema.properties.productRefs.items.required,
+    ["storeNumber", "obik"],
+  );
+});
+
 test("tool schema is generic and final schema is store-aware", () => {
   assert.equal(LOCAL_TOOL_NAME, "find_obi_products");
   assert.deepEqual(
