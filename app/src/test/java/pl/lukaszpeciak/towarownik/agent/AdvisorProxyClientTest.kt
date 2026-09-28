@@ -217,7 +217,7 @@ class AdvisorProxyClientTest {
                           "tool":{
                             "name":"find_obi_products",
                             "callId":"call_1",
-                            "arguments":{"query":"klej montażowy","storeNumber":"074","limit":5}
+                            "arguments":{"storeNumber":"074","queries":[{"query":"klej montażowy","limit":5}]}
                           }
                         }
                         """.trimIndent(),
@@ -382,9 +382,8 @@ class AdvisorProxyClientTest {
                         "name":"find_obi_products",
                         "callId":"call_tool_sources",
                         "arguments":{
-                          "query":"klej",
                           "storeNumber":"075",
-                          "limit":1
+                          "queries":[{"query":"klej","limit":1}]
                         }
                       },
                       "sources":[
@@ -612,11 +611,17 @@ class AdvisorProxyClientTest {
                     ?.jsonPrimitive
                     ?.content,
             )
+            val queries =
+                continuationResult["queries"] as
+                    kotlinx.serialization.json.JsonArray
+            val query = queries.single() as JsonObject
             assertEquals(
                 "finishing tools",
-                continuationResult["query"]
-                    ?.jsonPrimitive
-                    ?.content,
+                query["query"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                1,
+                query["limit"]?.jsonPrimitive?.intOrNull,
             )
         }
     }
@@ -669,7 +674,7 @@ class AdvisorProxyClientTest {
                       "tool":{
                         "name":"find_obi_products",
                         "callId":"call_1",
-                        "arguments":{"query":"klej","storeNumber":"075","limit":6}
+                        "arguments":{"storeNumber":"075","queries":[{"query":"klej","limit":6}]}
                       }
                     }
                     """.trimIndent(),
@@ -784,14 +789,28 @@ class AdvisorProxyClientTest {
 
             val resultBody = body["result"] as JsonObject
             assertEquals(
-                setOf("query", "storeNumber", "products"),
+                setOf("storeNumber", "results"),
                 resultBody.keys,
             )
             assertEquals(
                 "074",
                 resultBody["storeNumber"]?.jsonPrimitive?.content,
             )
-            val products = resultBody["products"] as kotlinx.serialization.json.JsonArray
+            val groups =
+                resultBody["results"] as
+                    kotlinx.serialization.json.JsonArray
+            val group = groups.single() as JsonObject
+            assertEquals(
+                setOf("query", "status", "products"),
+                group.keys,
+            )
+            assertEquals(
+                "verified",
+                group["status"]?.jsonPrimitive?.content,
+            )
+            val products =
+                group["products"] as
+                    kotlinx.serialization.json.JsonArray
             val product = products.single() as JsonObject
             assertEquals(
                 setOf(
@@ -868,8 +887,12 @@ class AdvisorProxyClientTest {
                 request.body.readUtf8(),
             ).jsonObject
             val resultBody = body["result"] as JsonObject
+            val groups =
+                resultBody["results"] as
+                    kotlinx.serialization.json.JsonArray
+            val group = groups.single() as JsonObject
             val serializedProducts =
-                resultBody["products"] as
+                group["products"] as
                     kotlinx.serialization.json.JsonArray
 
             assertEquals(5, serializedProducts.size)
