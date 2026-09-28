@@ -87,6 +87,7 @@
     <string name="ai_usage_requests">Żądania OpenAI</string>
     <string name="ai_usage_turns">Tury użytkownika</string>
     <string name="ai_usage_tool_turns">Tury z narzędziem</string>
+    <string name="ai_usage_web_searches">Wyszukania w sieci</string>
     <string name="ai_usage_tokens">TOKENY</string>
     <string name="ai_usage_input_tokens">Wejściowe</string>
     <string name="ai_usage_cached_tokens">Wejściowe z cache</string>
