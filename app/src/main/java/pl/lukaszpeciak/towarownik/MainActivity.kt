@@ -64,6 +64,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -88,6 +89,7 @@ import pl.lukaszpeciak.towarownik.conversation.ConversationSummary
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
@@ -467,6 +469,12 @@ private fun TowarownikApp() {
                         text = displayText,
                         finalResponseId = finalState.responseId,
                         products = finalState.products,
+                        sources = finalState.sources.map {
+                            PersistedWebSource(
+                                title = it.title,
+                                url = it.url,
+                            )
+                        },
                     )
                     if (
                         advisorRequestGuard.isCurrent(
@@ -1521,6 +1529,11 @@ private fun AdvisorMessageBubble(
                 VerifiedProductCard(product)
             }
 
+            if (message.sources.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                AdvisorWebSources(message.sources)
+            }
+
             message.persistedMessageId?.let { messageId ->
                 TextButton(
                     onClick = {
@@ -1548,6 +1561,43 @@ private fun AdvisorMessageBubble(
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdvisorWebSources(
+    sources: List<PersistedWebSource>,
+) {
+    val uriHandler = LocalUriHandler.current
+    Column(
+        modifier = Modifier.widthIn(max = 600.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.advisor_sources),
+            modifier = Modifier.padding(horizontal = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        sources.forEachIndexed { index, source ->
+            TextButton(
+                onClick = {
+                    runCatching {
+                        uriHandler.openUri(source.url)
+                    }
+                },
+                contentPadding = PaddingValues(
+                    horizontal = 6.dp,
+                    vertical = 1.dp,
+                ),
+            ) {
+                Text(
+                    text = (index + 1).toString() + ". " + source.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
     }
