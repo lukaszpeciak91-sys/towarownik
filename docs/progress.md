@@ -19,7 +19,7 @@ Implemented direction:
 - follow-up turns use authenticated `/v1/agent/message` with the stored final `lastResponseId`;
 - tool responses still use `/v1/agent/continue`;
 - only the final answer response ID replaces the persisted conversation context;
-- local tool allowance is two calls per USER turn and resets on every new USER message;
+- local tool allowance is three calls per USER turn and resets on every new USER message;
 - interrupted USER-only tails recover to editable draft without automatic resend;
 - switching/new conversation cancels active work and stale callbacks are rejected;
 - current OBI facts continue to be refreshed through the existing Android local tool;
@@ -75,7 +75,7 @@ Implemented direction:
 - direct OBIK and selected EAN/text candidates exact-verify against the active selected store while search discovery remains store-independent;
 - the single advisor OBI tool is now `find_obi_products(storeNumber, queries[])`: one shared store, at most five query groups, and at most five requested exact lookups in total per batch;
 - customer-kit requests can verify several categories in one local call, with grouped `verified` / `not_found` / `unavailable` results and successful groups retained independently;
-- the per-USER-turn ceiling remains two local OBI calls; a third requested batch performs zero OBI work, returns `local_tool_limit_reached`, and forces the final continuation to proceed without `find_obi_products`;
+- the per-USER-turn ceiling is three local OBI calls; a fourth requested batch performs zero OBI work, returns `local_tool_limit_reached`, and forces the final continuation to proceed without `find_obi_products`;
 - Android authorizes alternate tool stores only when a supported exact three-digit token occurs literally in the current USER message, with exact digit boundaries;
 - START/MESSAGE/CONTINUE carry the immutable turn-store context to the proxy, while the full allowlist remains Android-local;
 - unsupported/unauthorized store tool requests fail closed before OBI and never substitute `075`;
@@ -105,7 +105,7 @@ Android test version: **0.1.10 (11)**.
 - job/goal and complete-kit requests trigger a small essentials-first category plan, aggressive multi-query batching, concrete verified active-store selections, and brief explanations of what each selected item is for;
 - single-product/category requests stay focused on the requested item; obvious complements may be offered briefly but are searched only after user acceptance unless the original request already asks for a full kit;
 - accepted complements are batched together where practical, while direct current price/stock questions remain direct and avoid unnecessary cross-sell;
-- model-facing instructions no longer frame local OBI use as "two search tokens"; Android still independently enforces two local calls per USER turn and graceful `local_tool_limit_reached`;
+- model-facing instructions do not expose the numerical local-tool guard; Android independently enforces three local calls per USER turn and graceful `local_tool_limit_reached`;
 - stock `0`, null stock, grouped `not_found`, and grouped `unavailable` remain distinct evidence states and must produce distinct wording;
 - zero-stock/not-found requested items may lead to a verified current-store substitute and an offer to check another market, but no other-market number or availability is invented;
 - ordinary general technical knowledge remains allowed, specific OBI SKU/current-store claims remain under the verified tool trust hierarchy, and missing SKU-specific facts are not invented;
