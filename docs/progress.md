@@ -73,7 +73,9 @@ Implemented direction:
 - one canonical Android allowlist contains confirmed OBI Poland store numbers; new conversations default to `075`;
 - the advisor top bar exposes a compact conversation store selector; unsaved selection remains transient until first send;
 - direct OBIK and selected EAN/text candidates exact-verify against the active selected store while search discovery remains store-independent;
-- the single advisor OBI tool is now `find_obi_products(query, storeNumber, limit)`;
+- the single advisor OBI tool is now `find_obi_products(storeNumber, queries[])`: one shared store, at most five query groups, and at most five requested exact lookups in total per batch;
+- customer-kit requests can verify several categories in one local call, with grouped `verified` / `not_found` / `unavailable` results and successful groups retained independently;
+- the per-USER-turn ceiling remains two local OBI calls; a third requested batch performs zero OBI work, returns `local_tool_limit_reached`, and forces the final continuation to proceed without `find_obi_products`;
 - Android authorizes alternate tool stores only when a supported exact three-digit token occurs literally in the current USER message, with exact digit boundaries;
 - START/MESSAGE/CONTINUE carry the immutable turn-store context to the proxy, while the full allowlist remains Android-local;
 - unsupported/unauthorized store tool requests fail closed before OBI and never substitute `075`;
