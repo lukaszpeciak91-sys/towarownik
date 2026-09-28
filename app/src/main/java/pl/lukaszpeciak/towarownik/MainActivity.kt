@@ -488,7 +488,7 @@ private fun TowarownikApp() {
                     ) {
                         conversationRepository.load(turn.conversationId)
                             ?.let(::applyConversation)
-                        advisorState = finalState.copy(text = displayText)
+                        advisorState = finalState.copy(text = display.text)
                     }
                 }
 
