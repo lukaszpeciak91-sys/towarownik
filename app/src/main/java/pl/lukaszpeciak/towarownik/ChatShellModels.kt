@@ -16,6 +16,7 @@ import kotlinx.serialization.json.put
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 
@@ -29,6 +30,7 @@ internal data class AdvisorChatMessage(
     val text: String,
     val createdAt: Long,
     val products: List<VerifiedProductUiModel> = emptyList(),
+    val sources: List<PersistedWebSource> = emptyList(),
     val persistedMessageId: Long? = null,
 )
 
@@ -63,6 +65,7 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                 products = message.products.map { product ->
                     product.toVerifiedProductUiModel()
                 },
+                sources = message.sources,
                 persistedMessageId = message.id,
             )
         },
@@ -105,6 +108,19 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                 message.persistedMessageId
                                     ?.let(::JsonPrimitive)
                                     ?: JsonNull,
+                            )
+                            put(
+                                "sources",
+                                buildJsonArray {
+                                    message.sources.forEach { source ->
+                                        add(
+                                            buildJsonObject {
+                                                put("title", source.title)
+                                                put("url", source.url)
+                                            },
+                                        )
+                                    }
+                                },
                             )
                             put(
                                 "products",
@@ -167,6 +183,24 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                     ?.jsonPrimitive
                     ?.longOrNull
                     ?: return@mapNotNull null
+                val sources = (objectValue["sources"] as? JsonArray)
+                    ?.mapNotNull { sourceElement ->
+                        val source = sourceElement as? JsonObject
+                            ?: return@mapNotNull null
+                        val title = source["title"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: return@mapNotNull null
+                        val url = source["url"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                            ?: return@mapNotNull null
+                        PersistedWebSource(
+                            title = title,
+                            url = url,
+                        )
+                    }
+                    .orEmpty()
                 val products = (objectValue["products"] as? JsonArray)
                     ?.mapNotNull { productElement ->
                         val product = productElement as? JsonObject
@@ -209,6 +243,7 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                     text = text,
                     createdAt = createdAt,
                     products = products,
+                    sources = sources,
                     persistedMessageId = objectValue["persistedMessageId"]
                         ?.jsonPrimitive
                         ?.longOrNull,
