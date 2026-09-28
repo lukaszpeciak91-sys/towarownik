@@ -93,6 +93,8 @@ internal data class MessageSourceEntity(
     val position: Int,
     val title: String,
     val url: String,
+    val startIndex: Int?,
+    val endIndex: Int?,
 )
 
 internal data class MessageWithProducts(
