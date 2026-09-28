@@ -65,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -89,6 +90,7 @@ import pl.lukaszpeciak.towarownik.conversation.ConversationSummary
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.conversation.persistedWebSourceOrNull
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
@@ -1598,6 +1600,41 @@ private fun AdvisorWebSources(
                     text = (index + 1).toString() + ". " + source.title,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdvisorSourceLinks(
+    sources: List<pl.lukaszpeciak.towarownik.agent.AdvisorWebSource>,
+) {
+    val uriHandler = LocalUriHandler.current
+    Column(
+        modifier = Modifier.widthIn(max = 600.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.advisor_sources),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        sources.forEach { source ->
+            TextButton(
+                onClick = {
+                    runCatching {
+                        uriHandler.openUri(source.url)
+                    }
+                },
+                contentPadding = PaddingValues(
+                    horizontal = 6.dp,
+                    vertical = 2.dp,
+                ),
+            ) {
+                Text(
+                    text = source.title,
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
