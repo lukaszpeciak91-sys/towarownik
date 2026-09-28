@@ -729,7 +729,7 @@ class AdvisorControllerTest {
 
     @Test
     fun `usage is observed before a later continuation failure`() = runBlocking {
-        val observed = mutableListOf<AdvisorUsage?>()
+        val observed = mutableListOf<Pair<AdvisorUsage?, Long>>()
         var toolAssistedSignals = 0
         val paidUsage = AdvisorUsage(
             model = "gpt-6-luna",
@@ -771,7 +771,9 @@ class AdvisorControllerTest {
         val final = controller.runTurn(
             input = "test",
             previousResponseId = null,
-            onOpenAiResponse = { observed += it },
+            onOpenAiResponse = { usage, webSearchCalls ->
+                observed += usage to webSearchCalls
+            },
             onToolRequestObserved = {
                 toolAssistedSignals += 1
             },
@@ -781,7 +783,7 @@ class AdvisorControllerTest {
             AdvisorUiState.Error(AdvisorError.SERVICE),
             final,
         )
-        assertEquals(listOf(paidUsage), observed)
+        assertEquals(listOf(paidUsage to 0L), observed)
         assertEquals(1, toolAssistedSignals)
     }
 
