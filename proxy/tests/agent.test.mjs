@@ -1142,7 +1142,7 @@ test("web_search_call plus application function call remains a local tool reques
           call_id: "call_after_web",
           name: LOCAL_TOOL_NAME,
           arguments:
-            '{"query":"klej","storeNumber":"075","limit":2}',
+            '{"storeNumber":"075","queries":[{"query":"klej","limit":2}]}',
         },
       ],
     }),
