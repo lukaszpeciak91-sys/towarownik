@@ -1926,7 +1926,15 @@ test("selective web instructions preserve OBI authority and avoid reflexive brow
   );
   assert.match(
     instructions,
+    /relevant external information is inherently current and is not an OBI store fact/i,
+  );
+  assert.match(
+    instructions,
     /broader optional research.*offer deeper web verification instead of searching reflexively/i,
+  );
+  assert.match(
+    instructions,
+    /Do not use web_search for unrelated general chat/i,
   );
   assert.match(
     instructions,
