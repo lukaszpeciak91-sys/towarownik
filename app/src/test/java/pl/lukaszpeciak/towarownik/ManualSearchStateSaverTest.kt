@@ -2,7 +2,9 @@ package pl.lukaszpeciak.towarownik
 
 import java.math.BigDecimal
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 
@@ -89,6 +91,40 @@ class ManualSearchStateSaverTest {
         assertEquals("074", restored.item.storeNumber)
         assertNull(restored.item.stock)
         assertNull(restored.item.grossPrice)
+    }
+
+    @Test
+    fun `restored interrupted visible loading becomes retryable unavailable`() {
+        val state = ManualSearchUiState.SearchResults(
+            items = listOf(
+                ManualSearchResultItem(
+                    obik = "1000001",
+                    name = "Visible loading",
+                    enrichment = ManualResultEnrichment.Loading,
+                ),
+                ManualSearchResultItem(
+                    obik = "1000002",
+                    name = "Hidden pending",
+                    enrichment = ManualResultEnrichment.Pending,
+                ),
+            ),
+            reportedTotalCount = 2,
+            visibleCount = 1,
+        )
+
+        val restored = decodeManualSearchState(
+            encodeManualSearchState(state),
+        ) as ManualSearchUiState.SearchResults
+
+        assertTrue(
+            restored.items[0].enrichment is
+                ManualResultEnrichment.Unavailable,
+        )
+        assertTrue(
+            restored.items[1].enrichment is
+                ManualResultEnrichment.Pending,
+        )
+        assertFalse(restored.hasVisibleEnrichmentInFlight)
     }
 
     @Test
