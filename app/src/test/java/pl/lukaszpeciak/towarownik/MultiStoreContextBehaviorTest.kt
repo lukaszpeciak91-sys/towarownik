@@ -52,11 +52,35 @@ class MultiStoreContextBehaviorTest {
                 source,
                 "fun selectManualResult(item: ManualSearchResultItem) {",
             ),
+            functionBody(
+                source,
+                "fun showMoreManualResults() {",
+            ),
         ).forEach { body ->
             assertTrue(body.contains("manualRequestGuard.invalidate()"))
             assertTrue(body.contains("manualRequestGuard.isTokenCurrent(generation)"))
             assertTrue(body.contains("selectedStoreNumber == storeNumber"))
         }
+    }
+
+    @Test
+    fun `manual search screen inherits the active conversation store only`() {
+        val source = mainActivitySource()
+        val manualSurface = source
+            .substringAfter("AppSurface.MANUAL_SEARCH -> {")
+            .substringBefore("AppSurface.SETTINGS -> {")
+
+        assertTrue(
+            manualSurface.contains(
+                "storeNumber = selectedStoreNumber",
+            ),
+        )
+        assertFalse(
+            manualSurface.contains("manualStoreNumber"),
+        )
+        assertFalse(
+            manualSurface.contains("onStoreSelected"),
+        )
     }
 
     @Test
