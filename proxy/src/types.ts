@@ -36,9 +36,16 @@ export interface RejectedToolResult {
   rejection: "store_not_authorized";
 }
 
+export interface LocalToolLimitResult {
+  query: string;
+  storeNumber: string;
+  rejection: "local_tool_limit_reached";
+}
+
 export type ToolContinuationResult =
   | VerifiedToolResult
-  | RejectedToolResult;
+  | RejectedToolResult
+  | LocalToolLimitResult;
 
 export interface ProductRef {
   storeNumber: string;
