@@ -2193,6 +2193,10 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
     instructions,
     /After two calls/i,
   );
+  assert.doesNotMatch(
+    instructions,
+    /you have 3 calls|save your 3 calls|you may only search 3 times|at most 3 find_obi_products calls/i,
+  );
   assert.match(
     instructions,
     /local_tool_limit_reached.*do not request find_obi_products again/i,
