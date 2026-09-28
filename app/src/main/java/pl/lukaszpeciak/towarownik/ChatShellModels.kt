@@ -195,10 +195,12 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                             ?.jsonPrimitive
                             ?.contentOrNull
                             ?: return@mapNotNull null
-                        PersistedWebSource(
-                            title = title,
-                            url = url,
-                        )
+                        pl.lukaszpeciak.towarownik.conversation
+                            .persistedWebSourceOrNull(
+                                title = title,
+                                url = url,
+                            )
+                            ?: return@mapNotNull null
                     }
                     .orEmpty()
                 val products = (objectValue["products"] as? JsonArray)
