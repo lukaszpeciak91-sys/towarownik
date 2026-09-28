@@ -27,7 +27,7 @@ internal data class AiUsageModelTotals(
     val outputTokens: Long,
     val reasoningTokens: Long?,
     val totalTokens: Long,
-    val webSearchCalls: Long,
+    val webSearchCalls: Long = 0,
     val estimatedCostUsd: BigDecimal,
 )
 
