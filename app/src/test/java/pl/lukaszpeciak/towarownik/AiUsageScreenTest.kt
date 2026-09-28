@@ -73,6 +73,7 @@ class AiUsageScreenTest {
             outputTokens = 0,
             reasoningTokens = null,
             totalTokens = 0,
+            webSearchCalls = 0,
             estimatedCostUsd = BigDecimal.ZERO,
             unpricedRequests = unpricedRequests,
             models = models,
@@ -91,6 +92,7 @@ class AiUsageScreenTest {
             outputTokens = 1,
             reasoningTokens = 0,
             totalTokens = 2,
+            webSearchCalls = 0,
             estimatedCostUsd = BigDecimal("0.0000014"),
         )
 }
