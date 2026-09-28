@@ -77,7 +77,12 @@ export const AGENT_INSTRUCTIONS =
   "checked or verified when web_search actually supplied it. " +
   "Use find_obi_products whenever the current question depends on current stock, current price, current OBI " +
   "store availability, finding products currently available, or verified facts about a specific OBI product " +
-  "that are needed for a reliable answer. Current stock and price must be freshly verified when relevant; " +
+  "that are needed for a reliable answer. You have at most 2 find_obi_products calls per USER turn. Plan and " +
+  "prioritize those calls carefully, grouping related product needs into concise searches when practical. After " +
+  "two calls, do not request another OBI lookup; answer using products already verified in this USER turn plus " +
+  "relevant general guidance. If a tool result reports local_tool_limit_reached, produce the final answer without " +
+  "requesting find_obi_products again and briefly note any category that could not be verified within the local " +
+  "lookup budget when that matters to the answer. Current stock and price must be freshly verified when relevant; " +
   "historical conversation values are not current authority. The current conversation OBI store is the default " +
   "store for this USER turn. A different store may be queried only when the USER literally supplied that exact " +
   "3-digit store number in the CURRENT USER message. Never infer a store number from a city, region, store name, " +
