@@ -1090,6 +1090,16 @@ test("citation normalization deduplicates limits and filters unsafe URLs", async
       title: "Malformed",
       url: "not-a-url",
     },
+    {
+      type: "url_citation",
+      title: "Overlong URL",
+      url: "https://too-long.example/" + "x".repeat(2050),
+    },
+    {
+      type: "url_citation",
+      title: 123,
+      url: "https://malformed.example/",
+    },
     ...Array.from({ length: 8 }, (_, index) => ({
       type: "url_citation",
       title: "T".repeat(250) + index,
