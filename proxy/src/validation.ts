@@ -15,6 +15,7 @@ import {
   START_MESSAGE_MAX_CHARS,
 } from "./config.js";
 import type {
+  LocalToolLimitResult,
   RejectedToolResult,
   ToolArguments,
   ToolContinuationResult,
@@ -210,15 +211,24 @@ function validateRejectedToolResult(
     value,
     ["query", "storeNumber", "rejection"],
   );
-  if (object.rejection !== "store_not_authorized") {
-    throw new InvalidRequestError();
+  if (object.rejection === "store_not_authorized") {
+    return {
+      query: normalizedToolQuery(object.query),
+      storeNumber: validateStoreNumber(object.storeNumber),
+      rejection: "store_not_authorized",
+    };
   }
 
-  return {
-    query: normalizedToolQuery(object.query),
-    storeNumber: validateStoreNumber(object.storeNumber),
-    rejection: "store_not_authorized",
-  };
+  if (object.rejection === "local_tool_limit_reached") {
+    const result: LocalToolLimitResult = {
+      query: normalizedToolQuery(object.query),
+      storeNumber: validateStoreNumber(object.storeNumber),
+      rejection: "local_tool_limit_reached",
+    };
+    return result;
+  }
+
+  throw new InvalidRequestError();
 }
 
 function validatedMessage(value: unknown): string {
