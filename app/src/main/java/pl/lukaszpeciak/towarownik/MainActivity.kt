@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -1161,7 +1160,7 @@ private fun ConversationDrawer(
 
 @Composable
 private fun Modifier.bottomComposerSafeArea(): Modifier =
-    imePadding().windowInsetsPadding(
+    windowInsetsPadding(
         WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom),
     )
 
