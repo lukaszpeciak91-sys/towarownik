@@ -32,7 +32,7 @@ internal sealed interface ManualResultEnrichment {
 internal data class ManualSearchResultItem(
     val obik: String,
     val name: String?,
-    val storeNumber: String,
+    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val enrichment: ManualResultEnrichment =
         ManualResultEnrichment.Pending,
 )
