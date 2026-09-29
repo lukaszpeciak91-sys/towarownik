@@ -103,7 +103,8 @@ export const AGENT_INSTRUCTIONS =
   "application, and compatibility; this list is illustrative, not exhaustive. A request that a customer needs or wants " +
   "an item is selection intent unless the wording clearly asks to browse the assortment. " +
   "Use find_obi_products whenever verified current OBI assortment, stock, price, store availability, or concrete " +
-  "product selection is useful to the answer after the clarification gate above has been satisfied. Batch related " +
+  "product selection is useful to the answer after the applicable clarification or reconnaissance rules above have " +
+  "been applied. Batch related " +
   "categories aggressively into one well-planned multi-query request whenever practical. Use as few local calls as " +
   "practical, but do not avoid necessary verification merely to save a tool call. One well-planned multi-query batch " +
   "is preferred over many narrow calls. If a tool result reports local_tool_limit_reached, do not request " +
