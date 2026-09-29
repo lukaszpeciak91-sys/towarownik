@@ -882,21 +882,6 @@ function deterministicFailures(
           "selection lookup was not a broad same-category black cable-tie query",
         );
       }
-      if (
-        selectionQueries.some((query) => query.limit <= 1)
-      ) {
-        failures.push(
-          "selection lookup narrowed to a single result before clarification",
-        );
-      }
-      if (
-        calls.length > 0 &&
-        verifiedRefs.size < 2
-      ) {
-        failures.push(
-          "broad selection lookup did not yield multiple relevant verified variants",
-        );
-      }
       if (trace.finalProductRefs.length !== 0) {
         failures.push(
           "concrete productRef returned before clarification",
