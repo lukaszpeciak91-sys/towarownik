@@ -95,9 +95,10 @@ export const AGENT_INSTRUCTIONS =
   "resolving the ambiguity. Whether reconnaissance is used or not, ask ONE concise targeted clarification and STOP the " +
   "turn after that clarification. The response for that turn should clarify the missing selection parameter rather than " +
   "promote reconnaissance candidates. Explicit assortment/browse intent is different: it may proceed to verified " +
-  "variants and productRefs without unnecessary selection clarification. If the request is sufficiently specified, " +
-  "proceed without unnecessary clarification and only then decide whether find_obi_products is needed for concrete " +
-  "selection. Material selection parameters depend on the category and can include dimensions, length, width, diameter, " +
+  "variants and productRefs without unnecessary selection clarification. If the USER already provided enough relevant " +
+  "detail, proceed without unnecessary clarification and only then decide whether find_obi_products is needed for " +
+  "concrete selection. Material selection parameters depend on the category and can include dimensions, length, width, " +
+  "diameter, " +
   "thread or connection size, voltage, power, IP rating or environment, substrate or material, load or capacity, " +
   "application, and compatibility; this list is illustrative, not exhaustive. A request that a customer needs or wants " +
   "an item is selection intent unless the wording clearly asks to browse the assortment. " +  "Use find_obi_products whenever verified current OBI assortment, stock, price, store availability, or concrete " +
