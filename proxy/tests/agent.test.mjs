@@ -2394,6 +2394,10 @@ test('ambiguity A — "Klient potrzebuje czarnych trytytek." requires clarificat
   );
   assert.match(
     instructions,
+    /For selection intent, this clarification rule takes precedence over the general instruction to use find_obi_products when verification would otherwise be useful/i,
+  );
+  assert.match(
+    instructions,
     /dimensions, length, width, diameter, thread or connection size, voltage, power, IP rating or environment, substrate or material, load or capacity, application, and compatibility/i,
   );
   assert.match(
@@ -2423,7 +2427,7 @@ test('ambiguity B — "Jakie czarne trytytki mamy?" browses multiple verified va
   );
   assert.match(
     instructions,
-    /state clearly that multiple variants exist/i,
+    /state clearly that multiple verified variants were found/i,
   );
 });
 
