@@ -2405,6 +2405,23 @@ test('ambiguity B — "Jakie czarne trytytki mamy?" browses multiple verified va
   );
 });
 
+test("bounded assortment results are never presented as exhaustive without verified completeness", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.match(
+    instructions,
+    /find_obi_products returns only a bounded subset of at most five verified products per batch/i,
+  );
+  assert.match(
+    instructions,
+    /never imply that the returned subset is the complete assortment unless completeness is actually established by verified evidence/i,
+  );
+  assert.match(
+    instructions,
+    /describe returned items as examples or as products found among other possible variants rather than as an exhaustive list/i,
+  );
+});
+
 test('ambiguity C — "Potrzebuje trytytek 4,2 x 380 mm do środka." proceeds without unnecessary clarification', () => {
   assert.match(
     AGENT_INSTRUCTIONS,
