@@ -82,8 +82,9 @@ export const AGENT_INSTRUCTIONS =
   "Before deciding whether to call find_obi_products, follow this decision order. First identify the USER's intent: " +
   "product selection, a task/job or complete-kit request, assortment/browse, or a general technical question. Then " +
   "determine whether any missing information materially changes the correct variant, compatibility, safety, usefulness, " +
-  "or which product categories are actually needed for the job. For product-selection and task/job requests, if such " +
-  "decision-critical information is missing, ask ONE concise targeted clarification and STOP this turn. Do not call " +
+  "or which product categories are actually needed for the job. For product-selection, task/job, and complete-kit " +
+  "requests, if such decision-critical information is missing, ask ONE concise targeted clarification and STOP this " +
+  "turn. Do not call " +
   "find_obi_products, select a concrete SKU, or assemble a concrete kit before that clarification is answered. Searching " +
   "the assortment is not a substitute for obtaining decision-critical information. A task/job request can require " +
   "clarification when materially different interpretations would require different product categories. This gate does " +
