@@ -366,6 +366,47 @@ test("scenario A fails when a concrete verified SKU is recommended before clarif
   assert.equal(semanticCalls, 0);
 });
 
+test("scenario A fails lookup narrowed by an invented dimension before clarification", async () => {
+  const scenario = behaviorScenario("A");
+  let semanticCalls = 0;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          {
+            query: "czarne trytytki 4,2 x 380 mm",
+            limit: 3,
+          },
+        ]);
+      },
+      async continueTurn() {
+        return answer(
+          "Jaki rozmiar i zastosowanie mają mieć te trytytki?",
+        );
+      },
+    },
+    {
+      async grade() {
+        semanticCalls += 1;
+        return { pass: true, reason: "should not run" };
+      },
+    },
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(
+    result.reason,
+    /not a broad same-category black cable-tie query/i,
+  );
+  assert.equal(
+    result.trace.mockedToolResults[0].results[0].status,
+    "not_found",
+  );
+  assert.equal(semanticCalls, 0);
+});
+
 test("scenario A fails unrelated-category lookup even if clarification follows", async () => {
   const scenario = behaviorScenario("A");
   let semanticCalls = 0;
