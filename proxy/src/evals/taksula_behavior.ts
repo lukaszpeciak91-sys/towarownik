@@ -612,11 +612,14 @@ export function formatBehaviorSummary(
     (result) => result.status === "PASS",
   ).length;
   const failedNames = [
-    ...new Set(
+    ...new Map(
       results
         .filter((result) => result.status === "FAIL")
-        .map((result) => result.scenario),
-    ),
+        .map((result) => [
+          result.scenario,
+          `${result.scenario} (${result.scenarioName})`,
+        ]),
+    ).values(),
   ];
 
   lines.push("");
@@ -982,7 +985,7 @@ function mockQueryResult(
       return verifiedQuery(query, [DIRECT_PRODUCT].slice(0, limit));
 
     case "G_ZERO":
-      return callOrder === 1
+      return query.includes("7000002")
         ? verifiedQuery(
             query,
             [ZERO_STOCK_PRODUCT].slice(0, limit),
@@ -994,7 +997,7 @@ function mockQueryResult(
           };
 
     case "G_NULL":
-      return callOrder === 1
+      return query.includes("7000003")
         ? verifiedQuery(
             query,
             [UNKNOWN_STOCK_PRODUCT].slice(0, limit),
@@ -1013,11 +1016,17 @@ function mockQueryResult(
       };
 
     case "G_UNAVAILABLE":
-      return {
-        query,
-        status: "unavailable",
-        products: [],
-      };
+      return query.includes("7000005")
+        ? {
+            query,
+            status: "unavailable",
+            products: [],
+          }
+        : {
+            query,
+            status: "not_found",
+            products: [],
+          };
 
     case "H": {
       const normalized = normalizeQuery(query);
