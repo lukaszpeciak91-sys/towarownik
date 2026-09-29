@@ -34,7 +34,7 @@ The only eval-specific model prompt is the small semantic **grader** used when d
 
 Behavioral evals never call live `obi.pl`.
 
-Every local `find_obi_products` request is answered from deterministic in-repository mock fixtures. The fixture result echoes the model's requested query and returns bounded verified/not-found/unavailable data for the scenario.
+Every local `find_obi_products` request is answered from deterministic in-repository mock fixtures. Fixtures are query-sensitive: only a query whose observable meaning matches the scenario receives the intended verified/unavailable fixture; unrelated queries deterministically receive `not_found`. This prevents a poor tool query from being rewarded with the product the scenario expected.
 
 This allows the model/tool interaction to be exercised without coupling behavioral results to OBI website availability or parser changes.
 
@@ -70,6 +70,8 @@ Each trial records only observable data:
 - final `productRefs`.
 
 No chain-of-thought, hidden reasoning item, raw OpenAI response, API key, bearer token, cookie, or live OBI payload is stored by the harness.
+
+Each scenario also declares an explicit web-use policy: `forbidden`, `allowed`, or `required`. The initial A–I suite uses `forbidden` because it targets clarification, local OBI behavior, stable availability semantics, batching, and stable general technical knowledge rather than external research. The production `web_search` tool remains available to the advisor exactly as in production; if the model nevertheless uses it in a forbidden scenario, deterministic grading fails the trial.
 
 Deterministic assertions are preferred for:
 
