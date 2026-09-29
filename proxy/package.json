@@ -9,7 +9,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit false --outDir .test-dist && node --test tests/*.test.mjs",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "eval:build": "tsc -p tsconfig.eval.json",
+    "eval:behavior": "npm run eval:build && node evals/run-taksula-behavior.mjs"
   },
   "devDependencies": {
     "typescript": "5.9.3"
