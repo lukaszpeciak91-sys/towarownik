@@ -234,6 +234,37 @@ test("repeated trials stay configurable and summary reports pass totals", async 
   assert.match(summary, /failed scenarios: none/);
 });
 
+test("availability semantics allow a production-style substitute lookup after the exact item", async () => {
+  const scenario = behaviorScenario("G_ZERO");
+  let continuation = 0;
+  const driver = {
+    async start() {
+      return toolRequest([
+        { query: "OBIK 7000002", limit: 1 },
+      ]);
+    },
+    async continueTurn() {
+      continuation += 1;
+      if (continuation === 1) {
+        return toolRequest([
+          { query: "zamiennik produktu 7000002", limit: 1 },
+        ]);
+      }
+      return answer("Stan produktu bazowego wynosi 0 szt.");
+    },
+  };
+
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    driver,
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 2);
+});
+
 test("productRef grounding fails deterministically before semantic grading", async () => {
   let semanticCalls = 0;
   const judge = {
