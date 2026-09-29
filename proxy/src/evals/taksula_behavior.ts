@@ -38,10 +38,13 @@ export type BehaviorScenarioId =
   | "H"
   | "I";
 
+export type WebPolicy = "forbidden" | "allowed" | "required";
+
 export interface BehaviorScenario {
   id: BehaviorScenarioId;
   name: string;
   userMessage: string;
+  webPolicy: WebPolicy;
   semanticRubric: string[];
 }
 
@@ -160,6 +163,39 @@ const ZIP_TIES: VerifiedProduct[] = [
   ),
 ];
 
+const INDOOR_ZIP_TIES: VerifiedProduct[] = [
+  product(
+    "6110001",
+    "Mock opaski kablowe czarne 2,5 x 100 mm indoor",
+    20,
+    7.49,
+    [
+      ["Wymiary", "2,5 x 100 mm"],
+      ["Zastosowanie", "wewnątrz"],
+    ],
+  ),
+  product(
+    "6110002",
+    "Mock opaski kablowe czarne 3,6 x 200 mm indoor",
+    15,
+    11.99,
+    [
+      ["Wymiary", "3,6 x 200 mm"],
+      ["Zastosowanie", "wewnątrz"],
+    ],
+  ),
+  product(
+    "6110003",
+    "Mock opaski kablowe czarne 4,8 x 300 mm indoor",
+    9,
+    18.49,
+    [
+      ["Wymiary", "4,8 x 300 mm"],
+      ["Zastosowanie", "wewnątrz"],
+    ],
+  ),
+];
+
 const DIRECT_PRODUCT = product(
   "7000001",
   "Mock produkt do kontroli ceny i stanu",
@@ -213,6 +249,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "A",
     name: "Ambiguous black cable ties",
     userMessage: "Klient potrzebuje czarnych trytytek.",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer is one concise, relevant clarification before any concrete SKU selection.",
       "The clarification asks for missing selection information that materially affects the choice, such as size and/or indoor-versus-outdoor application.",
@@ -223,6 +260,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "B",
     name: "Browse black cable-tie assortment",
     userMessage: "Jakie czarne trytytki mamy?",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer treats this as browse/assortment intent rather than asking an unnecessary selection clarification.",
       "Several materially fitting verified variants are surfaced or compared instead of silently collapsing them to one.",
@@ -234,12 +272,14 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     name: "Specified cable-tie selection",
     userMessage:
       "Potrzebuję czarnych trytytek 4,2 x 380 mm do środka.",
+    webPolicy: "forbidden",
     semanticRubric: [],
   },
   {
     id: "D",
     name: "Ambiguous faucet aerator",
     userMessage: "Klient potrzebuje końcówki z sitkiem do kranu.",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer asks one concise clarification about the missing connection/thread/size or fitting type before concrete selection.",
       "It does not invent compatibility or select an arbitrary concrete SKU.",
@@ -250,6 +290,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     name: "Three fitting verified variants",
     userMessage:
       "Pokaż czarne trytytki do środka i sensowne warianty rozmiarowe.",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer presents or compares the useful fitting alternatives, or clearly explains why one is preferred over the other fitting verified variants.",
       "It does not imply that only one matching product exists.",
@@ -259,6 +300,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "F",
     name: "Direct current stock and price by OBIK",
     userMessage: "Jaki jest teraz stan i cena OBIK 7000001?",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The final answer directly answers current stock and price using the mocked verified product.",
       "It does not turn the answer into a complement-shopping list.",
@@ -268,6 +310,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "G_ZERO",
     name: "Availability semantics: stock zero",
     userMessage: "Sprawdź dostępność OBIK 7000002.",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer treats stock = 0 as confirmed zero/unavailable in the verified store.",
       "It does not describe the stock as merely unknown.",
@@ -277,6 +320,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "G_NULL",
     name: "Availability semantics: stock unknown",
     userMessage: "Sprawdź dostępność OBIK 7000003.",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer treats stock = null as unknown or unconfirmed availability.",
       "It does not claim zero stock, out of stock, or confirmed unavailability.",
@@ -286,6 +330,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "G_NOT_FOUND",
     name: "Availability semantics: not found",
     userMessage: "Sprawdź dostępność OBIK 7000004.",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer says that no verified matching product was found for the query.",
       "It does not convert not_found into stock zero or confirmed store unavailability.",
@@ -295,6 +340,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "G_UNAVAILABLE",
     name: "Availability semantics: retrieval unavailable",
     userMessage: "Sprawdź dostępność OBIK 7000005.",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer says that retrieval could not establish the current fact or that availability could not be verified.",
       "It does not present the result as not_found or stock zero.",
@@ -304,6 +350,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "H",
     name: "Small washbasin-sealing kit",
     userMessage: "Co potrzebuję do uszczelnienia umywalki?",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer forms a small practical essentials-first kit for sealing a washbasin.",
       "It does not require separate confirmation for every category.",
@@ -314,6 +361,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "I",
     name: "General SDS Plus versus SDS Max knowledge",
     userMessage: "Czym różni się SDS+ od SDS Max?",
+    webPolicy: "forbidden",
     semanticRubric: [
       "The answer gives a useful general technical distinction between SDS+ and SDS Max.",
       "It does not require current OBI assortment facts to answer the general technical question.",
@@ -767,6 +815,23 @@ function deterministicFailures(
     return failures;
   }
 
+  if (
+    scenario.webPolicy === "forbidden" &&
+    trace.webSearchCount > 0
+  ) {
+    failures.push(
+      "web search was used even though this scenario forbids it",
+    );
+  }
+  if (
+    scenario.webPolicy === "required" &&
+    trace.webSearchCount === 0
+  ) {
+    failures.push(
+      "web search was required by this scenario but was not used",
+    );
+  }
+
   const verifiedRefs = collectVerifiedRefs(
     trace.mockedToolResults,
   );
@@ -802,11 +867,6 @@ function deterministicFailures(
           "concrete productRef returned before clarification",
         );
       }
-      if (trace.webSearchCount !== 0) {
-        failures.push(
-          "web search was unnecessary for the clarification",
-        );
-      }
       break;
 
     case "B":
@@ -816,6 +876,11 @@ function deterministicFailures(
       if (!firstQueries.some((query) => query.limit > 1)) {
         failures.push(
           "browse lookup did not request multiple results",
+        );
+      }
+      if (verifiedRefs.size < 2) {
+        failures.push(
+          "browse lookup did not yield multiple relevant verified variants",
         );
       }
       break;
@@ -828,13 +893,23 @@ function deterministicFailures(
       }
       if (
         !flattenQueries(calls).some(
-          (query) =>
-            /380/.test(query) &&
-            /4\s*[,.]?\s*2/.test(query),
+          (query) => hasCableTieDimension42x380(query),
         )
       ) {
         failures.push(
-          "verification query did not preserve the specified size",
+          "verification query did not preserve the specified 4.2 x 380 mm size",
+        );
+      }
+      if (
+        !verifiedRefs.has(
+          refKey({
+            storeNumber: DEFAULT_EVAL_STORE_NUMBER,
+            obik: "6100002",
+          }),
+        )
+      ) {
+        failures.push(
+          "specified cable-tie lookup did not yield the intended verified variant",
         );
       }
       break;
@@ -858,14 +933,9 @@ function deterministicFailures(
           "direct stock/price request should use one local lookup",
         );
       }
-      if (trace.webSearchCount !== 0) {
-        failures.push(
-          "direct stock/price request used unnecessary web search",
-        );
-      }
       if (
         flattenQueries(calls).length !== 1 ||
-        !flattenQueries(calls)[0]?.includes("7000001")
+        !hasExactObik(flattenQueries(calls)[0] ?? "", "7000001")
       ) {
         failures.push(
           "direct OBIK lookup was broadened into unrelated searches",
@@ -900,17 +970,29 @@ function deterministicFailures(
           "kit request used too many narrow local lookups",
         );
       }
+      const verifiedKitProducts = [
+        "7200001",
+        "7200002",
+        "7200003",
+      ].filter((obik) =>
+        verifiedRefs.has(
+          refKey({
+            storeNumber: DEFAULT_EVAL_STORE_NUMBER,
+            obik,
+          }),
+        ),
+      ).length;
+      if (verifiedKitProducts < 2) {
+        failures.push(
+          "kit lookup did not yield at least two relevant verified kit categories",
+        );
+      }
       break;
 
     case "I":
       if (calls.length !== 0) {
         failures.push(
           "general SDS question used unnecessary local OBI lookup",
-        );
-      }
-      if (trace.webSearchCount !== 0) {
-        failures.push(
-          "general SDS question used unnecessary web search",
         );
       }
       if (trace.finalProductRefs.length !== 0) {
@@ -934,7 +1016,7 @@ function requireObikVerification(
     failures.push("availability check did not use local OBI");
     return;
   }
-  if (!queries.some((query) => query.includes(obik))) {
+  if (!queries.some((query) => hasExactObik(query, obik))) {
     failures.push(
       `availability lookup did not preserve OBIK ${obik}`,
     );
@@ -964,97 +1046,183 @@ function mockQueryResult(
   scenarioId: BehaviorScenarioId,
   query: string,
   limit: number,
-  callOrder: number,
-  queryIndex: number,
+  _callOrder: number,
+  _queryIndex: number,
 ): VerifiedQueryResult {
   switch (scenarioId) {
     case "B":
-    case "E":
-      return verifiedQuery(
-        query,
-        ZIP_TIES.slice(0, Math.min(limit, ZIP_TIES.length)),
-      );
+      return isBlackCableTieQuery(query)
+        ? verifiedQuery(
+            query,
+            ZIP_TIES.slice(0, Math.min(limit, ZIP_TIES.length)),
+          )
+        : notFoundQuery(query);
 
     case "C":
-      return verifiedQuery(
-        query,
-        [ZIP_TIES[1]].slice(0, limit),
-      );
+      return isSpecifiedIndoorCableTieQuery(query)
+        ? verifiedQuery(
+            query,
+            [ZIP_TIES[1]].slice(0, limit),
+          )
+        : notFoundQuery(query);
+
+    case "E":
+      return isIndoorBlackCableTieQuery(query)
+        ? verifiedQuery(
+            query,
+            INDOOR_ZIP_TIES.slice(
+              0,
+              Math.min(limit, INDOOR_ZIP_TIES.length),
+            ),
+          )
+        : notFoundQuery(query);
 
     case "F":
-      return verifiedQuery(query, [DIRECT_PRODUCT].slice(0, limit));
+      return hasExactObik(query, "7000001")
+        ? verifiedQuery(
+            query,
+            [DIRECT_PRODUCT].slice(0, limit),
+          )
+        : notFoundQuery(query);
 
     case "G_ZERO":
-      return query.includes("7000002")
+      return hasExactObik(query, "7000002")
         ? verifiedQuery(
             query,
             [ZERO_STOCK_PRODUCT].slice(0, limit),
           )
-        : {
-            query,
-            status: "not_found",
-            products: [],
-          };
+        : notFoundQuery(query);
 
     case "G_NULL":
-      return query.includes("7000003")
+      return hasExactObik(query, "7000003")
         ? verifiedQuery(
             query,
             [UNKNOWN_STOCK_PRODUCT].slice(0, limit),
           )
-        : {
-            query,
-            status: "not_found",
-            products: [],
-          };
+        : notFoundQuery(query);
 
     case "G_NOT_FOUND":
-      return {
-        query,
-        status: "not_found",
-        products: [],
-      };
+      return notFoundQuery(query);
 
     case "G_UNAVAILABLE":
-      return query.includes("7000005")
+      return hasExactObik(query, "7000005")
         ? {
             query,
             status: "unavailable",
             products: [],
           }
-        : {
-            query,
-            status: "not_found",
-            products: [],
-          };
+        : notFoundQuery(query);
 
     case "H": {
       const normalized = normalizeQuery(query);
-      let selected: VerifiedProduct;
-      if (/silik|uszczeln/.test(normalized)) {
-        selected = KIT_PRODUCTS[0];
-      } else if (/pistolet|wycisk|kartusz/.test(normalized)) {
-        selected = KIT_PRODUCTS[1];
-      } else if (/gladz|szpach|profil|narzedz/.test(normalized)) {
-        selected = KIT_PRODUCTS[2];
-      } else {
-        selected =
-          KIT_PRODUCTS[
-            (callOrder + queryIndex - 1) % KIT_PRODUCTS.length
-          ];
+      if (isSanitarySiliconeQuery(normalized)) {
+        return verifiedQuery(
+          query,
+          [KIT_PRODUCTS[0]].slice(0, limit),
+        );
       }
-      return verifiedQuery(query, [selected].slice(0, limit));
+      if (isCartridgeGunQuery(normalized)) {
+        return verifiedQuery(
+          query,
+          [KIT_PRODUCTS[1]].slice(0, limit),
+        );
+      }
+      if (isSiliconeFinishingToolQuery(normalized)) {
+        return verifiedQuery(
+          query,
+          [KIT_PRODUCTS[2]].slice(0, limit),
+        );
+      }
+      return notFoundQuery(query);
     }
 
     case "A":
     case "D":
     case "I":
-      return {
-        query,
-        status: "not_found",
-        products: [],
-      };
+      return notFoundQuery(query);
   }
+}
+
+function notFoundQuery(query: string): VerifiedQueryResult {
+  return {
+    query,
+    status: "not_found",
+    products: [],
+  };
+}
+
+function isBlackCableTieQuery(query: string): boolean {
+  const normalized = normalizeQuery(query);
+  return (
+    /\b(czarn\w*)\b/.test(normalized) &&
+    /\b(trytyt\w*|opask\w*)\b/.test(normalized)
+  );
+}
+
+function isIndoorBlackCableTieQuery(query: string): boolean {
+  const normalized = normalizeQuery(query);
+  return (
+    isBlackCableTieQuery(query) &&
+    /\b(wewn\w*|srod\w*)\b/.test(normalized)
+  );
+}
+
+function isSpecifiedIndoorCableTieQuery(
+  query: string,
+): boolean {
+  return (
+    isIndoorBlackCableTieQuery(query) &&
+    hasCableTieDimension42x380(query)
+  );
+}
+
+function hasCableTieDimension42x380(
+  query: string,
+): boolean {
+  return (
+    /4\s*[,.]\s*2/.test(query) &&
+    /(?:^|\D)380(?:\D|$)/.test(query)
+  );
+}
+
+function hasExactObik(
+  query: string,
+  obik: string,
+): boolean {
+  return new RegExp(
+    `(^|\\D)${obik}(\\D|$)`,
+  ).test(query);
+}
+
+function isSanitarySiliconeQuery(
+  normalized: string,
+): boolean {
+  return (
+    /\bsilikon\w*\b/.test(normalized) &&
+    /\b(sanit\w*|umywal\w*|uszczeln\w*)\b/.test(
+      normalized,
+    )
+  );
+}
+
+function isCartridgeGunQuery(
+  normalized: string,
+): boolean {
+  return (
+    /\b(pistolet\w*|wycisk\w*)\b/.test(normalized) &&
+    /\b(kartusz\w*|silikon\w*)\b/.test(normalized)
+  );
+}
+
+function isSiliconeFinishingToolQuery(
+  normalized: string,
+): boolean {
+  return (
+    /\b(gladz\w*|profil\w*|narzedz\w*)\b/.test(
+      normalized,
+    ) &&
+    /\bsilikon\w*\b/.test(normalized)
+  );
 }
 
 function verifiedQuery(
