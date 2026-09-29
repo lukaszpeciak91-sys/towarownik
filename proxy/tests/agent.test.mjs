@@ -2246,11 +2246,11 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   assert.equal(instructions.includes("web_search"), true);
 });
 
-test('A task kit contract — "Klient chce położyć płytki i nie wie czego potrzebuje."', () => {
+test('A sufficiently specified task kit contract — "Klient chce położyć płytki na przygotowanej ścianie i nie wie czego potrzebuje."', () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /When the USER describes a job or goal rather than one specific SKU/i,
+    /When a sufficiently specified USER request describes a job or goal rather than one specific SKU/i,
   );
   assert.match(
     instructions,
@@ -2274,11 +2274,11 @@ test('A task kit contract — "Klient chce położyć płytki i nie wie czego po
   );
 });
 
-test('B complete sales kit contract — "Co mogę sprzedać klientowi do uszczelnienia umywalki?"', () => {
+test('B sufficiently specified complete sales kit contract — "Co mogę sprzedać klientowi do uszczelnienia silikonem szczeliny między umywalką a ścianą?"', () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /If the intent is clearly a complete kit, what the customer needs, what can be sold for the job/i,
+    /If the sufficiently specified intent is clearly a complete kit, what the customer needs, what can be sold for the job/i,
   );
   assert.match(
     instructions,
