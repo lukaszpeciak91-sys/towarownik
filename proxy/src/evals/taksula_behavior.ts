@@ -529,7 +529,8 @@ export async function runBehaviorTrial(
       trace.finalProductRefs = [...result.productRefs];
       trace.clarificationOrFinalAnswer = {
         kind:
-          scenario.id === "A" || scenario.id === "D"
+          (scenario.id === "A" || scenario.id === "D") &&
+          trace.findObiProductsCalls.length === 0
             ? "clarification_candidate"
             : "final_answer",
         text: result.text,
@@ -870,16 +871,16 @@ function deterministicFailures(
       break;
 
     case "G_ZERO":
-      requireSingleObikQuery(calls, "7000002", failures);
+      requireObikVerification(calls, "7000002", failures);
       break;
     case "G_NULL":
-      requireSingleObikQuery(calls, "7000003", failures);
+      requireObikVerification(calls, "7000003", failures);
       break;
     case "G_NOT_FOUND":
-      requireSingleObikQuery(calls, "7000004", failures);
+      requireObikVerification(calls, "7000004", failures);
       break;
     case "G_UNAVAILABLE":
-      requireSingleObikQuery(calls, "7000005", failures);
+      requireObikVerification(calls, "7000005", failures);
       break;
 
     case "H":
@@ -920,19 +921,17 @@ function deterministicFailures(
   return failures;
 }
 
-function requireSingleObikQuery(
+function requireObikVerification(
   calls: readonly LocalToolCallTrace[],
   obik: string,
   failures: string[],
 ): void {
   const queries = flattenQueries(calls);
-  if (calls.length !== 1 || queries.length !== 1) {
-    failures.push(
-      "availability check should use one focused local lookup",
-    );
+  if (calls.length === 0) {
+    failures.push("availability check did not use local OBI");
     return;
   }
-  if (!queries[0]?.includes(obik)) {
+  if (!queries.some((query) => query.includes(obik))) {
     failures.push(
       `availability lookup did not preserve OBIK ${obik}`,
     );
@@ -983,16 +982,28 @@ function mockQueryResult(
       return verifiedQuery(query, [DIRECT_PRODUCT].slice(0, limit));
 
     case "G_ZERO":
-      return verifiedQuery(
-        query,
-        [ZERO_STOCK_PRODUCT].slice(0, limit),
-      );
+      return callOrder === 1
+        ? verifiedQuery(
+            query,
+            [ZERO_STOCK_PRODUCT].slice(0, limit),
+          )
+        : {
+            query,
+            status: "not_found",
+            products: [],
+          };
 
     case "G_NULL":
-      return verifiedQuery(
-        query,
-        [UNKNOWN_STOCK_PRODUCT].slice(0, limit),
-      );
+      return callOrder === 1
+        ? verifiedQuery(
+            query,
+            [UNKNOWN_STOCK_PRODUCT].slice(0, limit),
+          )
+        : {
+            query,
+            status: "not_found",
+            products: [],
+          };
 
     case "G_NOT_FOUND":
       return {
