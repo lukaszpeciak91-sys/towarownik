@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Retail-advisor mindset + task-oriented OBI tool use v0.2**
+**Advisor Product Contract v1 production policy**
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, richer verified OBI product facts, final Taksula behavior, selective web search, graceful local-tool exhaustion, and multi-query OBI lookup are complete. The current iteration changes only advisor behavior/tool philosophy: task-oriented kit building, restrained complementary sales, strict zero/unknown/failure wording, and retail-driven multi-query use while preserving all infrastructure guards and trust boundaries.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, richer verified OBI product facts, selective web search, graceful local-tool exhaustion, and multi-query OBI lookup are complete. The current iteration aligns production advisor policy with Product Contract v1: advisor-first general guidance, clarification-before-search for ambiguous selection, explicit-store-intent OBI lookup, restrained complements, and advice-first job/project handling while preserving infrastructure guards and trust boundaries.
 
 Implemented direction:
 
@@ -103,9 +103,10 @@ Android test version: **0.1.10 (11)**.
 - raw OBI HTML/Nuxt, URLs, EAN, cookies, diagnostics, and verification timestamps remain outside OpenAI tool results.
 
 - final Taksula instructions define a practical in-store home-improvement retail advisor rather than a literal product-answer bot;
-- job/goal and complete-kit requests trigger a small essentials-first category plan, aggressive multi-query batching, concrete verified active-store selections, and brief explanations of what each selected item is for;
-- single-product/category requests stay focused on the requested item; obvious complements may be offered briefly but are searched only after user acceptance unless the original request already asks for a full kit;
-- accepted complements are batched together where practical, while direct current price/stock questions remain direct and avoid unnecessary cross-sell;
+- ordinary technical/sales advice uses normal model knowledge when sufficient and does not automatically invoke OBI because a product category can be inferred;
+- ambiguous product selection asks one concise decision-critical clarification before any OBI lookup; assortment search is not used to infer the missing parameter;
+- understood job/project requests receive practical essentials-first advice without automatic OBI lookup, while explicit concrete-product or complete verified selected-market requests may use efficient multi-query verification;
+- complements are restrained and are proactively mentioned only when materially helpful for correctness, compatibility, safety, or avoiding obvious failure; direct current price/stock questions remain direct and avoid unnecessary cross-sell;
 - model-facing instructions do not expose the numerical local-tool guard; Android independently enforces three local calls per USER turn and graceful `local_tool_limit_reached`;
 - stock `0`, null stock, grouped `not_found`, and grouped `unavailable` remain distinct evidence states and must produce distinct wording;
 - zero-stock/not-found requested items may lead to a verified current-store substitute and an offer to check another market, but no other-market number or availability is invented;
