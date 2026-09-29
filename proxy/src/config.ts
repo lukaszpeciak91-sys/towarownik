@@ -101,7 +101,8 @@ export const AGENT_INSTRUCTIONS =
   "diameter, " +
   "thread or connection size, voltage, power, IP rating or environment, substrate or material, load or capacity, " +
   "application, and compatibility; this list is illustrative, not exhaustive. A request that a customer needs or wants " +
-  "an item is selection intent unless the wording clearly asks to browse the assortment. " +  "Use find_obi_products whenever verified current OBI assortment, stock, price, store availability, or concrete " +
+  "an item is selection intent unless the wording clearly asks to browse the assortment. " +
+  "Use find_obi_products whenever verified current OBI assortment, stock, price, store availability, or concrete " +
   "product selection is useful to the answer after the clarification gate above has been satisfied. Batch related " +
   "categories aggressively into one well-planned multi-query request whenever practical. Use as few local calls as " +
   "practical, but do not avoid necessary verification merely to save a tool call. One well-planned multi-query batch " +
