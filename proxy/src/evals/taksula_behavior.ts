@@ -36,6 +36,7 @@ export type BehaviorScenarioId =
   | "G_NOT_FOUND"
   | "G_UNAVAILABLE"
   | "H"
+  | "H_AMBIGUOUS"
   | "I";
 
 export type WebPolicy = "forbidden" | "allowed" | "required";
@@ -348,13 +349,24 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
   },
   {
     id: "H",
-    name: "Small washbasin-sealing kit",
+    name: "Small silicone washbasin-to-wall sealing kit",
+    userMessage:
+      "Co potrzebuję do uszczelnienia silikonem szczeliny między umywalką a ścianą?",
+    webPolicy: "forbidden",
+    semanticRubric: [
+      "The answer forms a small practical essentials-first kit for sealing the specified washbasin-to-wall gap with silicone.",
+      "It does not require separate confirmation for every category.",
+      "It avoids an exhaustive or absurd shopping list.",
+    ],
+  },
+  {
+    id: "H_AMBIGUOUS",
+    name: "Ambiguous washbasin sealing job",
     userMessage: "Co potrzebuję do uszczelnienia umywalki?",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer forms a small practical essentials-first kit for sealing a washbasin.",
-      "It does not require separate confirmation for every category.",
-      "It avoids an exhaustive or absurd shopping list.",
+      "The answer asks one concise clarification that distinguishes materially different sealing jobs, such as sealing the basin-to-wall/countertop joint versus a drain/siphon-related leak.",
+      "It does not select or present a concrete OBI kit before that clarification.",
     ],
   },
   {
@@ -577,7 +589,9 @@ export async function runBehaviorTrial(
       trace.finalProductRefs = [...result.productRefs];
       trace.clarificationOrFinalAnswer = {
         kind:
-          (scenario.id === "A" || scenario.id === "D") &&
+          (scenario.id === "A" ||
+            scenario.id === "D" ||
+            scenario.id === "H_AMBIGUOUS") &&
           trace.findObiProductsCalls.length === 0
             ? "clarification_candidate"
             : "final_answer",
@@ -857,6 +871,7 @@ function deterministicFailures(
   switch (scenario.id) {
     case "A":
     case "D":
+    case "H_AMBIGUOUS":
       if (calls.length !== 0) {
         failures.push(
           "local OBI lookup occurred before clarification",
@@ -1059,7 +1074,7 @@ function mockQueryResult(
         : notFoundQuery(query);
 
     case "C":
-      return isSpecifiedIndoorCableTieQuery(query)
+      return isSpecifiedBlackCableTieQuery(query)
         ? verifiedQuery(
             query,
             [ZIP_TIES[1]].slice(0, limit),
@@ -1138,6 +1153,7 @@ function mockQueryResult(
 
     case "A":
     case "D":
+    case "H_AMBIGUOUS":
     case "I":
       return notFoundQuery(query);
   }
@@ -1167,11 +1183,11 @@ function isIndoorBlackCableTieQuery(query: string): boolean {
   );
 }
 
-function isSpecifiedIndoorCableTieQuery(
+function isSpecifiedBlackCableTieQuery(
   query: string,
 ): boolean {
   return (
-    isIndoorBlackCableTieQuery(query) &&
+    isBlackCableTieQuery(query) &&
     hasCableTieDimension42x380(query)
   );
 }

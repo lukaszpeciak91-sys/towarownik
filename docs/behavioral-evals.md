@@ -44,7 +44,7 @@ The suite currently contains:
 
 - **A** — ambiguous black cable ties: clarify before selection;
 - **B** — browse black cable ties: request multiple results and avoid exhaustive-assortment wording;
-- **C** — specified 4.2 x 380 mm indoor cable ties: proceed to verification;
+- **C** — specified 4.2 x 380 mm indoor cable ties: proceed to verification; the search phrase may omit literal indoor wording when the returned verified product itself confirms indoor suitability;
 - **D** — ambiguous faucet aerator: clarify connection/thread information;
 - **E** — three fitting verified variants: surface alternatives or justify one selection;
 - **F** — direct current stock + price for one OBIK;
@@ -52,7 +52,8 @@ The suite currently contains:
 - **G_NULL** — unknown/null stock;
 - **G_NOT_FOUND** — no verified matching result;
 - **G_UNAVAILABLE** — retrieval could not establish the fact;
-- **H** — small essentials-first washbasin-sealing kit with related queries batched where practical;
+- **H** — specified silicone washbasin-to-wall gap: small essentials-first kit with related queries batched where practical;
+- **H_AMBIGUOUS** — original underspecified washbasin-sealing request: clarify wall/countertop joint versus drain/siphon-type work before any concrete OBI lookup;
 - **I** — general SDS+ versus SDS Max explanation without unnecessary tools.
 
 ## Trace and grading

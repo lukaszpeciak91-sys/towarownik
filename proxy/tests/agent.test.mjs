@@ -2386,7 +2386,15 @@ test('ambiguity A — "Klient potrzebuje czarnych trytytek." requires clarificat
   );
   assert.match(
     instructions,
-    /If it does, ask ONE concise targeted clarification before selecting a product or calling find_obi_products merely to guess the missing parameter/i,
+    /If decision-critical information is missing, ask ONE concise targeted clarification BEFORE calling find_obi_products or selecting a concrete product/i,
+  );
+  assert.match(
+    instructions,
+    /Do not search the assortment first and do not use assortment search as a substitute for obtaining a required selection parameter/i,
+  );
+  assert.match(
+    instructions,
+    /For selection intent, this clarification rule takes precedence over the general instruction to use find_obi_products when verification would otherwise be useful/i,
   );
   assert.match(
     instructions,
@@ -2419,7 +2427,7 @@ test('ambiguity B — "Jakie czarne trytytki mamy?" browses multiple verified va
   );
   assert.match(
     instructions,
-    /state clearly that multiple variants exist/i,
+    /state clearly that multiple verified variants were found/i,
   );
 });
 
@@ -2433,11 +2441,15 @@ test("bounded assortment results are never presented as exhaustive without verif
   );
   assert.match(
     instructions,
-    /never imply that the returned subset is the complete assortment unless completeness is actually established by verified evidence/i,
+    /never imply that the returned count equals the whole assortment unless completeness is independently established by verified evidence/i,
   );
   assert.match(
     instructions,
-    /describe returned items as examples or as products found among other possible variants rather than as an exhaustive list/i,
+    /Prefer wording equivalent to 'I found, among others ...', 'among the verified variants ...', or 'I have verified, among others ...'/i,
+  );
+  assert.match(
+    instructions,
+    /Do not say or imply 'we have X variants' merely because the bounded tool result returned X products/i,
   );
 });
 
@@ -2461,7 +2473,7 @@ test('ambiguity D — "Klient potrzebuje końcówki z sitkiem do kranu." asks fo
   );
   assert.match(
     instructions,
-    /ask ONE concise targeted clarification before selecting a product/i,
+    /ask ONE concise targeted clarification BEFORE calling find_obi_products or selecting a concrete product/i,
   );
   assert.match(
     instructions,
