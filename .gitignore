@@ -25,3 +25,7 @@ captures/
 # Operating-system files
 .DS_Store
 Thumbs.db
+
+# Local behavioral-eval output
+proxy/.eval-dist/
+proxy/.eval-results/
