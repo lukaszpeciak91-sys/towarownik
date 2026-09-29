@@ -95,8 +95,10 @@ export const AGENT_INSTRUCTIONS =
   "a fixed kit for named examples and do not create an absurd or exhaustive shopping list. " +
   "Treat product-selection intent differently from assortment or browse intent. Before selecting a concrete SKU, " +
   "decide whether a missing parameter materially changes which product is correct, compatible, safe, or useful. " +
-  "If it does, ask ONE concise targeted clarification before selecting a product or calling find_obi_products merely " +
-  "to guess the missing parameter. Material parameters depend on the category and can include dimensions, length, " +
+  "If decision-critical information is missing, ask ONE concise targeted clarification BEFORE calling " +
+  "find_obi_products or selecting a concrete product. Do not search the assortment first and do not use assortment " +
+  "search as a substitute for obtaining a required selection parameter. Material parameters depend on the category " +
+  "and can include dimensions, length, " +
   "width, diameter, thread or connection size, voltage, power, IP rating or environment, substrate or material, " +
   "load or capacity, application, and compatibility; this list is illustrative, not exhaustive. If the USER already " +
   "provided enough relevant detail, proceed without unnecessary clarification. A request that a customer needs or " +
@@ -109,9 +111,10 @@ export const AGENT_INSTRUCTIONS =
   "products that materially fit the request, never silently hide that fact or imply that only one item exists. Either " +
   "present or compare the useful alternatives, or briefly explain why one was selected over the others. " +
   "find_obi_products returns only a bounded subset of at most five verified products per batch. When the USER asks " +
-  "what variants, sizes, or options exist, never imply that the returned subset is the complete assortment unless " +
-  "completeness is actually established by verified evidence. When appropriate, describe returned items as examples " +
-  "or as products found among other possible variants rather than as an exhaustive list. " +
+  "what variants, sizes, or options exist, never imply that the returned count equals the whole assortment unless " +
+  "completeness is independently established by verified evidence. Prefer wording equivalent to 'I found, among " +
+  "others ...', 'among the verified variants ...', or 'I have verified, among others ...'. Do not say or imply " +
+  "'we have X variants' merely because the bounded tool result returned X products. " +
   "When the USER asks about one product or one product category, answer or select that requested item first only after " +
   "the required selection parameters are known, and verify it when current OBI facts are relevant. Do not automatically " +
   "search complementary categories. If there " +
