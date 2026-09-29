@@ -12,6 +12,7 @@ import {
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
   MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
+  MAX_TOOL_PRODUCTS,
   WEB_SEARCH_TOOL,
 } from "../.test-dist/config.js";
 import { createWorker } from "../.test-dist/index.js";
@@ -2356,6 +2357,119 @@ test('G direct price-stock contract — "Jaki jest stan i cena OBIK X?"', () => 
   assert.match(
     instructions,
     /Do not append a generic offer for more products to every answer/i,
+  );
+});
+
+test('ambiguity A — "Klient potrzebuje czarnych trytytek." requires clarification before arbitrary selection', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.match(
+    instructions,
+    /A request that a customer needs or wants an item is selection intent unless the wording clearly asks to browse the assortment/i,
+  );
+  assert.match(
+    instructions,
+    /If it does, ask ONE concise targeted clarification before selecting a product or calling find_obi_products merely to guess the missing parameter/i,
+  );
+  assert.match(
+    instructions,
+    /dimensions, length, width, diameter, thread or connection size, voltage, power, IP rating or environment, substrate or material, load or capacity, application, and compatibility/i,
+  );
+  assert.match(
+    instructions,
+    /this list is illustrative, not exhaustive/i,
+  );
+});
+
+test('ambiguity B — "Jakie czarne trytytki mamy?" browses multiple verified variants', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.match(
+    instructions,
+    /For assortment or browse intent such as asking what is available, what variants exist, what sizes exist, or to show options/i,
+  );
+  assert.match(
+    instructions,
+    /do not narrow arbitrarily to the first match/i,
+  );
+  assert.match(
+    instructions,
+    /Use find_obi_products with a result limit greater than one when useful/i,
+  );
+  assert.match(
+    instructions,
+    /return several relevant verified variants/i,
+  );
+  assert.match(
+    instructions,
+    /state clearly that multiple variants exist/i,
+  );
+});
+
+test("bounded assortment results are never presented as exhaustive without verified completeness", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.equal(MAX_TOOL_PRODUCTS, 5);
+  assert.match(
+    instructions,
+    /find_obi_products returns only a bounded subset of at most five verified products per batch/i,
+  );
+  assert.match(
+    instructions,
+    /never imply that the returned subset is the complete assortment unless completeness is actually established by verified evidence/i,
+  );
+  assert.match(
+    instructions,
+    /describe returned items as examples or as products found among other possible variants rather than as an exhaustive list/i,
+  );
+});
+
+test('ambiguity C — "Potrzebuje trytytek 4,2 x 380 mm do środka." proceeds without unnecessary clarification', () => {
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /If the USER already provided enough relevant detail, proceed without unnecessary clarification/i,
+  );
+});
+
+test('ambiguity D — "Klient potrzebuje końcówki z sitkiem do kranu." asks for connection details instead of inventing compatibility', () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.match(
+    instructions,
+    /missing parameter materially changes which product is correct, compatible, safe, or useful/i,
+  );
+  assert.match(
+    instructions,
+    /thread or connection size/i,
+  );
+  assert.match(
+    instructions,
+    /ask ONE concise targeted clarification before selecting a product/i,
+  );
+  assert.match(
+    instructions,
+    /never invent missing SKU-specific dimensions, materials, compatibility/i,
+  );
+});
+
+test("ambiguity E — three fitting verified variants cannot be silently collapsed to one", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.match(
+    instructions,
+    /When find_obi_products returns multiple verified products that materially fit the request, never silently hide that fact or imply that only one item exists/i,
+  );
+  assert.match(
+    instructions,
+    /Either present or compare the useful alternatives, or briefly explain why one was selected over the others/i,
+  );
+  assert.match(
+    instructions,
+    /compare useful distinguishing SKU facts only when those facts are verified/i,
+  );
+  assert.match(
+    instructions,
+    /If an important distinguishing parameter is not verified, say that it is not confirmed instead of guessing/i,
   );
 });
 
