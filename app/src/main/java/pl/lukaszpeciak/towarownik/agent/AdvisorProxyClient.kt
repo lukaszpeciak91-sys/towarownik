@@ -62,6 +62,7 @@ internal class AdvisorProxyClient(
         }
 
         val body = buildJsonObject {
+            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
             put("message", message)
             put("storeNumber", storeNumber)
         }
@@ -90,6 +91,7 @@ internal class AdvisorProxyClient(
         }
 
         val body = buildJsonObject {
+            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
             put("previousResponseId", previousResponseId)
             put("message", message)
             put("storeNumber", storeNumber)
@@ -505,6 +507,7 @@ internal class AdvisorProxyClient(
         result: JsonObject,
     ): JsonObject =
         buildJsonObject {
+            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
             put("responseId", responseId)
             put("callId", callId)
             put("storeNumber", storeNumber)

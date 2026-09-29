@@ -78,6 +78,7 @@ Implemented direction:
 - the per-USER-turn ceiling is three local OBI calls; a fourth requested batch performs zero OBI work, returns `local_tool_limit_reached`, and forces the final continuation to proceed without `find_obi_products`;
 - Android authorizes alternate tool stores only when a supported exact three-digit token occurs literally in the current USER message, with exact digit boundaries;
 - START/MESSAGE/CONTINUE carry the immutable turn-store context to the proxy, while the full allowlist remains Android-local;
+- START/MESSAGE/CONTINUE now also carry explicit advisor `protocolVersion: 2`; the Worker keeps unversioned requests pinned to grouped v2 for rolling-deployment compatibility, while explicit v1 selects only the legacy single-query contract;
 - unsupported/unauthorized store tool requests fail closed before OBI and never substitute `075`;
 - verified cards/history/reports preserve their own snapshot store and changing the conversation selector never rewrites historical facts;
 - store `075` remains the deterministic regression/live-probe baseline.

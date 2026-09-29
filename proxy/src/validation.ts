@@ -1,5 +1,7 @@
 import {
   CONTINUE_BODY_MAX_BYTES,
+  CURRENT_ADVISOR_PROTOCOL_VERSION,
+  LEGACY_ADVISOR_PROTOCOL_VERSION,
   MAX_CALL_ID_CHARS,
   MESSAGE_BODY_MAX_BYTES,
   MAX_PRODUCT_NAME_CHARS,
@@ -16,6 +18,10 @@ import {
   START_MESSAGE_MAX_CHARS,
 } from "./config.js";
 import type {
+  AdvisorProtocolVersion,
+  LegacyRejectedToolResult,
+  LegacyToolArguments,
+  LegacyVerifiedToolResult,
   LocalToolLimitResult,
   RejectedToolResult,
   ToolArguments,
@@ -24,12 +30,31 @@ import type {
   VerifiedProduct,
   VerifiedQueryResult,
   VerifiedToolResult,
+  VersionedToolArguments,
 } from "./types.js";
 
-export class InvalidRequestError extends Error {}
+export class InvalidRequestError extends Error {
+  readonly category = "invalid_request";
+
+  constructor(
+    readonly protocolVersion: number | null = null,
+  ) {
+    super("invalid request");
+  }
+}
+
+export class UnsupportedProtocolVersionError extends Error {
+  readonly category = "unsupported_protocol_version";
+
+  constructor(readonly protocolVersion: number) {
+    super("unsupported protocol version");
+  }
+}
+
 export class RequestTooLargeError extends Error {}
 
 export interface StartRequest {
+  protocolVersion: AdvisorProtocolVersion;
   message: string;
   storeNumber: string;
 }
@@ -39,6 +64,7 @@ export interface MessageRequest extends StartRequest {
 }
 
 export interface ContinueRequest {
+  protocolVersion: AdvisorProtocolVersion;
   responseId: string;
   callId: string;
   storeNumber: string;
@@ -74,73 +100,141 @@ export async function parseStartRequest(
   request: Request,
 ): Promise<StartRequest> {
   const value = await readJsonBody(request, START_BODY_MAX_BYTES);
-  const object = exactObject(value, ["message", "storeNumber"]);
+  const record = requireRecord(value);
+  const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
-  return {
-    message: validatedMessage(object.message),
-    storeNumber: validateStoreNumber(object.storeNumber),
-  };
+  return withProtocolContext(protocolVersion, () => {
+    const object = exactObjectShape(
+      value,
+      ["message", "storeNumber"],
+      ["protocolVersion"],
+    );
+
+    return {
+      protocolVersion,
+      message: validatedMessage(object.message),
+      storeNumber: validateStoreNumber(object.storeNumber),
+    };
+  });
 }
 
 export async function parseMessageRequest(
   request: Request,
 ): Promise<MessageRequest> {
   const value = await readJsonBody(request, MESSAGE_BODY_MAX_BYTES);
-  const object = exactObject(
-    value,
-    ["previousResponseId", "message", "storeNumber"],
-  );
+  const record = requireRecord(value);
+  const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
-  return {
-    previousResponseId: boundedString(
-      object.previousResponseId,
-      MAX_RESPONSE_ID_CHARS,
-    ),
-    message: validatedMessage(object.message),
-    storeNumber: validateStoreNumber(object.storeNumber),
-  };
+  return withProtocolContext(protocolVersion, () => {
+    const object = exactObjectShape(
+      value,
+      ["previousResponseId", "message", "storeNumber"],
+      ["protocolVersion"],
+    );
+
+    return {
+      protocolVersion,
+      previousResponseId: boundedString(
+        object.previousResponseId,
+        MAX_RESPONSE_ID_CHARS,
+      ),
+      message: validatedMessage(object.message),
+      storeNumber: validateStoreNumber(object.storeNumber),
+    };
+  });
 }
 
 export async function parseContinueRequest(
   request: Request,
 ): Promise<ContinueRequest> {
   const value = await readJsonBody(request, CONTINUE_BODY_MAX_BYTES);
-  const object = exactObject(
-    value,
-    ["responseId", "callId", "storeNumber", "tool", "result"],
-  );
+  const record = requireRecord(value);
+  const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
-  const responseId = boundedString(
-    object.responseId,
-    MAX_RESPONSE_ID_CHARS,
-  );
-  const callId = boundedString(
-    object.callId,
-    MAX_CALL_ID_CHARS,
-  );
-  const storeNumber = validateStoreNumber(object.storeNumber);
+  return withProtocolContext(protocolVersion, () => {
+    const object = exactObjectShape(
+      value,
+      ["responseId", "callId", "storeNumber", "tool", "result"],
+      ["protocolVersion"],
+    );
 
-  if (object.tool !== "find_obi_products") {
-    throw new InvalidRequestError();
-  }
+    const responseId = boundedString(
+      object.responseId,
+      MAX_RESPONSE_ID_CHARS,
+    );
+    const callId = boundedString(
+      object.callId,
+      MAX_CALL_ID_CHARS,
+    );
+    const storeNumber = validateStoreNumber(object.storeNumber);
 
-  return {
-    responseId,
-    callId,
-    storeNumber,
-    tool: "find_obi_products",
-    result: validateToolContinuationResult(object.result),
-  };
+    if (object.tool !== "find_obi_products") {
+      throw new InvalidRequestError(protocolVersion);
+    }
+
+    return {
+      protocolVersion,
+      responseId,
+      callId,
+      storeNumber,
+      tool: "find_obi_products",
+      result: validateToolContinuationResult(
+        object.result,
+        protocolVersion,
+      ),
+    };
+  });
 }
 
-export function parseToolArguments(raw: string): ToolArguments {
+export function parseToolArguments(
+  raw: string,
+  protocolVersion: AdvisorProtocolVersion =
+    CURRENT_ADVISOR_PROTOCOL_VERSION,
+): VersionedToolArguments {
   let value: unknown;
   try {
     value = JSON.parse(raw) as unknown;
   } catch {
+    throw new InvalidRequestError(protocolVersion);
+  }
+
+  return withProtocolContext(protocolVersion, () => {
+    if (protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION) {
+      return validateLegacyToolArguments(value);
+    }
+    return validateGroupedToolArguments(value);
+  });
+}
+
+function validateLegacyToolArguments(
+  value: unknown,
+): LegacyToolArguments {
+  const object = exactObject(
+    value,
+    ["query", "storeNumber", "limit"],
+  );
+  const query = normalizedToolQuery(object.query);
+  const storeNumber = validateStoreNumber(object.storeNumber);
+
+  if (
+    typeof object.limit !== "number" ||
+    !Number.isInteger(object.limit) ||
+    object.limit < 1 ||
+    object.limit > MAX_TOOL_PRODUCTS
+  ) {
     throw new InvalidRequestError();
   }
 
+  return {
+    query,
+    storeNumber,
+    limit: object.limit,
+  };
+}
+
+function validateGroupedToolArguments(
+  value: unknown,
+): ToolArguments {
   const object = exactObject(
     value,
     ["storeNumber", "queries"],
@@ -190,9 +284,20 @@ function validateToolQueries(value: unknown): ToolQuery[] {
 
 function validateToolContinuationResult(
   value: unknown,
+  protocolVersion: AdvisorProtocolVersion,
 ): ToolContinuationResult {
   if (!isRecord(value)) {
-    throw new InvalidRequestError();
+    throw new InvalidRequestError(protocolVersion);
+  }
+
+  if (protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION) {
+    if ("products" in value) {
+      return validateLegacyVerifiedToolResult(value);
+    }
+    if ("rejection" in value) {
+      return validateLegacyRejectedToolResult(value);
+    }
+    throw new InvalidRequestError(protocolVersion);
   }
 
   if ("results" in value) {
@@ -201,7 +306,49 @@ function validateToolContinuationResult(
   if ("rejection" in value) {
     return validateRejectedToolResult(value);
   }
-  throw new InvalidRequestError();
+  throw new InvalidRequestError(protocolVersion);
+}
+
+function validateLegacyVerifiedToolResult(
+  value: unknown,
+): LegacyVerifiedToolResult {
+  const object = exactObject(
+    value,
+    ["query", "storeNumber", "products"],
+  );
+  const query = normalizedToolQuery(object.query);
+  const storeNumber = validateStoreNumber(object.storeNumber);
+
+  if (
+    !Array.isArray(object.products) ||
+    object.products.length > MAX_TOOL_PRODUCTS
+  ) {
+    throw new InvalidRequestError();
+  }
+
+  return {
+    query,
+    storeNumber,
+    products: object.products.map(validateProduct),
+  };
+}
+
+function validateLegacyRejectedToolResult(
+  value: unknown,
+): LegacyRejectedToolResult {
+  const object = exactObject(
+    value,
+    ["query", "storeNumber", "rejection"],
+  );
+  if (object.rejection !== "store_not_authorized") {
+    throw new InvalidRequestError();
+  }
+
+  return {
+    query: normalizedToolQuery(object.query),
+    storeNumber: validateStoreNumber(object.storeNumber),
+    rejection: "store_not_authorized",
+  };
 }
 
 function validateVerifiedToolResult(
@@ -304,6 +451,77 @@ function validateRejectedToolResult(
   }
 
   throw new InvalidRequestError();
+}
+
+function validateProtocolVersion(
+  value: unknown,
+): AdvisorProtocolVersion {
+  if (value === undefined) {
+    return CURRENT_ADVISOR_PROTOCOL_VERSION;
+  }
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value)
+  ) {
+    throw new InvalidRequestError();
+  }
+  if (
+    value === LEGACY_ADVISOR_PROTOCOL_VERSION ||
+    value === CURRENT_ADVISOR_PROTOCOL_VERSION
+  ) {
+    return value;
+  }
+  throw new UnsupportedProtocolVersionError(value);
+}
+
+function requireRecord(
+  value: unknown,
+): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new InvalidRequestError();
+  }
+  return value;
+}
+
+function exactObjectShape(
+  value: unknown,
+  requiredKeys: readonly string[],
+  optionalKeys: readonly string[] = [],
+): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new InvalidRequestError();
+  }
+
+  const keys = Object.keys(value);
+  if (
+    keys.some(
+      (key) =>
+        !requiredKeys.includes(key) &&
+        !optionalKeys.includes(key),
+    ) ||
+    requiredKeys.some((key) => !(key in value))
+  ) {
+    throw new InvalidRequestError();
+  }
+
+  return value;
+}
+
+function withProtocolContext<T>(
+  protocolVersion: AdvisorProtocolVersion,
+  action: () => T,
+): T {
+  try {
+    return action();
+  } catch (error) {
+    if (
+      error instanceof InvalidRequestError &&
+      error.protocolVersion === null
+    ) {
+      throw new InvalidRequestError(protocolVersion);
+    }
+    throw error;
+  }
 }
 
 function validatedMessage(value: unknown): string {

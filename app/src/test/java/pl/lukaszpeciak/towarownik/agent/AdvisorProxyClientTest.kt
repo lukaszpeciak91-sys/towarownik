@@ -35,7 +35,14 @@ class AdvisorProxyClientTest {
 
             val raw = request.body.readUtf8()
             val body = Json.parseToJsonElement(raw).jsonObject
-            assertEquals(setOf("message", "storeNumber"), body.keys)
+            assertEquals(
+                setOf("protocolVersion", "message", "storeNumber"),
+                body.keys,
+            )
+            assertEquals(
+                ADVISOR_PROTOCOL_VERSION,
+                body["protocolVersion"]?.jsonPrimitive?.intOrNull,
+            )
             assertEquals(
                 "potrzebuję kleju",
                 body["message"]?.jsonPrimitive?.content,
@@ -68,8 +75,17 @@ class AdvisorProxyClientTest {
             val raw = request.body.readUtf8()
             val body = Json.parseToJsonElement(raw).jsonObject
             assertEquals(
-                setOf("previousResponseId", "message", "storeNumber"),
+                setOf(
+                    "protocolVersion",
+                    "previousResponseId",
+                    "message",
+                    "storeNumber",
+                ),
                 body.keys,
+            )
+            assertEquals(
+                ADVISOR_PROTOCOL_VERSION,
+                body["protocolVersion"]?.jsonPrimitive?.intOrNull,
             )
             assertEquals(
                 "resp_previous",
@@ -775,6 +791,7 @@ class AdvisorProxyClientTest {
             val body = Json.parseToJsonElement(raw).jsonObject
             assertEquals(
                 setOf(
+                    "protocolVersion",
                     "responseId",
                     "callId",
                     "storeNumber",
@@ -782,6 +799,10 @@ class AdvisorProxyClientTest {
                     "result",
                 ),
                 body.keys,
+            )
+            assertEquals(
+                ADVISOR_PROTOCOL_VERSION,
+                body["protocolVersion"]?.jsonPrimitive?.intOrNull,
             )
             assertEquals("resp_previous", body["responseId"]?.jsonPrimitive?.content)
             assertEquals("call_previous", body["callId"]?.jsonPrimitive?.content)

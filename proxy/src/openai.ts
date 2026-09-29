@@ -15,11 +15,13 @@ import {
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
-  OBI_TOOL,
+  CURRENT_ADVISOR_PROTOCOL_VERSION,
+  obiToolForProtocol,
   WEB_SEARCH_TOOL,
 } from "./config.js";
 import { InvalidRequestError, parseToolArguments } from "./validation.js";
 import type {
+  AdvisorProtocolVersion,
   AgentRequestType,
   AgentResult,
   AgentUsage,
@@ -36,11 +38,13 @@ export async function startAgent(
   storeNumber: string,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
+  protocolVersion: AdvisorProtocolVersion =
+    CURRENT_ADVISOR_PROTOCOL_VERSION,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: agentInstructionsForStore(storeNumber),
+      instructions: agentInstructionsForStore(storeNumber, protocolVersion),
       input: message,
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
@@ -53,12 +57,13 @@ export async function startAgent(
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
+      tools: [obiToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
     "START",
     true,
+    protocolVersion,
   );
 }
 
@@ -68,11 +73,13 @@ export async function messageAgent(
   storeNumber: string,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
+  protocolVersion: AdvisorProtocolVersion =
+    CURRENT_ADVISOR_PROTOCOL_VERSION,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: agentInstructionsForStore(storeNumber),
+      instructions: agentInstructionsForStore(storeNumber, protocolVersion),
       previous_response_id: previousResponseId,
       input: message,
       reasoning: {
@@ -86,12 +93,13 @@ export async function messageAgent(
       text: {
         format: FINAL_ANSWER_FORMAT,
       },
-      tools: [OBI_TOOL, WEB_SEARCH_TOOL],
+      tools: [obiToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
     "MESSAGE",
     true,
+    protocolVersion,
   );
 }
 
@@ -102,6 +110,8 @@ export async function continueAgent(
   result: ToolContinuationResult,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
+  protocolVersion: AdvisorProtocolVersion =
+    CURRENT_ADVISOR_PROTOCOL_VERSION,
 ): Promise<AgentResult> {
   const localToolAvailable =
     !("rejection" in result) ||
@@ -110,7 +120,7 @@ export async function continueAgent(
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: agentInstructionsForStore(storeNumber),
+      instructions: agentInstructionsForStore(storeNumber, protocolVersion),
       previous_response_id: responseId,
       input: [
         {
@@ -131,13 +141,14 @@ export async function continueAgent(
         format: FINAL_ANSWER_FORMAT,
       },
       tools: localToolAvailable
-        ? [OBI_TOOL, WEB_SEARCH_TOOL]
+        ? [obiToolForProtocol(protocolVersion), WEB_SEARCH_TOOL]
         : [WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
     "CONTINUE",
     localToolAvailable,
+    protocolVersion,
   );
 }
 
@@ -147,6 +158,7 @@ async function requestOpenAI(
   upstreamFetch: UpstreamFetch,
   requestType: AgentRequestType,
   allowLocalTool: boolean,
+  protocolVersion: AdvisorProtocolVersion,
 ): Promise<AgentResult> {
   let response: Response;
   try {
@@ -177,6 +189,7 @@ async function requestOpenAI(
     payload,
     requestType,
     allowLocalTool,
+    protocolVersion,
   );
 }
 
@@ -184,6 +197,8 @@ export function normalizeOpenAIResponse(
   payload: unknown,
   requestType: AgentRequestType = "START",
   allowLocalTool = true,
+  protocolVersion: AdvisorProtocolVersion =
+    CURRENT_ADVISOR_PROTOCOL_VERSION,
 ): AgentResult {
   if (!isRecord(payload)) {
     throw new UpstreamFailureError();
@@ -222,7 +237,10 @@ export function normalizeOpenAIResponse(
 
     let argumentsValue;
     try {
-      argumentsValue = parseToolArguments(call.arguments);
+      argumentsValue = parseToolArguments(
+        call.arguments,
+        protocolVersion,
+      );
     } catch (error) {
       if (error instanceof InvalidRequestError) {
         throw new UpstreamFailureError();

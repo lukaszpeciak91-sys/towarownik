@@ -26,7 +26,7 @@ const configuredEnv = {
 };
 
 function jsonRequest(path, body, options = {}) {
-  const normalizedBody =
+  let normalizedBody =
     body &&
     typeof body === "object" &&
     !Array.isArray(body) &&
@@ -35,6 +35,23 @@ function jsonRequest(path, body, options = {}) {
     !Object.prototype.hasOwnProperty.call(body, "storeNumber")
       ? { ...body, storeNumber: "075" }
       : body;
+
+  if (
+    normalizedBody &&
+    typeof normalizedBody === "object" &&
+    !Array.isArray(normalizedBody) &&
+    path.startsWith("/v1/agent/") &&
+    options.injectProtocol !== false &&
+    !Object.prototype.hasOwnProperty.call(
+      normalizedBody,
+      "protocolVersion",
+    )
+  ) {
+    normalizedBody = {
+      ...normalizedBody,
+      protocolVersion: 2,
+    };
+  }
   const headers = {
     "Content-Type": "application/json",
     ...(options.authorization === false
