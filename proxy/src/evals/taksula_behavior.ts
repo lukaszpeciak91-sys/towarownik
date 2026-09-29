@@ -252,9 +252,9 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     userMessage: "Klient potrzebuje czarnych trytytek.",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer is one concise, relevant clarification before any concrete SKU selection.",
-      "The clarification asks for missing selection information that materially affects the choice, such as size and/or indoor-versus-outdoor application.",
-      "It does not pretend that a concrete variant has already been selected.",
+      "A broad same-category lookup of black cable ties before clarification is allowed only to inspect available variants; it must not narrow to an unprovided required size, application, or other decision-critical variant.",
+      "The final answer asks one concise clarification about a decision-critical missing selection parameter before making any concrete recommendation.",
+      "The answer does not select or recommend a concrete SKU as the correct choice, claim unestablished compatibility or suitability, invent a missing dimension/application, or act as though the broad lookup resolved the ambiguity.",
     ],
   },
   {
@@ -589,10 +589,10 @@ export async function runBehaviorTrial(
       trace.finalProductRefs = [...result.productRefs];
       trace.clarificationOrFinalAnswer = {
         kind:
-          (scenario.id === "A" ||
-            scenario.id === "D" ||
+          scenario.id === "A" ||
+          ((scenario.id === "D" ||
             scenario.id === "H_AMBIGUOUS") &&
-          trace.findObiProductsCalls.length === 0
+            trace.findObiProductsCalls.length === 0)
             ? "clarification_candidate"
             : "final_answer",
         text: result.text,
@@ -869,7 +869,27 @@ function deterministicFailures(
   const firstQueries = firstCall?.arguments.queries ?? [];
 
   switch (scenario.id) {
-    case "A":
+    case "A": {
+      const selectionQueries = calls.flatMap(
+        (call) => call.arguments.queries,
+      );
+      if (
+        selectionQueries.some(
+          (query) => !isBroadBlackCableTieQuery(query.query),
+        )
+      ) {
+        failures.push(
+          "selection lookup was not a broad same-category black cable-tie query",
+        );
+      }
+      if (trace.finalProductRefs.length !== 0) {
+        failures.push(
+          "concrete productRef returned before clarification",
+        );
+      }
+      break;
+    }
+
     case "D":
     case "H_AMBIGUOUS":
       if (calls.length !== 0) {
@@ -1065,6 +1085,14 @@ function mockQueryResult(
   _queryIndex: number,
 ): VerifiedQueryResult {
   switch (scenarioId) {
+    case "A":
+      return isBroadBlackCableTieQuery(query)
+        ? verifiedQuery(
+            query,
+            ZIP_TIES.slice(0, Math.min(limit, ZIP_TIES.length)),
+          )
+        : notFoundQuery(query);
+
     case "B":
       return isBlackCableTieQuery(query)
         ? verifiedQuery(
@@ -1151,7 +1179,6 @@ function mockQueryResult(
       return notFoundQuery(query);
     }
 
-    case "A":
     case "D":
     case "H_AMBIGUOUS":
     case "I":
@@ -1172,6 +1199,28 @@ function isBlackCableTieQuery(query: string): boolean {
   return (
     /\b(czarn\w*)\b/.test(normalized) &&
     /\b(trytyt\w*|opask\w*)\b/.test(normalized)
+  );
+}
+
+function isBroadBlackCableTieQuery(query: string): boolean {
+  const normalized = normalizeQuery(query);
+  const hasSpecificDimension =
+    /\b\d+(?:[,.]\d+)?\s*(?:mm|cm|m)\b/.test(normalized) ||
+    /\b\d+(?:[,.]\d+)?\s*[x×]\s*\d+(?:[,.]\d+)?\b/.test(
+      normalized,
+    );
+  const hasSpecificApplication =
+    /\b(wewn\w*|srod\w*|zewn\w*|uv)\b/.test(normalized);
+  const hasLoadOrBundleQualifier =
+    /\b(srednic\w*|obciaz\w*|nosn\w*|udzwig\w*|wiaz\w*)\b/.test(
+      normalized,
+    );
+
+  return (
+    isBlackCableTieQuery(query) &&
+    !hasSpecificDimension &&
+    !hasSpecificApplication &&
+    !hasLoadOrBundleQualifier
   );
 }
 
