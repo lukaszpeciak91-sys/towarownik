@@ -366,6 +366,62 @@ test("scenario A fails when a concrete verified SKU is recommended before clarif
   assert.equal(semanticCalls, 0);
 });
 
+test("scenario A fails text-only concrete candidate recommendation before clarification", async () => {
+  const scenario = behaviorScenario("A");
+  let semanticCalls = 0;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "czarne trytytki", limit: 3 },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        const first = mockedResult.results[0].products[0];
+        return answer(
+          `Polecam ${first.name} jako właściwy wybór.`,
+        );
+      },
+    },
+    {
+      async grade({ scenario: gradedScenario, trace }) {
+        semanticCalls += 1;
+        assert.equal(
+          gradedScenario.semanticRubric.some((line) =>
+            /does not select or recommend a concrete SKU as the correct choice/i.test(line),
+          ),
+          true,
+        );
+        const text =
+          trace.clarificationOrFinalAnswer?.text ?? "";
+        const concreteRecommendation =
+          /polecam|właściwy wybór|najlepsz/i.test(text);
+        return {
+          pass: !concreteRecommendation,
+          reason: concreteRecommendation
+            ? "concrete candidate was recommended before clarification"
+            : "no premature concrete recommendation",
+        };
+      },
+    },
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(
+    result.reason,
+    /concrete candidate was recommended before clarification/i,
+  );
+  assert.equal(result.trace.finalProductRefs.length, 0);
+  assert.equal(semanticCalls, 1);
+});
+
 test("scenario A fails lookup narrowed by an invented dimension before clarification", async () => {
   const scenario = behaviorScenario("A");
   let semanticCalls = 0;
@@ -576,6 +632,7 @@ test("scenario C accepts a semantic exact-size cable-tie query without literal i
     result.trace.mockedToolResults[0].results[0];
   assert.equal(group.status, "verified");
   assert.equal(group.products.length, 1);
+  assert.equal(result.trace.finalProductRefs.length, 1);
   assert.equal(
     group.products[0].technicalFacts.some(
       (fact) =>
@@ -614,6 +671,7 @@ test("ambiguous washbasin sealing expects clarification before local lookup", as
 
   assert.equal(result.status, "PASS");
   assert.equal(result.localToolCallCount, 0);
+  assert.equal(result.trace.finalProductRefs.length, 0);
   assert.equal(
     result.trace.clarificationOrFinalAnswer?.kind,
     "clarification_candidate",
