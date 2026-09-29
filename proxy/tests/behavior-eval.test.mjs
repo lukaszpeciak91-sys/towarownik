@@ -76,9 +76,15 @@ function scriptedDriver(scenario) {
             "SDS+ jest do lżejszych prac i mniejszych młotowiertarek, a SDS Max do cięższych prac i większych średnic.",
           );
         case "B":
-        case "E":
           return toolRequest([
             { query: "czarne trytytki", limit: 3 },
+          ]);
+        case "E":
+          return toolRequest([
+            {
+              query: "czarne trytytki do wewnątrz",
+              limit: 3,
+            },
           ]);
         case "C":
           return toolRequest([
@@ -263,6 +269,223 @@ test("availability semantics allow a production-style substitute lookup after th
 
   assert.equal(result.status, "PASS");
   assert.equal(result.localToolCallCount, 2);
+});
+
+test("all initial scenarios explicitly forbid web search", () => {
+  assert.equal(
+    BEHAVIOR_SCENARIOS.every(
+      (scenario) => scenario.webPolicy === "forbidden",
+    ),
+    true,
+  );
+});
+
+test("forbidden web search fails deterministically without hiding the production web tool", async () => {
+  let semanticCalls = 0;
+  const scenario = behaviorScenario("I");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return answer(
+          "SDS+ i SDS Max różnią się zastosowaniem i rozmiarem osprzętu.",
+          [],
+          1,
+        );
+      },
+      async continueTurn() {
+        throw new Error("unexpected continuation");
+      },
+    },
+    {
+      async grade() {
+        semanticCalls += 1;
+        return { pass: true, reason: "should not run" };
+      },
+    },
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(result.reason, /scenario forbids it/i);
+  assert.equal(result.webSearchCount, 1);
+  assert.equal(semanticCalls, 0);
+});
+
+test("unrelated browse queries cannot receive B or E cable-tie fixtures or pass", async () => {
+  for (const id of ["B", "E"]) {
+    const scenario = behaviorScenario(id);
+    const result = await runBehaviorTrial(
+      scenario,
+      1,
+      {
+        async start() {
+          return toolRequest([
+            { query: "młotki murarskie", limit: 3 },
+          ]);
+        },
+        async continueTurn(
+          _responseId,
+          _callId,
+          _storeNumber,
+          mockedResult,
+        ) {
+          return answer(
+            "Znalazłam kilka wariantów.",
+            verifiedRefs(mockedResult),
+          );
+        },
+      },
+      passingSemanticJudge,
+    );
+
+    assert.equal(result.status, "FAIL");
+    const group =
+      result.trace.mockedToolResults[0].results[0];
+    assert.equal(group.status, "not_found");
+    assert.equal(group.products.length, 0);
+  }
+});
+
+test("scenario E exposes three distinct indoor-compatible cable-tie variants", async () => {
+  const scenario = behaviorScenario("E");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  const group =
+    result.trace.mockedToolResults[0].results[0];
+  assert.equal(group.status, "verified");
+  assert.equal(group.products.length, 3);
+
+  const dimensions = new Set();
+  for (const product of group.products) {
+    const application = product.technicalFacts.find(
+      (fact) => fact.label === "Zastosowanie",
+    );
+    const dimension = product.technicalFacts.find(
+      (fact) => fact.label === "Wymiary",
+    );
+    assert.equal(application?.value, "wewnątrz");
+    assert.ok(dimension?.value);
+    dimensions.add(dimension.value);
+  }
+  assert.equal(dimensions.size, 3);
+});
+
+test("unrelated complete-kit queries receive no valid kit fixtures and fail H", async () => {
+  const scenario = behaviorScenario("H");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "młotek ciesielski", limit: 1 },
+          { query: "wiertło do betonu", limit: 1 },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        return answer(
+          "Podstawowy zestaw: silikon i wyciskacz.",
+          verifiedRefs(mockedResult),
+        );
+      },
+    },
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "FAIL");
+  const groups = result.trace.mockedToolResults[0].results;
+  assert.equal(
+    groups.every(
+      (group) =>
+        group.status === "not_found" &&
+        group.products.length === 0,
+    ),
+    true,
+  );
+  assert.match(result.reason, /relevant verified kit categories/i);
+});
+
+test("scenario C rejects 42 x 380 as a substitute for the 4.2 x 380 dimension", async () => {
+  const scenario = behaviorScenario("C");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          {
+            query:
+              "czarne trytytki 42 x 380 mm do wewnątrz",
+            limit: 1,
+          },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        return answer(
+          "Pasuje zweryfikowany wariant.",
+          verifiedRefs(mockedResult),
+        );
+      },
+    },
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.equal(
+    result.trace.mockedToolResults[0].results[0].status,
+    "not_found",
+  );
+  assert.match(result.reason, /4\.2 x 380 mm/i);
+});
+
+test("wrong direct OBIK queries do not receive F or G fixtures and fail", async () => {
+  for (const id of [
+    "F",
+    "G_ZERO",
+    "G_NULL",
+    "G_NOT_FOUND",
+    "G_UNAVAILABLE",
+  ]) {
+    const scenario = behaviorScenario(id);
+    const result = await runBehaviorTrial(
+      scenario,
+      1,
+      {
+        async start() {
+          return toolRequest([
+            { query: "OBIK 7999999", limit: 1 },
+          ]);
+        },
+        async continueTurn() {
+          return answer("Synthetic availability answer.");
+        },
+      },
+      passingSemanticJudge,
+    );
+
+    assert.equal(result.status, "FAIL");
+    assert.equal(
+      result.trace.mockedToolResults[0].results[0].status,
+      "not_found",
+    );
+  }
 });
 
 test("productRef grounding fails deterministically before semantic grading", async () => {
