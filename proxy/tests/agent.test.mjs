@@ -2246,11 +2246,11 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   assert.equal(instructions.includes("web_search"), true);
 });
 
-test('A task kit contract — "Klient chce położyć płytki i nie wie czego potrzebuje."', () => {
+test('A sufficiently specified task kit contract — "Klient chce położyć płytki na przygotowanej ścianie i nie wie czego potrzebuje."', () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /When the USER describes a job or goal rather than one specific SKU/i,
+    /When a sufficiently specified USER request describes a job or goal rather than one specific SKU/i,
   );
   assert.match(
     instructions,
@@ -2274,11 +2274,11 @@ test('A task kit contract — "Klient chce położyć płytki i nie wie czego po
   );
 });
 
-test('B complete sales kit contract — "Co mogę sprzedać klientowi do uszczelnienia umywalki?"', () => {
+test('B sufficiently specified complete sales kit contract — "Co mogę sprzedać klientowi do uszczelnienia silikonem szczeliny między umywalką a ścianą?"', () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /If the intent is clearly a complete kit, what the customer needs, what can be sold for the job/i,
+    /If the sufficiently specified intent is clearly a complete kit, what the customer needs, what can be sold for the job/i,
   );
   assert.match(
     instructions,
@@ -2386,15 +2386,15 @@ test('ambiguity A — "Klient potrzebuje czarnych trytytek." requires clarificat
   );
   assert.match(
     instructions,
-    /If decision-critical information is missing, ask ONE concise targeted clarification BEFORE calling find_obi_products or selecting a concrete product/i,
+    /For product-selection, task\/job, and complete-kit requests, if such decision-critical information is missing, ask ONE concise targeted clarification and STOP this turn/i,
   );
   assert.match(
     instructions,
-    /Do not search the assortment first and do not use assortment search as a substitute for obtaining a required selection parameter/i,
+    /Do not call find_obi_products, select a concrete SKU, or assemble a concrete kit before that clarification is answered/i,
   );
   assert.match(
     instructions,
-    /For selection intent, this clarification rule takes precedence over the general instruction to use find_obi_products when verification would otherwise be useful/i,
+    /Searching the assortment is not a substitute for obtaining decision-critical information/i,
   );
   assert.match(
     instructions,
@@ -2403,6 +2403,46 @@ test('ambiguity A — "Klient potrzebuje czarnych trytytek." requires clarificat
   assert.match(
     instructions,
     /this list is illustrative, not exhaustive/i,
+  );
+});
+
+test("clarification gate is structurally before general OBI tool-use and job-kit policy", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+  const gateIndex = instructions.indexOf(
+    "Before deciding whether to call find_obi_products, follow this decision order.",
+  );
+  const generalObiIndex = instructions.indexOf(
+    "Use find_obi_products whenever verified current OBI assortment",
+  );
+  const jobPolicyIndex = instructions.indexOf(
+    "When a sufficiently specified USER request describes a job or goal",
+  );
+
+  assert.notEqual(gateIndex, -1);
+  assert.notEqual(generalObiIndex, -1);
+  assert.notEqual(jobPolicyIndex, -1);
+  assert.ok(gateIndex < generalObiIndex);
+  assert.ok(gateIndex < jobPolicyIndex);
+
+  assert.match(
+    instructions,
+    /First identify the USER's intent: product selection, a task\/job or complete-kit request, assortment\/browse, or a general technical question/i,
+  );
+  assert.match(
+    instructions,
+    /For product-selection, task\/job, and complete-kit requests, if such decision-critical information is missing, ask ONE concise targeted clarification and STOP this turn/i,
+  );
+  assert.match(
+    instructions,
+    /which product categories are actually needed for the job/i,
+  );
+  assert.match(
+    instructions,
+    /A task\/job request can require clarification when materially different interpretations would require different product categories/i,
+  );
+  assert.match(
+    instructions,
+    /only then decide whether find_obi_products is needed/i,
   );
 });
 
@@ -2465,7 +2505,7 @@ test('ambiguity D — "Klient potrzebuje końcówki z sitkiem do kranu." asks fo
 
   assert.match(
     instructions,
-    /missing parameter materially changes which product is correct, compatible, safe, or useful/i,
+    /determine whether any missing information materially changes the correct variant, compatibility, safety, usefulness, or which product categories are actually needed for the job/i,
   );
   assert.match(
     instructions,
@@ -2473,7 +2513,7 @@ test('ambiguity D — "Klient potrzebuje końcówki z sitkiem do kranu." asks fo
   );
   assert.match(
     instructions,
-    /ask ONE concise targeted clarification BEFORE calling find_obi_products or selecting a concrete product/i,
+    /ask ONE concise targeted clarification and STOP this turn/i,
   );
   assert.match(
     instructions,
