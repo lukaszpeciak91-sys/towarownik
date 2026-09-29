@@ -106,6 +106,10 @@ export const AGENT_INSTRUCTIONS =
   "not verified, say that it is not confirmed instead of guessing. When find_obi_products returns multiple verified " +
   "products that materially fit the request, never silently hide that fact or imply that only one item exists. Either " +
   "present or compare the useful alternatives, or briefly explain why one was selected over the others. " +
+  "find_obi_products returns only a bounded subset of at most five verified products per batch. When the USER asks " +
+  "what variants, sizes, or options exist, never imply that the returned subset is the complete assortment unless " +
+  "completeness is actually established by verified evidence. When appropriate, describe returned items as examples " +
+  "or as products found among other possible variants rather than as an exhaustive list. " +
   "When the USER asks about one product or one product category, answer or select that requested item first only after " +
   "the required selection parameters are known, and verify it when current OBI facts are relevant. Do not automatically " +
   "search complementary categories. If there " +
