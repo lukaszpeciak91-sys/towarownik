@@ -90,7 +90,7 @@ function scriptedDriver(scenario) {
           return toolRequest([
             {
               query:
-                "czarne trytytki 4,2 x 380 mm do wewnątrz",
+                "czarne opaski zaciskowe trytytki 4,2 x 380 mm",
               limit: 1,
             },
           ]);
@@ -116,13 +116,17 @@ function scriptedDriver(scenario) {
           ]);
         case "H":
           return toolRequest([
-            { query: "silikon sanitarny", limit: 1 },
-            { query: "pistolet do kartuszy", limit: 1 },
+            { query: "silikon sanitarny do umywalki", limit: 1 },
+            { query: "pistolet do silikonu", limit: 1 },
             {
               query: "narzędzie do wygładzania silikonu",
               limit: 1,
             },
           ]);
+        case "H_AMBIGUOUS":
+          return answer(
+            "Czy chodzi o uszczelnienie szczeliny przy ścianie/blacie, czy o przeciek przy odpływie lub syfonie?",
+          );
       }
     },
 
@@ -238,6 +242,167 @@ test("repeated trials stay configurable and summary reports pass totals", async 
   const summary = formatBehaviorSummary(results);
   assert.match(summary, /passed: 4 \/ 4/);
   assert.match(summary, /failed scenarios: none/);
+});
+
+test("ambiguous selection fails if local OBI lookup happens before clarification", async () => {
+  for (const id of ["A", "D", "H_AMBIGUOUS"]) {
+    const scenario = behaviorScenario(id);
+    const result = await runBehaviorTrial(
+      scenario,
+      1,
+      {
+        async start() {
+          return toolRequest([
+            { query: "przedwczesne wyszukiwanie", limit: 3 },
+          ]);
+        },
+        async continueTurn() {
+          return answer("Jaki wariant lub rodzaj połączenia jest potrzebny?");
+        },
+      },
+      passingSemanticJudge,
+    );
+
+    assert.equal(result.status, "FAIL");
+    assert.match(
+      result.reason,
+      /local OBI lookup occurred before clarification/i,
+    );
+  }
+});
+
+test("browse exhaustive wording is rejected by the behavioral semantic rubric", async () => {
+  const scenario = behaviorScenario("B");
+  let observedRubric = [];
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "czarne trytytki", limit: 3 },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        return answer(
+          "Mamy trzy warianty czarnych trytytek.",
+          verifiedRefs(mockedResult),
+        );
+      },
+    },
+    {
+      async grade({ scenario: gradedScenario, trace }) {
+        observedRubric = gradedScenario.semanticRubric;
+        const exhaustive =
+          /mamy trzy warianty/i.test(
+            trace.clarificationOrFinalAnswer?.text ?? "",
+          );
+        return {
+          pass: !exhaustive,
+          reason: exhaustive
+            ? "bounded subset was presented as the complete assortment"
+            : "non-exhaustive wording",
+        };
+      },
+    },
+  );
+
+  assert.equal(
+    observedRubric.some((line) =>
+      /does not imply.*complete assortment/i.test(line),
+    ),
+    true,
+  );
+  assert.equal(result.status, "FAIL");
+  assert.match(result.reason, /complete assortment/i);
+});
+
+test("scenario C accepts a semantic exact-size cable-tie query without literal indoor wording", async () => {
+  const scenario = behaviorScenario("C");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          {
+            query:
+              "czarne opaski zaciskowe trytytki 4.2 x 380 mm",
+            limit: 1,
+          },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        return answer(
+          "Pasuje zweryfikowany wariant do zastosowania wewnątrz.",
+          verifiedRefs(mockedResult),
+        );
+      },
+    },
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  const group =
+    result.trace.mockedToolResults[0].results[0];
+  assert.equal(group.status, "verified");
+  assert.equal(group.products.length, 1);
+  assert.equal(
+    group.products[0].technicalFacts.some(
+      (fact) =>
+        fact.label === "Zastosowanie" &&
+        fact.value === "wewnątrz",
+    ),
+    true,
+  );
+});
+
+test("specified H exercises complete-kit batching without clarification", async () => {
+  const scenario = behaviorScenario("H");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 1);
+  assert.equal(
+    result.trace.findObiProductsCalls[0].arguments.queries.length,
+    3,
+  );
+});
+
+test("ambiguous washbasin sealing expects clarification before local lookup", async () => {
+  const scenario = behaviorScenario("H_AMBIGUOUS");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 0);
+  assert.equal(
+    result.trace.clarificationOrFinalAnswer?.kind,
+    "clarification_candidate",
+  );
+  assert.match(
+    result.trace.clarificationOrFinalAnswer?.text ?? "",
+    /ścian|blat|odpływ|syfon/i,
+  );
 });
 
 test("availability semantics allow a production-style substitute lookup after the exact item", async () => {
