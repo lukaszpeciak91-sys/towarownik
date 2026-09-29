@@ -2386,7 +2386,7 @@ test('ambiguity A — "Klient potrzebuje czarnych trytytek." requires clarificat
   );
   assert.match(
     instructions,
-    /For product-selection and task\/job requests, if such decision-critical information is missing, ask ONE concise targeted clarification and STOP this turn/i,
+    /For product-selection, task\/job, and complete-kit requests, if such decision-critical information is missing, ask ONE concise targeted clarification and STOP this turn/i,
   );
   assert.match(
     instructions,
@@ -2427,6 +2427,10 @@ test("clarification gate is structurally before general OBI tool-use and job-kit
   assert.match(
     instructions,
     /First identify the USER's intent: product selection, a task\/job or complete-kit request, assortment\/browse, or a general technical question/i,
+  );
+  assert.match(
+    instructions,
+    /For product-selection, task\/job, and complete-kit requests, if such decision-critical information is missing, ask ONE concise targeted clarification and STOP this turn/i,
   );
   assert.match(
     instructions,
