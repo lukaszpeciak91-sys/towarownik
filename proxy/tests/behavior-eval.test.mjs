@@ -244,8 +244,8 @@ test("repeated trials stay configurable and summary reports pass totals", async 
   assert.match(summary, /failed scenarios: none/);
 });
 
-test("ambiguous selection fails if local OBI lookup happens before clarification", async () => {
-  for (const id of ["A", "D", "H_AMBIGUOUS"]) {
+test("compatibility and materially different job ambiguity still fail if local OBI lookup happens before clarification", async () => {
+  for (const id of ["D", "H_AMBIGUOUS"]) {
     const scenario = behaviorScenario(id);
     const result = await runBehaviorTrial(
       scenario,
@@ -269,6 +269,184 @@ test("ambiguous selection fails if local OBI lookup happens before clarification
       /local OBI lookup occurred before clarification/i,
     );
   }
+});
+
+test("scenario A passes broad same-category lookup followed by clarification without concrete recommendation", async () => {
+  const scenario = behaviorScenario("A");
+  let semanticCalls = 0;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "czarne opaski zaciskowe trytytki", limit: 3 },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        const group = mockedResult.results[0];
+        assert.equal(group.status, "verified");
+        assert.equal(group.products.length, 3);
+        return answer(
+          "Jaki rozmiar i do jakiego zastosowania mają być te trytytki?",
+        );
+      },
+    },
+    {
+      async grade({ trace }) {
+        semanticCalls += 1;
+        const text =
+          trace.clarificationOrFinalAnswer?.text ?? "";
+        const asksClarification =
+          /\?/.test(text) &&
+          /rozmiar|wymiar|zastosowan|środ|zewn/i.test(text);
+        return {
+          pass: asksClarification,
+          reason: asksClarification
+            ? "broad category lookup was followed by a decision-critical clarification"
+            : "missing clarification",
+        };
+      },
+    },
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 1);
+  assert.equal(result.trace.finalProductRefs.length, 0);
+  assert.equal(
+    result.trace.clarificationOrFinalAnswer?.kind,
+    "clarification_candidate",
+  );
+  assert.equal(semanticCalls, 1);
+});
+
+test("scenario A fails when a concrete verified SKU is recommended before clarification", async () => {
+  const scenario = behaviorScenario("A");
+  let semanticCalls = 0;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "czarne trytytki", limit: 3 },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        const refs = verifiedRefs(mockedResult);
+        return answer(
+          "Najlepszym wyborem będzie pierwszy znaleziony wariant.",
+          refs.slice(0, 1),
+        );
+      },
+    },
+    {
+      async grade() {
+        semanticCalls += 1;
+        return { pass: true, reason: "should not run" };
+      },
+    },
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(
+    result.reason,
+    /concrete productRef returned before clarification/i,
+  );
+  assert.equal(semanticCalls, 0);
+});
+
+test("scenario A fails unrelated-category lookup even if clarification follows", async () => {
+  const scenario = behaviorScenario("A");
+  let semanticCalls = 0;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "młotki murarskie", limit: 3 },
+        ]);
+      },
+      async continueTurn() {
+        return answer(
+          "Jaki rozmiar i zastosowanie mają mieć te trytytki?",
+        );
+      },
+    },
+    {
+      async grade() {
+        semanticCalls += 1;
+        return { pass: true, reason: "should not run" };
+      },
+    },
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(
+    result.reason,
+    /not a broad same-category black cable-tie query/i,
+  );
+  assert.equal(
+    result.trace.mockedToolResults[0].results[0].status,
+    "not_found",
+  );
+  assert.equal(semanticCalls, 0);
+});
+
+test("scenario A fails when broad lookup is treated as resolving ambiguity without clarification", async () => {
+  const scenario = behaviorScenario("A");
+  let semanticCalls = 0;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "czarne trytytki", limit: 3 },
+        ]);
+      },
+      async continueTurn() {
+        return answer(
+          "Znalazłam czarne trytytki, więc można je dobrać z tych wyników.",
+        );
+      },
+    },
+    {
+      async grade({ scenario: gradedScenario, trace }) {
+        semanticCalls += 1;
+        assert.equal(
+          gradedScenario.semanticRubric.some((line) =>
+            /final answer asks one concise clarification/i.test(line),
+          ),
+          true,
+        );
+        const text =
+          trace.clarificationOrFinalAnswer?.text ?? "";
+        const asksClarification = /\?/.test(text);
+        return {
+          pass: asksClarification,
+          reason: asksClarification
+            ? "clarification present"
+            : "broad lookup was treated as resolving ambiguity without clarification",
+        };
+      },
+    },
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(result.reason, /without clarification/i);
+  assert.equal(semanticCalls, 1);
 });
 
 test("browse exhaustive wording is rejected by the behavioral semantic rubric", async () => {
