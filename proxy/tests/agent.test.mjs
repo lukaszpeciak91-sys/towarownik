@@ -12,6 +12,7 @@ import {
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
   MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
+  MAX_TOOL_PRODUCTS,
   WEB_SEARCH_TOOL,
 } from "../.test-dist/config.js";
 import { createWorker } from "../.test-dist/index.js";
@@ -2408,6 +2409,7 @@ test('ambiguity B — "Jakie czarne trytytki mamy?" browses multiple verified va
 test("bounded assortment results are never presented as exhaustive without verified completeness", () => {
   const instructions = AGENT_INSTRUCTIONS;
 
+  assert.equal(MAX_TOOL_PRODUCTS, 5);
   assert.match(
     instructions,
     /find_obi_products returns only a bounded subset of at most five verified products per batch/i,
