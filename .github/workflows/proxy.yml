@@ -37,3 +37,6 @@ jobs:
 
       - name: Test proxy
         run: npm test
+
+      - name: Validate behavioral eval CLI
+        run: npm run eval:build && node --check evals/run-taksula-behavior.mjs
