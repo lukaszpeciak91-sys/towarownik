@@ -1,0 +1,53 @@
+name: Taksula behavioral evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      trials:
+        description: "Trials per scenario (1-10)"
+        required: true
+        default: "1"
+        type: string
+      scenarios:
+        description: "Comma-separated scenario IDs or all"
+        required: true
+        default: "all"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proxy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: proxy/package-lock.json
+
+      - name: Install proxy dependencies
+        run: npm ci
+
+      - name: Run real-model behavioral evals
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: >-
+          npm run eval:behavior --
+          --trials "${{ inputs.trials }}"
+          --scenarios "${{ inputs.scenarios }}"
+          --output ".eval-results/taksula-behavior.json"
+
+      - name: Upload behavioral eval trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: taksula-behavioral-eval
+          path: proxy/.eval-results/taksula-behavior.json
+          if-no-files-found: ignore

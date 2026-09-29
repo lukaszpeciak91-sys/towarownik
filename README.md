@@ -151,6 +151,7 @@ The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-n
 - [Architecture](docs/architecture.md)
 - [Product and technical decisions](docs/decisions.md)
 - [Progress and next milestone](docs/progress.md)
+- [Taksula behavioral evaluations](docs/behavioral-evals.md)
 - [Contributor and agent rules](AGENTS.md)
 
 
