@@ -3,8 +3,16 @@ export interface Env {
   TOWAROWNIK_APP_TOKEN?: string;
 }
 
+export type AdvisorProtocolVersion = 1 | 2;
+
 export interface ToolQuery {
   query: string;
+  limit: number;
+}
+
+export interface LegacyToolArguments {
+  query: string;
+  storeNumber: string;
   limit: number;
 }
 
@@ -12,6 +20,10 @@ export interface ToolArguments {
   storeNumber: string;
   queries: ToolQuery[];
 }
+
+export type VersionedToolArguments =
+  | LegacyToolArguments
+  | ToolArguments;
 
 export interface TechnicalFact {
   label: string;
@@ -26,6 +38,18 @@ export interface VerifiedProduct {
   technicalFacts: TechnicalFact[];
   stock: number | null;
   price: number | null;
+}
+
+export interface LegacyVerifiedToolResult {
+  query: string;
+  storeNumber: string;
+  products: VerifiedProduct[];
+}
+
+export interface LegacyRejectedToolResult {
+  query: string;
+  storeNumber: string;
+  rejection: "store_not_authorized";
 }
 
 export type VerifiedQueryStatus =
@@ -57,6 +81,8 @@ export interface LocalToolLimitResult {
 }
 
 export type ToolContinuationResult =
+  | LegacyVerifiedToolResult
+  | LegacyRejectedToolResult
   | VerifiedToolResult
   | RejectedToolResult
   | LocalToolLimitResult;
@@ -104,7 +130,7 @@ export type AgentResult =
       tool: {
         name: "find_obi_products";
         callId: string;
-        arguments: ToolArguments;
+        arguments: VersionedToolArguments;
       };
       webSearchCalls: number;
       usage?: AgentUsage;

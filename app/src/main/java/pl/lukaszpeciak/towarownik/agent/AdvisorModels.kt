@@ -8,6 +8,7 @@ import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 internal const val ADVISOR_PROXY_BASE_URL =
     "https://towarownik-proxy.lukaszpeciak91.workers.dev"
 
+internal const val ADVISOR_PROTOCOL_VERSION = 2
 internal const val FIND_OBI_PRODUCTS = "find_obi_products"
 internal const val MAX_LOCAL_TOOL_CALLS_PER_TURN = 3
 internal const val MAX_TOOL_PRODUCTS = 5

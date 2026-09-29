@@ -5,18 +5,27 @@ import {
   startAgent,
   UpstreamFailureError,
 } from "./openai.js";
-import type { Env, UpstreamFetch } from "./types.js";
+import type {
+  AdvisorProtocolVersion,
+  AgentResult,
+  Env,
+  UpstreamFetch,
+} from "./types.js";
 import {
   InvalidRequestError,
   parseContinueRequest,
   parseMessageRequest,
   parseStartRequest,
   RequestTooLargeError,
+  UnsupportedProtocolVersionError,
 } from "./validation.js";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json",
 } as const;
+
+type AgentEndpoint = "start" | "message" | "continue";
+type AgentStage = "START" | "MESSAGE" | "CONTINUE";
 
 function jsonResponse(
   body: unknown,
@@ -50,11 +59,39 @@ function handleHealth(request: Request): Response {
   );
 }
 
+function stageFor(endpoint: AgentEndpoint): AgentStage {
+  return endpoint.toUpperCase() as AgentStage;
+}
+
+function logProtocolDiagnostic(
+  level: "info" | "warn",
+  data: {
+    protocolVersion: number | null;
+    stage: AgentStage;
+    responseEnvelopeType: AgentResult["type"] | null;
+    validationFailureCategory: string | null;
+  },
+): void {
+  const line = JSON.stringify({
+    event: "advisor_protocol",
+    protocolVersion: data.protocolVersion,
+    endpointStage: data.stage,
+    responseEnvelopeType: data.responseEnvelopeType,
+    validationFailureCategory: data.validationFailureCategory,
+  });
+
+  if (level === "warn") {
+    console.warn(line);
+  } else {
+    console.info(line);
+  }
+}
+
 async function handleProtectedAgentRequest(
   request: Request,
   env: Env,
   upstreamFetch: UpstreamFetch,
-  endpoint: "start" | "message" | "continue",
+  endpoint: AgentEndpoint,
 ): Promise<Response> {
   const auth = authorizeApp(request, env);
   if (!auth.ok) {
@@ -77,51 +114,107 @@ async function handleProtectedAgentRequest(
     );
   }
 
-  try {
-    const result = endpoint === "start"
-      ? await (async () => {
-          const input = await parseStartRequest(request);
-          return startAgent(
-            input.message,
-            input.storeNumber,
-            apiKey,
-            upstreamFetch,
-          );
-        })()
-      : endpoint === "message"
-        ? await (async () => {
-            const input = await parseMessageRequest(request);
-            return messageAgent(
-              input.previousResponseId,
-              input.message,
-              input.storeNumber,
-              apiKey,
-              upstreamFetch,
-            );
-          })()
-        : await (async () => {
-            const input = await parseContinueRequest(request);
-            return continueAgent(
-              input.responseId,
-              input.callId,
-              input.storeNumber,
-              input.result,
-              apiKey,
-              upstreamFetch,
-            );
-          })();
+  const stage = stageFor(endpoint);
+  let protocolVersion: AdvisorProtocolVersion | null = null;
 
+  try {
+    let result: AgentResult;
+
+    if (endpoint === "start") {
+      const input = await parseStartRequest(request);
+      protocolVersion = input.protocolVersion;
+      result = await startAgent(
+        input.message,
+        input.storeNumber,
+        apiKey,
+        upstreamFetch,
+        input.protocolVersion,
+      );
+    } else if (endpoint === "message") {
+      const input = await parseMessageRequest(request);
+      protocolVersion = input.protocolVersion;
+      result = await messageAgent(
+        input.previousResponseId,
+        input.message,
+        input.storeNumber,
+        apiKey,
+        upstreamFetch,
+        input.protocolVersion,
+      );
+    } else {
+      const input = await parseContinueRequest(request);
+      protocolVersion = input.protocolVersion;
+      result = await continueAgent(
+        input.responseId,
+        input.callId,
+        input.storeNumber,
+        input.result,
+        apiKey,
+        upstreamFetch,
+        input.protocolVersion,
+      );
+    }
+
+    logProtocolDiagnostic("info", {
+      protocolVersion,
+      stage,
+      responseEnvelopeType: result.type,
+      validationFailureCategory: null,
+    });
     return jsonResponse(result, 200);
   } catch (error) {
+    const failureProtocolVersion =
+      error instanceof InvalidRequestError ||
+      error instanceof UnsupportedProtocolVersionError
+        ? error.protocolVersion
+        : protocolVersion;
+
     if (error instanceof RequestTooLargeError) {
+      logProtocolDiagnostic("warn", {
+        protocolVersion: failureProtocolVersion,
+        stage,
+        responseEnvelopeType: null,
+        validationFailureCategory: "request_too_large",
+      });
       return jsonResponse({ error: "request_too_large" }, 413);
     }
+    if (error instanceof UnsupportedProtocolVersionError) {
+      logProtocolDiagnostic("warn", {
+        protocolVersion: error.protocolVersion,
+        stage,
+        responseEnvelopeType: null,
+        validationFailureCategory: error.category,
+      });
+      return jsonResponse(
+        { error: "unsupported_protocol_version" },
+        400,
+      );
+    }
     if (error instanceof InvalidRequestError) {
+      logProtocolDiagnostic("warn", {
+        protocolVersion: error.protocolVersion,
+        stage,
+        responseEnvelopeType: null,
+        validationFailureCategory: error.category,
+      });
       return jsonResponse({ error: "invalid_request" }, 400);
     }
     if (error instanceof UpstreamFailureError) {
+      logProtocolDiagnostic("warn", {
+        protocolVersion: failureProtocolVersion,
+        stage,
+        responseEnvelopeType: null,
+        validationFailureCategory: "upstream_failure",
+      });
       return jsonResponse({ error: "upstream_failure" }, 502);
     }
+
+    logProtocolDiagnostic("warn", {
+      protocolVersion: failureProtocolVersion,
+      stage,
+      responseEnvelopeType: null,
+      validationFailureCategory: "unexpected_failure",
+    });
     return jsonResponse({ error: "upstream_failure" }, 502);
   }
 }

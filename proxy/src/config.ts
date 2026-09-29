@@ -35,6 +35,8 @@ export const MAX_WEB_CITATIONS = 6;
 export const MAX_WEB_CITATION_TITLE_CHARS = 200;
 export const MAX_WEB_CITATION_URL_CHARS = 2048;
 
+export const LEGACY_ADVISOR_PROTOCOL_VERSION = 1 as const;
+export const CURRENT_ADVISOR_PROTOCOL_VERSION = 2 as const;
 export const LOCAL_TOOL_NAME = "find_obi_products";
 export const MAX_TOOL_PRODUCTS = 5;
 export const MAX_TOOL_QUERIES = 5;
@@ -163,15 +165,59 @@ export const AGENT_INSTRUCTIONS =
   "data, internal IDs, or unrelated private conversation content into web queries. If web search is unavailable or " +
   "does not establish a needed fact, do not invent that fact; keep verified OBI/general guidance useful where possible.";
 
-export function agentInstructionsForStore(storeNumber: string): string {
+export function agentInstructionsForStore(
+  storeNumber: string,
+  protocolVersion: number = CURRENT_ADVISOR_PROTOCOL_VERSION,
+): string {
+  const legacyCompatibility =
+    protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION
+      ? " Compatibility override for protocol v1: this client uses the legacy single-query find_obi_products contract. Request exactly one query per local tool call using query, storeNumber, and limit; never request queries[]. Ignore multi-query batching instructions for this client. The legacy Android client supports at most two local OBI calls per USER turn, so prioritize the most important verification(s) and after two calls finish from already verified facts plus general guidance instead of requesting another local tool call."
+      : "";
+
   return AGENT_INSTRUCTIONS +
     " Current conversation store for this USER turn is OBI " +
     storeNumber +
-    ".";
+    "." +
+    legacyCompatibility;
 }
 
 export const WEB_SEARCH_TOOL = {
   type: "web_search",
+} as const;
+
+export const LEGACY_OBI_TOOL = {
+  type: "function",
+  name: LOCAL_TOOL_NAME,
+  description:
+    "Ask the Android app to find verified OBI products for one explicit 3-digit store number using the legacy single-query contract.",
+  strict: true,
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        minLength: 1,
+        maxLength: MAX_TOOL_QUERY_CHARS,
+        description:
+          "Concise product search phrase for one requested category.",
+      },
+      storeNumber: {
+        type: "string",
+        pattern: "^[0-9]{3}$",
+        description:
+          "One explicit OBI store number. Use the current conversation store by default.",
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: MAX_TOOL_PRODUCTS,
+        description:
+          "Maximum verified products to return for this one query.",
+      },
+    },
+    required: ["query", "storeNumber", "limit"],
+    additionalProperties: false,
+  },
 } as const;
 
 export const OBI_TOOL = {
@@ -222,6 +268,12 @@ export const OBI_TOOL = {
     additionalProperties: false,
   },
 } as const;
+
+export function obiToolForProtocol(protocolVersion: number) {
+  return protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION
+    ? LEGACY_OBI_TOOL
+    : OBI_TOOL;
+}
 
 export const FINAL_ANSWER_FORMAT = {
   type: "json_schema",

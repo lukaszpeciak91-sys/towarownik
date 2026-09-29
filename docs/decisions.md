@@ -329,3 +329,13 @@ These decisions describe the broader intended product behavior. The currently im
 - Render safely mapped citations as small clickable inline numbered markers and keep the compact clickable source list as fallback for unmappable sources and navigation.
 - Pricing version becomes `openai-gpt-6-luna-2026-09-28-web-v1`; add USD 0.01 per completed search action to existing token cost. Completed search actions are counted directly from Responses output independently of optional token usage. Availability alone is zero search calls; missing/malformed or otherwise unpriceable usage preserves the search count while cost remains a lower bound.
 - This completes the currently planned AI capability stage. No deep research, streaming, background mode, fallback routing, RAG, MCP, file/image search, another retailer, or autonomous agent framework is introduced.
+
+## Advisor transport protocol versioning v0.1
+
+- Android explicitly sends `protocolVersion: 2` on advisor START, MESSAGE, and CONTINUE requests. Protocol v2 is the current grouped `find_obi_products(storeNumber, queries[])` transport.
+- The Worker keeps an explicit protocol v1 branch for the old single-query `{query,storeNumber,limit}` tool/continuation contract. That branch is selected only by an explicit `protocolVersion: 1`.
+- Missing `protocolVersion` is intentionally treated as v2, not v1. A deployed grouped Android build already existed before protocol markers were introduced, so both the old single-query generation and the grouped generation can be unversioned and cannot be distinguished safely from the request shape before a tool response is emitted.
+- Therefore the Worker must never guess v1 from an absent marker. Unversioned grouped clients remain operational during rollout; pre-versioned single-query clients must update.
+- Unsupported future protocol versions fail explicitly before OpenAI work. Protocol diagnostics may record only protocol version, endpoint stage, response-envelope type, and bounded validation category; no user/tool/product content, secrets, raw request bodies, or upstream payloads.
+- Future incompatible transport changes require a new explicit protocol version and a rollout plan that preserves the frozen unversioned-v2 compatibility alias instead of changing its meaning.
+
