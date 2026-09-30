@@ -87,13 +87,10 @@ internal fun isAdvisorComposerEnabled(
         state !is AdvisorUiState.RunningLocalTool &&
         state !is AdvisorUiState.WaitingForFinalAnswer
 
-internal fun normalizeAdvisorDisplayText(raw: String): String =
-    raw
-        .replace(MARKDOWN_HEADING, "")
-        .replace("**", "")
-        .replace("__", "")
-        .replace("`", "")
-        .trim()
+internal fun normalizeAdvisorDisplayText(
+    raw: String,
+): String =
+    normalizeAdvisorText(raw).text
 
 internal data class NormalizedAdvisorDisplay(
     val text: String,
@@ -104,48 +101,8 @@ internal fun normalizeAdvisorDisplay(
     raw: String,
     sources: List<AdvisorWebSource>,
 ): NormalizedAdvisorDisplay {
-    val removed = BooleanArray(raw.length)
-
-    fun removeRange(start: Int, endExclusive: Int) {
-        for (index in start until endExclusive.coerceAtMost(raw.length)) {
-            removed[index] = true
-        }
-    }
-
-    MARKDOWN_HEADING.findAll(raw).forEach { match ->
-        removeRange(
-            start = match.range.first,
-            endExclusive = match.range.last + 1,
-        )
-    }
-
-    listOf("**", "__", "`").forEach { marker ->
-        var searchFrom = 0
-        while (searchFrom < raw.length) {
-            val index = raw.indexOf(marker, startIndex = searchFrom)
-            if (index < 0) break
-            removeRange(index, index + marker.length)
-            searchFrom = index + marker.length
-        }
-    }
-
-    val boundaryMap = IntArray(raw.length + 1)
-    val untrimmed = StringBuilder(raw.length)
-    var outputIndex = 0
-    for (index in raw.indices) {
-        boundaryMap[index] = outputIndex
-        if (!removed[index]) {
-            untrimmed.append(raw[index])
-            outputIndex += 1
-        }
-    }
-    boundaryMap[raw.length] = outputIndex
-
-    val untrimmedText = untrimmed.toString()
-    val text = untrimmedText.trim()
-    val leadingTrim =
-        untrimmedText.length - untrimmedText.trimStart().length
-    val trailingBoundary = leadingTrim + text.length
+    val normalized = normalizeAdvisorText(raw)
+    val text = normalized.text
 
     val persistedSources = sources.mapNotNull { source ->
         val mappedRange = if (
@@ -155,14 +112,17 @@ internal fun normalizeAdvisorDisplay(
             source.endIndex in 0..raw.length &&
             source.endIndex > source.startIndex
         ) {
-            val start = boundaryMap[source.startIndex]
-            val end = boundaryMap[source.endIndex]
+            val start =
+                normalized.boundaryMap[source.startIndex]
+            val end =
+                normalized.boundaryMap[source.endIndex]
             if (
-                start >= leadingTrim &&
-                end <= trailingBoundary &&
+                start >= normalized.leadingTrim &&
+                end <= normalized.trailingBoundary &&
                 end > start
             ) {
-                (start - leadingTrim) to (end - leadingTrim)
+                (start - normalized.leadingTrim) to
+                    (end - normalized.leadingTrim)
             } else {
                 null
             }
@@ -450,6 +410,101 @@ internal fun recoverInterruptedAdvisorCase(
         state
     }
 }
+
+private data class AdvisorTextNormalization(
+    val text: String,
+    val boundaryMap: IntArray,
+    val leadingTrim: Int,
+    val trailingBoundary: Int,
+)
+
+private fun normalizeAdvisorText(
+    raw: String,
+): AdvisorTextNormalization {
+    val removed = BooleanArray(raw.length)
+
+    fun removeRange(start: Int, endExclusive: Int) {
+        for (
+            index in start until
+                endExclusive.coerceAtMost(raw.length)
+        ) {
+            removed[index] = true
+        }
+    }
+
+    MARKDOWN_HEADING.findAll(raw).forEach { match ->
+        removeRange(
+            start = match.range.first,
+            endExclusive = match.range.last + 1,
+        )
+    }
+
+    listOf("**", "__", "`").forEach { marker ->
+        var searchFrom = 0
+        while (searchFrom < raw.length) {
+            val index = raw.indexOf(
+                marker,
+                startIndex = searchFrom,
+            )
+            if (index < 0) break
+            removeRange(index, index + marker.length)
+            searchFrom = index + marker.length
+        }
+    }
+
+    listOf(
+        MARKDOWN_BRACKET_LINK,
+        MARKDOWN_PAREN_LINK,
+    ).forEach { pattern ->
+        pattern.findAll(raw).forEach matchLoop@ { match ->
+            val labelRange =
+                match.groups[1]?.range
+                    ?: return@matchLoop
+            removeRange(
+                match.range.first,
+                labelRange.first,
+            )
+            removeRange(
+                labelRange.last + 1,
+                match.range.last + 1,
+            )
+        }
+    }
+
+    val boundaryMap = IntArray(raw.length + 1)
+    val untrimmed = StringBuilder(raw.length)
+    var outputIndex = 0
+    for (index in raw.indices) {
+        boundaryMap[index] = outputIndex
+        if (!removed[index]) {
+            untrimmed.append(raw[index])
+            outputIndex += 1
+        }
+    }
+    boundaryMap[raw.length] = outputIndex
+
+    val untrimmedText = untrimmed.toString()
+    val text = untrimmedText.trim()
+    val leadingTrim =
+        untrimmedText.length -
+            untrimmedText.trimStart().length
+    val trailingBoundary = leadingTrim + text.length
+
+    return AdvisorTextNormalization(
+        text = text,
+        boundaryMap = boundaryMap,
+        leadingTrim = leadingTrim,
+        trailingBoundary = trailingBoundary,
+    )
+}
+
+private val MARKDOWN_BRACKET_LINK = Regex(
+    pattern = """\[([^\]\n]+)]\((https://[^)\s]+)\)""",
+)
+
+private val MARKDOWN_PAREN_LINK = Regex(
+    pattern = """\(([^()\n]+)\)\((https://[^)\s]+)\)""",
+)
 
 private val MARKDOWN_HEADING = Regex(
     pattern = """(?m)^\s*#{1,6}\s+""",
