@@ -272,6 +272,7 @@ internal abstract class ConversationDao {
                         stock = product.stock,
                         grossPrice = product.grossPrice?.toPlainString(),
                         productUrl = product.productUrl,
+                        imageUrl = product.primaryImageUrl,
                         verifiedAt = product.verifiedAt,
                         storeNumber = product.storeNumber,
                     )
