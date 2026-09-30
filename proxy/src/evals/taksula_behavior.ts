@@ -252,9 +252,9 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     userMessage: "Klient potrzebuje czarnych trytytek.",
     webPolicy: "forbidden",
     semanticRubric: [
-      "A broad same-category lookup of black cable ties before clarification is allowed only to inspect available variants; it must not narrow to an unprovided required size, application, or other decision-critical variant.",
-      "The final answer asks one concise clarification about a decision-critical missing selection parameter before making any concrete recommendation.",
-      "The answer does not select or recommend a concrete SKU as the correct choice, claim unestablished compatibility or suitability, invent a missing dimension/application, or act as though the broad lookup resolved the ambiguity.",
+      "The answer asks one concise clarification about a decision-critical missing selection parameter before any OBI lookup or concrete recommendation.",
+      "It does not select or recommend a concrete SKU, present candidate-specific price or stock, or invent a missing dimension/application.",
+      "It does not return productRefs before the missing selection parameter is clarified.",
     ],
   },
   {
@@ -272,7 +272,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     id: "C",
     name: "Specified cable-tie selection",
     userMessage:
-      "Potrzebuję czarnych trytytek 4,2 x 380 mm do środka.",
+      "Potrzebuję czarnych trytytek 4,2 x 380 mm do środka. Sprawdź co mamy.",
     webPolicy: "forbidden",
     semanticRubric: [],
   },
@@ -349,14 +349,14 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
   },
   {
     id: "H",
-    name: "Small silicone washbasin-to-wall sealing kit",
+    name: "Understood washbasin-to-wall sealing job advice",
     userMessage:
       "Co potrzebuję do uszczelnienia silikonem szczeliny między umywalką a ścianą?",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer forms a small practical essentials-first kit for sealing the specified washbasin-to-wall gap with silicone.",
-      "It does not require separate confirmation for every category.",
-      "It avoids an exhaustive or absurd shopping list.",
+      "The answer gives a small practical essentials-first explanation for sealing the specified washbasin-to-wall gap with silicone.",
+      "It distinguishes essential needs from optional convenience items without turning the answer into an automatic verified shopping kit.",
+      "It does not require current OBI assortment facts or product cards to answer this understood job question.",
     ],
   },
   {
@@ -869,27 +869,7 @@ function deterministicFailures(
   const firstQueries = firstCall?.arguments.queries ?? [];
 
   switch (scenario.id) {
-    case "A": {
-      const selectionQueries = calls.flatMap(
-        (call) => call.arguments.queries,
-      );
-      if (
-        selectionQueries.some(
-          (query) => !isBroadBlackCableTieQuery(query.query),
-        )
-      ) {
-        failures.push(
-          "selection lookup was not a broad same-category black cable-tie query",
-        );
-      }
-      if (trace.finalProductRefs.length !== 0) {
-        failures.push(
-          "concrete productRef returned before clarification",
-        );
-      }
-      break;
-    }
-
+    case "A":
     case "D":
     case "H_AMBIGUOUS":
       if (calls.length !== 0) {
@@ -992,34 +972,14 @@ function deterministicFailures(
       break;
 
     case "H":
-      if (calls.length === 0) {
-        failures.push("kit request did not verify products");
-      }
-      if (firstQueries.length < 2) {
+      if (calls.length !== 0) {
         failures.push(
-          "related kit categories were not batched in the first lookup",
+          "understood job advice used automatic local OBI lookup without explicit store intent",
         );
       }
-      if (calls.length > 2) {
+      if (trace.finalProductRefs.length !== 0) {
         failures.push(
-          "kit request used too many narrow local lookups",
-        );
-      }
-      const verifiedKitProducts = [
-        "7200001",
-        "7200002",
-        "7200003",
-      ].filter((obik) =>
-        verifiedRefs.has(
-          refKey({
-            storeNumber: DEFAULT_EVAL_STORE_NUMBER,
-            obik,
-          }),
-        ),
-      ).length;
-      if (verifiedKitProducts < 2) {
-        failures.push(
-          "kit lookup did not yield at least two relevant verified kit categories",
+          "understood job advice unexpectedly returned productRefs",
         );
       }
       break;
@@ -1085,14 +1045,6 @@ function mockQueryResult(
   _queryIndex: number,
 ): VerifiedQueryResult {
   switch (scenarioId) {
-    case "A":
-      return isBroadBlackCableTieQuery(query)
-        ? verifiedQuery(
-            query,
-            ZIP_TIES.slice(0, Math.min(limit, ZIP_TIES.length)),
-          )
-        : notFoundQuery(query);
-
     case "B":
       return isBlackCableTieQuery(query)
         ? verifiedQuery(
@@ -1156,30 +1108,9 @@ function mockQueryResult(
           }
         : notFoundQuery(query);
 
-    case "H": {
-      const normalized = normalizeQuery(query);
-      if (isSanitarySiliconeQuery(normalized)) {
-        return verifiedQuery(
-          query,
-          [KIT_PRODUCTS[0]].slice(0, limit),
-        );
-      }
-      if (isCartridgeGunQuery(normalized)) {
-        return verifiedQuery(
-          query,
-          [KIT_PRODUCTS[1]].slice(0, limit),
-        );
-      }
-      if (isSiliconeFinishingToolQuery(normalized)) {
-        return verifiedQuery(
-          query,
-          [KIT_PRODUCTS[2]].slice(0, limit),
-        );
-      }
-      return notFoundQuery(query);
-    }
-
+    case "A":
     case "D":
+    case "H":
     case "H_AMBIGUOUS":
     case "I":
       return notFoundQuery(query);
