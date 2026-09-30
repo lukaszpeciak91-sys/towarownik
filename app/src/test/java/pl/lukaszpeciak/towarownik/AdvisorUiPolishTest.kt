@@ -17,7 +17,9 @@ class AdvisorUiPolishTest {
             bubble.contains("AdvisorVerifiedProductCard(product)"),
         )
         assertFalse(
-            bubble.contains("VerifiedProductCard(product)"),
+            bubble.lineSequence().any {
+                it.trim() == "VerifiedProductCard(product)"
+            },
         )
     }
 
