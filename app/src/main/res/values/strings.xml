@@ -30,8 +30,10 @@
     <string name="advisor_progress_checking_obi">Sprawdzam OBI…</string>
     <string name="advisor_progress_preparing">Przygotowuję odpowiedź…</string>
     <string name="advisor_error_not_configured">Doradca nie jest skonfigurowany w tej wersji aplikacji.</string>
+    <string name="advisor_error_authentication">Nie udało się uwierzytelnić aplikacji. Zaktualizuj Taksulę lub zgłoś problem.</string>
     <string name="advisor_error_network">Nie udało się połączyć z doradcą.</string>
-    <string name="advisor_error_service">Usługa doradcy jest chwilowo niedostępna.</string>
+    <string name="advisor_error_service">Doradca chwilowo nie odpowiada. Spróbuj ponownie.</string>
+    <string name="advisor_error_diagnostic_code">Kod diagnostyczny: %1$s</string>
     <string name="advisor_error_protocol">Otrzymano nieprawidłową odpowiedź doradcy.</string>
     <string name="advisor_error_obi">Nie udało się odczytać danych z OBI.</string>
     <string name="advisor_error_input">Opisz czego potrzebuje klient.</string>
