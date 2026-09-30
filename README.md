@@ -20,7 +20,7 @@ The current phase is **Selective web search for Taksula v0.1**. Taksula keeps th
 - Compose BOM: 2026.06.00
 - Activity Compose: 1.13.0
 - OkHttp: 4.12.0
-- Coil: 3.6.3 (Compose + OkHttp network loader)
+- Coil: 3.5.0 (Compose + OkHttp network loader)
 - kotlinx.serialization JSON: 1.9.0
 - Kotlin coroutines: 1.10.2
 - Android resource localization: Polish default (`values/`) + English (`values-en/`)
