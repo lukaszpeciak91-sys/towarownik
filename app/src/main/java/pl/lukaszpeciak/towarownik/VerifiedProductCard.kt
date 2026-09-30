@@ -5,11 +5,13 @@ import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -25,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
@@ -117,6 +120,165 @@ internal fun formatVerifiedProductTimestamp(
         R.string.product_verified_at,
         formatVerifiedProductTimestampValue(verifiedAt),
     )
+
+@Composable
+internal fun AdvisorVerifiedProductCard(
+    product: VerifiedProductUiModel,
+) {
+    val context = LocalContext.current
+    val warmColors = MaterialTheme.towarownikColors
+    val accentColor = MaterialTheme.colorScheme.primary
+    val stockColor = when {
+        product.stock == null ->
+            MaterialTheme.colorScheme.onSurfaceVariant
+        product.stock == 0 -> MaterialTheme.colorScheme.error
+        else -> warmColors.success
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawWithContent {
+                drawContent()
+                drawRect(
+                    color = accentColor,
+                    size = Size(3.dp.toPx(), size.height),
+                )
+            },
+        shape = RoundedCornerShape(18.dp),
+        color = warmColors.surfaceRaised,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(
+                start = 18.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = 16.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SelectionContainer {
+                Text(
+                    text = product.name,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                SelectionContainer(
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Column(
+                        verticalArrangement =
+                            Arrangement.spacedBy(7.dp),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.product_store,
+                                product.storeNumber,
+                            ),
+                            style =
+                                MaterialTheme.typography.labelMedium,
+                            color =
+                                MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.product_obik,
+                                product.obik,
+                            ),
+                            style =
+                                MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme
+                                .onSurfaceVariant,
+                        )
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline
+                                .copy(alpha = 0.65f),
+                        )
+                        Text(
+                            text = formatStorePrice(
+                                product.grossPrice,
+                            ),
+                            style =
+                                MaterialTheme.typography.titleMedium,
+                            color =
+                                MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = formatStoreStock(product.stock),
+                            style =
+                                MaterialTheme.typography.bodyLarge,
+                            color = stockColor,
+                        )
+                        product.verifiedAt?.let { verifiedAt ->
+                            Text(
+                                text =
+                                    formatVerifiedProductTimestamp(
+                                        verifiedAt,
+                                    ),
+                                style =
+                                    MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme
+                                    .onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+
+                if (product.primaryImageUrl != null) {
+                    VerifiedProductThumbnail(
+                        product = product,
+                        modifier = Modifier.size(108.dp),
+                    )
+                }
+            }
+
+            OutlinedButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse(
+                                    verifiedProductOpenUrl(product),
+                                ),
+                            ),
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline,
+                ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ),
+            ) {
+                Text(stringResource(R.string.open_in_obi))
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    painter = painterResource(
+                        R.drawable.ic_open_in_new_24,
+                    ),
+                    contentDescription = null,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 internal fun VerifiedProductCard(
