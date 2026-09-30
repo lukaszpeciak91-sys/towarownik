@@ -45,6 +45,12 @@ internal data class AdvisorToolArguments(
         get() = queries.sumOf { it.limit }
 }
 
+internal data class AdvisorSearchAction(
+    val query: String,
+    val storeNumber: String,
+    val reportedTotalCount: Int,
+)
+
 internal data class AdvisorProductRef(
     val storeNumber: String,
     val obik: String,
@@ -223,6 +229,7 @@ internal sealed interface AdvisorToolExecutionResult {
     data class Success(
         val result: AdvisorVerifiedToolResult,
         val snapshots: List<VerifiedProductSnapshot>,
+        val searchActions: List<AdvisorSearchAction> = emptyList(),
     ) : AdvisorToolExecutionResult
 
     data object UnsupportedStore : AdvisorToolExecutionResult
