@@ -1,0 +1,113 @@
+package pl.lukaszpeciak.towarownik
+
+import java.io.File
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AdvisorUiPolishTest {
+    @Test
+    fun `assistant messages use chat specific product cards only`() {
+        val source = mainActivitySource()
+        val bubble = source
+            .substringAfter("private fun AdvisorMessageBubble(")
+            .substringBefore("@Composable\nprivate fun AdvisorAnswerText(")
+
+        assertTrue(
+            bubble.contains("AdvisorVerifiedProductCard(product)"),
+        )
+        assertFalse(
+            bubble.contains("VerifiedProductCard(product)"),
+        )
+    }
+
+    @Test
+    fun `manual search keeps approved product card and result thumbnail layout`() {
+        val source = mainActivitySource()
+        val manualScreen = source
+            .substringAfter("private fun ManualObiSearchScreen(")
+            .substringBefore("@Composable\nprivate fun ManualSearchTopBar(")
+        val manualResults = source
+            .substringAfter("private fun ManualSearchResults(")
+            .substringBefore("@Composable\nprivate fun ManualVerifiedProductLink(")
+
+        assertTrue(
+            manualScreen.contains("VerifiedProductCard(state.item)"),
+        )
+        assertTrue(
+            manualResults.contains("VerifiedProductThumbnail("),
+        )
+        assertTrue(
+            manualResults.contains("modifier = Modifier.size(84.dp)"),
+        )
+        assertFalse(
+            manualResults.contains("AdvisorVerifiedProductCard"),
+        )
+    }
+
+    @Test
+    fun `chat product card keeps title full width and thumbnail beside details`() {
+        val source = verifiedProductCardSource()
+        val chatCard = source
+            .substringAfter("internal fun AdvisorVerifiedProductCard(")
+            .substringBefore("@Composable\ninternal fun VerifiedProductCard(")
+
+        val titleIndex = chatCard.indexOf("text = product.name")
+        val rowIndex = chatCard.indexOf("Row(")
+
+        assertTrue(titleIndex >= 0)
+        assertTrue(rowIndex > titleIndex)
+        assertTrue(chatCard.contains("modifier = Modifier.weight(1f)"))
+        assertTrue(chatCard.contains("modifier = Modifier.size(108.dp)"))
+        assertTrue(chatCard.contains("modifier = Modifier.fillMaxWidth()"))
+        assertTrue(
+            source
+                .substringAfter("internal fun VerifiedProductThumbnail(")
+                .contains("contentScale = ContentScale.Fit"),
+        )
+    }
+
+    @Test
+    fun `cited answer text explicitly uses normal assistant foreground`() {
+        val source = mainActivitySource()
+        val answer = source
+            .substringAfter("private fun AdvisorAnswerText(")
+            .substringBefore("@Composable\nprivate fun AdvisorSearchActions(")
+
+        assertTrue(
+            answer.contains(
+                "MaterialTheme.typography.bodyLarge.copy(",
+            ),
+        )
+        assertTrue(
+            answer.contains(
+                "color = MaterialTheme.colorScheme.onSurface",
+            ),
+        )
+    }
+
+    private fun mainActivitySource(): String =
+        File(
+            projectRoot(),
+            "app/src/main/java/pl/lukaszpeciak/towarownik/MainActivity.kt",
+        ).readText()
+
+    private fun verifiedProductCardSource(): String =
+        File(
+            projectRoot(),
+            "app/src/main/java/pl/lukaszpeciak/towarownik/VerifiedProductCard.kt",
+        ).readText()
+
+    private fun projectRoot(): File {
+        var current = File(
+            requireNotNull(System.getProperty("user.dir")),
+        )
+        repeat(3) {
+            if (File(current, "app/src/main").isDirectory) {
+                return current
+            }
+            current = current.parentFile ?: return@repeat
+        }
+        error("Project root not found")
+    }
+}
