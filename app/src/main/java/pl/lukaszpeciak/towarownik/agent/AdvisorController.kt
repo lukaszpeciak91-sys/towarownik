@@ -8,6 +8,7 @@ import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 internal enum class AdvisorError {
     NOT_CONFIGURED,
+    AUTHENTICATION,
     NETWORK,
     SERVICE,
     PROTOCOL,
@@ -27,7 +28,10 @@ internal sealed interface AdvisorUiState {
         val sources: List<AdvisorWebSource> = emptyList(),
         val searchActions: List<AdvisorSearchAction> = emptyList(),
     ) : AdvisorUiState
-    data class Error(val error: AdvisorError) : AdvisorUiState
+    data class Error(
+        val error: AdvisorError,
+        val diagnostic: AdvisorFailureDiagnostic? = null,
+    ) : AdvisorUiState
 }
 
 internal class AdvisorController(
@@ -337,10 +341,11 @@ private fun AdvisorProxyResult.webSearchCalls(): Long =
 private fun AdvisorProxyCallResult.Failure.toUiError():
     AdvisorUiState.Error =
     AdvisorUiState.Error(
-        when (kind) {
+        error = when (kind) {
             AdvisorProxyFailureKind.NOT_CONFIGURED ->
                 AdvisorError.NOT_CONFIGURED
-            AdvisorProxyFailureKind.AUTHENTICATION,
+            AdvisorProxyFailureKind.AUTHENTICATION ->
+                AdvisorError.AUTHENTICATION
             AdvisorProxyFailureKind.SERVICE ->
                 AdvisorError.SERVICE
             AdvisorProxyFailureKind.NETWORK ->
@@ -348,6 +353,7 @@ private fun AdvisorProxyCallResult.Failure.toUiError():
             AdvisorProxyFailureKind.PROTOCOL ->
                 AdvisorError.PROTOCOL
         },
+        diagnostic = diagnosticOrNull(),
     )
 
 private val ADVISOR_CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")

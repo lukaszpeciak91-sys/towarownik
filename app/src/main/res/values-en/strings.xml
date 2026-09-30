@@ -30,8 +30,10 @@
     <string name="advisor_progress_checking_obi">Checking OBI…</string>
     <string name="advisor_progress_preparing">Preparing answer…</string>
     <string name="advisor_error_not_configured">The advisor is not configured in this app build.</string>
+    <string name="advisor_error_authentication">The app could not authenticate with the advisor. Update Taksula or report the problem.</string>
     <string name="advisor_error_network">Could not connect to the advisor.</string>
-    <string name="advisor_error_service">The advisor service is temporarily unavailable.</string>
+    <string name="advisor_error_service">The advisor is temporarily not responding. Try again.</string>
+    <string name="advisor_error_diagnostic_code">Diagnostic code: %1$s</string>
     <string name="advisor_error_protocol">The advisor returned an invalid response.</string>
     <string name="advisor_error_obi">Could not read data from OBI.</string>
     <string name="advisor_error_input">Describe what the customer needs.</string>

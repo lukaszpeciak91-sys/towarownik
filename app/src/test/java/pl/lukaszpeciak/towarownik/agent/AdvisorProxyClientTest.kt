@@ -708,13 +708,20 @@ class AdvisorProxyClientTest {
     }
 
     @Test
-    fun `401 maps to bounded authentication failure`() = runBlocking {
+    fun `401 captures safe authentication diagnostic`() = runBlocking {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(401).setBody("secret upstream body"))
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(401)
+                    .setBody("""{"error":"unauthorized"}"""),
+            )
 
             assertEquals(
                 AdvisorProxyCallResult.Failure(
-                    AdvisorProxyFailureKind.AUTHENTICATION,
+                    kind = AdvisorProxyFailureKind.AUTHENTICATION,
+                    httpStatus = 401,
+                    proxyErrorCode = "unauthorized",
+                    endpoint = "start",
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -722,17 +729,87 @@ class AdvisorProxyClientTest {
     }
 
     @Test
-    fun `other non success maps to bounded service failure`() = runBlocking {
+    fun `503 captures safe service diagnostic`() = runBlocking {
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(503).setBody("details"))
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(503)
+                    .setBody("""{"error":"server_not_configured"}"""),
+            )
 
             assertEquals(
                 AdvisorProxyCallResult.Failure(
-                    AdvisorProxyFailureKind.SERVICE,
+                    kind = AdvisorProxyFailureKind.SERVICE,
+                    httpStatus = 503,
+                    proxyErrorCode = "server_not_configured",
+                    endpoint = "start",
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
             assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
+    fun `unsafe proxy failure body is not surfaced`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(502)
+                    .setBody("""{"error":"UPSTREAM secret detail"}"""),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    kind = AdvisorProxyFailureKind.SERVICE,
+                    httpStatus = 502,
+                    proxyErrorCode = null,
+                    endpoint = "start",
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `lowercase unknown proxy error code is not surfaced`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(502)
+                    .setBody("""{"error":"secret_token_abc123"}"""),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    kind = AdvisorProxyFailureKind.SERVICE,
+                    httpStatus = 502,
+                    proxyErrorCode = null,
+                    endpoint = "start",
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
+    fun `400 proxy contract failure maps to protocol with diagnostic`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(400)
+                    .setBody("""{"error":"unsupported_protocol_version"}"""),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    kind = AdvisorProxyFailureKind.PROTOCOL,
+                    httpStatus = 400,
+                    proxyErrorCode = "unsupported_protocol_version",
+                    endpoint = "start",
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
         }
     }
 

@@ -885,6 +885,10 @@ private fun TowarownikApp() {
                                 submission.includeObiDiagnostics,
                             conversationId = reportConversationId,
                             reportedMessageId = reportMessageId,
+                            advisorFailureDiagnostic =
+                                (advisorState as? AdvisorUiState.Error)
+                                    ?.diagnostic
+                                    ?.reportValue(),
                         )
                         val result = createProblemReportSharePayload(
                             context = uiContext,
@@ -1341,7 +1345,9 @@ private fun AdvisorChatScreen(
 
                         is AdvisorUiState.Error -> item {
                             AdvisorErrorBubble(
-                                advisorErrorText(state.error),
+                                message = advisorErrorText(state.error),
+                                diagnosticCode =
+                                    state.diagnostic?.userCode(),
                             )
                         }
                     }
@@ -1954,7 +1960,10 @@ private fun AdvisorProgressBubble(text: String) {
 }
 
 @Composable
-private fun AdvisorErrorBubble(message: String) {
+private fun AdvisorErrorBubble(
+    message: String,
+    diagnosticCode: String? = null,
+) {
     val warmColors = MaterialTheme.towarownikColors
 
     Surface(
@@ -1966,15 +1975,30 @@ private fun AdvisorErrorBubble(message: String) {
             MaterialTheme.colorScheme.error.copy(alpha = 0.45f),
         ),
     ) {
-        Text(
-            text = message,
+        Column(
             modifier = Modifier.padding(
                 horizontal = 14.dp,
                 vertical = 10.dp,
             ),
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyMedium,
-        )
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            diagnosticCode?.let { code ->
+                Text(
+                    text = stringResource(
+                        R.string.advisor_error_diagnostic_code,
+                        code,
+                    ),
+                    color =
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
     }
 }
 
@@ -2471,6 +2495,7 @@ private fun advisorErrorText(error: AdvisorError): String =
     stringResource(
         when (error) {
             AdvisorError.NOT_CONFIGURED -> R.string.advisor_error_not_configured
+            AdvisorError.AUTHENTICATION -> R.string.advisor_error_authentication
             AdvisorError.NETWORK -> R.string.advisor_error_network
             AdvisorError.SERVICE -> R.string.advisor_error_service
             AdvisorError.PROTOCOL -> R.string.advisor_error_protocol

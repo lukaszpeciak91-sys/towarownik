@@ -127,6 +127,37 @@ class ProblemReportFormatterTest {
     }
 
     @Test
+    fun `general report includes safe advisor failure diagnostic when provided`() {
+        val request = ProblemReportRequest(
+            type = ProblemReportType.GENERAL,
+            category = ProblemReportCategory.APP_PROBLEM,
+            description = "Advisor failed",
+            includeConversation = false,
+            includeObiDiagnostics = false,
+            advisorFailureDiagnostic =
+                "kind=AUTHENTICATION http=401 proxy=unauthorized endpoint=start",
+        )
+
+        val report = ProblemReportFormatter.format(
+            request = request,
+            evidence = ProblemReportEvidence(
+                conversationId = null,
+                reportedMessage = null,
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = null,
+        )
+
+        assertTrue(
+            report.contains(
+                "Advisor failure: kind=AUTHENTICATION " +
+                    "http=401 proxy=unauthorized endpoint=start",
+            ),
+        )
+    }
+
+    @Test
     fun `general report with conversation includes persisted messages but no draft field`() {
         val request = ProblemReportRequest(
             type = ProblemReportType.GENERAL,

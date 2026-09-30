@@ -200,7 +200,10 @@ internal class AdvisorProxyClient(
 
                     override fun onResponse(call: Call, response: Response) {
                         val result = response.use {
-                            mapResponse(it)
+                            mapResponse(
+                                response = it,
+                                endpoint = endpoint.substringAfterLast('/'),
+                            )
                         }
                         if (continuation.isActive) {
                             continuation.resume(result)
@@ -211,15 +214,21 @@ internal class AdvisorProxyClient(
         }
     }
 
-    private fun mapResponse(response: Response): AdvisorProxyCallResult {
-        if (response.code == 401) {
-            return AdvisorProxyCallResult.Failure(
-                AdvisorProxyFailureKind.AUTHENTICATION,
-            )
-        }
+    private fun mapResponse(
+        response: Response,
+        endpoint: String,
+    ): AdvisorProxyCallResult {
         if (!response.isSuccessful) {
+            val kind = when (response.code) {
+                401 -> AdvisorProxyFailureKind.AUTHENTICATION
+                400, 413 -> AdvisorProxyFailureKind.PROTOCOL
+                else -> AdvisorProxyFailureKind.SERVICE
+            }
             return AdvisorProxyCallResult.Failure(
-                AdvisorProxyFailureKind.SERVICE,
+                kind = kind,
+                httpStatus = response.code,
+                proxyErrorCode = parseProxyErrorCode(response),
+                endpoint = endpoint,
             )
         }
 
@@ -252,6 +261,21 @@ internal class AdvisorProxyClient(
 
         return AdvisorProxyCallResult.Success(result)
     }
+
+    private fun parseProxyErrorCode(
+        response: Response,
+    ): String? =
+        runCatching {
+            val raw = response
+                .peekBody(MAX_PROXY_ERROR_BYTES.toLong())
+                .string()
+            val root = Json.parseToJsonElement(raw) as? JsonObject
+                ?: return null
+            root["error"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+                ?.takeIf(SAFE_PROXY_ERROR_CODES::contains)
+        }.getOrNull()
 
     private fun parseEnvelope(raw: String): AdvisorProxyResult {
         val root = Json.parseToJsonElement(raw) as? JsonObject
@@ -816,6 +840,17 @@ internal class AdvisorProxyClient(
         val OBIK_PATTERN = Regex("""\d{7}""")
         val STORE_NUMBER_PATTERN = Regex("""\d{3}""")
         val MODEL_PATTERN = Regex("""[A-Za-z0-9._-]+""")
+        val SAFE_PROXY_ERROR_CODES = setOf(
+            "unauthorized",
+            "server_not_configured",
+            "method_not_allowed",
+            "request_too_large",
+            "unsupported_protocol_version",
+            "invalid_request",
+            "upstream_failure",
+            "not_found",
+        )
+        const val MAX_PROXY_ERROR_BYTES = 1_024
         const val MAX_PROXY_RESPONSE_BYTES = 64 * 1024
         const val MAX_CONTINUE_REQUEST_BYTES = 16 * 1024 - 1
         const val MAX_ID_CHARS = 256
