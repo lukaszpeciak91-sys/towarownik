@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -163,23 +164,33 @@ internal fun VerifiedProductCard(
                     .fillMaxWidth()
                     .height(96.dp),
             )
-            Text(
-                text = product.name,
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(
-                    R.string.product_store,
-                    product.storeNumber,
-                ),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = stringResource(R.string.product_obik, product.obik),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            SelectionContainer {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = product.name,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.product_store,
+                            product.storeNumber,
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.product_obik,
+                            product.obik,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color =
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outline.copy(
