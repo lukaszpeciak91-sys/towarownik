@@ -654,6 +654,56 @@ class FindObiProductsToolTest {
     }
 
     @Test
+    fun `trusted image stays local in snapshot and out of advisor product context`() = runBlocking {
+        val imageUrl =
+            "https://bilder.obi.pl/example/pr08A/image.jpeg"
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    listOf(
+                        ProductSearchCandidate(
+                            "1234567",
+                            "Candidate",
+                        ),
+                    ),
+                )
+            },
+            lookup = { _, _ ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = "1234567",
+                        name = "Verified",
+                        primaryImageUrl = imageUrl,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(arguments()) as
+            AdvisorToolExecutionResult.Success
+
+        assertEquals(
+            imageUrl,
+            result.snapshots.single().primaryImageUrl,
+        )
+        assertEquals(
+            AdvisorVerifiedProduct(
+                obik = "1234567",
+                name = "Verified",
+                stock = 3,
+                price = BigDecimal("10.00"),
+            ),
+            result.result.products.single(),
+        )
+        assertTrue(
+            result.result.products.single()
+                .toString()
+                .contains("bilder.obi.pl")
+                .not(),
+        )
+    }
+
+    @Test
     fun `alternate store propagates to every exact lookup and compact result`() = runBlocking {
         val stores = mutableListOf<String>()
         val tool = tool(
@@ -846,6 +896,7 @@ class FindObiProductsToolTest {
         brand: String? = null,
         shortDescription: String? = null,
         technicalFacts: List<TechnicalFact> = emptyList(),
+        primaryImageUrl: String? = null,
     ) = LocalProduct(
         obik = obik,
         name = name,
@@ -857,5 +908,6 @@ class FindObiProductsToolTest {
         brand = brand,
         shortDescription = shortDescription,
         technicalFacts = technicalFacts,
+        primaryImageUrl = primaryImageUrl,
     )
 }
