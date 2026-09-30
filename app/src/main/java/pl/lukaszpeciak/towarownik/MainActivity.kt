@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -2246,10 +2247,48 @@ private fun ManualSearchResults(
                                 product = enrichment.product,
                                 modifier = Modifier.size(84.dp),
                             )
-                            Column(
+                            SelectionContainer(
                                 modifier = Modifier.weight(1f),
+                            ) {
+                                Column(
+                                    verticalArrangement =
+                                        Arrangement.spacedBy(4.dp),
+                                ) {
+                                    manualResultDisplayName(item)?.let { name ->
+                                        Text(
+                                            text = name,
+                                            style =
+                                                MaterialTheme.typography.titleMedium,
+                                        )
+                                    }
+                                    Text(
+                                        text = stringResource(
+                                            R.string.product_obik,
+                                            item.obik,
+                                        ),
+                                        style =
+                                            MaterialTheme.typography.bodyMedium,
+                                        color =
+                                            MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        text = stringResource(
+                                            R.string.product_store,
+                                            item.storeNumber,
+                                        ),
+                                        style =
+                                            MaterialTheme.typography.labelMedium,
+                                        color =
+                                            MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        SelectionContainer {
+                            Column(
                                 verticalArrangement =
-                                    Arrangement.spacedBy(4.dp),
+                                    Arrangement.spacedBy(7.dp),
                             ) {
                                 manualResultDisplayName(item)?.let { name ->
                                     Text(
@@ -2280,30 +2319,6 @@ private fun ManualSearchResults(
                                 )
                             }
                         }
-                    } else {
-                        manualResultDisplayName(item)?.let { name ->
-                            Text(
-                                text = name,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        }
-                        Text(
-                            text = stringResource(
-                                R.string.product_obik,
-                                item.obik,
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color =
-                                MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = stringResource(
-                                R.string.product_store,
-                                item.storeNumber,
-                            ),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
                     }
 
                     when (enrichment) {
