@@ -287,6 +287,11 @@ internal class ManualSearchController(
             )
             onState(current)
         }
+
+        val sorted = current.sortVisibleByStock()
+        if (sorted != current) {
+            onState(sorted)
+        }
     }
 
     private fun resolveText(
@@ -305,6 +310,43 @@ internal class ManualSearchController(
         }
     }
 }
+
+private fun ManualSearchUiState.SearchResults.sortVisibleByStock():
+    ManualSearchUiState.SearchResults {
+    if (visibleCount <= 1) return this
+
+    val sortedVisible = items
+        .take(visibleCount)
+        .sortedWith(
+            compareBy<ManualSearchResultItem> {
+                it.stockSortBucket()
+            }.thenByDescending {
+                it.verifiedStockForSort()
+            },
+        )
+    val reordered = sortedVisible + items.drop(visibleCount)
+    return if (reordered == items) this else copy(items = reordered)
+}
+
+private fun ManualSearchResultItem.stockSortBucket(): Int =
+    when (val value = enrichment) {
+        is ManualResultEnrichment.Verified ->
+            when (value.product.stock) {
+                null -> 2
+                0 -> 1
+                else -> 0
+            }
+
+        ManualResultEnrichment.Unavailable -> 3
+        ManualResultEnrichment.Pending,
+        ManualResultEnrichment.Loading -> 4
+    }
+
+private fun ManualSearchResultItem.verifiedStockForSort(): Int =
+    (enrichment as? ManualResultEnrichment.Verified)
+        ?.product
+        ?.stock
+        ?: 0
 
 internal fun manualResultDisplayName(
     item: ManualSearchResultItem,
