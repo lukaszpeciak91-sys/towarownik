@@ -359,3 +359,13 @@ These decisions describe the broader intended product behavior. The currently im
 - Render the count only as an OBI-reported search-result count. UI wording must not imply store stock, availability, completeness, or that all reported results were loaded.
 - “Zobacz więcej (N)” opens the existing manual OBI search with the exact persisted query and store and automatically starts the existing `ManualSearchController` path. A separate manual-search store context prevents a historical action from mutating the conversation's selected store; normal top-bar manual search still starts from the conversation store.
 - Manual search remains capped at 25 parsed candidates and existing five-item reveal/enrichment. No OBI pagination, advisor protocol/version change, Worker validation change, prompt/orchestration change, productRef change, or manual-screen redesign is introduced.
+
+
+## Trusted OBI primary product thumbnails v0.1
+
+- Verified Android product presentation may carry one nullable `primaryImageUrl`; it remains separate from model/tool/productRef contracts.
+- Extract only the primary structured product image from the existing product page response. Accept only HTTPS URLs on the confirmed `bilder.obi.pl` host; malformed, missing, non-HTTPS, or untrusted URLs fail soft to null.
+- Do not parse search-result thumbnails, galleries, labels, banners, recommendations, or energy-label artwork. Manual search gets the image only after the existing exact-verification enrichment.
+- Persist the image with assistant product snapshots in Room v6 via nullable `message_products.imageUrl`; v5→v6 leaves historical rows null.
+- Use Coil 3.6.3 Compose + OkHttp for asynchronous cached network presentation. Image loading errors stay UI-local and never become product/search failures.
+- Preserve advisor prompts/orchestration, Worker protocol, productRefs, five-product advisor bound, manual 25-candidate/five-at-a-time behavior, and PR #51 search-more semantics.
