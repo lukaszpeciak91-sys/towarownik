@@ -221,30 +221,6 @@ const UNKNOWN_STOCK_PRODUCT = product(
   [],
 );
 
-const KIT_PRODUCTS = [
-  product(
-    "7200001",
-    "Mock silikon sanitarny",
-    10,
-    29.99,
-    [["Zastosowanie", "uszczelnianie sanitarne"]],
-  ),
-  product(
-    "7200002",
-    "Mock wyciskacz do kartuszy",
-    6,
-    24.99,
-    [["Typ", "ręczny"]],
-  ),
-  product(
-    "7200003",
-    "Mock narzędzie do wygładzania silikonu",
-    4,
-    14.99,
-    [["Typ", "zestaw profili"]],
-  ),
-];
-
 export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
   {
     id: "A",
@@ -1133,28 +1109,6 @@ function isBlackCableTieQuery(query: string): boolean {
   );
 }
 
-function isBroadBlackCableTieQuery(query: string): boolean {
-  const normalized = normalizeQuery(query);
-  const hasSpecificDimension =
-    /\b\d+(?:[,.]\d+)?\s*(?:mm|cm|m)\b/.test(normalized) ||
-    /\b\d+(?:[,.]\d+)?\s*[x×]\s*\d+(?:[,.]\d+)?\b/.test(
-      normalized,
-    );
-  const hasSpecificApplication =
-    /\b(wewn\w*|srod\w*|zewn\w*|uv)\b/.test(normalized);
-  const hasLoadOrBundleQualifier =
-    /\b(srednic\w*|obciaz\w*|nosn\w*|udzwig\w*|wiaz\w*)\b/.test(
-      normalized,
-    );
-
-  return (
-    isBlackCableTieQuery(query) &&
-    !hasSpecificDimension &&
-    !hasSpecificApplication &&
-    !hasLoadOrBundleQualifier
-  );
-}
-
 function isIndoorBlackCableTieQuery(query: string): boolean {
   const normalized = normalizeQuery(query);
   return (
@@ -1188,37 +1142,6 @@ function hasExactObik(
   return new RegExp(
     `(^|\\D)${obik}(\\D|$)`,
   ).test(query);
-}
-
-function isSanitarySiliconeQuery(
-  normalized: string,
-): boolean {
-  return (
-    /\bsilikon\w*\b/.test(normalized) &&
-    /\b(sanit\w*|umywal\w*|uszczeln\w*)\b/.test(
-      normalized,
-    )
-  );
-}
-
-function isCartridgeGunQuery(
-  normalized: string,
-): boolean {
-  return (
-    /\b(pistolet\w*|wycisk\w*)\b/.test(normalized) &&
-    /\b(kartusz\w*|silikon\w*)\b/.test(normalized)
-  );
-}
-
-function isSiliconeFinishingToolQuery(
-  normalized: string,
-): boolean {
-  return (
-    /\b(gladz\w*|profil\w*|narzedz\w*)\b/.test(
-      normalized,
-    ) &&
-    /\bsilikon\w*\b/.test(normalized)
-  );
 }
 
 function verifiedQuery(
