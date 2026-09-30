@@ -220,9 +220,53 @@ internal enum class AdvisorProxyFailureKind {
     PROTOCOL,
 }
 
+internal data class AdvisorFailureDiagnostic(
+    val kind: AdvisorProxyFailureKind,
+    val httpStatus: Int? = null,
+    val proxyErrorCode: String? = null,
+    val endpoint: String? = null,
+) {
+    fun userCode(): String? =
+        listOfNotNull(
+            httpStatus?.toString(),
+            proxyErrorCode,
+        ).takeIf { it.isNotEmpty() }
+            ?.joinToString("/")
+
+    fun reportValue(): String =
+        buildList {
+            add("kind=${kind.name}")
+            httpStatus?.let { add("http=$it") }
+            proxyErrorCode?.let { add("proxy=$it") }
+            endpoint?.let { add("endpoint=$it") }
+        }.joinToString(" ")
+}
+
 internal sealed interface AdvisorProxyCallResult {
     data class Success(val result: AdvisorProxyResult) : AdvisorProxyCallResult
-    data class Failure(val kind: AdvisorProxyFailureKind) : AdvisorProxyCallResult
+
+    data class Failure(
+        val kind: AdvisorProxyFailureKind,
+        val httpStatus: Int? = null,
+        val proxyErrorCode: String? = null,
+        val endpoint: String? = null,
+    ) : AdvisorProxyCallResult {
+        fun diagnosticOrNull(): AdvisorFailureDiagnostic? =
+            if (
+                httpStatus == null &&
+                proxyErrorCode == null &&
+                endpoint == null
+            ) {
+                null
+            } else {
+                AdvisorFailureDiagnostic(
+                    kind = kind,
+                    httpStatus = httpStatus,
+                    proxyErrorCode = proxyErrorCode,
+                    endpoint = endpoint,
+                )
+            }
+    }
 }
 
 internal sealed interface AdvisorToolExecutionResult {
