@@ -359,3 +359,13 @@ These decisions describe the broader intended product behavior. The currently im
 - Render the count only as an OBI-reported search-result count. UI wording must not imply store stock, availability, completeness, or that all reported results were loaded.
 - “Zobacz więcej (N)” opens the existing manual OBI search with the exact persisted query and store and automatically starts the existing `ManualSearchController` path. A separate manual-search store context prevents a historical action from mutating the conversation's selected store; normal top-bar manual search still starts from the conversation store.
 - Manual search remains capped at 25 parsed candidates and existing five-item reveal/enrichment. No OBI pagination, advisor protocol/version change, Worker validation change, prompt/orchestration change, productRef change, or manual-screen redesign is introduced.
+
+
+## Trusted OBI primary thumbnails v0.1
+
+- Keep product imagery strictly Android-local presentation metadata. Do not add image URLs to `AdvisorVerifiedProduct`, Worker continuations, productRefs, or prompts/model context.
+- Use the already-fetched product page only. Primary image extraction reads the first structured Product JSON-LD `image` value and fails soft when absent or malformed; do not add an image-specific OBI request or parse search-result thumbnails.
+- Trust only HTTPS URLs on the confirmed product-image host `bilder.obi.pl`. Keep only one primary image, not the gallery. Unrelated page images such as energy labels, banners, recommendations, and heyOBI assets are out of scope.
+- Persist the local image URL with verified assistant product snapshots. Room v5→v6 adds nullable `message_products.imageUrl`; historical rows remain valid with NULL.
+- Reuse the same exact lookup/enrichment for manual-search thumbnails. Preserve the 25-candidate cap, five-at-a-time reveal, search-more action behavior, advisor five-product limit, orchestration, protocol, and OBI search/parser boundaries.
+- Render thumbnails with standard Coil 3 Compose + OkHttp networking, bounded `ContentScale.Fit`, and fail-soft presentation-only error handling.

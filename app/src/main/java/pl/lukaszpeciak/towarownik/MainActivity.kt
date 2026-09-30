@@ -2234,31 +2234,79 @@ private fun ManualSearchResults(
                     ),
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    manualResultDisplayName(item)?.let { name ->
+                    val enrichment = item.enrichment
+                    if (enrichment is ManualResultEnrichment.Verified) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement =
+                                Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            VerifiedProductThumbnail(
+                                product = enrichment.product,
+                                modifier = Modifier.size(84.dp),
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement =
+                                    Arrangement.spacedBy(4.dp),
+                            ) {
+                                manualResultDisplayName(item)?.let { name ->
+                                    Text(
+                                        text = name,
+                                        style =
+                                            MaterialTheme.typography.titleMedium,
+                                    )
+                                }
+                                Text(
+                                    text = stringResource(
+                                        R.string.product_obik,
+                                        item.obik,
+                                    ),
+                                    style =
+                                        MaterialTheme.typography.bodyMedium,
+                                    color =
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = stringResource(
+                                        R.string.product_store,
+                                        item.storeNumber,
+                                    ),
+                                    style =
+                                        MaterialTheme.typography.labelMedium,
+                                    color =
+                                        MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    } else {
+                        manualResultDisplayName(item)?.let { name ->
+                            Text(
+                                text = name,
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
                         Text(
-                            text = name,
-                            style = MaterialTheme.typography.titleMedium,
+                            text = stringResource(
+                                R.string.product_obik,
+                                item.obik,
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color =
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.product_store,
+                                item.storeNumber,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
                         )
                     }
-                    Text(
-                        text = stringResource(
-                            R.string.product_obik,
-                            item.obik,
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color =
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = stringResource(
-                            R.string.product_store,
-                            item.storeNumber,
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
 
-                    when (val enrichment = item.enrichment) {
+                    when (enrichment) {
                         ManualResultEnrichment.Pending,
                         ManualResultEnrichment.Loading -> {
                             Row(

@@ -18,6 +18,8 @@ class ManualSearchStateSaverTest {
                 grossPrice = BigDecimal("29.99"),
                 stock = 3,
                 productUrl = "https://www.obi.pl/p/1234567/trusted",
+                primaryImageUrl =
+                    "https://bilder.obi.pl/fixture-direct/pr08A/image.jpeg",
                 verifiedAt = 1_700_000_000_000L,
                 storeNumber = "074",
             ),
@@ -40,6 +42,10 @@ class ManualSearchStateSaverTest {
         assertEquals(
             1_700_000_000_000L,
             restored.item.verifiedAt,
+        )
+        assertEquals(
+            "https://bilder.obi.pl/fixture-direct/pr08A/image.jpeg",
+            restored.item.primaryImageUrl,
         )
     }
 
@@ -91,6 +97,49 @@ class ManualSearchStateSaverTest {
         assertEquals("074", restored.item.storeNumber)
         assertNull(restored.item.stock)
         assertNull(restored.item.grossPrice)
+    }
+
+    @Test
+    fun `verified search result image survives save and restore`() {
+        val imageUrl =
+            "https://bilder.obi.pl/fixture-result/pr08A/image.jpeg"
+        val state = ManualSearchUiState.SearchResults(
+            items = listOf(
+                ManualSearchResultItem(
+                    obik = "1234567",
+                    name = "Discovery name",
+                    storeNumber = "074",
+                    enrichment = ManualResultEnrichment.Verified(
+                        VerifiedProductUiModel(
+                            name = "Verified product",
+                            obik = "1234567",
+                            grossPrice = BigDecimal("12.99"),
+                            stock = 5,
+                            productUrl =
+                                "https://www.obi.pl/p/1234567/trusted",
+                            storeNumber = "074",
+                            primaryImageUrl = imageUrl,
+                        ),
+                    ),
+                ),
+            ),
+            reportedTotalCount = 27,
+            visibleCount = 1,
+        )
+
+        val restored = decodeManualSearchState(
+            encodeManualSearchState(state),
+        ) as ManualSearchUiState.SearchResults
+
+        val product = (
+            restored.items.single().enrichment as
+                ManualResultEnrichment.Verified
+            ).product
+        assertEquals(imageUrl, product.primaryImageUrl)
+        assertEquals("Verified product", product.name)
+        assertEquals(BigDecimal("12.99"), product.grossPrice)
+        assertEquals(5, product.stock)
+        assertEquals("074", product.storeNumber)
     }
 
     @Test
@@ -152,5 +201,6 @@ class ManualSearchStateSaverTest {
             "https://www.obi.pl/p/2222222/trusted",
             restored.item.productUrl,
         )
+        assertNull(restored.item.primaryImageUrl)
     }
 }

@@ -386,5 +386,6 @@ internal fun LocalProduct.toVerifiedProductUiModel(): VerifiedProductUiModel =
         grossPrice = grossPrice,
         stock = stock,
         productUrl = productUrl,
+        primaryImageUrl = primaryImageUrl,
         storeNumber = storeNumber,
     )

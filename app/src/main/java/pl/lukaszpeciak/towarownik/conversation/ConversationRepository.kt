@@ -331,6 +331,7 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 stock = product.stock,
                                 grossPrice = product.grossPrice?.let(::BigDecimal),
                                 productUrl = product.productUrl,
+                                primaryImageUrl = product.imageUrl,
                                 verifiedAt = product.verifiedAt,
                                 storeNumber = product.storeNumber,
                             )

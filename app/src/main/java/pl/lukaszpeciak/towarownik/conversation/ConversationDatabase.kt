@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageSourceEntity::class,
         MessageSearchActionEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 internal abstract class ConversationDatabase : RoomDatabase() {
@@ -37,6 +37,7 @@ internal abstract class ConversationDatabase : RoomDatabase() {
                         MIGRATION_2_3,
                         MIGRATION_3_4,
                         MIGRATION_4_5,
+                        MIGRATION_5_6,
                     )
                     .build()
                     .also { database ->
@@ -138,6 +139,15 @@ internal val MIGRATION_4_5 = object : Migration(4, 5) {
             CREATE INDEX IF NOT EXISTS `index_message_search_actions_messageId`
             ON `message_search_actions` (`messageId`)
             """.trimIndent(),
+        )
+    }
+}
+
+
+internal val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE message_products ADD COLUMN imageUrl TEXT",
         )
     }
 }
