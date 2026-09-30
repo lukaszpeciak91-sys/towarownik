@@ -199,6 +199,55 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `advisor search actions persist reload and cascade with conversation deletion`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Pokaż czarne trytytki",
+            createdAt = 100L,
+            storeNumber = "074",
+        )
+        val actions = listOf(
+            PersistedSearchAction(
+                query = "czarne trytytki",
+                storeNumber = "074",
+                reportedTotalCount = 27,
+            ),
+            PersistedSearchAction(
+                query = "opaski kablowe UV",
+                storeNumber = "075",
+                reportedTotalCount = 14,
+            ),
+        )
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Znalazłam kilka wariantów.",
+            finalResponseId = "resp_search_actions",
+            createdAt = 200L,
+            searchActions = actions,
+        )
+
+        database.close()
+        openDatabase()
+
+        val restored = requireNotNull(
+            repository.load(started.conversationId),
+        )
+        assertEquals(
+            actions,
+            restored.messages.last().searchActions,
+        )
+        assertEquals(
+            2,
+            messageSearchActionCount(started.conversationId),
+        )
+
+        assertTrue(
+            repository.deleteConversation(started.conversationId),
+        )
+        assertEquals(0, allMessageSearchActionCount())
+    }
+
+    @Test
     fun `web source model accepts only bounded https URLs`() {
         assertEquals(
             PersistedWebSource(
@@ -928,6 +977,34 @@ class ConversationRepositoryTest {
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
     )
+
+    private fun allMessageSearchActionCount(): Int {
+        val cursor = database.openHelper.readableDatabase.query(
+            "SELECT COUNT(*) FROM message_search_actions",
+        )
+        return cursor.use {
+            check(it.moveToFirst())
+            it.getInt(0)
+        }
+    }
+
+    private fun messageSearchActionCount(
+        conversationId: Long,
+    ): Int {
+        val cursor = database.openHelper.readableDatabase.query(
+            """
+            SELECT COUNT(*) FROM message_search_actions
+            WHERE messageId IN (
+                SELECT id FROM messages WHERE conversationId = ?
+            )
+            """.trimIndent(),
+            arrayOf(conversationId),
+        )
+        return cursor.use {
+            check(it.moveToFirst())
+            it.getInt(0)
+        }
+    }
 
     private fun allMessageSourceCount(): Int {
         val cursor = database.openHelper.readableDatabase.query(
