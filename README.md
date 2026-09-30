@@ -126,6 +126,14 @@ Bounds intentionally preserve the existing 16 KiB continuation envelope for up t
 
 Stock and price remain authoritative only from the requested selected store's `product.store.articleData.stock` and `product.store.articleData.pricing.grossPrice`. Rich descriptive/specification facts are product-level model context. They are not persisted into message-product snapshots, do not change visible verified cards, and do not enter problem reports. Product URL, verification timestamp, EAN, raw HTML, raw Nuxt, cookies, and diagnostics remain excluded from OpenAI tool results.
 
+## Trusted OBI product thumbnails
+
+Exact product parsing now derives at most one Android-local primary product image from structured Product JSON-LD on the same OBI product page already fetched for identity, stock, price, and product facts. Only HTTPS URLs on the confirmed OBI image host `bilder.obi.pl` are accepted; malformed, missing, non-HTTPS, or untrusted-host values fail soft to null. Only the first structured product image is retained, so galleries, labels, banners, recommendations, and heyOBI graphics are not exposed as product thumbnails.
+
+The trusted image URL is presentation metadata only. It flows `LocalProduct → VerifiedProductSnapshot → VerifiedProductUiModel`, is persisted with assistant cards in Room v6, and is reused by manual-search exact enrichment. It is not sent to OpenAI, the Worker continuation payload, productRefs, or model context, and it never causes an additional OBI request.
+
+Compose renders a compact bounded `ContentScale.Fit` packshot using Coil 3.x with the OkHttp network module. Image loading and caching are owned by Coil; a load failure removes only the thumbnail surface and never changes product/advisor/manual-search state. Manual search keeps the existing 25-candidate cap, five-at-a-time reveal/enrichment, and search-more behavior.
+
 ## Signed Google Play AAB
 
 A signed release bundle is built only by the manual GitHub Actions workflow **Build signed Play AAB**. Configure these repository Actions secrets first:
@@ -158,16 +166,16 @@ The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-n
 
 ## Local conversation persistence
 
-Room schema v5 stores local conversation metadata, rendered USER/ASSISTANT messages, store-aware verified product snapshots, normalized web sources, and Android-local advisor search actions attached to ASSISTANT messages:
+Room schema v6 stores local conversation metadata, rendered USER/ASSISTANT messages, store-aware verified product snapshots, normalized web sources, and Android-local advisor search actions attached to ASSISTANT messages:
 
 - conversation: id, title, createdAt, updatedAt, nullable lastResponseId, draft, storeNumber;
 - message: id, conversationId, role, text, createdAt;
-- message product: messageId, position, storeNumber, OBIK, name, nullable stock, lossless decimal price text, trusted productUrl, verifiedAt;
+- message product: messageId, position, storeNumber, OBIK, name, nullable stock, lossless decimal price text, trusted productUrl, nullable trusted primary imageUrl, verifiedAt;
 - message source: messageId, position, bounded title, normalized HTTPS URL;
 - message search action: messageId, position, exact advisor query, storeNumber, reportedTotalCount;
 - message rows cascade with conversation deletion; products, sources, and search actions cascade with their message.
 
-Schema v1 upgrades through explicit 1→2, 2→3, 3→4, and 4→5 migrations. The 2→3 step adds `Conversation.storeNumber` and `message_products.storeNumber` with deterministic default `075`; 3→4 adds `message_sources`; 4→5 adds `message_search_actions`, so historical messages migrate with zero search actions. There is no destructive fallback. Search actions are local UI metadata only and are never sent to the Worker or encoded into assistant text.
+Schema v1 upgrades through explicit 1→2, 2→3, 3→4, 4→5, and 5→6 migrations. The 2→3 step adds `Conversation.storeNumber` and `message_products.storeNumber` with deterministic default `075`; 3→4 adds `message_sources`; 4→5 adds `message_search_actions`; 5→6 adds nullable `message_products.imageUrl`, so historical product cards migrate with no thumbnail. There is no destructive fallback. Search actions are local UI metadata only and are never sent to the Worker or encoded into assistant text.
 
 No API keys, app bearer tokens, OBI HTML/cookies, parser internals, raw OpenAI responses, or reasoning data are persisted.
 
