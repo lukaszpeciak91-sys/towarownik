@@ -67,6 +67,8 @@ class ChatShellModelsTest {
             grossPrice = BigDecimal("12.30"),
             stock = 0,
             productUrl = "https://www.obi.pl/p/1234567/trusted-exact",
+            primaryImageUrl =
+                "https://bilder.obi.pl/example/pr08A/image.jpeg",
             verifiedAt = 1_234_567L,
         )
         val completed = AdvisorCaseUiState(
@@ -88,6 +90,10 @@ class ChatShellModelsTest {
         assertEquals(
             "https://www.obi.pl/p/1234567/trusted-exact",
             verifiedProductOpenUrl(restored.messages.single().products.single()),
+        )
+        assertEquals(
+            "https://bilder.obi.pl/example/pr08A/image.jpeg",
+            restored.messages.single().products.single().primaryImageUrl,
         )
     }
 
