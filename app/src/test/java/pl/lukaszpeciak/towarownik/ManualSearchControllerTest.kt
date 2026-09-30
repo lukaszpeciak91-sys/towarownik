@@ -155,6 +155,158 @@ class ManualSearchControllerTest {
     }
 
     @Test
+    fun `visible batch sorts positive stock descending then zero unknown and unavailable`() = runBlocking {
+        val candidates = (1..5).map { index ->
+            ProductSearchCandidate(
+                obik = (1_000_000 + index).toString(),
+                name = "Synthetic $index",
+            )
+        }
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                when (obik) {
+                    "1000001" -> ProductLookupResult.Found(
+                        product(
+                            obik = obik,
+                            stock = 0,
+                            storeNumber = storeNumber,
+                        ),
+                    )
+                    "1000002",
+                    "1000003",
+                    -> ProductLookupResult.Found(
+                        product(
+                            obik = obik,
+                            stock = 7,
+                            storeNumber = storeNumber,
+                        ),
+                    )
+                    "1000004" -> ProductLookupResult.Found(
+                        product(
+                            obik = obik,
+                            stock = null,
+                            storeNumber = storeNumber,
+                        ),
+                    )
+                    else -> ProductLookupResult.Unavailable(
+                        failure = pl.lukaszpeciak.towarownik.product
+                            .ProductLookupFailure.NETWORK,
+                        reason = "synthetic",
+                    )
+                }
+            },
+            searchProducts = {
+                ManualProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = candidates.size,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val states = mutableListOf<ManualSearchUiState>()
+
+        controller.submit("synthetic", "075") { states += it }
+
+        val resultStates =
+            states.filterIsInstance<ManualSearchUiState.SearchResults>()
+        val final = resultStates.last()
+        assertEquals(
+            listOf(
+                "1000002",
+                "1000003",
+                "1000001",
+                "1000004",
+                "1000005",
+            ),
+            final.visibleItems.map { it.obik },
+        )
+        assertEquals(
+            candidates.map { it.obik },
+            resultStates[resultStates.lastIndex - 1]
+                .visibleItems
+                .map { it.obik },
+        )
+    }
+
+    @Test
+    fun `show more re-sorts all visible verified results and leaves hidden candidates untouched`() = runBlocking {
+        val candidates = (1..12).map { index ->
+            ProductSearchCandidate(
+                obik = (1_000_000 + index).toString(),
+                name = "Synthetic $index",
+            )
+        }
+        val stockByObik = mapOf(
+            "1000001" to 5,
+            "1000002" to 4,
+            "1000003" to 3,
+            "1000004" to 2,
+            "1000005" to 1,
+            "1000006" to 10,
+            "1000007" to 8,
+            "1000008" to 0,
+            "1000009" to null,
+            "1000010" to 6,
+        )
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        stock = stockByObik[obik],
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+            searchProducts = {
+                ManualProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = candidates.size,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val initialStates = mutableListOf<ManualSearchUiState>()
+        controller.submit("synthetic", "075") {
+            initialStates += it
+        }
+        val initial =
+            initialStates.last() as ManualSearchUiState.SearchResults
+
+        val moreStates = mutableListOf<ManualSearchUiState>()
+        controller.showMore(initial, "075") {
+            moreStates += it
+        }
+
+        val expanded =
+            moreStates.last() as ManualSearchUiState.SearchResults
+        assertEquals(
+            listOf(
+                "1000006",
+                "1000007",
+                "1000010",
+                "1000001",
+                "1000002",
+                "1000003",
+                "1000004",
+                "1000005",
+                "1000008",
+                "1000009",
+            ),
+            expanded.visibleItems.map { it.obik },
+        )
+        assertEquals(
+            listOf("1000011", "1000012"),
+            expanded.items.drop(expanded.visibleCount).map { it.obik },
+        )
+        assertTrue(
+            expanded.items.drop(expanded.visibleCount).all {
+                it.enrichment is ManualResultEnrichment.Pending
+            },
+        )
+    }
+
+    @Test
     fun `show more is blocked while visible enrichment is unfinished`() = runBlocking {
         var lookups = 0
         val controller = ManualSearchController(
@@ -296,15 +448,19 @@ class ManualSearchControllerTest {
             states.last() as ManualSearchUiState.SearchResults
         assertEquals(5, results.items.size)
         assertTrue(
-            results.items[2].enrichment is
-                ManualResultEnrichment.Unavailable,
+            results.items.single { it.obik == "1000003" }
+                .enrichment is ManualResultEnrichment.Unavailable,
         )
         assertTrue(
-            results.items.filterIndexed { index, _ -> index != 2 }
+            results.items.filter { it.obik != "1000003" }
                 .all {
                     it.enrichment is
                         ManualResultEnrichment.Verified
                 },
+        )
+        assertEquals(
+            "1000003",
+            results.visibleItems.last().obik,
         )
     }
 
