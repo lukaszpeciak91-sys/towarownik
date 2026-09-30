@@ -22,6 +22,7 @@ import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
 
 internal const val REPORT_RECIPIENT_EMAIL = "napahustudios@gmail.com"
 internal const val REPORT_DESCRIPTION_MAX_CHARS = 2_000
+internal const val REPORT_ADVISOR_FAILURE_DIAGNOSTIC_MAX_CHARS = 256
 internal const val REPORT_CACHE_DIRECTORY = "reports"
 internal const val REPORT_FILE_PROVIDER_AUTHORITY_SUFFIX = ".fileprovider"
 internal const val REPORT_INCLUDE_CONVERSATION_DEFAULT = false
@@ -95,10 +96,16 @@ internal data class ProblemReportRequest(
     val includeObiDiagnostics: Boolean,
     val conversationId: Long? = null,
     val reportedMessageId: Long? = null,
+    val advisorFailureDiagnostic: String? = null,
 ) {
     init {
         require(category.reportType == type)
         require(description.length <= REPORT_DESCRIPTION_MAX_CHARS)
+        require(
+            advisorFailureDiagnostic == null ||
+                advisorFailureDiagnostic.length <=
+                    REPORT_ADVISOR_FAILURE_DIAGNOSTIC_MAX_CHARS,
+        )
     }
 }
 
@@ -276,6 +283,9 @@ internal object ProblemReportFormatter {
         appendLine("Android: ${metadata.androidVersion} API ${metadata.apiLevel}")
         appendLine("Device: ${metadata.manufacturer} ${metadata.deviceModel}")
         appendLine("UI language: ${metadata.uiLanguageTag}")
+        request.advisorFailureDiagnostic?.let {
+            appendLine("Advisor failure: $it")
+        }
 
         if (request.type == ProblemReportType.ASSISTANT_RESPONSE) {
             appendLine("Conversation ID: ${evidence.conversationId}")
