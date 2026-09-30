@@ -74,6 +74,7 @@ class ContractClassificationTest(unittest.TestCase):
             "response": {
                 "jsonShape": {"type": "object"},
                 "storeNumbers": stores,
+                "availabilityKeyHits": ["stock", "articleNumber"],
             },
             "path": path,
         }
@@ -95,6 +96,27 @@ class ContractClassificationTest(unittest.TestCase):
 
         self.assertEqual("B", result["type"])
 
+    def test_store_directory_alone_is_not_availability_contract(self):
+        result = probe.classify_contract(
+            [
+                {
+                    "id": 1,
+                    "stage": "availability_open:3496072",
+                    "relevanceScore": 6,
+                    "query": [],
+                    "path": "/api/disc/store/locator/country/pl",
+                    "response": {
+                        "jsonShape": {"type": "object"},
+                        "storeNumbers": ["001", "002", "003"],
+                        "availabilityKeyHits": [],
+                    },
+                },
+            ],
+        )
+
+        self.assertEqual("C", result["type"])
+        self.assertEqual(0, result["candidateCount"])
+
     def test_does_not_invent_contract_without_json_evidence(self):
         result = probe.classify_contract(
             [
@@ -108,6 +130,7 @@ class ContractClassificationTest(unittest.TestCase):
                     "response": {
                         "jsonShape": None,
                         "storeNumbers": [],
+                        "availabilityKeyHits": [],
                     },
                 },
             ],
