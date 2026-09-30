@@ -2317,6 +2317,27 @@ test('D accepted complements contract — "Tak, dobierz też grunt, wałek i fol
   );
 });
 
+test("obsolete complete-kit/job wording cannot independently trigger complement OBI lookup", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.doesNotMatch(
+    instructions,
+    /complete kit or everything needed for the job/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /Search those complementary categories only when the USER asks for them or when the original request clearly asks/i,
+  );
+  assert.match(
+    instructions,
+    /Search complements when the USER asks for them or when an explicit complete verified store-kit request requires them/i,
+  );
+  assert.match(
+    instructions,
+    /Do not automatically call find_obi_products merely because the required categories can be identified/i,
+  );
+});
+
 test("E zero stock contract suggests current-store alternative without inventing other stores", () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
