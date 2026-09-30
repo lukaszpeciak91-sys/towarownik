@@ -747,7 +747,7 @@ def choose_store(
 
 
 def load_store_directory(context, stores: list[str]) -> dict[str, dict[str, Any]]:
-    response = api_request.get(
+    response = context.request.get(
         DIRECTORY_URL,
         headers={
             "Accept": "application/json,text/plain,*/*",
