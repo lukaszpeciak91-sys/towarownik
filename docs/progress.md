@@ -86,7 +86,7 @@ Implemented direction:
 - Room schema v5 adds `message_search_actions` for exact query/store/reported-count metadata, and the existing manual search can reopen that historical query/store without mutating the conversation store;
 - manual search remains capped at 25 parsed candidates with the existing five-at-a-time enrichment/show-more behavior; no OBI pagination or Worker/protocol change is added.
 - exact verified products now carry one nullable trusted `bilder.obi.pl` primary-image URL for Android presentation only; assistant cards persist it in Room v6 and enriched manual rows reuse the same exact lookup;
-- Coil 3.6.3 renders/caches thumbnails asynchronously with fail-soft UI-only errors; no image URL enters OpenAI, productRefs, Worker protocol, search-result parsing, or gallery logic.
+- Coil 3.5.0 renders/caches thumbnails asynchronously with fail-soft UI-only errors; no image URL enters OpenAI, productRefs, Worker protocol, search-result parsing, or gallery logic.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
