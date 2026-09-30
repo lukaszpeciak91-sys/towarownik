@@ -12,6 +12,7 @@ import pl.lukaszpeciak.towarownik.product.LocalProduct
 import pl.lukaszpeciak.towarownik.product.ManualProductSearchResult
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
+import pl.lukaszpeciak.towarownik.product.toVerifiedProductSnapshot
 
 class ManualSearchControllerTest {
     @Test
@@ -418,6 +419,67 @@ class ManualSearchControllerTest {
     }
 
     @Test
+    fun `LocalProduct snapshot and UI model preserve primary image url`() {
+        val imageUrl =
+            "https://bilder.obi.pl/example/pr08A/image.jpeg"
+        val local = product(
+            obik = "1234567",
+            primaryImageUrl = imageUrl,
+        )
+
+        val snapshot = local.toVerifiedProductSnapshot(
+            verifiedAt = 123L,
+        )
+        val ui = snapshot.toVerifiedProductUiModel()
+
+        assertEquals(imageUrl, local.primaryImageUrl)
+        assertEquals(imageUrl, snapshot.primaryImageUrl)
+        assertEquals(imageUrl, ui.primaryImageUrl)
+    }
+
+    @Test
+    fun `manual exact enrichment carries primary image url`() = runBlocking {
+        val imageUrl =
+            "https://bilder.obi.pl/example/pr08A/image.jpeg"
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                        primaryImageUrl = imageUrl,
+                    ),
+                )
+            },
+            searchProducts = {
+                ManualProductSearchResult.Candidates(
+                    items = listOf(
+                        ProductSearchCandidate(
+                            "1234567",
+                            "Candidate",
+                        ),
+                    ),
+                    reportedTotalCount = 1,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val states = mutableListOf<ManualSearchUiState>()
+
+        controller.submit("candidate", "075") {
+            states += it
+        }
+
+        val results =
+            states.last() as ManualSearchUiState.SearchResults
+        val verified = (
+            results.items.single().enrichment as
+                ManualResultEnrichment.Verified
+            ).product
+        assertEquals(imageUrl, verified.primaryImageUrl)
+    }
+
+    @Test
     fun `single exact EAN candidate keeps existing verification semantics`() = runBlocking {
         val controller = ManualSearchController(
             lookupObik = { obik, _ ->
@@ -590,6 +652,7 @@ class ManualSearchControllerTest {
         storeNumber: String = "075",
         stock: Int? = 4,
         grossPrice: BigDecimal? = BigDecimal("19.99"),
+        primaryImageUrl: String? = null,
     ) = LocalProduct(
         obik = obik,
         name = "Exact synthetic product",
@@ -598,6 +661,7 @@ class ManualSearchControllerTest {
         productUrl = productUrl,
         ean = ean,
         storeNumber = storeNumber,
+        primaryImageUrl = primaryImageUrl,
     )
 
     private companion object {
