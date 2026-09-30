@@ -4,11 +4,13 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -18,7 +20,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
@@ -29,6 +36,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import coil3.compose.AsyncImage
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
@@ -39,6 +47,7 @@ internal data class VerifiedProductUiModel(
     val grossPrice: BigDecimal?,
     val stock: Int?,
     val productUrl: String,
+    val primaryImageUrl: String? = null,
     val verifiedAt: Long? = null,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
 )
@@ -51,6 +60,7 @@ internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
         grossPrice = grossPrice,
         stock = stock,
         productUrl = productUrl,
+        primaryImageUrl = primaryImageUrl,
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
     )
@@ -147,6 +157,10 @@ internal fun VerifiedProductCard(
             ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            VerifiedProductThumbnail(
+                imageUrl = product.primaryImageUrl,
+                contentDescription = product.name,
+            )
             Text(
                 text = product.name,
                 style = MaterialTheme.typography.titleMedium,
@@ -218,6 +232,43 @@ internal fun VerifiedProductCard(
                     contentDescription = null,
                 )
             }
+        }
+    }
+}
+
+@Composable
+internal fun VerifiedProductThumbnail(
+    imageUrl: String?,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+) {
+    if (imageUrl == null) return
+
+    var failed by remember(imageUrl) {
+        mutableStateOf(false)
+    }
+    if (failed) return
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(112.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.towarownikColors.surfaceMuted,
+    ) {
+        Box(
+            contentAlignment = androidx.compose.ui.Alignment.Center,
+        ) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = contentDescription,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(104.dp)
+                    .padding(8.dp),
+                contentScale = ContentScale.Fit,
+                onError = { failed = true },
+            )
         }
     }
 }
