@@ -66,7 +66,7 @@ function scriptedDriver(scenario) {
       switch (scenario.id) {
         case "A":
           return answer(
-            "Jaki mniej więcej rozmiar i czy mają być do środka czy na zewnątrz?",
+            "Jakiej długości potrzebuje i do czego będą używane?",
           );
         case "D":
           return answer(
@@ -83,7 +83,7 @@ function scriptedDriver(scenario) {
         case "E":
           return toolRequest([
             {
-              query: "czarne trytytki do wewnątrz",
+              query: "czarne trytytki",
               limit: 3,
             },
           ]);
@@ -117,7 +117,7 @@ function scriptedDriver(scenario) {
           ]);
         case "H":
           return answer(
-            "Niezbędne: silikon sanitarny dobrany do szczeliny oraz czyste i odtłuszczone podłoże. Wyciskacz jest potrzebny do kartusza, jeśli go nie masz; narzędzie do wygładzania to wygodny dodatek, nie warunek wykonania uszczelnienia.",
+            "Do takiej szczeliny użyj silikonu sanitarnego; biały albo bezbarwny dobierz do wykończenia. Powierzchnię najpierw oczyść i odtłuść. Przy kartuszu przyda się wyciskacz, a taśma malarska lub gładzik mogą ułatwić równe wykończenie.",
           );
         case "H_AMBIGUOUS":
           return answer(
@@ -268,25 +268,46 @@ test("clarification-first scenarios fail on any local OBI lookup before clarific
   }
 });
 
-test("scenario A passes one concise clarification with zero OBI calls and zero productRefs", async () => {
+test("scenario A accepts one natural clarification covering two tightly related decision-critical details", async () => {
   const scenario = behaviorScenario("A");
+  let observedRubric = [];
   const result = await runBehaviorTrial(
     scenario,
     1,
     scriptedDriver(scenario),
-    passingSemanticJudge,
+    {
+      async grade({ scenario: gradedScenario, trace }) {
+        observedRubric = gradedScenario.semanticRubric;
+        const text =
+          trace.clarificationOrFinalAnswer?.text ?? "";
+        const usefulClarification =
+          /\?/.test(text) &&
+          /długoś|dlugos/i.test(text) &&
+          /do czego|używane|uzywane/i.test(text);
+        return {
+          pass: usefulClarification,
+          reason: usefulClarification
+            ? "one natural clarification covers related missing details"
+            : "missing useful clarification",
+        };
+      },
+    },
   );
 
   assert.equal(result.status, "PASS");
   assert.equal(result.localToolCallCount, 0);
   assert.equal(result.trace.finalProductRefs.length, 0);
   assert.equal(
-    result.trace.clarificationOrFinalAnswer?.kind,
-    "clarification_candidate",
+    observedRubric.some((line) =>
+      /more than one tightly related decision-critical detail/i.test(line),
+    ),
+    true,
   );
-  assert.match(
-    result.trace.clarificationOrFinalAnswer?.text ?? "",
-    /rozmiar|środ|zewn|zastosowan/i,
+  assert.equal(
+    observedRubric.some((line) =>
+      /do not require one exact parameter/i.test(line),
+    ),
+    true,
   );
 });
 
@@ -479,25 +500,45 @@ test("scenario C accepts a semantic exact-size cable-tie query without literal i
   );
 });
 
-test("scenario H passes essentials-first advice with zero OBI calls and zero productRefs", async () => {
+test("scenario H accepts useful natural job advice without required essential/optional labels", async () => {
   const scenario = behaviorScenario("H");
+  let observedRubric = [];
   const result = await runBehaviorTrial(
     scenario,
     1,
     scriptedDriver(scenario),
-    passingSemanticJudge,
+    {
+      async grade({ scenario: gradedScenario, trace }) {
+        observedRubric = gradedScenario.semanticRubric;
+        const text =
+          trace.clarificationOrFinalAnswer?.text ?? "";
+        const usefulAdvice =
+          /silikon/i.test(text) &&
+          /oczyść|odtłuść|odtlusc/i.test(text);
+        return {
+          pass: usefulAdvice,
+          reason: usefulAdvice
+            ? "useful practical sealing advice"
+            : "advice was not useful for the understood job",
+        };
+      },
+    },
   );
 
   assert.equal(result.status, "PASS");
   assert.equal(result.localToolCallCount, 0);
   assert.equal(result.trace.finalProductRefs.length, 0);
   assert.equal(
-    result.trace.clarificationOrFinalAnswer?.kind,
-    "final_answer",
+    observedRubric.some((line) =>
+      /no exact item list, labels, or answer structure is required/i.test(line),
+    ),
+    true,
   );
-  assert.match(
-    result.trace.clarificationOrFinalAnswer?.text ?? "",
-    /niezbęd|silikon|opcjonal|dodatek|wyciskacz/i,
+  assert.equal(
+    observedRubric.some((line) =>
+      /distinguishes essential needs from optional convenience items/i.test(line),
+    ),
+    false,
   );
 });
 
@@ -552,7 +593,7 @@ test("scenario H fails if advice is automatically converted into a verified shop
   assert.equal(semanticCalls, 0);
 });
 
-test("ambiguous washbasin sealing expects clarification before local lookup", async () => {
+test("H_AMBIGUOUS accepts a concise clarification before local lookup", async () => {
   const scenario = behaviorScenario("H_AMBIGUOUS");
   const result = await runBehaviorTrial(
     scenario,
@@ -571,6 +612,53 @@ test("ambiguous washbasin sealing expects clarification before local lookup", as
   assert.match(
     result.trace.clarificationOrFinalAnswer?.text ?? "",
     /ścian|blat|odpływ|syfon/i,
+  );
+});
+
+test("H_AMBIGUOUS accepts a clearly conditional answer that keeps materially different interpretations explicit", async () => {
+  const scenario = behaviorScenario("H_AMBIGUOUS");
+  let observedRubric = [];
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return answer(
+          "Jeśli chodzi o szczelinę między umywalką a ścianą lub blatem, stosuje się silikon sanitarny po oczyszczeniu podłoża. Jeśli natomiast cieknie przy odpływie albo syfonie, to jest inny problem i trzeba najpierw ustalić miejsce przecieku.",
+        );
+      },
+      async continueTurn() {
+        throw new Error("unexpected continuation");
+      },
+    },
+    {
+      async grade({ scenario: gradedScenario, trace }) {
+        observedRubric = gradedScenario.semanticRubric;
+        const text =
+          trace.clarificationOrFinalAnswer?.text ?? "";
+        const conditional =
+          /jeśli|jesli/i.test(text) &&
+          /ścian|blat/i.test(text) &&
+          /odpływ|odplyw|syfon/i.test(text) &&
+          /inny problem/i.test(text);
+        return {
+          pass: conditional,
+          reason: conditional
+            ? "conditional answer keeps both job interpretations explicit"
+            : "answer silently assumed one interpretation",
+        };
+      },
+    },
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 0);
+  assert.equal(result.trace.finalProductRefs.length, 0);
+  assert.equal(
+    observedRubric.some((line) =>
+      /may either ask a concise clarification.*or give a clearly conditional answer/i.test(line),
+    ),
+    true,
   );
 });
 
@@ -709,6 +797,58 @@ test("scenario E exposes three distinct indoor-compatible cable-tie variants", a
     dimensions.add(dimension.value);
   }
   assert.equal(dimensions.size, 3);
+});
+
+test("scenario E accepts a relevant black-cable-tie query without repeating the indoor constraint", async () => {
+  const scenario = behaviorScenario("E");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "czarne trytytki", limit: 3 },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        const group = mockedResult.results[0];
+        assert.equal(group.status, "verified");
+        return answer(
+          "Znalazłam m.in. kilka czarnych wariantów do zastosowania wewnątrz, różniących się wymiarami.",
+          verifiedRefs(mockedResult),
+        );
+      },
+    },
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 1);
+  assert.equal(
+    /wewn|środ|srod/i.test(
+      result.trace.findObiProductsCalls[0].arguments.queries[0]
+        .query,
+    ),
+    false,
+  );
+  const group =
+    result.trace.mockedToolResults[0].results[0];
+  assert.equal(group.products.length, 3);
+  assert.equal(
+    group.products.every((product) =>
+      product.technicalFacts.some(
+        (fact) =>
+          fact.label === "Zastosowanie" &&
+          fact.value === "wewnątrz",
+      ),
+    ),
+    true,
+  );
 });
 
 test("explicit browse and direct current-store fact scenarios still require local OBI", async () => {
