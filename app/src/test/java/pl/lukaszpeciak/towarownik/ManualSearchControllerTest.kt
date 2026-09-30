@@ -9,6 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.conversation.PersistedSearchAction
 import pl.lukaszpeciak.towarownik.product.LocalProduct
+import pl.lukaszpeciak.towarownik.product.toVerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.ManualProductSearchResult
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
@@ -556,6 +557,64 @@ class ManualSearchControllerTest {
     }
 
     @Test
+    fun `local product snapshot and ui model preserve trusted image url`() {
+        val imageUrl =
+            "https://bilder.obi.pl/fixture-primary/pr08A/image.jpeg"
+        val ui = product(
+            obik = "1234567",
+            primaryImageUrl = imageUrl,
+        )
+            .toVerifiedProductSnapshot(verifiedAt = 123L)
+            .toVerifiedProductUiModel()
+
+        assertEquals(imageUrl, ui.primaryImageUrl)
+        assertEquals(123L, ui.verifiedAt)
+    }
+
+    @Test
+    fun `manual exact enrichment carries trusted image url without extra lookup`() = runBlocking {
+        val imageUrl =
+            "https://bilder.obi.pl/fixture-primary/pr08A/image.jpeg"
+        var lookups = 0
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                lookups += 1
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                        primaryImageUrl = imageUrl,
+                    ),
+                )
+            },
+            searchProducts = {
+                ManualProductSearchResult.Candidates(
+                    items = listOf(
+                        ProductSearchCandidate(
+                            obik = "1234567",
+                            name = "Discovery",
+                        ),
+                    ),
+                    reportedTotalCount = 1,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val states = mutableListOf<ManualSearchUiState>()
+
+        controller.submit("synthetic", "075") { states += it }
+
+        val results =
+            states.last() as ManualSearchUiState.SearchResults
+        val product = (
+            results.items.single().enrichment as
+                ManualResultEnrichment.Verified
+            ).product
+        assertEquals(1, lookups)
+        assertEquals(imageUrl, product.primaryImageUrl)
+    }
+
+    @Test
     fun `stock null zero and positive select distinct localized resources`() {
         assertEquals(
             R.string.product_stock_unknown,
@@ -590,6 +649,7 @@ class ManualSearchControllerTest {
         storeNumber: String = "075",
         stock: Int? = 4,
         grossPrice: BigDecimal? = BigDecimal("19.99"),
+        primaryImageUrl: String? = null,
     ) = LocalProduct(
         obik = obik,
         name = "Exact synthetic product",
@@ -598,6 +658,7 @@ class ManualSearchControllerTest {
         productUrl = productUrl,
         ean = ean,
         storeNumber = storeNumber,
+        primaryImageUrl = primaryImageUrl,
     )
 
     private companion object {
