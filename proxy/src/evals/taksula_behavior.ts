@@ -221,6 +221,30 @@ const UNKNOWN_STOCK_PRODUCT = product(
   [],
 );
 
+const KIT_PRODUCTS = [
+  product(
+    "7200001",
+    "Mock silikon sanitarny",
+    10,
+    29.99,
+    [["Zastosowanie", "uszczelnianie sanitarne"]],
+  ),
+  product(
+    "7200002",
+    "Mock wyciskacz do kartuszy",
+    6,
+    24.99,
+    [["Typ", "ręczny"]],
+  ),
+  product(
+    "7200003",
+    "Mock narzędzie do wygładzania silikonu",
+    4,
+    14.99,
+    [["Typ", "zestaw profili"]],
+  ),
+];
+
 export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
   {
     id: "A",
@@ -1021,6 +1045,14 @@ function mockQueryResult(
   _queryIndex: number,
 ): VerifiedQueryResult {
   switch (scenarioId) {
+    case "A":
+      return isBlackCableTieQuery(query)
+        ? verifiedQuery(
+            query,
+            ZIP_TIES.slice(0, Math.min(limit, ZIP_TIES.length)),
+          )
+        : notFoundQuery(query);
+
     case "B":
       return isBlackCableTieQuery(query)
         ? verifiedQuery(
@@ -1084,9 +1116,30 @@ function mockQueryResult(
           }
         : notFoundQuery(query);
 
-    case "A":
+    case "H": {
+      const normalized = normalizeQuery(query);
+      if (isSanitarySiliconeQuery(normalized)) {
+        return verifiedQuery(
+          query,
+          [KIT_PRODUCTS[0]].slice(0, limit),
+        );
+      }
+      if (isCartridgeGunQuery(normalized)) {
+        return verifiedQuery(
+          query,
+          [KIT_PRODUCTS[1]].slice(0, limit),
+        );
+      }
+      if (isSiliconeFinishingToolQuery(normalized)) {
+        return verifiedQuery(
+          query,
+          [KIT_PRODUCTS[2]].slice(0, limit),
+        );
+      }
+      return notFoundQuery(query);
+    }
+
     case "D":
-    case "H":
     case "H_AMBIGUOUS":
     case "I":
       return notFoundQuery(query);
@@ -1142,6 +1195,37 @@ function hasExactObik(
   return new RegExp(
     `(^|\\D)${obik}(\\D|$)`,
   ).test(query);
+}
+
+function isSanitarySiliconeQuery(
+  normalized: string,
+): boolean {
+  return (
+    /\bsilikon\w*\b/.test(normalized) &&
+    /\b(sanit\w*|umywal\w*|uszczeln\w*)\b/.test(
+      normalized,
+    )
+  );
+}
+
+function isCartridgeGunQuery(
+  normalized: string,
+): boolean {
+  return (
+    /\b(pistolet\w*|wycisk\w*)\b/.test(normalized) &&
+    /\b(kartusz\w*|silikon\w*)\b/.test(normalized)
+  );
+}
+
+function isSiliconeFinishingToolQuery(
+  normalized: string,
+): boolean {
+  return (
+    /\b(gladz\w*|profil\w*|narzedz\w*)\b/.test(
+      normalized,
+    ) &&
+    /\bsilikon\w*\b/.test(normalized)
+  );
 }
 
 function verifiedQuery(
