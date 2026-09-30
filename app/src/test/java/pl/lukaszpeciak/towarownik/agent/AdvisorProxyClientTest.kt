@@ -772,6 +772,27 @@ class AdvisorProxyClientTest {
     }
 
     @Test
+    fun `lowercase unknown proxy error code is not surfaced`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(502)
+                    .setBody("""{"error":"secret_token_abc123"}"""),
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    kind = AdvisorProxyFailureKind.SERVICE,
+                    httpStatus = 502,
+                    proxyErrorCode = null,
+                    endpoint = "start",
+                ),
+                client(server, FAKE_TOKEN).start("test"),
+            )
+        }
+    }
+
+    @Test
     fun `400 proxy contract failure maps to protocol with diagnostic`() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(
