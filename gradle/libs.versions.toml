@@ -13,7 +13,7 @@ room = "2.8.5"
 ksp = "2.3.12"
 androidxTestCore = "1.7.0"
 robolectric = "4.16.1"
-coil = "3.6.3"
+coil = "3.5.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
