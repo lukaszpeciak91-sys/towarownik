@@ -277,6 +277,88 @@ class ConversationMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 5 to 6 preserves historical products and adds nullable image url`() {
+        val context =
+            ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase(DB_V5_NAME)
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(DB_V5_NAME)
+                .callback(
+                    object : SupportSQLiteOpenHelper.Callback(5) {
+                        override fun onCreate(
+                            db: SupportSQLiteDatabase,
+                        ) {
+                            createV2Schema(db)
+                            MIGRATION_2_3.migrate(db)
+                            MIGRATION_3_4.migrate(db)
+                            MIGRATION_4_5.migrate(db)
+                        }
+
+                        override fun onUpgrade(
+                            db: SupportSQLiteDatabase,
+                            oldVersion: Int,
+                            newVersion: Int,
+                        ) = Unit
+                    },
+                )
+                .build(),
+        )
+
+        try {
+            val db = helper.writableDatabase
+            db.execSQL(
+                "INSERT INTO conversations " +
+                    "(id,title,createdAt,updatedAt,lastResponseId,draft,storeNumber) " +
+                    "VALUES (1,'old',1,1,NULL,'','075')",
+            )
+            db.execSQL(
+                "INSERT INTO messages " +
+                    "(id,conversationId,role,text,createdAt) " +
+                    "VALUES (1,1,'ASSISTANT','answer',1)",
+            )
+            db.execSQL(
+                "INSERT INTO message_products " +
+                    "(messageId,position,obik,name,stock,grossPrice," +
+                    "productUrl,verifiedAt,storeNumber) " +
+                    "VALUES (1,0,'3496072','Product',25,'12.99'," +
+                    "'https://www.obi.pl/p/3496072',1,'075')",
+            )
+
+            MIGRATION_5_6.migrate(db)
+
+            assertEquals(
+                "3496072",
+                queryText(
+                    db,
+                    "SELECT obik FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+            assertEquals(
+                "12.99",
+                queryText(
+                    db,
+                    "SELECT grossPrice FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+            assertEquals(
+                true,
+                queryIsNull(
+                    db,
+                    "SELECT imageUrl FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(DB_V5_NAME)
+        }
+    }
+
     private fun createV2Schema(db: SupportSQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE conversations (" +
@@ -301,6 +383,15 @@ class ConversationMigrationTest {
         )
     }
 
+    private fun queryIsNull(
+        db: SupportSQLiteDatabase,
+        sql: String,
+    ): Boolean =
+        db.query(sql).use {
+            check(it.moveToFirst())
+            it.isNull(0)
+        }
+
     private fun queryText(
         db: SupportSQLiteDatabase,
         sql: String,
@@ -314,5 +405,6 @@ class ConversationMigrationTest {
         const val DB_NAME = "conversation-migration-v2-v3-test.db"
         const val DB_V3_NAME = "conversation-migration-v3-v4-test.db"
         const val DB_V4_NAME = "conversation-migration-v4-v5-test.db"
+        const val DB_V5_NAME = "conversation-migration-v5-v6-test.db"
     }
 }
