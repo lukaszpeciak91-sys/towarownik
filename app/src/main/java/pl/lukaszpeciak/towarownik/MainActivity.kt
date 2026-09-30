@@ -78,7 +78,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import java.time.Instant
@@ -1668,7 +1667,7 @@ private fun AdvisorMessageBubble(
         if (!isUser) {
             message.products.forEach { product ->
                 Spacer(modifier = Modifier.height(8.dp))
-                VerifiedProductCard(product)
+                AdvisorVerifiedProductCard(product)
             }
 
             if (message.searchActions.isNotEmpty()) {
@@ -1773,7 +1772,6 @@ private fun AdvisorAnswerText(
                     pushStyle(
                         SpanStyle(
                             color = linkColor,
-                            textDecoration = TextDecoration.Underline,
                         ),
                     )
                     append(" [$number]")
@@ -1793,7 +1791,9 @@ private fun AdvisorAnswerText(
             horizontal = 14.dp,
             vertical = 10.dp,
         ),
-        style = MaterialTheme.typography.bodyLarge,
+        style = MaterialTheme.typography.bodyLarge.copy(
+            color = MaterialTheme.colorScheme.onSurface,
+        ),
         onClick = { offset ->
             annotated
                 .getStringAnnotations(
