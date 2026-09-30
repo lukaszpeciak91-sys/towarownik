@@ -206,6 +206,59 @@ class ChatShellModelsTest {
     }
 
     @Test
+    fun `advisor display normalization hides bracket markdown link target`() {
+        assertEquals(
+            "Sprawdź instrukcję producenta.",
+            normalizeAdvisorDisplayText(
+                "Sprawdź [instrukcję producenta](https://manufacturer.example/manual).",
+            ),
+        )
+    }
+
+    @Test
+    fun `advisor display normalization hides parenthesized markdown like link target`() {
+        assertEquals(
+            "Sprawdź instrukcję producenta.",
+            normalizeAdvisorDisplayText(
+                "Sprawdź (instrukcję producenta)(https://manufacturer.example/manual).",
+            ),
+        )
+    }
+
+    @Test
+    fun `markdown link cleanup preserves citation offset mapping`() {
+        val raw =
+            "[Instrukcja](https://manufacturer.example/manual): moc 600 W."
+        val start = raw.indexOf("600 W")
+        val end = start + "600 W".length
+
+        val normalized = normalizeAdvisorDisplay(
+            raw = raw,
+            sources = listOf(
+                AdvisorWebSource(
+                    title = "Manufacturer manual",
+                    url = "https://manufacturer.example/manual",
+                    startIndex = start,
+                    endIndex = end,
+                ),
+            ),
+        )
+
+        assertEquals(
+            "Instrukcja: moc 600 W.",
+            normalized.text,
+        )
+        assertEquals(
+            normalized.text.indexOf("600 W"),
+            normalized.sources.single().startIndex,
+        )
+        assertEquals(
+            normalized.text.indexOf("600 W") + "600 W".length,
+            normalized.sources.single().endIndex,
+        )
+    }
+
+    @Test
     fun `unfinished user only case restores as retryable draft`() {
         val interrupted = AdvisorCaseUiState(
             draft = "",
