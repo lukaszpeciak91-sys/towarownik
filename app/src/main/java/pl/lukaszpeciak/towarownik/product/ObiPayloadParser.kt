@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.product
 
 import java.math.BigDecimal
+import java.net.URI
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -108,6 +109,10 @@ class ObiPayloadParser(
             val brand = parseBrand(product)
             val shortDescription = parseShortDescription(product)
             val technicalFacts = parseTechnicalFacts(product)
+            val primaryImageUrl = parsePrimaryImageUrl(
+                html = html,
+                obik = expectedObik,
+            )
 
             diagnostics.parserStage(
                 diagnosticId,
@@ -142,6 +147,7 @@ class ObiPayloadParser(
                 brand = brand,
                 shortDescription = shortDescription,
                 technicalFacts = technicalFacts,
+                primaryImageUrl = primaryImageUrl,
             )
         }
 
@@ -180,6 +186,50 @@ class ObiPayloadParser(
         val store = get("store") as? JsonObject ?: return null
         val information = store["information"] as? JsonObject ?: return null
         return information.string("storeId") ?: information.string("storeNumber")
+    }
+
+    private fun parsePrimaryImageUrl(
+        html: String,
+        obik: String,
+    ): String? =
+        runCatching {
+            jsonLdProduct(html, obik)
+                ?.get("image")
+                ?.firstStructuredImageUrl()
+                ?.trustedObiProductImageUrlOrNull()
+        }.getOrNull()
+
+    private fun JsonElement.firstStructuredImageUrl(): String? =
+        when (this) {
+            is JsonPrimitive ->
+                takeIf { isString }
+                    ?.contentOrNull
+                    ?.takeIf(String::isNotBlank)
+
+            is JsonArray ->
+                firstOrNull()
+                    ?.firstStructuredImageUrl()
+
+            is JsonObject ->
+                string("url")
+                    ?: string("contentUrl")
+
+            else -> null
+        }
+
+    private fun String.trustedObiProductImageUrlOrNull(): String? {
+        if (length !in 1..2048) return null
+        val uri = runCatching { URI(this) }.getOrNull() ?: return null
+        if (
+            uri.scheme?.lowercase() != "https" ||
+            uri.host?.lowercase() != TRUSTED_PRODUCT_IMAGE_HOST ||
+            uri.userInfo != null ||
+            uri.port !in listOf(-1, 443) ||
+            uri.path.isNullOrBlank()
+        ) {
+            return null
+        }
+        return this
     }
 
     private fun parseBrand(product: JsonObject): String? =
@@ -336,6 +386,7 @@ class ObiPayloadParser(
         val PRODUCT_NUMBER_KEYS = listOf("skuId", "obik", "productNumber", "articleNumber", "sku")
         val PRODUCT_NAME_KEYS = listOf("productTitle", "productTitleTab", "name", "productName")
         val EAN_KEYS = listOf("articleEanEcms", "ean", "gtin13", "gtin")
+        const val TRUSTED_PRODUCT_IMAGE_HOST = "bilder.obi.pl"
         const val MAX_BRAND_CHARS = 80
         const val MAX_DESCRIPTION_CHARS = 220
         const val MAX_TECHNICAL_FACTS = 6
