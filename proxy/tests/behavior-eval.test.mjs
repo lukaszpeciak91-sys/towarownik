@@ -662,6 +662,48 @@ test("H_AMBIGUOUS accepts a clearly conditional answer that keeps materially dif
   );
 });
 
+test("H_AMBIGUOUS rejects silently assuming one materially different sealing problem", async () => {
+  const scenario = behaviorScenario("H_AMBIGUOUS");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return answer(
+          "Potrzebujesz silikonu sanitarnego do szczeliny między umywalką a ścianą.",
+        );
+      },
+      async continueTurn() {
+        throw new Error("unexpected continuation");
+      },
+    },
+    {
+      async grade({ trace }) {
+        const text =
+          trace.clarificationOrFinalAnswer?.text ?? "";
+        const acknowledgesAmbiguity =
+          /jeśli|jesli|czy chodzi|odpływ|odplyw|syfon|inny problem/i.test(
+            text,
+          );
+        return {
+          pass: acknowledgesAmbiguity,
+          reason: acknowledgesAmbiguity
+            ? "material ambiguity is explicit"
+            : "answer silently assumed one materially different interpretation",
+        };
+      },
+    },
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.equal(result.localToolCallCount, 0);
+  assert.equal(result.trace.finalProductRefs.length, 0);
+  assert.match(
+    result.reason,
+    /silently assumed one materially different interpretation/i,
+  );
+});
+
 test("availability semantics allow a production-style substitute lookup after the exact item", async () => {
   const scenario = behaviorScenario("G_ZERO");
   let continuation = 0;
@@ -801,6 +843,7 @@ test("scenario E exposes three distinct indoor-compatible cable-tie variants", a
 
 test("scenario E accepts a relevant black-cable-tie query without repeating the indoor constraint", async () => {
   const scenario = behaviorScenario("E");
+  let observedRubric = [];
   const result = await runBehaviorTrial(
     scenario,
     1,
@@ -824,7 +867,22 @@ test("scenario E accepts a relevant black-cable-tie query without repeating the 
         );
       },
     },
-    passingSemanticJudge,
+    {
+      async grade({ scenario: gradedScenario, trace }) {
+        observedRubric = gradedScenario.semanticRubric;
+        const text =
+          trace.clarificationOrFinalAnswer?.text ?? "";
+        const nonExhaustive =
+          /m\.in\.|między innymi|wsrod|wśród/i.test(text) &&
+          !/to wszystkie|pełna lista|pelna lista/i.test(text);
+        return {
+          pass: nonExhaustive,
+          reason: nonExhaustive
+            ? "useful variants are presented without false completeness"
+            : "bounded results were presented as complete",
+        };
+      },
+    },
   );
 
   assert.equal(result.status, "PASS");
@@ -846,6 +904,18 @@ test("scenario E accepts a relevant black-cable-tie query without repeating the 
           fact.label === "Zastosowanie" &&
           fact.value === "wewnątrz",
       ),
+    ),
+    true,
+  );
+  assert.equal(
+    observedRubric.some((line) =>
+      /does not falsely present.*complete assortment/i.test(line),
+    ),
+    true,
+  );
+  assert.equal(
+    observedRubric.some((line) =>
+      /not whether the tool query repeats every constraint/i.test(line),
     ),
     true,
   );
