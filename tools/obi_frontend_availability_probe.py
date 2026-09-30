@@ -377,7 +377,9 @@ def classify_contract(events: list[dict[str, Any]]) -> dict[str, Any]:
         for event in events
         if event.get("relevanceScore", 0) >= 3
         and event.get("response", {}).get("jsonShape") is not None
+        and event.get("response", {}).get("availabilityKeyHits")
         and event.get("stage") != "page_load"
+        and "/api/disc/store/locator/country/" not in event.get("path", "").lower()
     ]
     if not candidates:
         return {
@@ -470,6 +472,7 @@ class NetworkRecorder:
         json_shape = None
         store_numbers: list[str] = []
         obiks: list[str] = []
+        availability_key_hits: list[str] = []
         body_bytes = None
         if "json" in response_content_type.lower():
             try:
@@ -479,6 +482,22 @@ class NetworkRecorder:
                     json_shape = summarize_json(json_root)
                     store_numbers = sorted(collect_store_numbers(json_root))
                     obiks = sorted(collect_obiks(json_root))
+                    all_keys = collect_json_keys(json_root)
+                    availability_key_hits = sorted(
+                        key
+                        for key in all_keys
+                        if any(
+                            term in key
+                            for term in (
+                                "stock",
+                                "availability",
+                                "inventory",
+                                "article",
+                                "quantity",
+                                "price",
+                            )
+                        )
+                    )[:30]
                 else:
                     json_shape = {
                         "type": "oversized_json",
@@ -515,6 +534,7 @@ class NetworkRecorder:
                 "jsonShape": json_shape,
                 "storeNumbers": store_numbers,
                 "obiks": obiks,
+                "availabilityKeyHits": availability_key_hits,
             },
             "relevanceScore": score,
         }
@@ -577,15 +597,62 @@ def click_named_control(page, patterns: list[re.Pattern[str]]) -> str | None:
                 return label
         except Exception:
             pass
+
+    try:
+        raw_patterns = [pattern.pattern for pattern in patterns]
+        clicked = page.evaluate(
+            """(patterns) => {
+                const regexes = patterns.map((value) => new RegExp(value, 'i'));
+                const visible = (el) => {
+                    const style = window.getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
+                    return style.visibility !== 'hidden'
+                        && style.display !== 'none'
+                        && rect.width > 0
+                        && rect.height > 0;
+                };
+                const nodes = Array.from(
+                    document.querySelectorAll(
+                        'button,a,[role="button"],[onclick],div,span,p'
+                    )
+                );
+                const matches = nodes
+                    .filter((el) => {
+                        const text = (el.innerText || '').replace(/\\s+/g, ' ').trim();
+                        return text
+                            && text.length <= 220
+                            && visible(el)
+                            && regexes.some((regex) => regex.test(text));
+                    })
+                    .sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+                if (!matches.length) return null;
+                const source = matches[0];
+                const target = source.closest('button,a,[role="button"],[onclick]') || source;
+                const label = (source.innerText || target.innerText || '')
+                    .replace(/\\s+/g, ' ')
+                    .trim()
+                    .slice(0, 160);
+                target.click();
+                return label || target.tagName;
+            }""",
+            raw_patterns,
+        )
+        if clicked:
+            page.wait_for_timeout(900)
+            return str(clicked)[:160]
+    except Exception:
+        pass
     return None
 
 
 AVAILABILITY_PATTERNS = [
+    re.compile("sprawdź dostępność w innym sklepie", re.I),
     re.compile("sprawdź dostępność w sklepie", re.I),
     re.compile("wybierz sklep obi", re.I),
     re.compile("zarezerwuj i odbierz", re.I),
 ]
 CHANGE_STORE_PATTERNS = [
+    re.compile("sprawdź dostępność w innym sklepie", re.I),
     re.compile("wybierz sklep obi", re.I),
     re.compile("zmień sklep", re.I),
     re.compile("zmień market", re.I),
@@ -680,7 +747,7 @@ def choose_store(
 
 
 def load_store_directory(context, stores: list[str]) -> dict[str, dict[str, Any]]:
-    response = context.request.get(
+    response = api_request.get(
         DIRECTORY_URL,
         headers={
             "Accept": "application/json,text/plain,*/*",
@@ -718,7 +785,9 @@ def safe_event_candidates(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             event
             for event in events
             if event.get("relevanceScore", 0) >= 3
+            and event.get("response", {}).get("availabilityKeyHits")
             and event.get("stage") != "page_load"
+            and "/api/disc/store/locator/country/" not in event.get("path", "").lower()
         ],
         key=lambda event: (-event["relevanceScore"], event["id"]),
     )[:80]
@@ -728,6 +797,8 @@ def no_cookie_replay(raw: RawReplay) -> dict[str, Any]:
     headers = {}
     for key, value in raw.headers.items():
         lowered = key.lower()
+        if key.startswith(":"):
+            continue
         if lowered in {
             "cookie",
             "authorization",
@@ -783,6 +854,8 @@ def replay_raw(raw: RawReplay) -> dict[str, Any]:
     headers = {}
     for key, value in raw.headers.items():
         lowered = key.lower()
+        if key.startswith(":"):
+            continue
         if lowered in {"host", "content-length"}:
             continue
         headers[key] = value
@@ -1007,7 +1080,7 @@ def full_lookup_fact(html: str, obik: str, store: str) -> dict[str, Any]:
     }
 
 
-def full_lookup(context, obik: str, store: str) -> dict[str, Any]:
+def full_lookup(api_request, obik: str, store: str) -> dict[str, Any]:
     query = urllib.parse.urlencode(
         {
             "storeNumber": store,
@@ -1048,6 +1121,13 @@ def run_probe(obiks: list[str], stores: list[str]) -> dict[str, Any]:
             viewport={"width": 1280, "height": 900},
         )
         directory = load_store_directory(context, stores)
+        verification_api = playwright.request.new_context(
+            extra_http_headers={
+                "User-Agent": USER_AGENT,
+                "Accept": HTML_ACCEPT,
+                "Accept-Language": ACCEPT_LANGUAGE,
+            },
+        )
         missing_stores = sorted(set(stores) - set(directory))
         recorder = NetworkRecorder()
         ui_runs = []
@@ -1099,7 +1179,7 @@ def run_probe(obiks: list[str], stores: list[str]) -> dict[str, Any]:
                     {
                         "obik": obik,
                         "store": store_number,
-                        "fullLookup": full_lookup(context, obik, store_number),
+                        "fullLookup": full_lookup(verification_api, obik, store_number),
                     },
                 )
                 recorder.stage = f"availability_reopen:{obik}:{store_number}"
@@ -1148,6 +1228,7 @@ def run_probe(obiks: list[str], stores: list[str]) -> dict[str, Any]:
                 "candidates": len(candidates),
             },
         }
+        verification_api.dispose()
         context.close()
         browser.close()
         return summary
