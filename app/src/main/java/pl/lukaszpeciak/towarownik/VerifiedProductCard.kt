@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -250,9 +251,7 @@ internal fun VerifiedProductThumbnail(
     if (failed) return
 
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(112.dp),
+        modifier = modifier.size(96.dp),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.towarownikColors.surfaceHighlight,
     ) {
@@ -263,8 +262,7 @@ internal fun VerifiedProductThumbnail(
                 model = imageUrl,
                 contentDescription = contentDescription,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(104.dp)
+                    .fillMaxSize()
                     .padding(8.dp),
                 contentScale = ContentScale.Fit,
                 onError = { failed = true },
