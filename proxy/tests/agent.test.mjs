@@ -2328,6 +2328,18 @@ test("obsolete complete-kit/job wording cannot independently trigger complement 
     instructions,
     /Search those complementary categories only when the USER asks for them or when the original request clearly asks/i,
   );
+  assert.doesNotMatch(
+    instructions,
+    /When the USER asks about one product or one product category, answer or select that requested item first/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /For a direct factual question about the current price or stock of a specific OBIK or product/i,
+  );
+  assert.equal(
+    (instructions.match(/For a direct factual question about the current price, stock, availability, OBIK, or specific OBI product/g) ?? []).length,
+    1,
+  );
   assert.match(
     instructions,
     /Search complements when the USER asks for them or when an explicit complete verified store-kit request requires them/i,
