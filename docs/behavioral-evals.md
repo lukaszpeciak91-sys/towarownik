@@ -7,7 +7,7 @@ The behavioral eval harness checks observable advisor behavior against regressio
 - did Taksula clarify a materially ambiguous product request before selecting a concrete SKU;
 - did browse intent request and surface multiple useful verified variants;
 - did the model preserve stock/null/not-found/unavailable semantics;
-- did a task-oriented request batch related OBI categories;
+- did an understood task/job request give useful essentials-first advice without automatically turning into an OBI shopping kit;
 - did a general technical question avoid unnecessary local OBI or web tools.
 
 The harness does **not** prove general model correctness. It is a small regression suite for known behaviors and failure modes.
@@ -52,7 +52,7 @@ The suite currently contains:
 - **G_NULL** — unknown/null stock;
 - **G_NOT_FOUND** — no verified matching result;
 - **G_UNAVAILABLE** — retrieval could not establish the fact;
-- **H** — specified silicone washbasin-to-wall gap: small essentials-first kit with related queries batched where practical;
+- **H** — understood silicone washbasin-to-wall sealing job: give small practical essentials-first advice, distinguish essentials from optional convenience items, and use zero automatic `find_obi_products` calls / zero `productRefs` unless explicit store intent exists;
 - **H_AMBIGUOUS** — original underspecified washbasin-sealing request: clarify wall/countertop joint versus drain/siphon-type work before any concrete OBI lookup;
 - **I** — general SDS+ versus SDS Max explanation without unnecessary tools.
 
@@ -85,7 +85,15 @@ Deterministic assertions are preferred for:
 - current-turn `productRef` grounding;
 - clarification-before-lookup cases.
 
-Semantic grading is used only for behaviors that require meaning rather than exact wording, such as whether a clarification is relevant, whether alternatives were genuinely surfaced, or whether the four availability states were described distinctly. The semantic grader returns only `PASS/FAIL` plus one short diagnostic reason.
+Semantic grading is used only for behaviors that require meaning rather than exact wording, such as whether a clarification is relevant, whether alternatives were genuinely surfaced, or whether the four availability states were described distinctly. The semantic grader still returns only a short structured `{ pass, reason }` judgment.
+
+Trial status is separate from that grader shape:
+
+- **PASS** — observable behavior passed deterministic checks and, when applicable, a valid semantic judgment;
+- **FAIL** — an actual behavioral regression was observed, either deterministically or through a valid semantic judgment with `pass: false`;
+- **ERROR** — the eval infrastructure could not produce a trustworthy verdict, for example because advisor transport failed or the semantic grader still could not return a consumable grade after its bounded retry.
+
+Malformed, missing, structurally invalid, or explicitly output-limit-incomplete semantic-grader output is retried at most once. A valid semantic rejection is never retried. If the retry also cannot produce a valid grade, the trial is reported as **ERROR**, not **FAIL**.
 
 ## Deterministic CI tests
 
@@ -145,9 +153,10 @@ scenario  trial  result  local_calls  web_searches  reason
 ...
 passed: N / M
 failed scenarios: ...
+errored scenarios: ...
 ```
 
-The JSON output contains the structured per-trial trace.
+The JSON output contains the structured per-trial trace. The CLI/workflow exits non-zero when at least one trial is either **FAIL** or **ERROR**. This keeps infrastructure problems visible and red without misreporting them as behavioral regressions.
 
 ## Manual GitHub workflow
 
@@ -168,7 +177,7 @@ A real trial can involve multiple Responses API calls:
 
 1. advisor START;
 2. zero or more advisor CONTINUE calls after mocked local-tool results;
-3. one semantic grader call for scenarios that need semantic judgment.
+3. normally one semantic grader call for scenarios that need semantic judgment, with at most one additional grader attempt only when the first grader output is malformed, missing, structurally invalid, or observably incomplete because of the output limit.
 
 If the advisor chooses built-in web search, the normal production web-search fee also applies. Increasing `--trials` multiplies these costs. Start with one trial and raise the count only when measuring consistency.
 
