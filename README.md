@@ -20,6 +20,7 @@ The current phase is **Selective web search for Taksula v0.1**. Taksula keeps th
 - Compose BOM: 2026.06.00
 - Activity Compose: 1.13.0
 - OkHttp: 4.12.0
+- Coil: 3.6.3 (Compose + OkHttp network loader)
 - kotlinx.serialization JSON: 1.9.0
 - Kotlin coroutines: 1.10.2
 - Android resource localization: Polish default (`values/`) + English (`values-en/`)
@@ -124,6 +125,8 @@ Only three model-context fields are implemented: nullable brand, nullable normal
 
 Bounds intentionally preserve the existing 16 KiB continuation envelope for up to five products: brand 80 chars, description 220 chars, at most 6 technical facts, fact label 60 chars, fact value 100 chars. Optional rich sections fail soft and never invalidate a product with valid identity/store/basic data. The parser strips presentation-only markup, collapses whitespace, removes empty entries, and deduplicates facts by normalized label.
 
+The exact product parser also extracts at most one trusted presentation image from structured product metadata. Only HTTPS URLs on the confirmed `bilder.obi.pl` product-image host are accepted; missing, malformed, or untrusted image data becomes null and never invalidates the product. The image URL stays Android-local and is not added to model context, continuation payloads, or productRefs. Coil 3 loads/caches it asynchronously for verified cards and enriched manual-search rows.
+
 Stock and price remain authoritative only from the requested selected store's `product.store.articleData.stock` and `product.store.articleData.pricing.grossPrice`. Rich descriptive/specification facts are product-level model context. They are not persisted into message-product snapshots, do not change visible verified cards, and do not enter problem reports. Product URL, verification timestamp, EAN, raw HTML, raw Nuxt, cookies, and diagnostics remain excluded from OpenAI tool results.
 
 ## Signed Google Play AAB
@@ -158,16 +161,16 @@ The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-n
 
 ## Local conversation persistence
 
-Room schema v5 stores local conversation metadata, rendered USER/ASSISTANT messages, store-aware verified product snapshots, normalized web sources, and Android-local advisor search actions attached to ASSISTANT messages:
+Room schema v6 stores local conversation metadata, rendered USER/ASSISTANT messages, store-aware verified product snapshots, normalized web sources, and Android-local advisor search actions attached to ASSISTANT messages. Verified product snapshots may also retain one nullable trusted OBI primary-image URL for presentation:
 
 - conversation: id, title, createdAt, updatedAt, nullable lastResponseId, draft, storeNumber;
 - message: id, conversationId, role, text, createdAt;
-- message product: messageId, position, storeNumber, OBIK, name, nullable stock, lossless decimal price text, trusted productUrl, verifiedAt;
+- message product: messageId, position, storeNumber, OBIK, name, nullable stock, lossless decimal price text, trusted productUrl, nullable trusted imageUrl, verifiedAt;
 - message source: messageId, position, bounded title, normalized HTTPS URL;
 - message search action: messageId, position, exact advisor query, storeNumber, reportedTotalCount;
 - message rows cascade with conversation deletion; products, sources, and search actions cascade with their message.
 
-Schema v1 upgrades through explicit 1→2, 2→3, 3→4, and 4→5 migrations. The 2→3 step adds `Conversation.storeNumber` and `message_products.storeNumber` with deterministic default `075`; 3→4 adds `message_sources`; 4→5 adds `message_search_actions`, so historical messages migrate with zero search actions. There is no destructive fallback. Search actions are local UI metadata only and are never sent to the Worker or encoded into assistant text.
+Schema v1 upgrades through explicit 1→2, 2→3, 3→4, 4→5, and 5→6 migrations. The 2→3 step adds `Conversation.storeNumber` and `message_products.storeNumber` with deterministic default `075`; 3→4 adds `message_sources`; 4→5 adds `message_search_actions`; 5→6 adds nullable `message_products.imageUrl`, so historical product rows migrate with no thumbnail. There is no destructive fallback. Search actions are local UI metadata only and are never sent to the Worker or encoded into assistant text.
 
 No API keys, app bearer tokens, OBI HTML/cookies, parser internals, raw OpenAI responses, or reasoning data are persisted.
 
