@@ -120,6 +120,8 @@ class ConversationRepositoryTest {
             stock = null,
             price = null,
             url = "https://www.obi.pl/custom/trusted-one",
+            imageUrl =
+                "https://bilder.obi.pl/fixture-primary/pr08A/image.jpeg",
             verifiedAt = 120L,
         )
         val second = snapshot(
@@ -150,6 +152,11 @@ class ConversationRepositoryTest {
         assertEquals(BigDecimal("99.9900"), cards[1].grossPrice)
         assertEquals(first.productUrl, cards[0].productUrl)
         assertEquals(second.productUrl, cards[1].productUrl)
+        assertEquals(
+            "https://bilder.obi.pl/fixture-primary/pr08A/image.jpeg",
+            cards[0].primaryImageUrl,
+        )
+        assertNull(cards[1].primaryImageUrl)
         assertEquals(listOf(120L, 130L), cards.map { it.verifiedAt })
     }
 
@@ -966,6 +973,7 @@ class ConversationRepositoryTest {
         stock: Int?,
         price: BigDecimal?,
         url: String,
+        imageUrl: String? = null,
         verifiedAt: Long,
         storeNumber: String = "075",
     ) = VerifiedProductSnapshot(
@@ -974,6 +982,7 @@ class ConversationRepositoryTest {
         stock = stock,
         grossPrice = price,
         productUrl = url,
+        primaryImageUrl = imageUrl,
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
     )
