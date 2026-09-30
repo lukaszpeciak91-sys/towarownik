@@ -2466,6 +2466,7 @@ private fun AdvisorChatPreview() {
             storeSelectorEnabled = true,
             onStoreSelected = {},
             onReportAssistantMessage = {},
+            onOpenSearchAction = {},
             emptyPromptIndex = 0,
         )
     }
