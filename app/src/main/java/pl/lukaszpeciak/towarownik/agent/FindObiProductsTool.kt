@@ -58,6 +58,7 @@ internal class FindObiProductsTool(
     ): AdvisorToolExecutionResult {
         val groupedResults = mutableListOf<AdvisorVerifiedQueryResult>()
         val snapshots = mutableListOf<VerifiedProductSnapshot>()
+        val searchActions = mutableListOf<AdvisorSearchAction>()
 
         arguments.queries.forEach { requested ->
             val search = try {
@@ -79,6 +80,21 @@ internal class FindObiProductsTool(
                 }
 
                 is ProductSearchResult.Candidates -> {
+                    val boundedCandidateCount = minOf(
+                        requested.limit,
+                        search.items.size,
+                    )
+                    if (
+                        requested.limit > 1 &&
+                        search.reportedTotalCount > boundedCandidateCount
+                    ) {
+                        searchActions += AdvisorSearchAction(
+                            query = requested.query,
+                            storeNumber = arguments.storeNumber,
+                            reportedTotalCount = search.reportedTotalCount,
+                        )
+                    }
+
                     val verified = mutableListOf<AdvisorVerifiedProduct>()
                     var lookupFailed = false
 
@@ -152,6 +168,7 @@ internal class FindObiProductsTool(
                 results = groupedResults,
             ),
             snapshots = snapshots,
+            searchActions = searchActions,
         )
     }
 
