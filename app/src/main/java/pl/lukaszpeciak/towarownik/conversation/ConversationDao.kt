@@ -95,6 +95,11 @@ internal abstract class ConversationDao {
         sources: List<MessageSourceEntity>,
     )
 
+    @Insert
+    protected abstract suspend fun insertMessageSearchActions(
+        actions: List<MessageSearchActionEntity>,
+    )
+
     @Query("DELETE FROM messages WHERE id = :messageId")
     protected abstract suspend fun deleteMessage(
         messageId: Long,
@@ -216,12 +221,24 @@ internal abstract class ConversationDao {
         lastResponseId: String,
         products: List<VerifiedProductSnapshot>,
         sources: List<PersistedWebSource> = emptyList(),
+        searchActions: List<PersistedSearchAction> = emptyList(),
     ) {
         checkNotNull(getConversation(conversationId))
         require(products.size <= 5)
         require(products.map { it.key }.distinct().size == products.size)
         require(sources.size <= 6)
         require(sources.map { it.url }.distinct().size == sources.size)
+        require(
+            searchActions
+                .map { it.storeNumber to it.query }
+                .distinct()
+                .size == searchActions.size,
+        )
+        require(searchActions.all { persistedSearchActionOrNull(
+            query = it.query,
+            storeNumber = it.storeNumber,
+            reportedTotalCount = it.reportedTotalCount,
+        ) == it })
         require(
             sources.all {
                 persistedWebSourceOrNull(
@@ -271,6 +288,19 @@ internal abstract class ConversationDao {
                         url = source.url,
                         startIndex = source.startIndex,
                         endIndex = source.endIndex,
+                    )
+                },
+            )
+        }
+        if (searchActions.isNotEmpty()) {
+            insertMessageSearchActions(
+                searchActions.mapIndexed { position, action ->
+                    MessageSearchActionEntity(
+                        messageId = messageId,
+                        position = position,
+                        query = action.query,
+                        storeNumber = action.storeNumber,
+                        reportedTotalCount = action.reportedTotalCount,
                     )
                 },
             )
