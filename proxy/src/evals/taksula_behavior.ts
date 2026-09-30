@@ -252,9 +252,9 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     userMessage: "Klient potrzebuje czarnych trytytek.",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer asks one concise clarification about a decision-critical missing selection parameter before any OBI lookup or concrete recommendation.",
-      "It does not select or recommend a concrete SKU, present candidate-specific price or stock, or invent a missing dimension/application.",
-      "It does not return productRefs before the missing selection parameter is clarified.",
+      "The answer asks a concise, useful clarification before selection about missing information that materially affects the choice. One natural question may ask about more than one tightly related decision-critical detail, such as size and intended use.",
+      "It does not select or recommend a concrete SKU, present candidate-specific price or stock, guess missing requirements, or act as though the ambiguity is already resolved.",
+      "Equivalent natural clarification wording is acceptable; do not require one exact parameter, label, or answer structure.",
     ],
   },
   {
@@ -293,8 +293,9 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
       "Pokaż czarne trytytki do środka i sensowne warianty rozmiarowe.",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer presents or compares the useful fitting alternatives, or clearly explains why one is preferred over the other fitting verified variants.",
-      "It does not imply that only one matching product exists.",
+      "The answer surfaces or meaningfully compares several useful verified black cable-tie variants that fit the user's indoor browse request.",
+      "It does not falsely present the bounded verified results as the complete assortment.",
+      "Judge the usefulness and truthfulness of the answer, not whether the tool query repeats every constraint already stated by the user.",
     ],
   },
   {
@@ -354,9 +355,9 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
       "Co potrzebuję do uszczelnienia silikonem szczeliny między umywalką a ścianą?",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer gives a small practical essentials-first explanation for sealing the specified washbasin-to-wall gap with silicone.",
-      "It distinguishes essential needs from optional convenience items without turning the answer into an automatic verified shopping kit.",
-      "It does not require current OBI assortment facts or product cards to answer this understood job question.",
+      "The answer gives useful practical advice for sealing the specified washbasin-to-wall gap with silicone.",
+      "Natural useful guidance may include sanitary silicone, suitable color guidance, a cartridge gun, cleaning or degreasing, masking, or finishing technique; no exact item list, labels, or answer structure is required.",
+      "Judge the answer as advisor-first guidance rather than a shopping-format response; current OBI assortment facts or product cards are not required for this understood job.",
     ],
   },
   {
@@ -365,8 +366,9 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     userMessage: "Co potrzebuję do uszczelnienia umywalki?",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer asks one concise clarification that distinguishes materially different sealing jobs, such as sealing the basin-to-wall/countertop joint versus a drain/siphon-related leak.",
-      "It does not select or present a concrete OBI kit before that clarification.",
+      "The answer must acknowledge the material ambiguity instead of silently assuming one sealing problem. It may either ask a concise clarification about what is leaking/being sealed, or give a clearly conditional answer for one interpretation while explicitly noting that a drain/siphon leak is a different problem.",
+      "Equivalent conversational strategies are acceptable as long as the materially different interpretations remain explicit and no interpretation is presented as certain without support.",
+      "It does not select or present a concrete OBI kit while the ambiguity remains unresolved.",
     ],
   },
   {
@@ -1078,7 +1080,7 @@ function mockQueryResult(
         : notFoundQuery(query);
 
     case "E":
-      return isIndoorBlackCableTieQuery(query)
+      return isBlackCableTieQuery(query)
         ? verifiedQuery(
             query,
             INDOOR_ZIP_TIES.slice(
@@ -1167,14 +1169,6 @@ function isBlackCableTieQuery(query: string): boolean {
   return (
     /\b(czarn\w*)\b/.test(normalized) &&
     /\b(trytyt\w*|opask\w*)\b/.test(normalized)
-  );
-}
-
-function isIndoorBlackCableTieQuery(query: string): boolean {
-  const normalized = normalizeQuery(query);
-  return (
-    isBlackCableTieQuery(query) &&
-    /\b(wewn\w*|srod\w*)\b/.test(normalized)
   );
 }
 
