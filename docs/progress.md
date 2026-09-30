@@ -82,6 +82,9 @@ Implemented direction:
 - unsupported/unauthorized store tool requests fail closed before OBI and never substitute `075`;
 - verified cards/history/reports preserve their own snapshot store and changing the conversation selector never rewrites historical facts;
 - store `075` remains the deterministic regression/live-probe baseline.
+- broad advisor searches now preserve OBI's reported search-result count locally; when that count exceeds a multi-result bounded advisor subset, the assistant message can persist a deduped “Zobacz więcej (N)” action without changing the five-card/productRef boundary;
+- Room schema v5 adds `message_search_actions` for exact query/store/reported-count metadata, and the existing manual search can reopen that historical query/store without mutating the conversation store;
+- manual search remains capped at 25 parsed candidates with the existing five-at-a-time enrichment/show-more behavior; no OBI pagination or Worker/protocol change is added.
 
 No local transcript is replayed as a hidden fallback if an old OpenAI response chain cannot continue. No compaction/summarization is added. `previous_response_id` reduces application-level transcript replay but prior context tokens remain billable input.
 
@@ -116,7 +119,7 @@ Android test version: **0.1.10 (11)**.
 - current Responses `web_search` is available selectively alongside `find_obi_products`, with `tool_choice=auto` and `max_tool_calls=1` for built-ins;
 - OBI remains authoritative for current stock/price/store availability and only Android-verified current-turn snapshots may enter productRefs/cards;
 - final answers preserve at most six normalized HTTPS sources from actual OpenAI url_citation annotations; real annotation offsets are mapped only when exact, safely mapped citations render as clickable inline markers, and unmappable sources remain in the compact fallback source list;
-- Room schema v4 persists message source URL/title plus nullable validated answer spans with cascade so reopened web-derived answers retain inline/fallback citations offline;
+- Room schema v5 keeps the v4 message-source citation relation and adds message search actions with cascade so broad advisor results can reopen their exact historical manual search offline as metadata;
 - searched pages are explicitly untrusted reference data and cannot alter role/tool/trust/privacy rules;
 - AI Usage counts completed web searches independently from optional token usage; current pricing adds USD 0.01 per search action when cost is priceable;
 - web availability alone does not count as a call, while missing/malformed usage still preserves the actual search count and keeps existing unpriced/known-minimum budget semantics;
