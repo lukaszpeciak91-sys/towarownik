@@ -982,20 +982,18 @@ test("semantic grader uses the normal eval output budget and accepts a valid gra
     fakeFetch,
   );
   const scenario = behaviorScenario("A");
-  const trace = (
-    await runBehaviorTrial(
-      scenario,
-      1,
-      scriptedDriver(scenario),
-      passingSemanticJudge,
-    )
-  ).trace;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    judge,
+  );
 
-  const grade = await judge.grade({ scenario, trace });
-  assert.deepEqual(grade, {
-    pass: true,
-    reason: "observable behavior satisfies the rubric",
-  });
+  assert.equal(result.status, "PASS");
+  assert.equal(
+    result.reason,
+    "observable behavior satisfies the rubric",
+  );
   assert.equal(captures.length, 1);
   assert.equal(
     captures[0].max_output_tokens,
@@ -1005,6 +1003,15 @@ test("semantic grader uses the normal eval output budget and accepts a valid gra
   assert.deepEqual(captures[0].reasoning, {
     effort: OPENAI_REASONING_EFFORT,
   });
+  assert.equal(
+    captures[0].text.format.type,
+    "json_schema",
+  );
+  assert.equal(captures[0].text.format.strict, true);
+  assert.deepEqual(
+    captures[0].text.format.schema.required,
+    ["pass", "reason"],
+  );
   assert.equal(
     Object.prototype.hasOwnProperty.call(
       captures[0],
