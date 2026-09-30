@@ -6,7 +6,10 @@ import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 internal const val MANUAL_SEARCH_CANDIDATE_LIMIT = 25
 
 internal sealed interface ObiSearchParseResult {
-    data class Results(val items: List<ProductSearchCandidate>) : ObiSearchParseResult
+    data class Results(
+        val items: List<ProductSearchCandidate>,
+        val reportedTotalCount: Int = items.size,
+    ) : ObiSearchParseResult
     data object NoResults : ObiSearchParseResult
 }
 
@@ -41,7 +44,10 @@ class ObiSearchParser(
             maxCandidates = ADVISOR_SEARCH_CANDIDATE_LIMIT,
         ).map { parsed ->
             when (parsed) {
-                is ParsedSearch.Results -> ObiSearchParseResult.Results(parsed.items)
+                is ParsedSearch.Results -> ObiSearchParseResult.Results(
+                    items = parsed.items,
+                    reportedTotalCount = parsed.reportedTotalCount,
+                )
                 ParsedSearch.NoResults -> ObiSearchParseResult.NoResults
             }
         }.also { result ->
