@@ -268,6 +268,62 @@ class AdvisorControllerTest {
     }
 
     @Test
+    fun `search actions are accumulated and deduped across one user turn`() = runBlocking {
+        var continuation = 0
+        val controller = controller(
+            start = {
+                successTool(
+                    "resp_1",
+                    "call_1",
+                    "Czarne trytytki",
+                )
+            },
+            continueCall = { _, _, _ ->
+                continuation += 1
+                if (continuation == 1) {
+                    successTool(
+                        "resp_2",
+                        "call_2",
+                        "  czarne   TRYTYTKI ",
+                    )
+                } else {
+                    successAnswer(
+                        "resp_final",
+                        "Znalazłam kilka wariantów.",
+                    )
+                }
+            },
+            tool = { args ->
+                verifiedResult(args.query).copy(
+                    searchActions = listOf(
+                        AdvisorSearchAction(
+                            query = args.query,
+                            storeNumber = args.storeNumber,
+                            reportedTotalCount = 27,
+                        ),
+                    ),
+                )
+            },
+        )
+
+        val final = controller.runTurn(
+            input = "Pokaż czarne trytytki",
+            previousResponseId = null,
+        ) { } as AdvisorUiState.Success
+
+        assertEquals(
+            listOf(
+                AdvisorSearchAction(
+                    query = "Czarne trytytki",
+                    storeNumber = "075",
+                    reportedTotalCount = 27,
+                ),
+            ),
+            final.searchActions,
+        )
+    }
+
+    @Test
     fun `verified snapshots do not carry into the next user turn`() = runBlocking {
         var phase = 0
         val controller = controller(
