@@ -316,6 +316,16 @@ These decisions describe the broader intended product behavior. The currently im
 - Do not add cross-market scanning, distance logic, a new availability tool, parser/manual-search/Room changes, RAG, or other retailer integrations in this iteration.
 
 
+## Advisor Product Contract v1 alignment
+
+- Product Contract v1 supersedes the eager-search behavior above for current production advisor policy: Taksula is advisor-first and uses normal technical/sales knowledge when sufficient.
+- Ambiguous product selection asks one concise decision-critical clarification before `find_obi_products`; no broad reconnaissance lookup is used to infer the missing parameter.
+- Job/project/"what do I need?" requests are understood first and receive practical essentials-first advice without automatic OBI lookup once sufficiently clear.
+- Use OBI immediately for explicit assortment/browse, direct current price/stock/availability or OBIK verification, sufficiently specified selection when the user explicitly asks what the selected market has, and explicit sufficiently specified verified store kits.
+- Explicit verified store kits may batch related categories efficiently and remain small/practical. Complements stay restrained and are proactively mentioned only when materially helpful for correctness, compatibility, safety, or avoiding obvious failure.
+- Preserve the existing model, reasoning effort, multi-query tool/protocol, Android hard guard, grounding, store authorization, bounded-result wording, availability semantics, selective web search, pricing, persistence, parser, and UI boundaries.
+
+
 ## Selective web search for Taksula v0.1
 
 - Enable only the current Responses built-in `web_search`, never `web_search_preview`. Use automatic tool choice and one built-in call per Responses request; do not force browsing on ordinary technical questions.

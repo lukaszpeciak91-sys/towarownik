@@ -2185,19 +2185,15 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   );
   assert.match(
     instructions,
-    /Use find_obi_products whenever verified current OBI assortment, stock, price, store availability, or concrete product selection is useful/i,
+    /For ordinary general technical or sales-advice questions, answer from normal technical knowledge when that is sufficient/i,
   );
   assert.match(
     instructions,
-    /Batch related categories aggressively into one well-planned multi-query request/i,
+    /Do not call find_obi_products merely because a product category can be inferred from the advice/i,
   );
   assert.match(
     instructions,
-    /Use as few local calls as practical, but do not avoid necessary verification merely to save a tool call/i,
-  );
-  assert.match(
-    instructions,
-    /One well-planned multi-query batch is preferred over many narrow calls/i,
+    /Use find_obi_products immediately for explicit assortment\/browse requests, current price, current stock, availability, direct OBIK or specific-product verification/i,
   );
   assert.doesNotMatch(
     instructions,
@@ -2229,19 +2225,6 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   );
   assert.match(
     instructions,
-    /Reconnaissance results from an earlier USER turn are also not current authority for the final selection/i,
-  );
-  assert.match(
-    instructions,
-    /When the USER later supplies the missing selection parameter, perform fresh find_obi_products verification whenever current OBI facts matter/i,
-  );
-  assert.match(
-    instructions,
-    /do not silently promote an earlier reconnaissance candidate into the final recommendation without that fresh verification/i,
-  );
-
-  assert.match(
-    instructions,
     /Use richer verified OBI product-page facts selectively/i,
   );
   assert.match(
@@ -2259,74 +2242,111 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   assert.equal(instructions.includes("web_search"), true);
 });
 
-test('A sufficiently specified task kit contract — "Klient chce położyć płytki na przygotowanej ścianie i nie wie czego potrzebuje."', () => {
+test('A understood job contract gives essentials-first advice without automatic OBI lookup', () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /When a sufficiently specified USER request describes a job or goal rather than one specific SKU/i,
+    /For task, project, or 'what do I need' intent, understand the job before searching products/i,
   );
   assert.match(
     instructions,
-    /small practical set of product categories needed to complete that job/i,
+    /Once the job is sufficiently understood, give practical essentials-first advice from general knowledge/i,
   );
   assert.match(
     instructions,
-    /Distinguish essentials from optional convenience items/i,
+    /distinguishing essentials from optional convenience items/i,
   );
   assert.match(
     instructions,
-    /batch the important categories into find_obi_products/i,
+    /Do not automatically call find_obi_products merely because the required categories can be identified/i,
   );
   assert.match(
     instructions,
-    /return concrete verified products from the active store/i,
-  );
-  assert.match(
-    instructions,
-    /explain briefly what each selected item is for/i,
+    /Search OBI for a job only when the USER explicitly asks for concrete products from the selected market/i,
   );
 });
 
-test('B sufficiently specified complete sales kit contract — "Co mogę sprzedać klientowi do uszczelnienia silikonem szczeliny między umywalką a ścianą?"', () => {
+test('B explicit selected-market complete-kit contract may search and assemble a small verified kit', () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /If the sufficiently specified intent is clearly a complete kit, what the customer needs, what can be sold for the job/i,
+    /explicitly asks for a complete verified kit from that market/i,
   );
   assert.match(
     instructions,
-    /build the practical kit proactively without requiring separate confirmation for every category/i,
+    /When such an explicit store-kit request is sufficiently specified, build a small practical verified kit/i,
   );
   assert.match(
     instructions,
-    /do not create an absurd or exhaustive shopping list/i,
+    /batch related categories into one well-planned multi-query request where practical/i,
+  );
+  assert.match(
+    instructions,
+    /do not require separate confirmation for every category/i,
+  );
+  assert.match(
+    instructions,
+    /do not create an exhaustive shopping list/i,
   );
 });
 
-test('C single product contract — "Potrzebuję farby do łazienki."', () => {
+test("C complements stay restrained and correctness-driven", () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /When the USER asks about one product or one product category, answer or select that requested item first/i,
+    /For complements, be restrained/i,
   );
   assert.match(
     instructions,
-    /Do not automatically search complementary categories/i,
+    /only when it materially helps correctness, compatibility, safety, or avoiding an obvious failure/i,
   );
   assert.match(
     instructions,
-    /you may briefly offer them without being pushy/i,
+    /Do not routinely search optional convenience items/i,
   );
   assert.match(
     instructions,
-    /Search those complementary categories only when the USER asks for them/i,
+    /Search complements when the USER asks for them or when an explicit complete verified store-kit request requires them/i,
   );
 });
 
 test('D accepted complements contract — "Tak, dobierz też grunt, wałek i folię."', () => {
   assert.match(
     AGENT_INSTRUCTIONS,
-    /If the USER accepts complementary items, batch the requested complementary categories together in one find_obi_products request where practical/i,
+    /batch accepted related categories where practical/i,
+  );
+});
+
+test("obsolete complete-kit/job wording cannot independently trigger complement OBI lookup", () => {
+  const instructions = AGENT_INSTRUCTIONS;
+
+  assert.doesNotMatch(
+    instructions,
+    /complete kit or everything needed for the job/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /Search those complementary categories only when the USER asks for them or when the original request clearly asks/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /When the USER asks about one product or one product category, answer or select that requested item first/i,
+  );
+  assert.doesNotMatch(
+    instructions,
+    /For a direct factual question about the current price or stock of a specific OBIK or product/i,
+  );
+  assert.equal(
+    (instructions.match(/For a direct factual question about the current price, stock, availability, OBIK, or specific OBI product/g) ?? []).length,
+    1,
+  );
+  assert.match(
+    instructions,
+    /Search complements when the USER asks for them or when an explicit complete verified store-kit request requires them/i,
+  );
+  assert.match(
+    instructions,
+    /Do not automatically call find_obi_products merely because the required categories can be identified/i,
   );
 });
 
@@ -2378,19 +2398,19 @@ test('G direct price-stock contract — "Jaki jest stan i cena OBIK X?"', () => 
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /For a direct factual question about the current price or stock of a specific OBIK or product/i,
+    /For a direct factual question about the current price, stock, availability, OBIK, or specific OBI product/i,
   );
   assert.match(
     instructions,
-    /verify the requested product and answer that question directly without unnecessary cross-sell/i,
+    /verify the requested current-store fact and answer it directly without unnecessary cross-sell/i,
   );
   assert.match(
     instructions,
-    /Do not append a generic offer for more products to every answer/i,
+    /do not append a generic store-check or cross-sell question to every answer/i,
   );
 });
 
-test('ambiguity A — "Klient potrzebuje czarnych trytytek." allows reconnaissance but suppresses recommendation until clarification', () => {
+test('ambiguity A — "Klient potrzebuje czarnych trytytek." clarifies before OBI lookup', () => {
   const instructions = AGENT_INSTRUCTIONS;
 
   assert.match(
@@ -2399,76 +2419,53 @@ test('ambiguity A — "Klient potrzebuje czarnych trytytek." allows reconnaissan
   );
   assert.match(
     instructions,
-    /For product-selection intent where the requested product category is already clear but a missing decision-critical parameter still materially changes which variant is correct or useful/i,
+    /For product-selection intent, if a missing parameter materially changes which variant is correct or useful, its compatibility, or safety, ask ONE concise targeted clarification and STOP this turn/i,
   );
   assert.match(
     instructions,
-    /you MAY use one broad same-category find_obi_products lookup only as internal reconnaissance to understand the available variant space/i,
+    /Do not call find_obi_products before the USER answers/i,
   );
   assert.match(
     instructions,
-    /Do not invent the missing parameter to narrow that reconnaissance query/i,
+    /do not use assortment search to infer or guess the missing selection parameter/i,
   );
-  assert.match(
+  assert.doesNotMatch(
     instructions,
-    /do not recommend a concrete SKU, do not return productRefs, do not present specific candidate products as choices/i,
-  );
-  assert.match(
-    instructions,
-    /do not surface candidate-specific price or stock as though a selection has been made/i,
-  );
-  assert.match(
-    instructions,
-    /do not treat reconnaissance as resolving the ambiguity/i,
-  );
-  assert.match(
-    instructions,
-    /ask ONE concise targeted clarification and STOP the turn after that clarification/i,
+    /reconnaissance/i,
   );
   assert.match(
     instructions,
     /dimensions, length, width, diameter, thread or connection size, voltage, power, IP rating or environment, substrate or material, load or capacity, application, and compatibility/i,
   );
-  assert.match(
-    instructions,
-    /this list is illustrative, not exhaustive/i,
-  );
 });
 
-test("clarification gate is structurally before general OBI tool-use and job-kit policy", () => {
+test("Product Contract v1 decision policy keeps advisor-first paths before explicit OBI paths", () => {
   const instructions = AGENT_INSTRUCTIONS;
-  const gateIndex = instructions.indexOf(
-    "Before deciding whether to call find_obi_products, follow this decision order.",
+  const decisionIndex = instructions.indexOf(
+    "Before calling find_obi_products, first identify the USER's intent:",
   );
-  const generalObiIndex = instructions.indexOf(
-    "Use find_obi_products whenever verified current OBI assortment",
+  const generalAdviceIndex = instructions.indexOf(
+    "For ordinary general technical or sales-advice questions",
   );
-  const jobPolicyIndex = instructions.indexOf(
-    "When a sufficiently specified USER request describes a job or goal",
+  const selectionIndex = instructions.indexOf(
+    "For product-selection intent, if a missing parameter materially changes",
+  );
+  const jobIndex = instructions.indexOf(
+    "For task, project, or 'what do I need' intent",
+  );
+  const explicitObiIndex = instructions.indexOf(
+    "Use find_obi_products immediately for explicit assortment/browse requests",
   );
 
-  assert.notEqual(gateIndex, -1);
-  assert.notEqual(generalObiIndex, -1);
-  assert.notEqual(jobPolicyIndex, -1);
-  assert.ok(gateIndex < generalObiIndex);
-  assert.ok(gateIndex < jobPolicyIndex);
-
-  assert.match(
-    instructions,
-    /First identify the USER's intent: product selection, a task\/job or complete-kit request, assortment\/browse, or a general technical question/i,
-  );
-  assert.match(
-    instructions,
-    /If the ambiguity affects compatibility, safety, which product categories are needed, or a materially different interpretation of the job, ask ONE concise targeted clarification and STOP this turn before calling find_obi_products/i,
-  );
-  assert.match(
-    instructions,
-    /This stricter pre-lookup gate applies to product-selection, task\/job, and complete-kit requests/i,
-  );
-  assert.match(
-    instructions,
-    /Explicit assortment\/browse intent is different: it may proceed to verified variants and productRefs without unnecessary selection clarification/i,
-  );
+  assert.notEqual(decisionIndex, -1);
+  assert.notEqual(generalAdviceIndex, -1);
+  assert.notEqual(selectionIndex, -1);
+  assert.notEqual(jobIndex, -1);
+  assert.notEqual(explicitObiIndex, -1);
+  assert.ok(decisionIndex < generalAdviceIndex);
+  assert.ok(generalAdviceIndex < explicitObiIndex);
+  assert.ok(selectionIndex < explicitObiIndex);
+  assert.ok(jobIndex < explicitObiIndex);
 });
 
 test('ambiguity B — "Jakie czarne trytytki mamy?" browses multiple verified variants', () => {
@@ -2484,7 +2481,7 @@ test('ambiguity B — "Jakie czarne trytytki mamy?" browses multiple verified va
   );
   assert.match(
     instructions,
-    /Use find_obi_products with a result limit greater than one when useful/i,
+    /Use a result limit greater than one when useful/i,
   );
   assert.match(
     instructions,
@@ -2492,7 +2489,7 @@ test('ambiguity B — "Jakie czarne trytytki mamy?" browses multiple verified va
   );
   assert.match(
     instructions,
-    /state clearly that multiple verified variants were found/i,
+    /compare useful distinguishing SKU facts only when those facts are verified/i,
   );
 });
 
@@ -2518,10 +2515,15 @@ test("bounded assortment results are never presented as exhaustive without verif
   );
 });
 
-test('ambiguity C — "Potrzebuje trytytek 4,2 x 380 mm do środka." proceeds without unnecessary clarification', () => {
+test('ambiguity C — sufficiently specified selection with explicit market request proceeds to OBI verification', () => {
+  const instructions = AGENT_INSTRUCTIONS;
   assert.match(
-    AGENT_INSTRUCTIONS,
-    /If the USER already provided enough relevant detail, proceed without unnecessary clarification/i,
+    instructions,
+    /If the USER already supplied enough decision-critical detail, do not ask unnecessary clarification/i,
+  );
+  assert.match(
+    instructions,
+    /sufficiently specified product selection when the USER explicitly asks what the selected market has/i,
   );
 });
 
@@ -2530,7 +2532,7 @@ test('ambiguity D — "Klient potrzebuje końcówki z sitkiem do kranu." asks fo
 
   assert.match(
     instructions,
-    /determine whether any missing information materially changes the correct variant, compatibility, safety, usefulness, or which product categories are actually needed for the job/i,
+    /if a missing parameter materially changes which variant is correct or useful, its compatibility, or safety/i,
   );
   assert.match(
     instructions,
@@ -2538,7 +2540,7 @@ test('ambiguity D — "Klient potrzebuje końcówki z sitkiem do kranu." asks fo
   );
   assert.match(
     instructions,
-    /If the ambiguity affects compatibility, safety, which product categories are needed, or a materially different interpretation of the job, ask ONE concise targeted clarification and STOP this turn before calling find_obi_products/i,
+    /ask ONE concise targeted clarification and STOP this turn/i,
   );
   assert.match(
     instructions,
@@ -2551,11 +2553,11 @@ test("ambiguity E — three fitting verified variants cannot be silently collaps
 
   assert.match(
     instructions,
-    /When find_obi_products returns multiple verified products that materially fit the request, never silently hide that fact or imply that only one item exists/i,
+    /When multiple verified products materially fit the browse request, do not silently imply that only one exists/i,
   );
   assert.match(
     instructions,
-    /Either present or compare the useful alternatives, or briefly explain why one was selected over the others/i,
+    /return several relevant verified variants/i,
   );
   assert.match(
     instructions,
