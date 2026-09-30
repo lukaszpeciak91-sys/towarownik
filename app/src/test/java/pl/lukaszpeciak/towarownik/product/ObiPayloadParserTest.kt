@@ -101,7 +101,10 @@ class ObiPayloadParserTest {
             product.primaryImageUrl,
         )
         assertEquals("Bosch Wiertarka Easy Impact 600 W", product.name)
-        assertEquals(BigDecimal("188.0"), product.grossPrice)
+        assertEquals(
+            0,
+            product.grossPrice?.compareTo(BigDecimal("188.00")),
+        )
     }
 
     @Test
@@ -153,9 +156,9 @@ class ObiPayloadParserTest {
     @Test
     fun `non https and untrusted image hosts are rejected`() {
         listOf(
-            ""http://bilder.obi.pl/example/image.jpeg"",
-            ""https://imgix.obi.de/example/image.jpeg"",
-            ""https://bilder.obi.pl.evil.example/image.jpeg"",
+            "\"http://bilder.obi.pl/example/image.jpeg\"",
+            "\"https://imgix.obi.de/example/image.jpeg\"",
+            "\"https://bilder.obi.pl.evil.example/image.jpeg\"",
         ).forEach { imageJson ->
             val product = parser.parse(
                 optionalImageFixture(imageJson),
