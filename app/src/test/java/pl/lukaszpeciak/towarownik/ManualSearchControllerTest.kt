@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.conversation.PersistedSearchAction
 import pl.lukaszpeciak.towarownik.product.LocalProduct
 import pl.lukaszpeciak.towarownik.product.ManualProductSearchResult
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
@@ -89,6 +90,67 @@ class ManualSearchControllerTest {
                 it.enrichment is ManualResultEnrichment.Pending
             },
         )
+    }
+
+    @Test
+    fun `advisor search action reuses exact query and store through existing manual paging`() = runBlocking {
+        val action = PersistedSearchAction(
+            query = "Czarne trytytki 200 mm",
+            storeNumber = "074",
+            reportedTotalCount = 27,
+        )
+        val request = advisorSearchActionOpenRequest(action)
+        val candidates = (1..6).map { index ->
+            ProductSearchCandidate(
+                obik = (1_100_000 + index).toString(),
+                name = "Synthetic $index",
+            )
+        }
+        var searchedQuery: String? = null
+        val lookedUpStores = mutableListOf<String>()
+        val controller = ManualSearchController(
+            lookupObik = { obik, storeNumber ->
+                lookedUpStores += storeNumber
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+            searchProducts = { query ->
+                searchedQuery = query
+                ManualProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = action.reportedTotalCount,
+                )
+            },
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+        val initialStates = mutableListOf<ManualSearchUiState>()
+
+        controller.submit(
+            input = request.query,
+            storeNumber = request.storeNumber,
+        ) { initialStates += it }
+
+        val initial =
+            initialStates.last() as ManualSearchUiState.SearchResults
+        assertEquals(action.query, searchedQuery)
+        assertEquals(27, initial.reportedTotalCount)
+        assertEquals(5, initial.visibleCount)
+        assertEquals(List(5) { "074" }, lookedUpStores)
+
+        val moreStates = mutableListOf<ManualSearchUiState>()
+        controller.showMore(
+            current = initial,
+            storeNumber = request.storeNumber,
+        ) { moreStates += it }
+
+        val expanded =
+            moreStates.last() as ManualSearchUiState.SearchResults
+        assertEquals(6, expanded.visibleCount)
+        assertEquals(List(6) { "074" }, lookedUpStores)
     }
 
     @Test

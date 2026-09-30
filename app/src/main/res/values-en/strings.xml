@@ -21,6 +21,9 @@
     <string name="advisor_empty_prompt_help">How can I help with this customer?</string>
     <string name="advisor_empty_prompt_need">Alright, what do they need?</string>
     <string name="advisor_sources">Sources</string>
+    <string name="advisor_search_more_query">Search: %1$s</string>
+    <string name="advisor_search_more_reported">OBI reports %1$d search results.</string>
+    <string name="advisor_search_more_button">See more (%1$d)</string>
     <string name="ai_usage_web_searches">Web searches</string>
     <string name="advisor_composer_placeholder">Describe what the customer needs…</string>
     <string name="advisor_progress_connecting">Connecting to advisor…</string>

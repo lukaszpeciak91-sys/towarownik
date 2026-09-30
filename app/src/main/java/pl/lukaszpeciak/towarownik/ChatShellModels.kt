@@ -16,6 +16,7 @@ import kotlinx.serialization.json.put
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.conversation.PersistedSearchAction
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
@@ -32,6 +33,7 @@ internal data class AdvisorChatMessage(
     val createdAt: Long,
     val products: List<VerifiedProductUiModel> = emptyList(),
     val sources: List<PersistedWebSource> = emptyList(),
+    val searchActions: List<PersistedSearchAction> = emptyList(),
     val persistedMessageId: Long? = null,
 )
 
@@ -67,6 +69,7 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                     product.toVerifiedProductUiModel()
                 },
                 sources = message.sources,
+                searchActions = message.searchActions,
                 persistedMessageId = message.id,
             )
         },
@@ -226,6 +229,23 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                     ?: JsonNull,
                             )
                             put(
+                                "searchActions",
+                                buildJsonArray {
+                                    message.searchActions.forEach { action ->
+                                        add(
+                                            buildJsonObject {
+                                                put("query", action.query)
+                                                put("storeNumber", action.storeNumber)
+                                                put(
+                                                    "reportedTotalCount",
+                                                    action.reportedTotalCount,
+                                                )
+                                            },
+                                        )
+                                    }
+                                },
+                            )
+                            put(
                                 "products",
                                 buildJsonArray {
                                     message.products.forEach { product ->
@@ -355,12 +375,40 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                         )
                     }
                     .orEmpty()
+                val searchActions =
+                    (objectValue["searchActions"] as? JsonArray)
+                        ?.mapNotNull { actionElement ->
+                            val action = actionElement as? JsonObject
+                                ?: return@mapNotNull null
+                            val query = action["query"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: return@mapNotNull null
+                            val storeNumber = action["storeNumber"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: return@mapNotNull null
+                            val reportedTotalCount =
+                                action["reportedTotalCount"]
+                                    ?.jsonPrimitive
+                                    ?.intOrNull
+                                    ?: return@mapNotNull null
+                            pl.lukaszpeciak.towarownik.conversation
+                                .persistedSearchActionOrNull(
+                                    query = query,
+                                    storeNumber = storeNumber,
+                                    reportedTotalCount =
+                                        reportedTotalCount,
+                                )
+                        }
+                        .orEmpty()
                 AdvisorChatMessage(
                     role = role,
                     text = text,
                     createdAt = createdAt,
                     products = products,
                     sources = sources,
+                    searchActions = searchActions,
                     persistedMessageId = objectValue["persistedMessageId"]
                         ?.jsonPrimitive
                         ?.longOrNull,

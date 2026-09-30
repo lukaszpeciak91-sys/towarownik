@@ -192,6 +192,121 @@ class FindObiProductsToolTest {
     }
 
     @Test
+    fun `broad multi result search exposes local search more action when OBI reports more`() = runBlocking {
+        val candidates = (1..5).map { index ->
+            ProductSearchCandidate(
+                obik = (6_100_000 + index).toString(),
+                name = "Synthetic $index",
+            )
+        }
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = 27,
+                )
+            },
+            lookup = { obik, storeNumber ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(
+            arguments(
+                query = "czarne trytytki",
+                storeNumber = "074",
+                limit = 3,
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(
+            listOf(
+                AdvisorSearchAction(
+                    query = "czarne trytytki",
+                    storeNumber = "074",
+                    reportedTotalCount = 27,
+                ),
+            ),
+            result.searchActions,
+        )
+        assertEquals(3, result.result.products.size)
+    }
+
+    @Test
+    fun `search more action is omitted when bounded results cover reported total`() = runBlocking {
+        val candidates = listOf(
+            ProductSearchCandidate("6100001", "One"),
+            ProductSearchCandidate("6100002", "Two"),
+        )
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = 2,
+                )
+            },
+            lookup = { obik, storeNumber ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(
+            arguments(
+                query = "czarne trytytki",
+                limit = 2,
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertTrue(result.searchActions.isEmpty())
+    }
+
+    @Test
+    fun `single result lookup intent never creates search more action`() = runBlocking {
+        val candidates = (1..5).map { index ->
+            ProductSearchCandidate(
+                obik = (6_200_000 + index).toString(),
+                name = "Synthetic $index",
+            )
+        }
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    items = candidates,
+                    reportedTotalCount = 27,
+                )
+            },
+            lookup = { obik, storeNumber ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        storeNumber = storeNumber,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(
+            arguments(
+                query = "konkretny produkt",
+                limit = 1,
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertTrue(result.searchActions.isEmpty())
+        assertEquals(1, result.result.products.size)
+    }
+
+    @Test
     fun `stock zero remains zero and unknown stock and price remain null`() = runBlocking {
         val products = mapOf(
             "1234567" to product(

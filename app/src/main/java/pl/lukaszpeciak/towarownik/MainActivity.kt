@@ -97,6 +97,7 @@ import pl.lukaszpeciak.towarownik.conversation.ConversationSummary
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.conversation.PersistedSearchAction
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
@@ -138,6 +139,19 @@ class MainActivity : AppCompatActivity() {
         )
     }
 }
+
+internal data class ManualSearchOpenRequest(
+    val query: String,
+    val storeNumber: String,
+)
+
+internal fun advisorSearchActionOpenRequest(
+    action: PersistedSearchAction,
+): ManualSearchOpenRequest =
+    ManualSearchOpenRequest(
+        query = action.query,
+        storeNumber = action.storeNumber,
+    )
 
 internal enum class AppSurface {
     ADVISOR,
@@ -242,6 +256,9 @@ private fun TowarownikApp() {
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
 
     var manualQuery by rememberSaveable { mutableStateOf("") }
+    var manualStoreNumber by rememberSaveable {
+        mutableStateOf(selectedStoreNumber)
+    }
     var manualState by rememberSaveable(
         stateSaver = ManualSearchUiStateSaver,
     ) {
@@ -487,6 +504,14 @@ private fun TowarownikApp() {
                         finalResponseId = finalState.responseId,
                         products = finalState.products,
                         sources = display.sources,
+                        searchActions = finalState.searchActions.map { action ->
+                            PersistedSearchAction(
+                                query = action.query,
+                                storeNumber = action.storeNumber,
+                                reportedTotalCount =
+                                    action.reportedTotalCount,
+                            )
+                        },
                     )
                     if (
                         advisorRequestGuard.isCurrent(
@@ -533,7 +558,7 @@ private fun TowarownikApp() {
     }
 
     fun submitManualSearch() {
-        val storeNumber = selectedStoreNumber
+        val storeNumber = manualStoreNumber
         val submission = prepareSearchSubmission(manualQuery)
         manualRequestGuard.invalidate()
         val generation = manualRequestGuard.token()
@@ -546,7 +571,7 @@ private fun TowarownikApp() {
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    selectedStoreNumber == storeNumber
+                    manualStoreNumber == storeNumber
                 ) {
                     manualState = state
                 }
@@ -555,7 +580,7 @@ private fun TowarownikApp() {
     }
 
     fun selectManualResult(item: ManualSearchResultItem) {
-        val storeNumber = selectedStoreNumber
+        val storeNumber = manualStoreNumber
         manualRequestGuard.invalidate()
         val generation = manualRequestGuard.token()
         manualJob?.cancel()
@@ -566,7 +591,7 @@ private fun TowarownikApp() {
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    selectedStoreNumber == storeNumber
+                    manualStoreNumber == storeNumber
                 ) {
                     manualState = state
                 }
@@ -578,7 +603,7 @@ private fun TowarownikApp() {
         val current = manualState as?
             ManualSearchUiState.SearchResults ?: return
         if (!current.canShowMore) return
-        val storeNumber = selectedStoreNumber
+        val storeNumber = manualStoreNumber
         manualRequestGuard.invalidate()
         val generation = manualRequestGuard.token()
         manualJob?.cancel()
@@ -589,7 +614,7 @@ private fun TowarownikApp() {
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    selectedStoreNumber == storeNumber
+                    manualStoreNumber == storeNumber
                 ) {
                     manualState = state
                 }
@@ -598,7 +623,40 @@ private fun TowarownikApp() {
     }
 
     fun openManualSearch() {
+        if (manualStoreNumber != selectedStoreNumber) {
+            manualRequestGuard.invalidate()
+            manualJob?.cancel()
+            manualJob = null
+            manualState = ManualSearchUiState.Idle
+        }
+        manualStoreNumber = selectedStoreNumber
         surfaceName = AppSurface.MANUAL_SEARCH.name
+    }
+
+    fun openAdvisorSearchAction(
+        action: PersistedSearchAction,
+    ) {
+        val request = advisorSearchActionOpenRequest(action)
+        manualRequestGuard.invalidate()
+        val generation = manualRequestGuard.token()
+        manualJob?.cancel()
+        manualQuery = request.query
+        manualStoreNumber = request.storeNumber
+        manualState = ManualSearchUiState.Idle
+        surfaceName = AppSurface.MANUAL_SEARCH.name
+        manualJob = scope.launch {
+            manualSearchController.submit(
+                input = request.query,
+                storeNumber = request.storeNumber,
+            ) { state ->
+                if (
+                    manualRequestGuard.isTokenCurrent(generation) &&
+                    manualStoreNumber == request.storeNumber
+                ) {
+                    manualState = state
+                }
+            }
+        }
     }
 
     fun openSettings() {
@@ -712,6 +770,7 @@ private fun TowarownikApp() {
                         advisorJob?.isActive != true,
                     onStoreSelected = ::selectConversationStore,
                     onReportAssistantMessage = ::openAssistantReport,
+                    onOpenSearchAction = ::openAdvisorSearchAction,
                     emptyPromptIndex = emptyPromptIndex,
                 )
             }
@@ -741,7 +800,7 @@ private fun TowarownikApp() {
                 },
                 onSelectResult = ::selectManualResult,
                 onShowMore = ::showMoreManualResults,
-                storeNumber = selectedStoreNumber,
+                storeNumber = manualStoreNumber,
                 onBack = {
                     navigateBackFrom(AppSurface.MANUAL_SEARCH)
                 },
@@ -1183,6 +1242,7 @@ private fun AdvisorChatScreen(
     storeSelectorEnabled: Boolean,
     onStoreSelected: (String) -> Unit,
     onReportAssistantMessage: (Long) -> Unit,
+    onOpenSearchAction: (PersistedSearchAction) -> Unit,
     emptyPromptIndex: Int,
 ) {
     val isRunning = state.isRunning()
@@ -1246,6 +1306,8 @@ private fun AdvisorChatScreen(
                             message = message,
                             onReportAssistantMessage =
                                 onReportAssistantMessage,
+                            onOpenSearchAction =
+                                onOpenSearchAction,
                         )
                     }
 
@@ -1549,6 +1611,7 @@ private fun EmptyAdvisorState(
 private fun AdvisorMessageBubble(
     message: AdvisorChatMessage,
     onReportAssistantMessage: (Long) -> Unit,
+    onOpenSearchAction: (PersistedSearchAction) -> Unit,
 ) {
     val isUser = message.role == ChatMessageRole.USER
     val warmColors = MaterialTheme.towarownikColors
@@ -1605,6 +1668,14 @@ private fun AdvisorMessageBubble(
             message.products.forEach { product ->
                 Spacer(modifier = Modifier.height(8.dp))
                 VerifiedProductCard(product)
+            }
+
+            if (message.searchActions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                AdvisorSearchActions(
+                    actions = message.searchActions,
+                    onOpenSearchAction = onOpenSearchAction,
+                )
             }
 
             if (message.sources.isNotEmpty()) {
@@ -1738,6 +1809,75 @@ private fun AdvisorAnswerText(
                 }
         },
     )
+}
+
+@Composable
+private fun AdvisorSearchActions(
+    actions: List<PersistedSearchAction>,
+    onOpenSearchAction: (PersistedSearchAction) -> Unit,
+) {
+    Column(
+        modifier = Modifier.widthIn(max = 600.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        actions.forEach { action ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.towarownikColors.surfaceRaised,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline,
+                ),
+            ) {
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = 12.dp,
+                        vertical = 10.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (actions.size > 1) {
+                        Text(
+                            text = stringResource(
+                                R.string.advisor_search_more_query,
+                                action.query,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color =
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            R.string.advisor_search_more_reported,
+                            action.reportedTotalCount,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color =
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(
+                        onClick = {
+                            onOpenSearchAction(action)
+                        },
+                        contentPadding = PaddingValues(
+                            horizontal = 0.dp,
+                            vertical = 2.dp,
+                        ),
+                    ) {
+                        Text(
+                            text = stringResource(
+                                R.string.advisor_search_more_button,
+                                action.reportedTotalCount,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2326,6 +2466,7 @@ private fun AdvisorChatPreview() {
             storeSelectorEnabled = true,
             onStoreSelected = {},
             onReportAssistantMessage = {},
+            onOpenSearchAction = {},
             emptyPromptIndex = 0,
         )
     }

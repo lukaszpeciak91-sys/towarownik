@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
+import pl.lukaszpeciak.towarownik.conversation.PersistedSearchAction
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 
 class ChatShellModelsTest {
@@ -113,6 +114,52 @@ class ChatShellModelsTest {
         val restored = restoreAdvisorCase(saveAdvisorCase(completed))
 
         assertEquals(listOf(source), restored.messages.single().sources)
+    }
+
+    @Test
+    fun `advisor search actions survive save and restore unchanged`() {
+        val action = PersistedSearchAction(
+            query = "czarne trytytki",
+            storeNumber = "074",
+            reportedTotalCount = 27,
+        )
+        val completed = AdvisorCaseUiState(
+            messages = listOf(
+                AdvisorChatMessage(
+                    role = ChatMessageRole.ASSISTANT,
+                    text = "Znalazłam kilka wariantów.",
+                    createdAt = 200L,
+                    searchActions = listOf(action),
+                    persistedMessageId = 89L,
+                ),
+            ),
+        )
+
+        val restored = restoreAdvisorCase(
+            saveAdvisorCase(completed),
+        )
+
+        assertEquals(
+            listOf(action),
+            restored.messages.single().searchActions,
+        )
+    }
+
+    @Test
+    fun `advisor search action open request preserves exact query and historical store`() {
+        val action = PersistedSearchAction(
+            query = "Czarne trytytki  200 mm",
+            storeNumber = "074",
+            reportedTotalCount = 27,
+        )
+
+        assertEquals(
+            ManualSearchOpenRequest(
+                query = "Czarne trytytki  200 mm",
+                storeNumber = "074",
+            ),
+            advisorSearchActionOpenRequest(action),
+        )
     }
 
     @Test

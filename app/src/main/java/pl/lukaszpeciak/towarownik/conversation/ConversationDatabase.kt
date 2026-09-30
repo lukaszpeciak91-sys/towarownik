@@ -13,8 +13,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageEntity::class,
         MessageProductEntity::class,
         MessageSourceEntity::class,
+        MessageSearchActionEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 internal abstract class ConversationDatabase : RoomDatabase() {
@@ -35,6 +36,7 @@ internal abstract class ConversationDatabase : RoomDatabase() {
                         MIGRATION_1_2,
                         MIGRATION_2_3,
                         MIGRATION_3_4,
+                        MIGRATION_4_5,
                     )
                     .build()
                     .also { database ->
@@ -109,6 +111,32 @@ internal val MIGRATION_3_4 = object : Migration(3, 4) {
             """
             CREATE INDEX IF NOT EXISTS `index_message_sources_messageId`
             ON `message_sources` (`messageId`)
+            """.trimIndent(),
+        )
+    }
+}
+
+
+internal val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `message_search_actions` (
+                `messageId` INTEGER NOT NULL,
+                `position` INTEGER NOT NULL,
+                `query` TEXT NOT NULL,
+                `storeNumber` TEXT NOT NULL,
+                `reportedTotalCount` INTEGER NOT NULL,
+                PRIMARY KEY(`messageId`, `position`),
+                FOREIGN KEY(`messageId`) REFERENCES `messages`(`id`)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS `index_message_search_actions_messageId`
+            ON `message_search_actions` (`messageId`)
             """.trimIndent(),
         )
     }

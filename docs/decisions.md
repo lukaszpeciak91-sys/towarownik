@@ -349,3 +349,13 @@ These decisions describe the broader intended product behavior. The currently im
 - Unsupported future protocol versions fail explicitly before OpenAI work. Protocol diagnostics may record only protocol version, endpoint stage, response-envelope type, and bounded validation category; no user/tool/product content, secrets, raw request bodies, or upstream payloads.
 - Future incompatible transport changes require a new explicit protocol version and a rollout plan that preserves the frozen unversioned-v2 compatibility alias instead of changing its meaning.
 
+
+
+## Advisor broad-search “Zobacz więcej” v0.1
+
+- Preserve OBI `reportedTotalCount` on the Android advisor search path while keeping the advisor candidate/result-card limit at five.
+- For a successful advisor query with `limit > 1`, create Android-only `AdvisorSearchAction(query,storeNumber,reportedTotalCount)` metadata only when the reported count exceeds the bounded candidates requested/returned. This metadata is separate from verified product snapshots and is never sent through the Worker continuation protocol.
+- Deduplicate eligible actions within the current USER turn by store + normalized query. Persist final actions with the ASSISTANT message in Room v5 `message_search_actions`; historical messages migrate with zero actions.
+- Render the count only as an OBI-reported search-result count. UI wording must not imply store stock, availability, completeness, or that all reported results were loaded.
+- “Zobacz więcej (N)” opens the existing manual OBI search with the exact persisted query and store and automatically starts the existing `ManualSearchController` path. A separate manual-search store context prevents a historical action from mutating the conversation's selected store; normal top-bar manual search still starts from the conversation store.
+- Manual search remains capped at 25 parsed candidates and existing five-item reveal/enrichment. No OBI pagination, advisor protocol/version change, Worker validation change, prompt/orchestration change, productRef change, or manual-screen redesign is introduced.

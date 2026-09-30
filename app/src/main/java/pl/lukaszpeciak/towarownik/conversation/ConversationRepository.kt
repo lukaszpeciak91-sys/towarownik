@@ -37,6 +37,32 @@ internal data class PersistedWebSource(
     val endIndex: Int? = null,
 )
 
+internal data class PersistedSearchAction(
+    val query: String,
+    val storeNumber: String,
+    val reportedTotalCount: Int,
+)
+
+internal fun persistedSearchActionOrNull(
+    query: String,
+    storeNumber: String,
+    reportedTotalCount: Int,
+): PersistedSearchAction? {
+    if (
+        query.isBlank() ||
+        query.length > 200 ||
+        !isSupportedObiStoreNumber(storeNumber) ||
+        reportedTotalCount <= 0
+    ) {
+        return null
+    }
+    return PersistedSearchAction(
+        query = query,
+        storeNumber = storeNumber,
+        reportedTotalCount = reportedTotalCount,
+    )
+}
+
 internal fun persistedWebSourceOrNull(
     title: String,
     url: String,
@@ -84,6 +110,7 @@ internal data class PersistedMessage(
     val createdAt: Long,
     val products: List<VerifiedProductSnapshot>,
     val sources: List<PersistedWebSource> = emptyList(),
+    val searchActions: List<PersistedSearchAction> = emptyList(),
 )
 
 internal data class UserTurnStart(
@@ -206,6 +233,7 @@ internal class ConversationRepository(
         createdAt: Long = now(),
         products: List<VerifiedProductSnapshot> = emptyList(),
         sources: List<PersistedWebSource> = emptyList(),
+        searchActions: List<PersistedSearchAction> = emptyList(),
     ) {
         dao.completeAssistantTurn(
             conversationId = conversationId,
@@ -214,6 +242,7 @@ internal class ConversationRepository(
             lastResponseId = finalResponseId,
             products = products,
             sources = sources,
+            searchActions = searchActions,
         )
     }
 
@@ -314,6 +343,15 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 url = source.url,
                                 startIndex = source.startIndex,
                                 endIndex = source.endIndex,
+                            )
+                        },
+                    searchActions = item.searchActions
+                        .sortedBy { it.position }
+                        .mapNotNull { action ->
+                            persistedSearchActionOrNull(
+                                query = action.query,
+                                storeNumber = action.storeNumber,
+                                reportedTotalCount = action.reportedTotalCount,
                             )
                         },
                 )

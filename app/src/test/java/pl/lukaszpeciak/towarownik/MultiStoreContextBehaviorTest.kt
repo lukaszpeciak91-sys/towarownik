@@ -59,24 +59,44 @@ class MultiStoreContextBehaviorTest {
         ).forEach { body ->
             assertTrue(body.contains("manualRequestGuard.invalidate()"))
             assertTrue(body.contains("manualRequestGuard.isTokenCurrent(generation)"))
-            assertTrue(body.contains("selectedStoreNumber == storeNumber"))
+            assertTrue(body.contains("manualStoreNumber == storeNumber"))
         }
     }
 
     @Test
-    fun `manual search screen inherits the active conversation store only`() {
+    fun `normal manual search starts from conversation store while historical action keeps its own store`() {
         val source = mainActivitySource()
+        val openManual = functionBody(
+            source,
+            "fun openManualSearch() {",
+        )
+        val openAction = functionBody(
+            source,
+            "fun openAdvisorSearchAction(",
+        )
         val manualSurface = source
             .substringAfter("AppSurface.MANUAL_SEARCH -> {")
             .substringBefore("AppSurface.SETTINGS -> {")
 
         assertTrue(
-            manualSurface.contains(
-                "storeNumber = selectedStoreNumber",
+            openManual.contains(
+                "manualStoreNumber = selectedStoreNumber",
+            ),
+        )
+        assertTrue(
+            openAction.contains(
+                "manualStoreNumber = request.storeNumber",
             ),
         )
         assertFalse(
-            manualSurface.contains("manualStoreNumber"),
+            openAction.contains(
+                "selectedStoreNumber = request.storeNumber",
+            ),
+        )
+        assertTrue(
+            manualSurface.contains(
+                "storeNumber = manualStoreNumber",
+            ),
         )
         assertFalse(
             manualSurface.contains("onStoreSelected"),
