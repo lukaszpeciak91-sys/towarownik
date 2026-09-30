@@ -2304,6 +2304,10 @@ private fun ManualSearchResults(
 
                         is ManualResultEnrichment.Verified -> {
                             val product = enrichment.product
+                            VerifiedProductThumbnail(
+                                imageUrl = product.primaryImageUrl,
+                                contentDescription = product.name,
+                            )
                             Text(
                                 text = formatStoreStock(product.stock),
                                 style = MaterialTheme.typography.bodyLarge,
