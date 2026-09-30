@@ -141,10 +141,9 @@ class ProductSearchRepositoryTest {
             val result = repository.search("synthetic")
 
             assertTrue(result is ProductSearchResult.Candidates)
-            assertEquals(
-                5,
-                (result as ProductSearchResult.Candidates).items.size,
-            )
+            result as ProductSearchResult.Candidates
+            assertEquals(5, result.items.size)
+            assertEquals(706, result.reportedTotalCount)
         }
     }
 
