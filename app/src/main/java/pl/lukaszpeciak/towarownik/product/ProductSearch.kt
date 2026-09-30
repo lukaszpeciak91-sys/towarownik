@@ -21,7 +21,10 @@ data class ProductSearchCandidate(
 )
 
 sealed interface ProductSearchResult {
-    data class Candidates(val items: List<ProductSearchCandidate>) : ProductSearchResult
+    data class Candidates(
+        val items: List<ProductSearchCandidate>,
+        val reportedTotalCount: Int = items.size,
+    ) : ProductSearchResult
     data object NotFound : ProductSearchResult
     data class Unavailable(
         val failure: ProductLookupFailure,
@@ -208,7 +211,10 @@ class ProductSearchRepository(
                         when (parsedSearch) {
                             is ObiSearchParseResult.Results -> {
                                 diagnostics.finish(response.diagnosticId)
-                                ProductSearchResult.Candidates(parsedSearch.items)
+                                ProductSearchResult.Candidates(
+                                    items = parsedSearch.items,
+                                    reportedTotalCount = parsedSearch.reportedTotalCount,
+                                )
                             }
                             ObiSearchParseResult.NoResults -> {
                                 diagnostics.mappingTrace(
