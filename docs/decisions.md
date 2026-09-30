@@ -367,5 +367,5 @@ These decisions describe the broader intended product behavior. The currently im
 - Extract only the primary structured product image from the existing product page response. Accept only HTTPS URLs on the confirmed `bilder.obi.pl` host; malformed, missing, non-HTTPS, or untrusted URLs fail soft to null.
 - Do not parse search-result thumbnails, galleries, labels, banners, recommendations, or energy-label artwork. Manual search gets the image only after the existing exact-verification enrichment.
 - Persist the image with assistant product snapshots in Room v6 via nullable `message_products.imageUrl`; v5→v6 leaves historical rows null.
-- Use Coil 3.6.3 Compose + OkHttp for asynchronous cached network presentation. Image loading errors stay UI-local and never become product/search failures.
+- Use Coil 3.5.0 Compose + OkHttp for asynchronous cached network presentation. Image loading errors stay UI-local and never become product/search failures.
 - Preserve advisor prompts/orchestration, Worker protocol, productRefs, five-product advisor bound, manual 25-candidate/five-at-a-time behavior, and PR #51 search-more semantics.
