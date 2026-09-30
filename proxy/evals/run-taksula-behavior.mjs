@@ -5,6 +5,7 @@ import {
   createOpenAISemanticJudge,
   createProductionAdvisorDriver,
   formatBehaviorSummary,
+  behaviorSuiteExitCode,
   runBehaviorSuite,
 } from "../.eval-dist/evals/taksula_behavior.js";
 
@@ -118,9 +119,7 @@ async function main() {
   );
   console.log(`trace: ${outputPath}`);
 
-  if (results.some((result) => result.status === "FAIL")) {
-    process.exitCode = 1;
-  }
+  process.exitCode = behaviorSuiteExitCode(results);
 }
 
 main().catch((error) => {
