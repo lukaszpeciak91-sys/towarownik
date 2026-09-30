@@ -61,14 +61,26 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                 else -> null
             } ?: return@mapNotNull null
 
+            val display = if (role == ChatMessageRole.ASSISTANT) {
+                normalizePersistedAdvisorDisplay(
+                    raw = message.text,
+                    sources = message.sources,
+                )
+            } else {
+                NormalizedAdvisorDisplay(
+                    text = message.text,
+                    sources = message.sources,
+                )
+            }
+
             AdvisorChatMessage(
                 role = role,
-                text = message.text,
+                text = display.text,
                 createdAt = message.createdAt,
                 products = message.products.map { product ->
                     product.toVerifiedProductUiModel()
                 },
-                sources = message.sources,
+                sources = display.sources,
                 searchActions = message.searchActions,
                 persistedMessageId = message.id,
             )
@@ -102,46 +114,48 @@ internal fun normalizeAdvisorDisplay(
     sources: List<AdvisorWebSource>,
 ): NormalizedAdvisorDisplay {
     val normalized = normalizeAdvisorText(raw)
-    val text = normalized.text
-
-    val persistedSources = sources.mapNotNull { source ->
-        val mappedRange = if (
-            source.startIndex != null &&
-            source.endIndex != null &&
-            source.startIndex in 0..raw.length &&
-            source.endIndex in 0..raw.length &&
-            source.endIndex > source.startIndex
-        ) {
-            val start =
-                normalized.boundaryMap[source.startIndex]
-            val end =
-                normalized.boundaryMap[source.endIndex]
-            if (
-                start >= normalized.leadingTrim &&
-                end <= normalized.trailingBoundary &&
-                end > start
-            ) {
-                (start - normalized.leadingTrim) to
-                    (end - normalized.leadingTrim)
-            } else {
-                null
-            }
-        } else {
-            null
-        }
-
-        pl.lukaszpeciak.towarownik.conversation
-            .persistedWebSourceOrNull(
-                title = source.title,
-                url = source.url,
-                startIndex = mappedRange?.first,
-                endIndex = mappedRange?.second,
-            )
-    }
-
     return NormalizedAdvisorDisplay(
-        text = text,
-        sources = persistedSources,
+        text = normalized.text,
+        sources = sources.mapNotNull { source ->
+            val mappedRange = remapAdvisorSourceRange(
+                rawLength = raw.length,
+                startIndex = source.startIndex,
+                endIndex = source.endIndex,
+                normalized = normalized,
+            )
+            pl.lukaszpeciak.towarownik.conversation
+                .persistedWebSourceOrNull(
+                    title = source.title,
+                    url = source.url,
+                    startIndex = mappedRange?.first,
+                    endIndex = mappedRange?.second,
+                )
+        },
+    )
+}
+
+internal fun normalizePersistedAdvisorDisplay(
+    raw: String,
+    sources: List<PersistedWebSource>,
+): NormalizedAdvisorDisplay {
+    val normalized = normalizeAdvisorText(raw)
+    return NormalizedAdvisorDisplay(
+        text = normalized.text,
+        sources = sources.mapNotNull { source ->
+            val mappedRange = remapAdvisorSourceRange(
+                rawLength = raw.length,
+                startIndex = source.startIndex,
+                endIndex = source.endIndex,
+                normalized = normalized,
+            )
+            pl.lukaszpeciak.towarownik.conversation
+                .persistedWebSourceOrNull(
+                    title = source.title,
+                    url = source.url,
+                    startIndex = mappedRange?.first,
+                    endIndex = mappedRange?.second,
+                )
+        },
     )
 }
 
@@ -417,6 +431,36 @@ private data class AdvisorTextNormalization(
     val leadingTrim: Int,
     val trailingBoundary: Int,
 )
+
+private fun remapAdvisorSourceRange(
+    rawLength: Int,
+    startIndex: Int?,
+    endIndex: Int?,
+    normalized: AdvisorTextNormalization,
+): Pair<Int, Int>? {
+    if (
+        startIndex == null ||
+        endIndex == null ||
+        startIndex !in 0..rawLength ||
+        endIndex !in 0..rawLength ||
+        endIndex <= startIndex
+    ) {
+        return null
+    }
+
+    val start = normalized.boundaryMap[startIndex]
+    val end = normalized.boundaryMap[endIndex]
+    if (
+        start < normalized.leadingTrim ||
+        end > normalized.trailingBoundary ||
+        end <= start
+    ) {
+        return null
+    }
+
+    return (start - normalized.leadingTrim) to
+        (end - normalized.leadingTrim)
+}
 
 private fun normalizeAdvisorText(
     raw: String,
