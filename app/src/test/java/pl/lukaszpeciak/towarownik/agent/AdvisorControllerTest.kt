@@ -670,6 +670,35 @@ class AdvisorControllerTest {
     }
 
     @Test
+    fun `authentication failure stays distinct and carries safe diagnostic`() = runBlocking {
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Failure(
+                    kind = AdvisorProxyFailureKind.AUTHENTICATION,
+                    httpStatus = 401,
+                    proxyErrorCode = "unauthorized",
+                    endpoint = "start",
+                )
+            },
+        )
+
+        val final = controller.runTurn("test", null) { }
+
+        assertEquals(
+            AdvisorUiState.Error(
+                error = AdvisorError.AUTHENTICATION,
+                diagnostic = AdvisorFailureDiagnostic(
+                    kind = AdvisorProxyFailureKind.AUTHENTICATION,
+                    httpStatus = 401,
+                    proxyErrorCode = "unauthorized",
+                    endpoint = "start",
+                ),
+            ),
+            final,
+        )
+    }
+
+    @Test
     fun `new conversation with null previous id cannot reuse old response id`() = runBlocking {
         var starts = 0
         var messages = 0
