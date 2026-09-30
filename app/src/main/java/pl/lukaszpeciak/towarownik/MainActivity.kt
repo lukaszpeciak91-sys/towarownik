@@ -591,7 +591,7 @@ private fun TowarownikApp() {
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    selectedStoreNumber == storeNumber
+                    manualStoreNumber == storeNumber
                 ) {
                     manualState = state
                 }
@@ -614,7 +614,7 @@ private fun TowarownikApp() {
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    selectedStoreNumber == storeNumber
+                    manualStoreNumber == storeNumber
                 ) {
                     manualState = state
                 }
