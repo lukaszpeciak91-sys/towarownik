@@ -13,6 +13,7 @@ import json
 import re
 import statistics
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
