@@ -43,6 +43,101 @@ class ObiPayloadParserTest {
     }
 
     @Test
+    fun `confirmed live fixture extracts trusted primary OBI product image`() {
+        val product = parser.parse(
+            fixture("live-3496072-store-075.html"),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertEquals(
+            "https://bilder.obi.pl/0834d60c-3719-4acf-8ad4-ce901b2bbe8c/pr08A/image.jpeg",
+            product.primaryImageUrl,
+        )
+        assertEquals("Dragon Klej uniwersalny Butapren 50 ml", product.name)
+        assertEquals(25, product.stock)
+        assertEquals(BigDecimal("12.99"), product.grossPrice)
+    }
+
+    @Test
+    fun `multiple confirmed gallery images select the first primary packshot`() {
+        val bosch = parser.parse(
+            fixture("live-image-6743009-store-075.html"),
+            "6743009",
+            STORE,
+        ).getOrThrow()
+        val lamp = parser.parse(
+            fixture("live-image-7156243-store-075.html"),
+            "7156243",
+            STORE,
+        ).getOrThrow()
+
+        assertEquals(
+            "https://bilder.obi.pl/464012a8-24d7-4687-8ded-e2a5e57034b7/pr08A/image.jpeg",
+            bosch.primaryImageUrl,
+        )
+        assertEquals("Bosch Wiertarka Easy Impact 600 W", bosch.name)
+        assertEquals(BigDecimal("188.00"), bosch.grossPrice)
+        assertEquals(4, bosch.stock)
+
+        assertEquals(
+            "https://bilder.obi.pl/f13501fd-9fc2-4e8d-b45f-0ff14ef115e7/pr08A/image.jpeg",
+            lamp.primaryImageUrl,
+        )
+        assertEquals(
+            "Oprawa BATTEN LED 30 cm 9W 850 lm 4000K IP20",
+            lamp.name,
+        )
+        assertEquals(BigDecimal("23.99"), lamp.grossPrice)
+        assertEquals(7, lamp.stock)
+    }
+
+    @Test
+    fun `missing product image is accepted without affecting product parsing`() {
+        val product = parser.parse(
+            optionalRichFixture(richFields = ""),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertNull(product.primaryImageUrl)
+        assertEquals("Synthetic product", product.name)
+        assertEquals(4, product.stock)
+        assertEquals(BigDecimal("9.99"), product.grossPrice)
+    }
+
+    @Test
+    fun `malformed product image data fails soft to null`() {
+        val product = parser.parse(
+            imageFixture(imageJson = "123"),
+            LIVE_OBIK,
+            STORE,
+        ).getOrThrow()
+
+        assertNull(product.primaryImageUrl)
+        assertEquals("Synthetic product", product.name)
+    }
+
+    @Test
+    fun `non https and untrusted product image hosts are rejected`() {
+        val cases = listOf(
+            "\"http://bilder.obi.pl/example/image.jpeg\"",
+            "\"https://example.com/product/image.jpeg\"",
+            "\"https://user:pass@bilder.obi.pl/product/image.jpeg\"",
+        )
+
+        cases.forEach { imageJson ->
+            val product = parser.parse(
+                imageFixture(imageJson),
+                LIVE_OBIK,
+                STORE,
+            ).getOrThrow()
+
+            assertNull(product.primaryImageUrl)
+        }
+    }
+
+    @Test
     fun `confirmed live rich product fields are extracted from decoded Nuxt product`() {
         val product = parser.parse(
             fixture("live-3496072-store-075.html"),
@@ -297,6 +392,33 @@ class ObiPayloadParserTest {
     fun `different product identity fails`() {
         assertTrue(parser.parse(fixture("positive-stock.html"), "1234567", STORE).isFailure)
     }
+
+    private fun imageFixture(
+        imageJson: String,
+    ): String =
+        """
+        <!doctype html><html><head>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Product","sku":"3496072","name":"Synthetic product","image":$imageJson}
+        </script>
+        </head><body>
+        <script id="__NUXT_DATA__" type="application/json">
+        {
+          "skuId":"3496072",
+          "productTitle":"Synthetic product",
+          "prettyUrl":"/p/3496072/synthetic",
+          "articleEanEcms":["5900000000000"],
+          "store":{
+            "information":{"storeId":"075"},
+            "articleData":{
+              "stock":4,
+              "pricing":{"grossPrice":9.99}
+            }
+          }
+        }
+        </script>
+        </body></html>
+        """.trimIndent()
 
     private fun optionalRichFixture(
         richFields: String,
