@@ -7,8 +7,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
+import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
+import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
+import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
+import pl.lukaszpeciak.towarownik.conversation.PersistedMessage
 import pl.lukaszpeciak.towarownik.conversation.PersistedSearchAction
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
+import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 class ChatShellModelsTest {
     @Test
@@ -259,6 +264,156 @@ class ChatShellModelsTest {
     }
 
     @Test
+    fun `persisted assistant bracket link is normalized only for display`() {
+        val raw =
+            "Sprawdź [instrukcję producenta](https://example.com/manual)."
+        val ui = persistedConversation(
+            PersistedMessage(
+                id = 1L,
+                role = MESSAGE_ROLE_ASSISTANT,
+                text = raw,
+                createdAt = 10L,
+                products = emptyList(),
+            ),
+        ).toAdvisorCaseUiState()
+
+        assertEquals(
+            "Sprawdź instrukcję producenta.",
+            ui.messages.single().text,
+        )
+    }
+
+    @Test
+    fun `persisted assistant parenthesized link is normalized only for display`() {
+        val raw =
+            "Sprawdź (instrukcję producenta)(https://example.com/manual)."
+        val ui = persistedConversation(
+            PersistedMessage(
+                id = 2L,
+                role = MESSAGE_ROLE_ASSISTANT,
+                text = raw,
+                createdAt = 20L,
+                products = emptyList(),
+            ),
+        ).toAdvisorCaseUiState()
+
+        assertEquals(
+            "Sprawdź instrukcję producenta.",
+            ui.messages.single().text,
+        )
+    }
+
+    @Test
+    fun `persisted citation offsets remap after historical link normalization`() {
+        val raw =
+            "[Instrukcja](https://example.com/manual): moc 600 W."
+        val citedStart = raw.indexOf("600 W")
+        val citedEnd = citedStart + "600 W".length
+        val source = PersistedWebSource(
+            title = "Instrukcja",
+            url = "https://example.com/manual",
+            startIndex = citedStart,
+            endIndex = citedEnd,
+        )
+
+        val ui = persistedConversation(
+            PersistedMessage(
+                id = 3L,
+                role = MESSAGE_ROLE_ASSISTANT,
+                text = raw,
+                createdAt = 30L,
+                products = emptyList(),
+                sources = listOf(source),
+            ),
+        ).toAdvisorCaseUiState()
+
+        val message = ui.messages.single()
+        val mapped = message.sources.single()
+        assertEquals("Instrukcja: moc 600 W.", message.text)
+        assertEquals(
+            message.text.indexOf("600 W"),
+            mapped.startIndex,
+        )
+        assertEquals(
+            message.text.indexOf("600 W") + "600 W".length,
+            mapped.endIndex,
+        )
+        assertEquals(source.url, mapped.url)
+    }
+
+    @Test
+    fun `already normalized persisted assistant message stays unchanged`() {
+        val clean = "Instrukcja: moc 600 W."
+        val ui = persistedConversation(
+            PersistedMessage(
+                id = 4L,
+                role = MESSAGE_ROLE_ASSISTANT,
+                text = clean,
+                createdAt = 40L,
+                products = emptyList(),
+            ),
+        ).toAdvisorCaseUiState()
+
+        assertEquals(clean, ui.messages.single().text)
+    }
+
+    @Test
+    fun `persisted user message is never advisor-normalized`() {
+        val raw =
+            "Wyślij [ten link](https://example.com/manual) dokładnie tak."
+        val ui = persistedConversation(
+            PersistedMessage(
+                id = 5L,
+                role = MESSAGE_ROLE_USER,
+                text = raw,
+                createdAt = 50L,
+                products = emptyList(),
+            ),
+        ).toAdvisorCaseUiState()
+
+        assertEquals(raw, ui.messages.single().text)
+    }
+
+    @Test
+    fun `historical product snapshot fields are preserved during display normalization`() {
+        val snapshot = VerifiedProductSnapshot(
+            obik = "3496072",
+            name = "Dragon Klej uniwersalny Butapren 50 ml",
+            stock = 7,
+            grossPrice = BigDecimal("12.99"),
+            productUrl =
+                "https://www.obi.pl/p/3496072/dragon-klej-uniwersalny-butapren-50-ml",
+            verifiedAt = 1_700_000_000_000L,
+            storeNumber = "074",
+            primaryImageUrl =
+                "https://bilder.obi.pl/example/pr08A/image.jpeg",
+        )
+        val ui = persistedConversation(
+            PersistedMessage(
+                id = 6L,
+                role = MESSAGE_ROLE_ASSISTANT,
+                text =
+                    "[Produkt](https://www.obi.pl/p/3496072): sprawdzony wcześniej.",
+                createdAt = 60L,
+                products = listOf(snapshot),
+            ),
+        ).toAdvisorCaseUiState()
+
+        val product = ui.messages.single().products.single()
+        assertEquals(snapshot.name, product.name)
+        assertEquals(snapshot.obik, product.obik)
+        assertEquals(snapshot.storeNumber, product.storeNumber)
+        assertEquals(snapshot.grossPrice, product.grossPrice)
+        assertEquals(snapshot.stock, product.stock)
+        assertEquals(snapshot.verifiedAt, product.verifiedAt)
+        assertEquals(snapshot.productUrl, product.productUrl)
+        assertEquals(
+            snapshot.primaryImageUrl,
+            product.primaryImageUrl,
+        )
+    }
+
+    @Test
     fun `unfinished user only case restores as retryable draft`() {
         val interrupted = AdvisorCaseUiState(
             draft = "",
@@ -371,6 +526,20 @@ class ChatShellModelsTest {
             ),
         )
     }
+
+    private fun persistedConversation(
+        vararg messages: PersistedMessage,
+    ): PersistedConversation =
+        PersistedConversation(
+            id = 99L,
+            title = "History",
+            createdAt = 1L,
+            updatedAt = 2L,
+            lastResponseId = "resp_history",
+            draft = "",
+            storeNumber = "075",
+            messages = messages.toList(),
+        )
 
     @Test
     fun `chat message carries creation timestamp`() {
