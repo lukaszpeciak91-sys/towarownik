@@ -274,7 +274,7 @@ internal class AdvisorProxyClient(
             root["error"]
                 ?.jsonPrimitive
                 ?.contentOrNull
-                ?.takeIf(SAFE_PROXY_ERROR_CODE::matches)
+                ?.takeIf(SAFE_PROXY_ERROR_CODES::contains)
         }.getOrNull()
 
     private fun parseEnvelope(raw: String): AdvisorProxyResult {
@@ -840,7 +840,16 @@ internal class AdvisorProxyClient(
         val OBIK_PATTERN = Regex("""\d{7}""")
         val STORE_NUMBER_PATTERN = Regex("""\d{3}""")
         val MODEL_PATTERN = Regex("""[A-Za-z0-9._-]+""")
-        val SAFE_PROXY_ERROR_CODE = Regex("""[a-z0-9_]{1,64}""")
+        val SAFE_PROXY_ERROR_CODES = setOf(
+            "unauthorized",
+            "server_not_configured",
+            "method_not_allowed",
+            "request_too_large",
+            "unsupported_protocol_version",
+            "invalid_request",
+            "upstream_failure",
+            "not_found",
+        )
         const val MAX_PROXY_ERROR_BYTES = 1_024
         const val MAX_PROXY_RESPONSE_BYTES = 64 * 1024
         const val MAX_CONTINUE_REQUEST_BYTES = 16 * 1024 - 1
