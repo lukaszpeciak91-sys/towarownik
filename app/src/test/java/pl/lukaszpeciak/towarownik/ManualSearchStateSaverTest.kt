@@ -18,6 +18,8 @@ class ManualSearchStateSaverTest {
                 grossPrice = BigDecimal("29.99"),
                 stock = 3,
                 productUrl = "https://www.obi.pl/p/1234567/trusted",
+                primaryImageUrl =
+                    "https://bilder.obi.pl/fixture-primary/pr08A/image.jpeg",
                 verifiedAt = 1_700_000_000_000L,
                 storeNumber = "074",
             ),
@@ -40,6 +42,10 @@ class ManualSearchStateSaverTest {
         assertEquals(
             1_700_000_000_000L,
             restored.item.verifiedAt,
+        )
+        assertEquals(
+            "https://bilder.obi.pl/fixture-primary/pr08A/image.jpeg",
+            restored.item.primaryImageUrl,
         )
     }
 
