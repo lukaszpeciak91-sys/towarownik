@@ -58,6 +58,12 @@ internal fun encodeManualSearchState(state: ManualSearchUiState): String {
                         ?: JsonNull,
                 )
                 put("url", persistable.item.productUrl)
+                put(
+                    "imageUrl",
+                    persistable.item.primaryImageUrl
+                        ?.let(::JsonPrimitive)
+                        ?: JsonNull,
+                )
                 put("store", persistable.item.storeNumber)
                 put(
                     "verifiedAt",
@@ -132,6 +138,12 @@ internal fun encodeManualSearchState(state: ManualSearchUiState): String {
                                                 enrichment.product.productUrl,
                                             )
                                             put(
+                                                "verifiedImageUrl",
+                                                enrichment.product.primaryImageUrl
+                                                    ?.let(::JsonPrimitive)
+                                                    ?: JsonNull,
+                                            )
+                                            put(
                                                 "verifiedStock",
                                                 enrichment.product.stock
                                                     ?.let(::JsonPrimitive)
@@ -187,6 +199,10 @@ internal fun decodeManualSearchState(raw: String): ManualSearchUiState =
                         ?.jsonPrimitive
                         ?.intOrNull,
                     productUrl = checkNotNull(root["url"]?.jsonPrimitive?.contentOrNull),
+                    primaryImageUrl = root["imageUrl"]
+                        ?.takeUnless { it is JsonNull }
+                        ?.jsonPrimitive
+                        ?.contentOrNull,
                     storeNumber = root["store"]
                         ?.jsonPrimitive
                         ?.contentOrNull
@@ -259,6 +275,13 @@ internal fun decodeManualSearchState(raw: String): ManualSearchUiState =
                                                     ?.jsonPrimitive
                                                     ?.intOrNull,
                                             productUrl = verifiedUrl,
+                                            primaryImageUrl =
+                                                item["verifiedImageUrl"]
+                                                    ?.takeUnless {
+                                                        it is JsonNull
+                                                    }
+                                                    ?.jsonPrimitive
+                                                    ?.contentOrNull,
                                             storeNumber = verifiedStore,
                                         ),
                                     )
