@@ -1087,7 +1087,7 @@ def full_lookup(api_request, obik: str, store: str) -> dict[str, Any]:
             "redirectUrl": f"/p/{obik}",
         },
     )
-    response = context.request.get(
+    response = api_request.get(
         f"{BASE}/api/disc/store/change?{query}",
         headers={
             "User-Agent": USER_AGENT,
