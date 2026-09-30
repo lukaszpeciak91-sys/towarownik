@@ -13,9 +13,9 @@ internal data class VerifiedProductSnapshot(
     val stock: Int?,
     val grossPrice: BigDecimal?,
     val productUrl: String,
-    val primaryImageUrl: String? = null,
     val verifiedAt: Long,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val primaryImageUrl: String? = null,
 ) {
     val key: VerifiedProductKey
         get() = VerifiedProductKey(
