@@ -97,6 +97,29 @@ internal data class MessageSourceEntity(
     val endIndex: Int?,
 )
 
+@Entity(
+    tableName = "message_search_actions",
+    primaryKeys = ["messageId", "position"],
+    foreignKeys = [
+        ForeignKey(
+            entity = MessageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["messageId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index("messageId"),
+    ],
+)
+internal data class MessageSearchActionEntity(
+    val messageId: Long,
+    val position: Int,
+    val query: String,
+    val storeNumber: String,
+    val reportedTotalCount: Int,
+)
+
 internal data class MessageWithProducts(
     @Embedded
     val message: MessageEntity,
@@ -110,6 +133,11 @@ internal data class MessageWithProducts(
         entityColumn = "messageId",
     )
     val sources: List<MessageSourceEntity> = emptyList(),
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "messageId",
+    )
+    val searchActions: List<MessageSearchActionEntity> = emptyList(),
 )
 
 internal data class ConversationWithMessages(
