@@ -15,12 +15,12 @@ data class LocalProduct(
     val stock: Int?,
     val grossPrice: BigDecimal?,
     val productUrl: String,
-    val primaryImageUrl: String? = null,
     internal val ean: String?,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val brand: String? = null,
     val shortDescription: String? = null,
     val technicalFacts: List<TechnicalFact> = emptyList(),
+    val primaryImageUrl: String? = null,
 )
 
 enum class ProductLookupFailure {
