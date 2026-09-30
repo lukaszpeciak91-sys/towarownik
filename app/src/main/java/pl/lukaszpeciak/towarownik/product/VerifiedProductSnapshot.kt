@@ -13,6 +13,7 @@ internal data class VerifiedProductSnapshot(
     val stock: Int?,
     val grossPrice: BigDecimal?,
     val productUrl: String,
+    val primaryImageUrl: String? = null,
     val verifiedAt: Long,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
 ) {
@@ -32,6 +33,7 @@ internal fun LocalProduct.toVerifiedProductSnapshot(
         stock = stock,
         grossPrice = grossPrice,
         productUrl = productUrl,
+        primaryImageUrl = primaryImageUrl,
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
     )
