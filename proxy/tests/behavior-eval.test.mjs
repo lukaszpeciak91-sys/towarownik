@@ -14,6 +14,7 @@ import {
 import {
   BEHAVIOR_SCENARIOS,
   behaviorScenario,
+  behaviorSuiteExitCode,
   createOpenAISemanticJudge,
   createProductionAdvisorDriver,
   formatBehaviorSummary,
@@ -847,7 +848,7 @@ test("productRef grounding fails deterministically before semantic grading", asy
   assert.equal(semanticCalls, 0);
 });
 
-test("semantic grader failure is surfaced as the trial diagnostic", async () => {
+test("valid semantic rejection is a behavioral FAIL", async () => {
   const scenario = behaviorScenario("A");
   const result = await runBehaviorTrial(
     scenario,
@@ -956,18 +957,17 @@ test("production eval driver reuses production advisor request configuration", a
   );
 });
 
-test("real semantic grader adapter is deterministic under mocked upstream I/O", async () => {
+test("semantic grader uses the normal eval output budget and accepts a valid grade", async () => {
   const captures = [];
   const fakeFetch = async (_input, init) => {
     captures.push(JSON.parse(init.body));
-    const structured = JSON.stringify({
-      pass: true,
-      reason: "observable behavior satisfies the rubric",
-    });
     return new Response(
       JSON.stringify({
         id: "resp_grade",
-        output_text: structured,
+        output_text: JSON.stringify({
+          pass: true,
+          reason: "observable behavior satisfies the rubric",
+        }),
         output: [],
       }),
       {
@@ -982,29 +982,308 @@ test("real semantic grader adapter is deterministic under mocked upstream I/O", 
     fakeFetch,
   );
   const scenario = behaviorScenario("A");
-  const trace = (
-    await runBehaviorTrial(
-      scenario,
-      1,
-      scriptedDriver(scenario),
-      passingSemanticJudge,
-    )
-  ).trace;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    judge,
+  );
 
-  const grade = await judge.grade({ scenario, trace });
-  assert.deepEqual(grade, {
-    pass: true,
-    reason: "observable behavior satisfies the rubric",
-  });
+  assert.equal(result.status, "PASS");
+  assert.equal(
+    result.reason,
+    "observable behavior satisfies the rubric",
+  );
+  assert.equal(captures.length, 1);
+  assert.equal(
+    captures[0].max_output_tokens,
+    OPENAI_MAX_OUTPUT_TOKENS,
+  );
   assert.equal(captures[0].model, OPENAI_MODEL);
   assert.deepEqual(captures[0].reasoning, {
     effort: OPENAI_REASONING_EFFORT,
   });
+  assert.equal(
+    captures[0].text.format.type,
+    "json_schema",
+  );
+  assert.equal(captures[0].text.format.strict, true);
+  assert.deepEqual(
+    captures[0].text.format.schema.required,
+    ["pass", "reason"],
+  );
   assert.equal(
     Object.prototype.hasOwnProperty.call(
       captures[0],
       "tools",
     ),
     false,
+  );
+});
+
+test("valid semantic rejection returns FAIL without retry", async () => {
+  let graderRequests = 0;
+  const fakeFetch = async () => {
+    graderRequests += 1;
+    return new Response(
+      JSON.stringify({
+        id: "resp_grade_reject",
+        output_text: JSON.stringify({
+          pass: false,
+          reason: "clarification is not decision-critical",
+        }),
+        output: [],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  };
+
+  const scenario = behaviorScenario("A");
+  const judge = createOpenAISemanticJudge(
+    "test-key",
+    fakeFetch,
+  );
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    judge,
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.equal(
+    result.reason,
+    "clarification is not decision-critical",
+  );
+  assert.equal(graderRequests, 1);
+});
+
+test("malformed semantic grader output retries once and accepts the second valid grade", async () => {
+  let graderRequests = 0;
+  const fakeFetch = async () => {
+    graderRequests += 1;
+    const outputText =
+      graderRequests === 1
+        ? '{"pass":true,"reason":'
+        : JSON.stringify({
+            pass: true,
+            reason: "second grader attempt is valid",
+          });
+
+    return new Response(
+      JSON.stringify({
+        id: `resp_grade_${graderRequests}`,
+        output_text: outputText,
+        output: [],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  };
+
+  const scenario = behaviorScenario("A");
+  const judge = createOpenAISemanticJudge(
+    "test-key",
+    fakeFetch,
+  );
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    judge,
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.reason, "second grader attempt is valid");
+  assert.equal(graderRequests, 2);
+});
+
+test("max-output incomplete semantic grader response retries once", async () => {
+  let graderRequests = 0;
+  const fakeFetch = async () => {
+    graderRequests += 1;
+    if (graderRequests === 1) {
+      return new Response(
+        JSON.stringify({
+          id: "resp_grade_incomplete",
+          status: "incomplete",
+          incomplete_details: {
+            reason: "max_output_tokens",
+          },
+          output: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        id: "resp_grade_valid",
+        output_text: JSON.stringify({
+          pass: true,
+          reason: "retry recovered the grade",
+        }),
+        output: [],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  };
+
+  const scenario = behaviorScenario("A");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    createOpenAISemanticJudge("test-key", fakeFetch),
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.reason, "retry recovered the grade");
+  assert.equal(graderRequests, 2);
+});
+
+test("two malformed semantic grader attempts produce ERROR rather than FAIL", async () => {
+  let graderRequests = 0;
+  const fakeFetch = async () => {
+    graderRequests += 1;
+    return new Response(
+      JSON.stringify({
+        id: `resp_grade_bad_${graderRequests}`,
+        output_text:
+          graderRequests === 1 ? "" : '{"pass":"yes"}',
+        output: [],
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  };
+
+  const scenario = behaviorScenario("A");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    createOpenAISemanticJudge("test-key", fakeFetch),
+  );
+
+  assert.equal(result.status, "ERROR");
+  assert.match(
+    result.reason,
+    /semantic grader infrastructure failed/i,
+  );
+  assert.equal(graderRequests, 2);
+});
+
+test("advisor request infrastructure failure produces ERROR", async () => {
+  const scenario = behaviorScenario("A");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        throw new Error("synthetic advisor transport failure");
+      },
+      async continueTurn() {
+        throw new Error("unexpected continuation");
+      },
+    },
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "ERROR");
+  assert.match(result.reason, /advisor start failed/i);
+});
+
+test("behavior summary separates FAIL from ERROR", () => {
+  const scenarioA = behaviorScenario("A");
+  const scenarioH = behaviorScenario("H");
+  const emptyTrace = (scenario, trial) => ({
+    scenario: scenario.id,
+    trial,
+    userMessage: scenario.userMessage,
+    modelOutputs: [],
+    clarificationOrFinalAnswer: null,
+    findObiProductsCalls: [],
+    webSearchCount: 0,
+    mockedToolResults: [],
+    finalProductRefs: [],
+  });
+
+  const results = [
+    {
+      scenario: "A",
+      scenarioName: scenarioA.name,
+      trial: 1,
+      status: "FAIL",
+      localToolCallCount: 0,
+      webSearchCount: 0,
+      reason: "behavioral mismatch",
+      trace: emptyTrace(scenarioA, 1),
+    },
+    {
+      scenario: "H",
+      scenarioName: scenarioH.name,
+      trial: 1,
+      status: "ERROR",
+      localToolCallCount: 0,
+      webSearchCount: 0,
+      reason: "semantic grader infrastructure failed",
+      trace: emptyTrace(scenarioH, 1),
+    },
+  ];
+
+  const summary = formatBehaviorSummary(results);
+  assert.match(summary, /passed: 0 \/ 2/);
+  assert.match(summary, /failed scenarios: A \(/);
+  assert.match(summary, /errored scenarios: H \(/);
+  assert.doesNotMatch(summary, /failed scenarios:.*H \(/);
+});
+
+test("behavior CLI exit-code contract is non-zero for FAIL and ERROR", () => {
+  const scenario = behaviorScenario("A");
+  const base = {
+    scenario: "A",
+    scenarioName: scenario.name,
+    trial: 1,
+    localToolCallCount: 0,
+    webSearchCount: 0,
+    reason: "synthetic",
+    trace: {
+      scenario: "A",
+      trial: 1,
+      userMessage: scenario.userMessage,
+      modelOutputs: [],
+      clarificationOrFinalAnswer: null,
+      findObiProductsCalls: [],
+      webSearchCount: 0,
+      mockedToolResults: [],
+      finalProductRefs: [],
+    },
+  };
+
+  assert.equal(
+    behaviorSuiteExitCode([{ ...base, status: "PASS" }]),
+    0,
+  );
+  assert.equal(
+    behaviorSuiteExitCode([{ ...base, status: "FAIL" }]),
+    1,
+  );
+  assert.equal(
+    behaviorSuiteExitCode([{ ...base, status: "ERROR" }]),
+    1,
   );
 });

@@ -113,7 +113,7 @@ export interface BehaviorTrialResult {
   scenario: BehaviorScenarioId;
   scenarioName: string;
   trial: number;
-  status: "PASS" | "FAIL";
+  status: "PASS" | "FAIL" | "ERROR";
   localToolCallCount: number;
   webSearchCount: number;
   reason: string;
@@ -427,90 +427,97 @@ export function createOpenAISemanticJudge(
 ): SemanticJudge {
   return {
     async grade(input) {
-      const response = await upstreamFetch(OPENAI_RESPONSES_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+      const requestBody = JSON.stringify({
+        model: OPENAI_MODEL,
+        instructions:
+          "You are a strict behavioral-evaluation grader. Judge only the explicit rubric against the supplied observable trace. Do not require exact wording. Do not infer or request hidden reasoning. Return only the requested JSON with a boolean pass and one short diagnostic sentence.",
+        input: JSON.stringify({
+          scenario: input.scenario.id,
+          userMessage: input.trace.userMessage,
+          rubric: input.scenario.semanticRubric,
+          answer:
+            input.trace.clarificationOrFinalAnswer?.text ?? null,
+          productRefs: input.trace.finalProductRefs,
+          localToolCalls: input.trace.findObiProductsCalls.map(
+            (call) => ({
+              arguments: call.arguments,
+              mockedResult: call.mockedResult,
+            }),
+          ),
+        }),
+        reasoning: {
+          effort: OPENAI_REASONING_EFFORT,
         },
-        body: JSON.stringify({
-          model: OPENAI_MODEL,
-          instructions:
-            "You are a strict behavioral-evaluation grader. Judge only the explicit rubric against the supplied observable trace. Do not require exact wording. Do not infer or request hidden reasoning. Return only the requested JSON with a boolean pass and one short diagnostic sentence.",
-          input: JSON.stringify({
-            scenario: input.scenario.id,
-            userMessage: input.trace.userMessage,
-            rubric: input.scenario.semanticRubric,
-            answer:
-              input.trace.clarificationOrFinalAnswer?.text ?? null,
-            productRefs: input.trace.finalProductRefs,
-            localToolCalls: input.trace.findObiProductsCalls.map(
-              (call) => ({
-                arguments: call.arguments,
-                mockedResult: call.mockedResult,
-              }),
-            ),
-          }),
-          reasoning: {
-            effort: OPENAI_REASONING_EFFORT,
-          },
-          max_output_tokens: Math.min(160, OPENAI_MAX_OUTPUT_TOKENS),
-          store: false,
-          text: {
-            format: {
-              type: "json_schema",
-              name: "taksula_behavior_grade",
-              strict: true,
-              schema: {
-                type: "object",
-                properties: {
-                  pass: { type: "boolean" },
-                  reason: {
-                    type: "string",
-                    minLength: 1,
-                    maxLength: 240,
-                  },
+        max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+        store: false,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "taksula_behavior_grade",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                pass: { type: "boolean" },
+                reason: {
+                  type: "string",
+                  minLength: 1,
+                  maxLength: 240,
                 },
-                required: ["pass", "reason"],
-                additionalProperties: false,
               },
+              required: ["pass", "reason"],
+              additionalProperties: false,
             },
           },
-        }),
+        },
       });
 
-      if (!response.ok) {
-        throw new Error(
-          `Semantic grader request failed with HTTP ${response.status}`,
-        );
+      let lastOutputError: SemanticGraderOutputError | null = null;
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const response = await upstreamFetch(OPENAI_RESPONSES_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: requestBody,
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Semantic grader request failed with HTTP ${response.status}`,
+          );
+        }
+
+        let payload: unknown;
+        try {
+          payload = (await response.json()) as unknown;
+        } catch {
+          lastOutputError = new SemanticGraderOutputError(
+            "Semantic grader returned an unreadable response payload",
+          );
+          if (attempt === 1) continue;
+          throw lastOutputError;
+        }
+
+        try {
+          return parseSemanticGrade(payload);
+        } catch (error) {
+          if (!(error instanceof SemanticGraderOutputError)) {
+            throw error;
+          }
+          lastOutputError = error;
+          if (attempt === 1) continue;
+          throw lastOutputError;
+        }
       }
 
-      const payload = (await response.json()) as unknown;
-      const raw = extractOutputText(payload);
-      if (!raw) {
-        throw new Error("Semantic grader returned no text");
-      }
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw) as unknown;
-      } catch {
-        throw new Error("Semantic grader returned invalid JSON");
-      }
-
-      if (
-        !isRecord(parsed) ||
-        typeof parsed.pass !== "boolean" ||
-        typeof parsed.reason !== "string" ||
-        parsed.reason.trim().length === 0
-      ) {
-        throw new Error("Semantic grader returned an invalid grade");
-      }
-
-      return {
-        pass: parsed.pass,
-        reason: parsed.reason.trim().slice(0, 240),
-      };
+      throw (
+        lastOutputError ??
+        new SemanticGraderOutputError(
+          "Semantic grader output could not be consumed",
+        )
+      );
     },
   };
 }
@@ -673,23 +680,24 @@ export function formatBehaviorSummary(
   const passed = results.filter(
     (result) => result.status === "PASS",
   ).length;
-  const failedNames = [
-    ...new Map(
-      results
-        .filter((result) => result.status === "FAIL")
-        .map((result) => [
-          result.scenario,
-          `${result.scenario} (${result.scenarioName})`,
-        ]),
-    ).values(),
-  ];
+  const failedNames = uniqueScenarioNames(results, "FAIL");
+  const erroredNames = uniqueScenarioNames(results, "ERROR");
 
   lines.push("");
   lines.push(`passed: ${passed} / ${results.length}`);
   lines.push(
     `failed scenarios: ${failedNames.length ? failedNames.join(", ") : "none"}`,
   );
+  lines.push(
+    `errored scenarios: ${erroredNames.length ? erroredNames.join(", ") : "none"}`,
+  );
   return lines.join("\n");
+}
+
+export function behaviorSuiteExitCode(
+  results: readonly BehaviorTrialResult[],
+): number {
+  return results.some((result) => result.status !== "PASS") ? 1 : 0;
 }
 
 function recordModelOutput(
@@ -772,10 +780,10 @@ async function gradeCompletedTrial(
         scenario: scenario.id,
         scenarioName: scenario.name,
         trial,
-        status: "FAIL",
+        status: "ERROR",
         localToolCallCount: trace.findObiProductsCalls.length,
         webSearchCount: trace.webSearchCount,
-        reason: `semantic grader failed: ${errorMessage(error)}`,
+        reason: `semantic grader infrastructure failed: ${errorMessage(error)}`,
         trace,
       };
     }
@@ -1326,12 +1334,80 @@ function failedInfrastructureResult(
     scenario: scenario.id,
     scenarioName: scenario.name,
     trial,
-    status: "FAIL",
+    status: "ERROR",
     localToolCallCount: trace.findObiProductsCalls.length,
     webSearchCount: trace.webSearchCount,
     reason: compactReason(reason),
     trace,
   };
+}
+
+class SemanticGraderOutputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SemanticGraderOutputError";
+  }
+}
+
+function parseSemanticGrade(payload: unknown): SemanticGrade {
+  if (
+    isRecord(payload) &&
+    payload.status === "incomplete" &&
+    isRecord(payload.incomplete_details) &&
+    payload.incomplete_details.reason === "max_output_tokens"
+  ) {
+    throw new SemanticGraderOutputError(
+      "Semantic grader response was incomplete because max_output_tokens was reached",
+    );
+  }
+
+  const raw = extractOutputText(payload);
+  if (!raw) {
+    throw new SemanticGraderOutputError(
+      "Semantic grader returned no text",
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    throw new SemanticGraderOutputError(
+      "Semantic grader returned invalid JSON",
+    );
+  }
+
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.pass !== "boolean" ||
+    typeof parsed.reason !== "string" ||
+    parsed.reason.trim().length === 0
+  ) {
+    throw new SemanticGraderOutputError(
+      "Semantic grader returned an invalid grade",
+    );
+  }
+
+  return {
+    pass: parsed.pass,
+    reason: parsed.reason.trim().slice(0, 240),
+  };
+}
+
+function uniqueScenarioNames(
+  results: readonly BehaviorTrialResult[],
+  status: BehaviorTrialResult["status"],
+): string[] {
+  return [
+    ...new Map(
+      results
+        .filter((result) => result.status === status)
+        .map((result) => [
+          result.scenario,
+          `${result.scenario} (${result.scenarioName})`,
+        ]),
+    ).values(),
+  ];
 }
 
 function compactReason(reason: string): string {
