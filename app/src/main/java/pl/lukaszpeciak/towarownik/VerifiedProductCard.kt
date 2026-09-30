@@ -254,7 +254,7 @@ internal fun VerifiedProductThumbnail(
             .fillMaxWidth()
             .height(112.dp),
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.towarownikColors.surfaceMuted,
+        color = MaterialTheme.towarownikColors.surfaceHighlight,
     ) {
         Box(
             contentAlignment = androidx.compose.ui.Alignment.Center,
