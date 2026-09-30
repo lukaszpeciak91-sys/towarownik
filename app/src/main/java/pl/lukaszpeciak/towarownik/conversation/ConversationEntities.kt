@@ -69,9 +69,9 @@ internal data class MessageProductEntity(
     val stock: Int?,
     val grossPrice: String?,
     val productUrl: String,
-    val imageUrl: String? = null,
     val verifiedAt: Long,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val imageUrl: String? = null,
 )
 
 @Entity(
