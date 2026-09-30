@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      OBIKS: \${{ inputs.obiks || '3496072,6743009,7156243' }}
-      STORES: \${{ inputs.stores || '075,074,078' }}
+      OBIKS: ${{ inputs.obiks || '3496072,6743009,7156243' }}
+      STORES: ${{ inputs.stores || '075,074,078' }}
 
     steps:
       - uses: actions/checkout@v4
