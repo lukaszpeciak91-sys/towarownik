@@ -115,14 +115,9 @@ function scriptedDriver(scenario) {
             { query: "OBIK 7000005", limit: 1 },
           ]);
         case "H":
-          return toolRequest([
-            { query: "silikon sanitarny do umywalki", limit: 1 },
-            { query: "pistolet do silikonu", limit: 1 },
-            {
-              query: "narzędzie do wygładzania silikonu",
-              limit: 1,
-            },
-          ]);
+          return answer(
+            "Niezbędne: silikon sanitarny dobrany do szczeliny oraz czyste i odtłuszczone podłoże. Wyciskacz jest potrzebny do kartusza, jeśli go nie masz; narzędzie do wygładzania to wygodny dodatek, nie warunek wykonania uszczelnienia.",
+          );
         case "H_AMBIGUOUS":
           return answer(
             "Czy chodzi o uszczelnienie szczeliny przy ścianie/blacie, czy o przeciek przy odpływie lub syfonie?",
@@ -156,11 +151,6 @@ function scriptedDriver(scenario) {
           return answer("Nie znaleziono zweryfikowanego produktu.");
         case "G_UNAVAILABLE":
           return answer("Nie udało się potwierdzić dostępności.");
-        case "H":
-          return answer(
-            "Podstawowy zestaw: silikon, wyciskacz i narzędzie do wygładzania.",
-            refs,
-          );
         default:
           throw new Error(
             `Unexpected continuation for ${scenario.id}`,
@@ -244,20 +234,26 @@ test("repeated trials stay configurable and summary reports pass totals", async 
   assert.match(summary, /failed scenarios: none/);
 });
 
-test("compatibility and materially different job ambiguity still fail if local OBI lookup happens before clarification", async () => {
-  for (const id of ["D", "H_AMBIGUOUS"]) {
+test("clarification-first scenarios fail on any local OBI lookup before clarification", async () => {
+  const cases = [
+    ["A", "czarne trytytki"],
+    ["A", "czarne trytytki 4,2 x 380 mm"],
+    ["A", "młotki murarskie"],
+    ["D", "końcówka do kranu"],
+    ["H_AMBIGUOUS", "silikon do umywalki"],
+  ];
+
+  for (const [id, query] of cases) {
     const scenario = behaviorScenario(id);
     const result = await runBehaviorTrial(
       scenario,
       1,
       {
         async start() {
-          return toolRequest([
-            { query: "przedwczesne wyszukiwanie", limit: 3 },
-          ]);
+          return toolRequest([{ query, limit: 3 }]);
         },
         async continueTurn() {
-          return answer("Jaki wariant lub rodzaj połączenia jest potrzebny?");
+          return answer("Jaki dokładnie wariant jest potrzebny?");
         },
       },
       passingSemanticJudge,
@@ -271,7 +267,29 @@ test("compatibility and materially different job ambiguity still fail if local O
   }
 });
 
-test("scenario A passes broad same-category lookup followed by clarification without concrete recommendation", async () => {
+test("scenario A passes one concise clarification with zero OBI calls and zero productRefs", async () => {
+  const scenario = behaviorScenario("A");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 0);
+  assert.equal(result.trace.finalProductRefs.length, 0);
+  assert.equal(
+    result.trace.clarificationOrFinalAnswer?.kind,
+    "clarification_candidate",
+  );
+  assert.match(
+    result.trace.clarificationOrFinalAnswer?.text ?? "",
+    /rozmiar|środ|zewn|zastosowan/i,
+  );
+});
+
+test("scenario A rejects even a successful broad same-category lookup before clarification", async () => {
   const scenario = behaviorScenario("A");
   let semanticCalls = 0;
   const result = await runBehaviorTrial(
@@ -280,7 +298,7 @@ test("scenario A passes broad same-category lookup followed by clarification wit
     {
       async start() {
         return toolRequest([
-          { query: "czarne opaski zaciskowe trytytki", limit: 3 },
+          { query: "czarne trytytki", limit: 3 },
         ]);
       },
       async continueTurn(
@@ -298,59 +316,6 @@ test("scenario A passes broad same-category lookup followed by clarification wit
       },
     },
     {
-      async grade({ trace }) {
-        semanticCalls += 1;
-        const text =
-          trace.clarificationOrFinalAnswer?.text ?? "";
-        const asksClarification =
-          /\?/.test(text) &&
-          /rozmiar|wymiar|zastosowan|środ|zewn/i.test(text);
-        return {
-          pass: asksClarification,
-          reason: asksClarification
-            ? "broad category lookup was followed by a decision-critical clarification"
-            : "missing clarification",
-        };
-      },
-    },
-  );
-
-  assert.equal(result.status, "PASS");
-  assert.equal(result.localToolCallCount, 1);
-  assert.equal(result.trace.finalProductRefs.length, 0);
-  assert.equal(
-    result.trace.clarificationOrFinalAnswer?.kind,
-    "clarification_candidate",
-  );
-  assert.equal(semanticCalls, 1);
-});
-
-test("scenario A fails when a concrete verified SKU is recommended before clarification", async () => {
-  const scenario = behaviorScenario("A");
-  let semanticCalls = 0;
-  const result = await runBehaviorTrial(
-    scenario,
-    1,
-    {
-      async start() {
-        return toolRequest([
-          { query: "czarne trytytki", limit: 3 },
-        ]);
-      },
-      async continueTurn(
-        _responseId,
-        _callId,
-        _storeNumber,
-        mockedResult,
-      ) {
-        const refs = verifiedRefs(mockedResult);
-        return answer(
-          "Najlepszym wyborem będzie pierwszy znaleziony wariant.",
-          refs.slice(0, 1),
-        );
-      },
-    },
-    {
       async grade() {
         semanticCalls += 1;
         return { pass: true, reason: "should not run" };
@@ -361,12 +326,13 @@ test("scenario A fails when a concrete verified SKU is recommended before clarif
   assert.equal(result.status, "FAIL");
   assert.match(
     result.reason,
-    /concrete productRef returned before clarification/i,
+    /local OBI lookup occurred before clarification/i,
   );
+  assert.equal(result.trace.finalProductRefs.length, 0);
   assert.equal(semanticCalls, 0);
 });
 
-test("scenario A fails text-only concrete candidate recommendation before clarification", async () => {
+test("scenario A rejects a concrete recommendation without clarification even without productRefs", async () => {
   const scenario = behaviorScenario("A");
   let semanticCalls = 0;
   const result = await runBehaviorTrial(
@@ -374,20 +340,12 @@ test("scenario A fails text-only concrete candidate recommendation before clarif
     1,
     {
       async start() {
-        return toolRequest([
-          { query: "czarne trytytki", limit: 3 },
-        ]);
-      },
-      async continueTurn(
-        _responseId,
-        _callId,
-        _storeNumber,
-        mockedResult,
-      ) {
-        const first = mockedResult.results[0].products[0];
         return answer(
-          `Polecam ${first.name} jako właściwy wybór.`,
+          "Polecam konkretny wariant za 12,99 zł, mamy 5 sztuk.",
         );
+      },
+      async continueTurn() {
+        throw new Error("unexpected continuation");
       },
     },
     {
@@ -395,19 +353,19 @@ test("scenario A fails text-only concrete candidate recommendation before clarif
         semanticCalls += 1;
         assert.equal(
           gradedScenario.semanticRubric.some((line) =>
-            /does not select or recommend a concrete SKU as the correct choice/i.test(line),
+            /does not select or recommend a concrete SKU/i.test(line),
           ),
           true,
         );
         const text =
           trace.clarificationOrFinalAnswer?.text ?? "";
-        const concreteRecommendation =
-          /polecam|właściwy wybór|najlepsz/i.test(text);
+        const prematureRecommendation =
+          /polecam|zł|sztuk/i.test(text);
         return {
-          pass: !concreteRecommendation,
-          reason: concreteRecommendation
-            ? "concrete candidate was recommended before clarification"
-            : "no premature concrete recommendation",
+          pass: !prematureRecommendation,
+          reason: prematureRecommendation
+            ? "concrete recommendation or candidate-specific price/stock appeared before clarification"
+            : "no premature recommendation",
         };
       },
     },
@@ -416,133 +374,10 @@ test("scenario A fails text-only concrete candidate recommendation before clarif
   assert.equal(result.status, "FAIL");
   assert.match(
     result.reason,
-    /concrete candidate was recommended before clarification/i,
+    /before clarification/i,
   );
+  assert.equal(result.localToolCallCount, 0);
   assert.equal(result.trace.finalProductRefs.length, 0);
-  assert.equal(semanticCalls, 1);
-});
-
-test("scenario A fails lookup narrowed by an invented dimension before clarification", async () => {
-  const scenario = behaviorScenario("A");
-  let semanticCalls = 0;
-  const result = await runBehaviorTrial(
-    scenario,
-    1,
-    {
-      async start() {
-        return toolRequest([
-          {
-            query: "czarne trytytki 4,2 x 380 mm",
-            limit: 3,
-          },
-        ]);
-      },
-      async continueTurn() {
-        return answer(
-          "Jaki rozmiar i zastosowanie mają mieć te trytytki?",
-        );
-      },
-    },
-    {
-      async grade() {
-        semanticCalls += 1;
-        return { pass: true, reason: "should not run" };
-      },
-    },
-  );
-
-  assert.equal(result.status, "FAIL");
-  assert.match(
-    result.reason,
-    /not a broad same-category black cable-tie query/i,
-  );
-  assert.equal(
-    result.trace.mockedToolResults[0].results[0].status,
-    "not_found",
-  );
-  assert.equal(semanticCalls, 0);
-});
-
-test("scenario A fails unrelated-category lookup even if clarification follows", async () => {
-  const scenario = behaviorScenario("A");
-  let semanticCalls = 0;
-  const result = await runBehaviorTrial(
-    scenario,
-    1,
-    {
-      async start() {
-        return toolRequest([
-          { query: "młotki murarskie", limit: 3 },
-        ]);
-      },
-      async continueTurn() {
-        return answer(
-          "Jaki rozmiar i zastosowanie mają mieć te trytytki?",
-        );
-      },
-    },
-    {
-      async grade() {
-        semanticCalls += 1;
-        return { pass: true, reason: "should not run" };
-      },
-    },
-  );
-
-  assert.equal(result.status, "FAIL");
-  assert.match(
-    result.reason,
-    /not a broad same-category black cable-tie query/i,
-  );
-  assert.equal(
-    result.trace.mockedToolResults[0].results[0].status,
-    "not_found",
-  );
-  assert.equal(semanticCalls, 0);
-});
-
-test("scenario A fails when broad lookup is treated as resolving ambiguity without clarification", async () => {
-  const scenario = behaviorScenario("A");
-  let semanticCalls = 0;
-  const result = await runBehaviorTrial(
-    scenario,
-    1,
-    {
-      async start() {
-        return toolRequest([
-          { query: "czarne trytytki", limit: 3 },
-        ]);
-      },
-      async continueTurn() {
-        return answer(
-          "Znalazłam czarne trytytki, więc można je dobrać z tych wyników.",
-        );
-      },
-    },
-    {
-      async grade({ scenario: gradedScenario, trace }) {
-        semanticCalls += 1;
-        assert.equal(
-          gradedScenario.semanticRubric.some((line) =>
-            /final answer asks one concise clarification/i.test(line),
-          ),
-          true,
-        );
-        const text =
-          trace.clarificationOrFinalAnswer?.text ?? "";
-        const asksClarification = /\?/.test(text);
-        return {
-          pass: asksClarification,
-          reason: asksClarification
-            ? "clarification present"
-            : "broad lookup was treated as resolving ambiguity without clarification",
-        };
-      },
-    },
-  );
-
-  assert.equal(result.status, "FAIL");
-  assert.match(result.reason, /without clarification/i);
   assert.equal(semanticCalls, 1);
 });
 
@@ -643,7 +478,7 @@ test("scenario C accepts a semantic exact-size cable-tie query without literal i
   );
 });
 
-test("specified H exercises complete-kit batching without clarification", async () => {
+test("scenario H passes essentials-first advice with zero OBI calls and zero productRefs", async () => {
   const scenario = behaviorScenario("H");
   const result = await runBehaviorTrial(
     scenario,
@@ -653,11 +488,67 @@ test("specified H exercises complete-kit batching without clarification", async 
   );
 
   assert.equal(result.status, "PASS");
-  assert.equal(result.localToolCallCount, 1);
+  assert.equal(result.localToolCallCount, 0);
+  assert.equal(result.trace.finalProductRefs.length, 0);
   assert.equal(
-    result.trace.findObiProductsCalls[0].arguments.queries.length,
-    3,
+    result.trace.clarificationOrFinalAnswer?.kind,
+    "final_answer",
   );
+  assert.match(
+    result.trace.clarificationOrFinalAnswer?.text ?? "",
+    /niezbęd|silikon|opcjonal|dodatek|wyciskacz/i,
+  );
+});
+
+test("scenario H fails if advice is automatically converted into a verified shopping kit", async () => {
+  const scenario = behaviorScenario("H");
+  let semanticCalls = 0;
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "silikon sanitarny do umywalki", limit: 1 },
+          { query: "pistolet do silikonu", limit: 1 },
+          {
+            query: "narzędzie do wygładzania silikonu",
+            limit: 1,
+          },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        const verifiedGroups = mockedResult.results.filter(
+          (group) => group.status === "verified",
+        );
+        assert.equal(verifiedGroups.length, 3);
+        return answer(
+          "Gotowy zestaw ze sklepu: silikon, wyciskacz i wygładzacz.",
+          verifiedRefs(mockedResult),
+        );
+      },
+    },
+    {
+      async grade() {
+        semanticCalls += 1;
+        return { pass: true, reason: "should not run" };
+      },
+    },
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(
+    result.reason,
+    /automatic local OBI lookup without explicit store intent/i,
+  );
+  assert.equal(result.localToolCallCount, 1);
+  assert.equal(result.trace.finalProductRefs.length, 3);
+  assert.equal(semanticCalls, 0);
 });
 
 test("ambiguous washbasin sealing expects clarification before local lookup", async () => {
@@ -819,44 +710,35 @@ test("scenario E exposes three distinct indoor-compatible cable-tie variants", a
   assert.equal(dimensions.size, 3);
 });
 
-test("unrelated complete-kit queries receive no valid kit fixtures and fail H", async () => {
-  const scenario = behaviorScenario("H");
-  const result = await runBehaviorTrial(
-    scenario,
-    1,
-    {
-      async start() {
-        return toolRequest([
-          { query: "młotek ciesielski", limit: 1 },
-          { query: "wiertło do betonu", limit: 1 },
-        ]);
+test("explicit browse and direct current-store fact scenarios still require local OBI", async () => {
+  for (const id of ["B", "F"]) {
+    const scenario = behaviorScenario(id);
+    const result = await runBehaviorTrial(
+      scenario,
+      1,
+      {
+        async start() {
+          return answer(
+            id === "B"
+              ? "Mogę opisać ogólne rodzaje trytytek."
+              : "Nie sprawdzam teraz stanu ani ceny.",
+          );
+        },
+        async continueTurn() {
+          throw new Error("unexpected continuation");
+        },
       },
-      async continueTurn(
-        _responseId,
-        _callId,
-        _storeNumber,
-        mockedResult,
-      ) {
-        return answer(
-          "Podstawowy zestaw: silikon i wyciskacz.",
-          verifiedRefs(mockedResult),
-        );
-      },
-    },
-    passingSemanticJudge,
-  );
+      passingSemanticJudge,
+    );
 
-  assert.equal(result.status, "FAIL");
-  const groups = result.trace.mockedToolResults[0].results;
-  assert.equal(
-    groups.every(
-      (group) =>
-        group.status === "not_found" &&
-        group.products.length === 0,
-    ),
-    true,
-  );
-  assert.match(result.reason, /relevant verified kit categories/i);
+    assert.equal(result.status, "FAIL");
+    assert.match(
+      result.reason,
+      id === "B"
+        ? /browse request did not use local OBI/i
+        : /direct stock\/price request should use one local lookup/i,
+    );
+  }
 });
 
 test("scenario C rejects 42 x 380 as a substitute for the 4.2 x 380 dimension", async () => {
