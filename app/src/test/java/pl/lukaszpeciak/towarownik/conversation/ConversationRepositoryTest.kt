@@ -154,6 +154,44 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `assistant product thumbnail survives database recreation`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Pokaż produkt",
+            createdAt = 100L,
+        )
+        val imageUrl =
+            "https://bilder.obi.pl/0834d60c-3719-4acf-8ad4-ce901b2bbe8c/pr08A/image.jpeg"
+        val product = snapshot(
+            obik = "3496072",
+            name = "Dragon Klej uniwersalny Butapren 50 ml",
+            stock = 25,
+            price = BigDecimal("12.99"),
+            url = "https://www.obi.pl/p/3496072/dragon-klej-uniwersalny-butapren-50-ml",
+            imageUrl = imageUrl,
+            verifiedAt = 150L,
+        )
+
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Verified answer",
+            finalResponseId = "resp_image",
+            products = listOf(product),
+            createdAt = 200L,
+        )
+
+        database.close()
+        openDatabase()
+
+        val restored = requireNotNull(
+            repository.load(started.conversationId),
+        ).messages.last().products.single()
+
+        assertEquals(imageUrl, restored.primaryImageUrl)
+        assertEquals(product, restored)
+    }
+
+    @Test
     fun `assistant sources persist reopen and cascade with conversation deletion`() = runBlocking {
         val started = repository.beginUserTurn(
             conversationId = null,
@@ -966,6 +1004,7 @@ class ConversationRepositoryTest {
         stock: Int?,
         price: BigDecimal?,
         url: String,
+        imageUrl: String? = null,
         verifiedAt: Long,
         storeNumber: String = "075",
     ) = VerifiedProductSnapshot(
@@ -974,6 +1013,7 @@ class ConversationRepositoryTest {
         stock = stock,
         grossPrice = price,
         productUrl = url,
+        primaryImageUrl = imageUrl,
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
     )
