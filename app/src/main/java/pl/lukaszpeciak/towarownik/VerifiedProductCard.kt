@@ -47,9 +47,9 @@ internal data class VerifiedProductUiModel(
     val grossPrice: BigDecimal?,
     val stock: Int?,
     val productUrl: String,
-    val primaryImageUrl: String? = null,
     val verifiedAt: Long? = null,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val primaryImageUrl: String? = null,
 )
 
 internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
