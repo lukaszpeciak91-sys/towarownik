@@ -133,6 +133,26 @@ class ObiSearchParserTest {
     }
 
     @Test
+    fun `advisor search preserves reported total while capping candidates at five`() {
+        val links = (1..12).joinToString("\n") { index ->
+            val obik = (3_000_000 + index).toString()
+            """<a href="/p/$obik/product-$index">Synthetic product $index</a>"""
+        }
+        val html = """
+            <html><body>
+            <h1>Wyniki dla synthetic (706)</h1>
+            $links
+            </body></html>
+        """.trimIndent()
+
+        val result = parser.parse(html).getOrThrow() as
+            ObiSearchParseResult.Results
+
+        assertEquals(706, result.reportedTotalCount)
+        assertEquals(5, result.items.size)
+    }
+
+    @Test
     fun `manual search preserves reported total and caps parsed candidates at twenty five`() {
         val links = (1..30).joinToString("\n") { index ->
             val obik = (1_000_000 + index).toString()
