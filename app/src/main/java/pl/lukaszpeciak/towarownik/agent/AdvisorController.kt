@@ -25,6 +25,7 @@ internal sealed interface AdvisorUiState {
         val responseId: String,
         val products: List<VerifiedProductSnapshot> = emptyList(),
         val sources: List<AdvisorWebSource> = emptyList(),
+        val searchActions: List<AdvisorSearchAction> = emptyList(),
     ) : AdvisorUiState
     data class Error(val error: AdvisorError) : AdvisorUiState
 }
@@ -114,6 +115,8 @@ internal class AdvisorController(
         var toolAssistedObserved = false
         val verifiedByKey =
             linkedMapOf<VerifiedProductKey, VerifiedProductSnapshot>()
+        val searchActionsByKey =
+            linkedMapOf<String, AdvisorSearchAction>()
 
         while (true) {
             when (proxyResult) {
@@ -129,6 +132,7 @@ internal class AdvisorController(
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
                         sources = proxyResult.sources,
+                        searchActions = searchActionsByKey.values.toList(),
                     ).also(onState)
                 }
 
@@ -196,6 +200,21 @@ internal class AdvisorController(
                                 is AdvisorToolExecutionResult.Success -> {
                                     localResult.snapshots.forEach {
                                         verifiedByKey[it.key] = it
+                                    }
+                                    localResult.searchActions.forEach { action ->
+                                        val key = buildString {
+                                            append(action.storeNumber)
+                                            append('|')
+                                            append(
+                                                action.query
+                                                    .normalizeWhitespace()
+                                                    .lowercase(),
+                                            )
+                                        }
+                                        searchActionsByKey.putIfAbsent(
+                                            key,
+                                            action,
+                                        )
                                     }
                                     AdvisorToolContinuation.Verified(
                                         localResult.result,
