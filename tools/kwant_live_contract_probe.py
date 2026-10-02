@@ -394,10 +394,17 @@ def extract_label_value(body_text: str, labels: list[str]) -> str:
     normalized_labels = [re.compile(label, re.IGNORECASE) for label in labels]
     for index, line in enumerate(lines):
         for label in normalized_labels:
-            direct = re.match(rf"^{label.pattern}\s*[:：]?\s*(.+)$", line, re.IGNORECASE)
+            direct = re.match(
+                rf"^{label.pattern}\s*[:：]\s*(.+)$",
+                line,
+                re.IGNORECASE,
+            )
             if direct and direct.group(1).strip():
                 return direct.group(1).strip()
-            if label.fullmatch(line.rstrip(":：")) and index + 1 < len(lines):
+            if (
+                label.fullmatch(line.rstrip(":：").strip())
+                and index + 1 < len(lines)
+            ):
                 return lines[index + 1]
     return UNKNOWN
 
