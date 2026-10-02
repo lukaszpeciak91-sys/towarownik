@@ -411,7 +411,7 @@ def extract_label_value(body_text: str, labels: list[str]) -> str:
 
 def extract_stock_value(body_text: str, label_pattern: str) -> str:
     match = re.search(
-        rf"{label_pattern}\s*:\s*([0-9][0-9\s.,]*)\s*([A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż.]*)",
+        rf"{label_pattern}[ \t]*:[ \t]*([0-9][0-9 \t\u00a0.,]*)[ \t]*([A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż.]*)",
         body_text,
         re.IGNORECASE,
     )
@@ -437,7 +437,7 @@ def extract_selected_branch_stock(body_text: str, branch_label: str) -> str:
 
 def extract_price(body_text: str) -> str:
     match = re.search(
-        r"([0-9][0-9\s]*[,.][0-9]{2})\s*z[lł]\s*brutto",
+        r"([0-9][0-9 \t\u00a0]*[,.][0-9]{2})[ \t]*z[lł][ \t]*brutto",
         body_text,
         re.IGNORECASE,
     )
