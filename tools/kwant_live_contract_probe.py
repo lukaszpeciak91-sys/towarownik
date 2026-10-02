@@ -1,0 +1,1412 @@
+#!/usr/bin/env python3
+"""Research-only live KWANT frontend contract probe.
+
+The live runner uses Playwright lazily so deterministic unit tests do not
+require Playwright or network access.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Iterable
+from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit
+
+KWANT_ORIGIN = "https://kwant.net.pl"
+KWANT_HOST = "kwant.net.pl"
+UNKNOWN = "UNKNOWN"
+MAX_NETWORK_RECORDS = 350
+MAX_RESULT_LINKS = 25
+MAX_TECHNICAL_LINES = 60
+SECRET_KEY_RE = re.compile(
+    r"(token|secret|password|passwd|cookie|session|auth|csrf|xsrf|jwt|bearer|key)",
+    re.IGNORECASE,
+)
+SAFE_VALUE_KEY_RE = re.compile(
+    r"(query|search|term|phrase|q$|branch|oddzial|oddzia[lł]|warehouse|magazyn|store|shop|product|article|ean|sku|id$)",
+    re.IGNORECASE,
+)
+RELEVANT_RESOURCE_TYPES = {"document", "xhr", "fetch"}
+NO_RESULTS_RE = re.compile(
+    r"(brak\s+wynik|nie\s+znalezion|0\s+wynik)",
+    re.IGNORECASE,
+)
+PRODUCT_PATH_RE = re.compile(r"^/produkt/[^?#]*/?(?:$|[?#])", re.IGNORECASE)
+BRANCH_PAGE_ID_RE = re.compile(r"/(?:[^/]+/)*(\d+)/?$")
+
+
+@dataclass
+class NetworkRecorder:
+    action: str = "baseline"
+    records: list[dict[str, Any]] = field(default_factory=list)
+    _response_indices: dict[tuple[str, str, str], list[int]] = field(default_factory=dict)
+
+    def set_action(self, action: str) -> None:
+        self.action = action
+
+    def on_request(self, request: Any) -> None:
+        if len(self.records) >= MAX_NETWORK_RECORDS:
+            return
+        if getattr(request, "resource_type", None) not in RELEVANT_RESOURCE_TYPES:
+            return
+        expected, safe_url = sanitize_kwant_url(getattr(request, "url", ""))
+        if not expected:
+            return
+
+        method = str(getattr(request, "method", "GET")).upper()
+        headers = getattr(request, "headers", {}) or {}
+        post_data = getattr(request, "post_data", None)
+        record = {
+            "action": self.action,
+            "method": method,
+            "path": urlsplit(safe_url).path or "/",
+            "query": sanitized_query(
+                getattr(request, "url", ""),
+                action=self.action,
+            ),
+            "body": sanitize_body_shape(
+                post_data,
+                content_type=str(headers.get("content-type", "")),
+                action=self.action,
+            ),
+            "resourceType": getattr(request, "resource_type", None),
+            "status": None,
+            "contentType": None,
+        }
+        self.records.append(record)
+        key = (self.action, method, strip_query(safe_url))
+        self._response_indices.setdefault(key, []).append(len(self.records) - 1)
+
+    def on_response(self, response: Any) -> None:
+        request = getattr(response, "request", None)
+        if request is None:
+            return
+        if getattr(request, "resource_type", None) not in RELEVANT_RESOURCE_TYPES:
+            return
+        expected, safe_url = sanitize_kwant_url(getattr(response, "url", ""))
+        if not expected:
+            return
+
+        key = (
+            self.action,
+            str(getattr(request, "method", "GET")).upper(),
+            strip_query(safe_url),
+        )
+        indices = self._response_indices.get(key, [])
+        index = next(
+            (
+                candidate
+                for candidate in reversed(indices)
+                if self.records[candidate]["status"] is None
+            ),
+            None,
+        )
+        if index is None:
+            return
+
+        headers = getattr(response, "headers", {}) or {}
+        self.records[index]["status"] = getattr(response, "status", None)
+        self.records[index]["contentType"] = safe_content_type(
+            str(headers.get("content-type", ""))
+        )
+
+
+def validate_inputs(product_query: str, branch_label: str, text_query: str) -> None:
+    for label, value, limit in (
+        ("product query", product_query, 120),
+        ("branch label", branch_label, 120),
+        ("text query", text_query, 160),
+    ):
+        if not value or not value.strip():
+            raise ValueError(f"{label} must not be blank")
+        if len(value) > limit:
+            raise ValueError(f"{label} is too long")
+        if any(ord(char) < 32 for char in value):
+            raise ValueError(f"{label} contains control characters")
+
+
+def sanitize_kwant_url(raw_url: str) -> tuple[bool, str]:
+    try:
+        parsed = urlsplit(raw_url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return False, "REDACTED_INVALID_URL"
+
+    expected = bool(
+        parsed.scheme == "https"
+        and parsed.hostname == KWANT_HOST
+        and port in (None, 443)
+        and parsed.username is None
+        and parsed.password is None
+    )
+    if not expected:
+        return False, "REDACTED_UNEXPECTED_HOST"
+
+    return True, urlunsplit(("https", KWANT_HOST, parsed.path or "/", "", ""))
+
+
+def sanitize_public_url(raw_url: str, base_url: str = KWANT_ORIGIN) -> str:
+    try:
+        absolute = urljoin(base_url, raw_url)
+        parsed = urlsplit(absolute)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return "REDACTED_INVALID_URL"
+
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return "REDACTED_INVALID_URL"
+
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", "", ""))
+
+
+def strip_query(safe_url: str) -> str:
+    parsed = urlsplit(safe_url)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+
+def sanitized_query(raw_url: str, action: str = "") -> dict[str, Any]:
+    try:
+        pairs = parse_qsl(urlsplit(raw_url).query, keep_blank_values=True)
+    except ValueError:
+        return {"names": [], "safeValues": {}}
+
+    names: list[str] = []
+    safe_values: dict[str, str] = {}
+    for key, value in pairs:
+        if key not in names:
+            names.append(key)
+        if SECRET_KEY_RE.search(key):
+            continue
+        if SAFE_VALUE_KEY_RE.search(key) and is_safe_public_value(value):
+            safe_values[key] = value[:160]
+    return {"names": names[:50], "safeValues": safe_values}
+
+
+def sanitize_body_shape(
+    post_data: str | None,
+    *,
+    content_type: str = "",
+    action: str = "",
+) -> dict[str, Any] | None:
+    if not post_data:
+        return None
+
+    fields: list[str] = []
+    safe_values: dict[str, Any] = {}
+
+    def collect(mapping: dict[str, Any]) -> None:
+        for key, value in mapping.items():
+            key_text = str(key)
+            if key_text not in fields:
+                fields.append(key_text)
+            if SECRET_KEY_RE.search(key_text):
+                continue
+            if SAFE_VALUE_KEY_RE.search(key_text) and isinstance(
+                value, (str, int, float, bool)
+            ):
+                rendered = str(value)
+                if is_safe_public_value(rendered):
+                    safe_values[key_text] = value
+
+    stripped = post_data.strip()
+    try:
+        if "json" in content_type.lower() or stripped.startswith(("{", "[")):
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict):
+                collect(parsed)
+            else:
+                return {
+                    "encoding": "json",
+                    "type": type(parsed).__name__,
+                    "fields": [],
+                    "safeValues": {},
+                }
+            return {
+                "encoding": "json",
+                "fields": fields[:80],
+                "safeValues": safe_values,
+            }
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        form = dict(parse_qsl(stripped, keep_blank_values=True))
+        if form:
+            collect(form)
+            return {
+                "encoding": "form",
+                "fields": fields[:80],
+                "safeValues": safe_values,
+            }
+    except ValueError:
+        pass
+
+    return {
+        "encoding": "opaque",
+        "length": len(post_data),
+        "fields": [],
+        "safeValues": {},
+    }
+
+
+def is_safe_public_value(value: str) -> bool:
+    if len(value) > 180:
+        return False
+    if any(ord(char) < 32 for char in value):
+        return False
+    if re.search(r"(?i)(bearer\s|eyJ[a-zA-Z0-9_-]{10,}\.|[a-f0-9]{32,})", value):
+        return False
+    return True
+
+
+def safe_content_type(raw: str) -> str | None:
+    if not raw:
+        return None
+    return raw.split(";", 1)[0].strip().lower()[:100] or None
+
+
+def cookie_summary(cookies: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for cookie in cookies:
+        name = str(cookie.get("name", ""))
+        if not name:
+            continue
+        result.append(
+            {
+                "name": name[:120],
+                "domain": str(cookie.get("domain", ""))[:160],
+                "path": str(cookie.get("path", ""))[:160],
+                "secure": bool(cookie.get("secure", False)),
+                "httpOnly": bool(cookie.get("httpOnly", False)),
+                "sameSite": cookie.get("sameSite"),
+            }
+        )
+    return sorted(result, key=lambda item: (item["domain"], item["name"]))
+
+
+def storage_key_summary(storage: dict[str, dict[str, str]]) -> dict[str, list[str]]:
+    return {
+        "localStorage": sorted(storage.get("localStorage", {}).keys())[:120],
+        "sessionStorage": sorted(storage.get("sessionStorage", {}).keys())[:120],
+    }
+
+
+def state_changed_keys(
+    before_cookies: dict[str, str],
+    after_cookies: dict[str, str],
+    before_storage: dict[str, dict[str, str]],
+    after_storage: dict[str, dict[str, str]],
+) -> dict[str, list[str]]:
+    cookie_names = sorted(
+        key
+        for key in set(before_cookies) | set(after_cookies)
+        if before_cookies.get(key) != after_cookies.get(key)
+    )
+    local_names = sorted(
+        key
+        for key in set(before_storage.get("localStorage", {}))
+        | set(after_storage.get("localStorage", {}))
+        if before_storage.get("localStorage", {}).get(key)
+        != after_storage.get("localStorage", {}).get(key)
+    )
+    session_names = sorted(
+        key
+        for key in set(before_storage.get("sessionStorage", {}))
+        | set(after_storage.get("sessionStorage", {}))
+        if before_storage.get("sessionStorage", {}).get(key)
+        != after_storage.get("sessionStorage", {}).get(key)
+    )
+    return {
+        "cookies": cookie_names,
+        "localStorage": local_names,
+        "sessionStorage": session_names,
+    }
+
+
+def persisted_state_keys(
+    after_cookies: dict[str, str],
+    reload_cookies: dict[str, str],
+    after_storage: dict[str, dict[str, str]],
+    reload_storage: dict[str, dict[str, str]],
+    changed: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    return {
+        "cookies": [
+            key
+            for key in changed["cookies"]
+            if key in after_cookies
+            and after_cookies.get(key) == reload_cookies.get(key)
+        ],
+        "localStorage": [
+            key
+            for key in changed["localStorage"]
+            if key in after_storage.get("localStorage", {})
+            and after_storage["localStorage"].get(key)
+            == reload_storage.get("localStorage", {}).get(key)
+        ],
+        "sessionStorage": [
+            key
+            for key in changed["sessionStorage"]
+            if key in after_storage.get("sessionStorage", {})
+            and after_storage["sessionStorage"].get(key)
+            == reload_storage.get("sessionStorage", {}).get(key)
+        ],
+    }
+
+
+def extract_branch_page_identifier(url: str) -> str:
+    expected, safe = sanitize_kwant_url(url)
+    if not expected:
+        return UNKNOWN
+    match = BRANCH_PAGE_ID_RE.search(urlsplit(safe).path)
+    return match.group(1) if match else UNKNOWN
+
+
+def infer_backend_branch_identifier(
+    network: list[dict[str, Any]],
+) -> str:
+    candidates: list[str] = []
+    for record in network:
+        if record.get("action") != "branch:select":
+            continue
+        for source in (
+            record.get("query", {}).get("safeValues", {}),
+            (record.get("body") or {}).get("safeValues", {}),
+        ):
+            for key, value in source.items():
+                if re.search(
+                    r"(branch|oddzial|oddzia[lł]|warehouse|magazyn|store)",
+                    key,
+                    re.IGNORECASE,
+                ):
+                    rendered = str(value).strip()
+                    if rendered and rendered not in candidates:
+                        candidates.append(rendered)
+    return candidates[0] if len(candidates) == 1 else UNKNOWN
+
+
+def normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip()
+
+
+def parse_number_text(value: str) -> str:
+    return value.replace("\xa0", " ").strip()
+
+
+def extract_label_value(body_text: str, labels: list[str]) -> str:
+    lines = [normalize_text(line) for line in body_text.splitlines()]
+    lines = [line for line in lines if line]
+    normalized_labels = [re.compile(label, re.IGNORECASE) for label in labels]
+    for index, line in enumerate(lines):
+        for label in normalized_labels:
+            direct = re.match(rf"^{label.pattern}\s*[:：]?\s*(.+)$", line, re.IGNORECASE)
+            if direct and direct.group(1).strip():
+                return direct.group(1).strip()
+            if label.fullmatch(line.rstrip(":：")) and index + 1 < len(lines):
+                return lines[index + 1]
+    return UNKNOWN
+
+
+def extract_stock_value(body_text: str, label_pattern: str) -> str:
+    match = re.search(
+        rf"{label_pattern}\s*:\s*([0-9][0-9\s.,]*)\s*([A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż.]*)",
+        body_text,
+        re.IGNORECASE,
+    )
+    if not match:
+        return UNKNOWN
+    amount = normalize_text(match.group(1))
+    unit = normalize_text(match.group(2))
+    return normalize_text(f"{amount} {unit}")
+
+
+def extract_selected_branch_stock(body_text: str, branch_label: str) -> str:
+    escaped = re.escape(branch_label)
+    patterns = (
+        rf"{escaped}[^\n]{{0,80}}?([0-9][0-9\s.,]*)\s*(szt\.?|opak\.?|m|mb|kpl\.?)",
+        rf"(?:oddzia[lł]|magazyn)[^\n]{{0,50}}?{escaped}[^\n]{{0,80}}?([0-9][0-9\s.,]*)\s*(szt\.?|opak\.?|m|mb|kpl\.?)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, body_text, re.IGNORECASE)
+        if match:
+            return normalize_text(f"{match.group(1)} {match.group(2)}")
+    return UNKNOWN
+
+
+def extract_price(body_text: str) -> str:
+    match = re.search(
+        r"([0-9][0-9\s]*[,.][0-9]{2})\s*z[lł]\s*brutto",
+        body_text,
+        re.IGNORECASE,
+    )
+    return parse_number_text(match.group(1)) if match else UNKNOWN
+
+
+def extract_technical_data(body_text: str) -> list[str]:
+    match = re.search(
+        r"(?:^|\n)\s*Specyfikacja\s*(.*?)(?=\n\s*(?:Producent\s*/|Opis\b|Pliki\b|Produkty\b)|\Z)",
+        body_text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return []
+    lines = [normalize_text(line) for line in match.group(1).splitlines()]
+    return [line for line in lines if line][:MAX_TECHNICAL_LINES]
+
+
+def flatten_json_ld(value: Any) -> Iterable[dict[str, Any]]:
+    if isinstance(value, dict):
+        if isinstance(value.get("@graph"), list):
+            for child in value["@graph"]:
+                yield from flatten_json_ld(child)
+        yield value
+    elif isinstance(value, list):
+        for child in value:
+            yield from flatten_json_ld(child)
+
+
+def product_json_ld(raw_blocks: Iterable[str]) -> dict[str, Any] | None:
+    for raw in raw_blocks:
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            continue
+        for item in flatten_json_ld(parsed):
+            item_type = item.get("@type")
+            types = item_type if isinstance(item_type, list) else [item_type]
+            if any(str(value).lower() == "product" for value in types if value):
+                return item
+    return None
+
+
+def structured_product_fields(
+    raw_blocks: Iterable[str],
+    page_url: str,
+) -> dict[str, Any]:
+    product = product_json_ld(raw_blocks)
+    if not product:
+        return {}
+
+    brand = product.get("brand")
+    if isinstance(brand, dict):
+        brand = brand.get("name")
+    image = product.get("image")
+    if isinstance(image, list):
+        image = image[0] if image else None
+
+    offers = product.get("offers")
+    if isinstance(offers, list):
+        offers = offers[0] if offers else None
+
+    return {
+        "name": public_scalar(product.get("name")),
+        "articleNumber": public_scalar(
+            product.get("sku") or product.get("mpn")
+        ),
+        "ean": public_scalar(
+            product.get("gtin13")
+            or product.get("gtin")
+            or product.get("ean")
+        ),
+        "manufacturer": public_scalar(brand),
+        "imageUrl": (
+            sanitize_public_url(str(image), page_url)
+            if isinstance(image, str)
+            else UNKNOWN
+        ),
+        "canonicalUrl": (
+            sanitize_public_url(
+                str(product.get("url") or page_url),
+                page_url,
+            )
+        ),
+        "structuredPrice": (
+            public_scalar(offers.get("price"))
+            if isinstance(offers, dict)
+            else UNKNOWN
+        ),
+    }
+
+
+def public_scalar(value: Any) -> str:
+    if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+        rendered = normalize_text(str(value))
+        if rendered and is_safe_public_value(rendered):
+            return rendered[:500]
+    return UNKNOWN
+
+
+def product_page_identifier(url: str) -> str:
+    expected, safe = sanitize_kwant_url(url)
+    if not expected:
+        return UNKNOWN
+    match = re.search(r"-(\d+)/?$", urlsplit(safe).path)
+    return match.group(1) if match else UNKNOWN
+
+
+def product_snapshot(
+    *,
+    page_url: str,
+    body_text: str,
+    json_ld_blocks: Iterable[str],
+    branch_label: str,
+) -> dict[str, Any]:
+    structured = structured_product_fields(json_ld_blocks, page_url)
+
+    article = extract_label_value(
+        body_text,
+        [r"Kod\s+produktu", r"Nr\s+kat\.?"],
+    )
+    ean = extract_label_value(body_text, [r"EAN"])
+    manufacturer = extract_label_value(
+        body_text,
+        [r"Producent"],
+    )
+    canonical = structured.get("canonicalUrl", UNKNOWN)
+    if canonical == UNKNOWN:
+        expected, safe = sanitize_kwant_url(page_url)
+        canonical = safe if expected else UNKNOWN
+
+    return {
+        "name": coalesce(
+            structured.get("name"),
+            extract_heading(body_text),
+        ),
+        "articleNumber": coalesce(
+            article,
+            structured.get("articleNumber"),
+        ),
+        "ean": coalesce(ean, structured.get("ean")),
+        "manufacturer": coalesce(
+            manufacturer,
+            structured.get("manufacturer"),
+        ),
+        "productId": product_page_identifier(page_url),
+        "technicalData": extract_technical_data(body_text),
+        "imageUrl": structured.get("imageUrl", UNKNOWN),
+        "canonicalUrl": canonical,
+        "price": coalesce(
+            extract_price(body_text),
+            structured.get("structuredPrice"),
+        ),
+        "priceScope": "ONLINE"
+        if coalesce(
+            extract_price(body_text),
+            structured.get("structuredPrice"),
+        )
+        != UNKNOWN
+        else UNKNOWN,
+        "selectedBranchStock": extract_selected_branch_stock(
+            body_text, branch_label
+        ),
+        "centralStock": extract_stock_value(
+            body_text,
+            r"Centrala",
+        ),
+        "aggregateBranchStock": extract_stock_value(
+            body_text,
+            r"W\s+oddzia[lł]ach",
+        ),
+    }
+
+
+def extract_heading(body_text: str) -> str:
+    lines = [normalize_text(line) for line in body_text.splitlines()]
+    for line in lines:
+        if line and len(line) > 10 and "wyłącznik" in line.lower():
+            return line[:500]
+    return UNKNOWN
+
+
+def coalesce(*values: Any) -> Any:
+    for value in values:
+        if value not in (None, "", UNKNOWN, []):
+            return value
+    return UNKNOWN
+
+
+def safe_search_status(
+    *,
+    interaction_ok: bool,
+    target_found: bool,
+    any_products: bool,
+    body_text: str,
+) -> str:
+    if target_found or any_products:
+        return "SUPPORTED"
+    if interaction_ok and NO_RESULTS_RE.search(body_text or ""):
+        return "UNSUPPORTED"
+    return UNKNOWN
+
+
+def empty_search_result(query: str) -> dict[str, Any]:
+    return {
+        "query": query,
+        "status": UNKNOWN,
+        "reportedResultCount": UNKNOWN,
+        "productIdentifiers": [],
+        "productUrls": [],
+    }
+
+
+def build_safe_summary(
+    *,
+    requested_branch_label: str,
+    branch_page_url: str = "",
+    selection_observed: bool | None = None,
+    selection_persisted: bool | None = None,
+    backend_branch_identifier: str = UNKNOWN,
+    searches: dict[str, dict[str, Any]] | None = None,
+    product_before: dict[str, Any] | None = None,
+    product_after: dict[str, Any] | None = None,
+    network: list[dict[str, Any]] | None = None,
+    state: dict[str, Any] | None = None,
+    frontend_clues: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    searches = searches or {}
+    product = product_after or product_before or {}
+
+    return {
+        "branch": {
+            "requestedLabel": requested_branch_label,
+            "selectionObserved": tri_state(selection_observed),
+            "selectionPersisted": tri_state(selection_persisted),
+            "branchPageIdentifier": (
+                extract_branch_page_identifier(branch_page_url)
+                if branch_page_url
+                else UNKNOWN
+            ),
+            "backendBranchIdentifier": backend_branch_identifier or UNKNOWN,
+        },
+        "search": {
+            "articleCode": searches.get(
+                "articleCode", empty_search_result(UNKNOWN)
+            ),
+            "ean": searches.get("ean", empty_search_result(UNKNOWN)),
+            "text": searches.get("text", empty_search_result(UNKNOWN)),
+        },
+        "product": {
+            "articleNumber": product.get("articleNumber", UNKNOWN),
+            "ean": product.get("ean", UNKNOWN),
+            "productId": product.get("productId", UNKNOWN),
+            "name": product.get("name", UNKNOWN),
+            "manufacturer": product.get("manufacturer", UNKNOWN),
+            "technicalData": product.get("technicalData", []),
+            "imageUrl": product.get("imageUrl", UNKNOWN),
+            "canonicalUrl": product.get("canonicalUrl", UNKNOWN),
+            "price": product.get("price", UNKNOWN),
+            "priceScope": product.get("priceScope", UNKNOWN),
+            "selectedBranchStock": product.get(
+                "selectedBranchStock", UNKNOWN
+            ),
+            "centralStock": product.get("centralStock", UNKNOWN),
+            "aggregateBranchStock": product.get(
+                "aggregateBranchStock", UNKNOWN
+            ),
+            "beforeBranchSelection": product_before or {},
+            "afterBranchSelection": product_after or {},
+        },
+        "network": network or [],
+        "state": state or {},
+        "frontendClues": frontend_clues or [],
+    }
+
+
+def tri_state(value: bool | None) -> str | bool:
+    if value is None:
+        return UNKNOWN
+    return value
+
+
+def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    branch = summary["branch"]
+    search = summary["search"]
+    product = summary["product"]
+    lines = [
+        "KWANT LIVE CONTRACT SUMMARY",
+        "",
+        "BRANCH",
+        f"requestedLabel={branch['requestedLabel']}",
+        f"selectionObserved={format_scalar(branch['selectionObserved'])}",
+        f"selectionPersisted={format_scalar(branch['selectionPersisted'])}",
+        f"branchPageIdentifier={branch['branchPageIdentifier']}",
+        f"backendBranchIdentifier={branch['backendBranchIdentifier']}",
+        "",
+        "SEARCH",
+        f"articleCode={search['articleCode'].get('status', UNKNOWN)}",
+        f"ean={search['ean'].get('status', UNKNOWN)}",
+        f"text={search['text'].get('status', UNKNOWN)}",
+        "",
+        "PRODUCT",
+        f"articleNumber={format_scalar(product['articleNumber'])}",
+        f"ean={format_scalar(product['ean'])}",
+        f"productId={format_scalar(product['productId'])}",
+        f"name={format_scalar(product['name'])}",
+        f"manufacturer={format_scalar(product['manufacturer'])}",
+        f"imageUrl={format_scalar(product['imageUrl'])}",
+        f"canonicalUrl={format_scalar(product['canonicalUrl'])}",
+        f"price={format_scalar(product['price'])}",
+        f"priceScope={format_scalar(product['priceScope'])}",
+        f"selectedBranchStock={format_scalar(product['selectedBranchStock'])}",
+        f"centralStock={format_scalar(product['centralStock'])}",
+        f"aggregateBranchStock={format_scalar(product['aggregateBranchStock'])}",
+        "",
+        "NETWORK",
+    ]
+    for record in summary.get("network", []):
+        query = record.get("query") or {}
+        body = record.get("body") or {}
+        lines.append(
+            "- "
+            + " ".join(
+                [
+                    f"action={record.get('action', UNKNOWN)}",
+                    f"method={record.get('method', UNKNOWN)}",
+                    f"path={record.get('path', UNKNOWN)}",
+                    f"queryNames={query.get('names', [])}",
+                    f"querySafeValues={query.get('safeValues', {})}",
+                    f"bodyFields={body.get('fields', [])}",
+                    f"bodySafeValues={body.get('safeValues', {})}",
+                    f"status={record.get('status', UNKNOWN)}",
+                    f"contentType={record.get('contentType', UNKNOWN)}",
+                ]
+            )
+        )
+
+    (out_dir / "summary.txt").write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
+
+
+def format_scalar(value: Any) -> str:
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if value is None:
+        return UNKNOWN
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value)
+
+
+def safe_report_contains_secret(report: Any, secret: str) -> bool:
+    return secret in json.dumps(report, ensure_ascii=False)
+
+
+def browser_storage_values(page: Any) -> dict[str, dict[str, str]]:
+    return page.evaluate(
+        """
+        () => ({
+          localStorage: Object.fromEntries(
+            Array.from({length: localStorage.length}, (_, i) => {
+              const key = localStorage.key(i);
+              return [key, localStorage.getItem(key)];
+            })
+          ),
+          sessionStorage: Object.fromEntries(
+            Array.from({length: sessionStorage.length}, (_, i) => {
+              const key = sessionStorage.key(i);
+              return [key, sessionStorage.getItem(key)];
+            })
+          ),
+        })
+        """
+    )
+
+
+def cookie_values(context: Any) -> tuple[dict[str, str], list[dict[str, Any]]]:
+    cookies = context.cookies()
+    values = {
+        f"{cookie.get('domain', '')}|{cookie.get('path', '')}|{cookie.get('name', '')}":
+        str(cookie.get("value", ""))
+        for cookie in cookies
+        if cookie.get("name")
+    }
+    return values, cookies
+
+
+def branch_marker(page: Any, branch_label: str) -> bool:
+    escaped = re.escape(branch_label)
+    selector = (
+        "[class*='branch'],[id*='branch'],"
+        "[class*='oddzial'],[id*='oddzial'],"
+        "[class*='store'],[id*='store'],"
+        "[class*='warehouse'],[id*='warehouse'],"
+        "[aria-label*='oddział'],[aria-label*='Oddział']"
+    )
+    try:
+        candidates = page.locator(selector)
+        count = min(candidates.count(), 40)
+        for index in range(count):
+            text = normalize_text(candidates.nth(index).inner_text(timeout=300))
+            if re.search(escaped, text, re.IGNORECASE):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def search_input(page: Any) -> Any:
+    selectors = (
+        "input[type='search']",
+        "input[placeholder*='Wyszuk']",
+        "input[aria-label*='Wyszuk']",
+        "input[name*='search']",
+        "input[name*='query']",
+    )
+    for selector in selectors:
+        locator = page.locator(selector).filter(visible=True) if False else page.locator(selector)
+        try:
+            count = locator.count()
+            for index in range(min(count, 10)):
+                candidate = locator.nth(index)
+                if candidate.is_visible():
+                    return candidate
+        except Exception:
+            continue
+    return None
+
+
+def product_links(page: Any) -> list[dict[str, str]]:
+    result: list[dict[str, str]] = []
+    try:
+        anchors = page.locator("a[href*='/produkt/']")
+        for index in range(min(anchors.count(), MAX_RESULT_LINKS * 3)):
+            anchor = anchors.nth(index)
+            href = anchor.get_attribute("href") or ""
+            text = normalize_text(anchor.inner_text(timeout=300))
+            url = sanitize_public_url(href, page.url)
+            if url.startswith("REDACTED_"):
+                continue
+            item = {"url": url, "text": text[:300]}
+            if item not in result:
+                result.append(item)
+            if len(result) >= MAX_RESULT_LINKS:
+                break
+    except Exception:
+        pass
+    if PRODUCT_PATH_RE.match(urlsplit(page.url).path):
+        expected, safe = sanitize_kwant_url(page.url)
+        if expected:
+            current = {"url": safe, "text": normalize_text(page.title())[:300]}
+            if current not in result:
+                result.insert(0, current)
+    return result
+
+
+def result_identifiers(links: list[dict[str, str]]) -> list[str]:
+    identifiers: list[str] = []
+    for item in links:
+        identifier = product_page_identifier(item.get("url", ""))
+        if identifier != UNKNOWN and identifier not in identifiers:
+            identifiers.append(identifier)
+    return identifiers
+
+
+def reported_result_count(body_text: str) -> str:
+    patterns = (
+        r"([0-9]+)\s+wynik",
+        r"wynik[^0-9]{0,20}([0-9]+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, body_text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return UNKNOWN
+
+
+def run_search(
+    page: Any,
+    recorder: NetworkRecorder,
+    *,
+    query: str,
+    action: str,
+    target_hint: str = "",
+    raw_dir: Path,
+) -> dict[str, Any]:
+    recorder.set_action(action)
+    page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
+    page.wait_for_timeout(500)
+
+    input_box = search_input(page)
+    interaction_ok = input_box is not None
+    if not interaction_ok:
+        return empty_search_result(query)
+
+    input_box.fill(query)
+    input_box.press("Enter")
+    try:
+        page.wait_for_load_state("networkidle", timeout=12000)
+    except Exception:
+        page.wait_for_timeout(1500)
+
+    body = page.locator("body").inner_text(timeout=5000)
+    links = product_links(page)
+    target_found = bool(
+        target_hint
+        and any(
+            target_hint.lower()
+            in f"{item.get('text', '')} {item.get('url', '')}".lower()
+            for item in links
+        )
+    )
+    status = safe_search_status(
+        interaction_ok=True,
+        target_found=target_found,
+        any_products=bool(links),
+        body_text=body,
+    )
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    (raw_dir / f"{action.replace(':', '-')}.html").write_text(
+        page.content(),
+        encoding="utf-8",
+    )
+    return {
+        "query": query,
+        "status": status,
+        "reportedResultCount": reported_result_count(body),
+        "productIdentifiers": result_identifiers(links),
+        "productUrls": [item["url"] for item in links],
+        "_links": links,
+    }
+
+
+def choose_branch(
+    page: Any,
+    recorder: NetworkRecorder,
+    branch_label: str,
+    raw_dir: Path,
+) -> tuple[bool, str]:
+    recorder.set_action("branch:list")
+    page.goto(
+        f"{KWANT_ORIGIN}/lista-hurtowni-elektrycznych",
+        wait_until="domcontentloaded",
+        timeout=45000,
+    )
+    page.wait_for_timeout(500)
+
+    branch_page_url = ""
+    label_locator = page.get_by_text(branch_label, exact=False)
+    try:
+        if label_locator.count():
+            label = label_locator.first
+            href_locator = label.locator(
+                "xpath=ancestor::*[self::article or self::div or self::li][1]//a[@href]"
+            )
+            for index in range(min(href_locator.count(), 12)):
+                href = href_locator.nth(index).get_attribute("href") or ""
+                if "hurtownia-elektryczna" in href:
+                    branch_page_url = sanitize_public_url(href, page.url)
+                    break
+    except Exception:
+        pass
+
+    if branch_page_url and not branch_page_url.startswith("REDACTED_"):
+        recorder.set_action("branch:page")
+        page.goto(branch_page_url, wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(400)
+
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    (raw_dir / "branch-before-select.html").write_text(
+        page.content(),
+        encoding="utf-8",
+    )
+
+    recorder.set_action("branch:select")
+    button = page.get_by_role(
+        "button",
+        name=re.compile(r"Wybierz\s+oddzia[lł]", re.IGNORECASE),
+    )
+    try:
+        if not button.count():
+            return False, branch_page_url or page.url
+        button.first.click(timeout=7000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            page.wait_for_timeout(1200)
+        (raw_dir / "branch-after-select.html").write_text(
+            page.content(),
+            encoding="utf-8",
+        )
+        return True, branch_page_url or page.url
+    except Exception:
+        return False, branch_page_url or page.url
+
+
+def open_product(
+    page: Any,
+    recorder: NetworkRecorder,
+    *,
+    url: str,
+    action: str,
+    branch_label: str,
+    raw_dir: Path,
+) -> dict[str, Any]:
+    recorder.set_action(action)
+    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+    try:
+        page.wait_for_load_state("networkidle", timeout=10000)
+    except Exception:
+        page.wait_for_timeout(1200)
+
+    body = page.locator("body").inner_text(timeout=6000)
+    blocks = page.locator("script[type='application/ld+json']").all_text_contents()
+    snapshot = product_snapshot(
+        page_url=page.url,
+        body_text=body,
+        json_ld_blocks=blocks,
+        branch_label=branch_label,
+    )
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    (raw_dir / f"{action.replace(':', '-')}.html").write_text(
+        page.content(),
+        encoding="utf-8",
+    )
+    return snapshot
+
+
+def matching_product_url(
+    search_result: dict[str, Any],
+    hint: str,
+) -> str:
+    links = search_result.get("_links", [])
+    lowered = hint.lower()
+    for item in links:
+        if lowered in f"{item.get('text', '')} {item.get('url', '')}".lower():
+            return item.get("url", "")
+    return links[0]["url"] if links else ""
+
+
+def selected_marker_after_reload(page: Any, branch_label: str) -> bool:
+    return branch_marker(page, branch_label)
+
+
+def collect_frontend_clues(page: Any, context: Any) -> list[dict[str, Any]]:
+    terms = (
+        "branch",
+        "oddzial",
+        "warehouse",
+        "magazyn",
+        "stock",
+        "inventory",
+        "availability",
+        "search",
+        "ean",
+        "product",
+        "price",
+    )
+    clues: list[dict[str, Any]] = []
+    try:
+        sources = page.locator("script[src]").evaluate_all(
+            "els => els.map(el => el.src)"
+        )
+    except Exception:
+        return clues
+
+    for source in sources[:20]:
+        expected, safe = sanitize_kwant_url(source)
+        if not expected:
+            continue
+        try:
+            response = context.request.get(source, timeout=12000)
+            if not response.ok:
+                continue
+            text = response.text()
+        except Exception:
+            continue
+        lowered = text.lower()
+        matched = [term for term in terms if term in lowered]
+        if matched:
+            clues.append(
+                {
+                    "scriptPath": urlsplit(safe).path,
+                    "matchedTerms": matched,
+                }
+            )
+        if len(clues) >= 20:
+            break
+    return clues
+
+
+def run_live_probe(
+    *,
+    product_query: str,
+    branch_label: str,
+    text_query: str,
+    out_dir: Path,
+) -> dict[str, Any]:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright is required for the live KWANT probe"
+        ) from exc
+
+    raw_dir = out_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    recorder = NetworkRecorder()
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(
+            locale="pl-PL",
+            user_agent=(
+                "Mozilla/5.0 (X11; Linux x86_64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/140.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1440, "height": 1000},
+        )
+        page = context.new_page()
+        page.on("request", recorder.on_request)
+        page.on("response", recorder.on_response)
+
+        recorder.set_action("baseline")
+        page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(500)
+        (raw_dir / "baseline.html").write_text(
+            page.content(),
+            encoding="utf-8",
+        )
+
+        before_cookie_values, before_cookies = cookie_values(context)
+        before_storage = browser_storage_values(page)
+
+        article_before = run_search(
+            page,
+            recorder,
+            query=product_query,
+            action="search:article:before",
+            target_hint=product_query,
+            raw_dir=raw_dir,
+        )
+        product_url = matching_product_url(article_before, product_query)
+        product_before = (
+            open_product(
+                page,
+                recorder,
+                url=product_url,
+                action="product:before",
+                branch_label=branch_label,
+                raw_dir=raw_dir,
+            )
+            if product_url
+            else {}
+        )
+
+        page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
+        branch_click_ok, branch_page_url = choose_branch(
+            page,
+            recorder,
+            branch_label,
+            raw_dir,
+        )
+
+        after_cookie_values, after_cookies = cookie_values(context)
+        after_storage = browser_storage_values(page)
+        marker_after_select = branch_marker(page, branch_label)
+        changed = state_changed_keys(
+            before_cookie_values,
+            after_cookie_values,
+            before_storage,
+            after_storage,
+        )
+
+        recorder.set_action("branch:reload")
+        page.reload(wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(500)
+        reload_cookie_values, reload_cookies = cookie_values(context)
+        reload_storage = browser_storage_values(page)
+        marker_after_reload = selected_marker_after_reload(
+            page, branch_label
+        )
+        persisted = persisted_state_keys(
+            after_cookie_values,
+            reload_cookie_values,
+            after_storage,
+            reload_storage,
+            changed,
+        )
+
+        selection_observed = (
+            branch_click_ok
+            and (
+                marker_after_select
+                or any(changed.values())
+                or any(
+                    record.get("action") == "branch:select"
+                    for record in recorder.records
+                )
+            )
+        )
+        selection_persisted: bool | None
+        if not branch_click_ok:
+            selection_persisted = None
+        elif marker_after_reload or any(persisted.values()):
+            selection_persisted = True
+        elif selection_observed:
+            selection_persisted = False
+        else:
+            selection_persisted = None
+
+        article_after = run_search(
+            page,
+            recorder,
+            query=product_query,
+            action="search:article",
+            target_hint=product_query,
+            raw_dir=raw_dir,
+        )
+        product_url = (
+            matching_product_url(article_after, product_query)
+            or product_url
+        )
+        product_after = (
+            open_product(
+                page,
+                recorder,
+                url=product_url,
+                action="product:after",
+                branch_label=branch_label,
+                raw_dir=raw_dir,
+            )
+            if product_url
+            else {}
+        )
+
+        ean = coalesce(
+            product_after.get("ean"),
+            product_before.get("ean"),
+        )
+        ean_search = (
+            run_search(
+                page,
+                recorder,
+                query=str(ean),
+                action="search:ean",
+                target_hint=product_query,
+                raw_dir=raw_dir,
+            )
+            if ean != UNKNOWN
+            else empty_search_result(UNKNOWN)
+        )
+        text_search = run_search(
+            page,
+            recorder,
+            query=text_query,
+            action="search:text",
+            target_hint=product_query,
+            raw_dir=raw_dir,
+        )
+
+        page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
+        frontend_clues = collect_frontend_clues(page, context)
+
+        summary = build_safe_summary(
+            requested_branch_label=branch_label,
+            branch_page_url=branch_page_url,
+            selection_observed=selection_observed,
+            selection_persisted=selection_persisted,
+            backend_branch_identifier=infer_backend_branch_identifier(
+                recorder.records
+            ),
+            searches={
+                "articleCode": strip_private_search_fields(article_after),
+                "ean": strip_private_search_fields(ean_search),
+                "text": strip_private_search_fields(text_search),
+            },
+            product_before=product_before,
+            product_after=product_after,
+            network=recorder.records,
+            state={
+                "baseline": {
+                    "cookies": cookie_summary(before_cookies),
+                    "storageKeys": storage_key_summary(before_storage),
+                },
+                "afterSelection": {
+                    "cookies": cookie_summary(after_cookies),
+                    "storageKeys": storage_key_summary(after_storage),
+                    "changedKeyNames": changed,
+                    "branchMarkerObserved": marker_after_select,
+                },
+                "afterReload": {
+                    "cookies": cookie_summary(reload_cookies),
+                    "storageKeys": storage_key_summary(reload_storage),
+                    "persistedChangedKeyNames": persisted,
+                    "branchMarkerObserved": marker_after_reload,
+                },
+            },
+            frontend_clues=frontend_clues,
+        )
+        browser.close()
+        return summary
+
+
+def strip_private_search_fields(
+    value: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        key: child
+        for key, child in value.items()
+        if not key.startswith("_")
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--product-query", default="MBN116E")
+    parser.add_argument("--branch-label", default="Nowy Sącz")
+    parser.add_argument(
+        "--text-query",
+        default="wyłącznik nadprądowy B16 Hager",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default="build/kwant-live-contract",
+    )
+    args = parser.parse_args()
+
+    try:
+        validate_inputs(
+            args.product_query,
+            args.branch_label,
+            args.text_query,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    summary = run_live_probe(
+        product_query=args.product_query.strip(),
+        branch_label=args.branch_label.strip(),
+        text_query=args.text_query.strip(),
+        out_dir=out_dir,
+    )
+    write_safe_summary(summary, out_dir)
+
+    print((out_dir / "summary.txt").read_text(encoding="utf-8"))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
