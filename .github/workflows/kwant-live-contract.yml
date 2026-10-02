@@ -1,0 +1,87 @@
+name: KWANT live contract probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      product_query:
+        description: Product article/catalog query to investigate
+        required: true
+        default: "MBN116E"
+      branch_label:
+        description: Public KWANT branch label to select
+        required: true
+        default: "Nowy Sącz"
+      text_query:
+        description: Product-name/text query to investigate
+        required: true
+        default: "wyłącznik nadprądowy B16 Hager"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      PRODUCT_QUERY: ${{ inputs.product_query }}
+      BRANCH_LABEL: ${{ inputs.branch_label }}
+      TEXT_QUERY: ${{ inputs.text_query }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate probe inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=tools python3 - "$PRODUCT_QUERY" "$BRANCH_LABEL" "$TEXT_QUERY" <<'PY'
+          import sys
+          from kwant_live_contract_probe import validate_inputs
+
+          validate_inputs(sys.argv[1], sys.argv[2], sys.argv[3])
+          PY
+
+      - name: Install Playwright Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "playwright==1.63.0"
+          python3 -m playwright install --with-deps chromium
+
+      - name: Probe live KWANT frontend contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=tools python3 tools/kwant_live_contract_probe.py \
+            --product-query "$PRODUCT_QUERY" \
+            --branch-label "$BRANCH_LABEL" \
+            --text-query "$TEXT_QUERY" \
+            --out-dir build/kwant-live-contract
+
+      - name: Print safe contract summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f build/kwant-live-contract/summary.txt ]]; then
+            cat build/kwant-live-contract/summary.txt
+          fi
+
+      - name: Upload safe KWANT contract summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kwant-live-contract-summary
+          path: |
+            build/kwant-live-contract/summary.json
+            build/kwant-live-contract/summary.txt
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Upload short-lived raw KWANT page captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kwant-live-contract-raw
+          path: |
+            build/kwant-live-contract/raw/*.html
+          if-no-files-found: ignore
+          retention-days: 1
