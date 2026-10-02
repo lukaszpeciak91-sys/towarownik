@@ -26,7 +26,7 @@ SECRET_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 SAFE_VALUE_KEY_RE = re.compile(
-    r"(query|search|term|phrase|q$|branch|oddzial|oddzia[lł]|warehouse|magazyn|store|shop|product|article|ean|sku|id$)",
+    r"(query|search|term|phrase|q$|branch|oddzial|oddzia[lł]|warehouse|magazyn|store|shop|product|article|ean|sku)",
     re.IGNORECASE,
 )
 RELEVANT_RESOURCE_TYPES = {"document", "xhr", "fetch"}
@@ -42,7 +42,7 @@ BRANCH_PAGE_ID_RE = re.compile(r"/(?:[^/]+/)*(\d+)/?$")
 class NetworkRecorder:
     action: str = "baseline"
     records: list[dict[str, Any]] = field(default_factory=list)
-    _response_indices: dict[tuple[str, str, str], list[int]] = field(default_factory=dict)
+    _request_indices: dict[int, int] = field(default_factory=dict)
 
     def set_action(self, action: str) -> None:
         self.action = action
@@ -77,8 +77,7 @@ class NetworkRecorder:
             "contentType": None,
         }
         self.records.append(record)
-        key = (self.action, method, strip_query(safe_url))
-        self._response_indices.setdefault(key, []).append(len(self.records) - 1)
+        self._request_indices[id(request)] = len(self.records) - 1
 
     def on_response(self, response: Any) -> None:
         request = getattr(response, "request", None)
@@ -90,21 +89,8 @@ class NetworkRecorder:
         if not expected:
             return
 
-        key = (
-            self.action,
-            str(getattr(request, "method", "GET")).upper(),
-            strip_query(safe_url),
-        )
-        indices = self._response_indices.get(key, [])
-        index = next(
-            (
-                candidate
-                for candidate in reversed(indices)
-                if self.records[candidate]["status"] is None
-            ),
-            None,
-        )
-        if index is None:
+        index = self._request_indices.get(id(request))
+        if index is None or index >= len(self.records):
             return
 
         headers = getattr(response, "headers", {}) or {}
@@ -872,7 +858,7 @@ def search_input(page: Any) -> Any:
         "input[name*='query']",
     )
     for selector in selectors:
-        locator = page.locator(selector).filter(visible=True) if False else page.locator(selector)
+        locator = page.locator(selector)
         try:
             count = locator.count()
             for index in range(min(count, 10)):
@@ -1003,25 +989,72 @@ def choose_branch(
     page.wait_for_timeout(500)
 
     branch_page_url = ""
+    targeted_button = None
     label_locator = page.get_by_text(branch_label, exact=False)
     try:
         if label_locator.count():
             label = label_locator.first
-            href_locator = label.locator(
-                "xpath=ancestor::*[self::article or self::div or self::li][1]//a[@href]"
+            container = label.locator(
+                "xpath=ancestor::*[.//button][1]"
             )
-            for index in range(min(href_locator.count(), 12)):
-                href = href_locator.nth(index).get_attribute("href") or ""
-                if "hurtownia-elektryczna" in href:
-                    branch_page_url = sanitize_public_url(href, page.url)
-                    break
+            if container.count():
+                candidate = container.get_by_role(
+                    "button",
+                    name=re.compile(
+                        r"Wybierz\s+oddzia[lł]",
+                        re.IGNORECASE,
+                    ),
+                )
+                if candidate.count():
+                    targeted_button = candidate.first
+
+                href_locator = container.locator(
+                    "a[href*='hurtownia-elektryczna']"
+                )
+                for index in range(min(href_locator.count(), 12)):
+                    href = href_locator.nth(index).get_attribute("href") or ""
+                    safe = sanitize_public_url(href, page.url)
+                    if not safe.startswith("REDACTED_"):
+                        branch_page_url = safe
+                        break
+
+            if not branch_page_url:
+                links = page.locator(
+                    "a[href*='hurtownia-elektryczna']"
+                )
+                for index in range(min(links.count(), 80)):
+                    link = links.nth(index)
+                    text = normalize_text(
+                        link.inner_text(timeout=300)
+                    )
+                    parent_text = normalize_text(
+                        link.locator("xpath=..").inner_text(
+                            timeout=300
+                        )
+                    )
+                    if branch_label.lower() in (
+                        f"{text} {parent_text}".lower()
+                    ):
+                        safe = sanitize_public_url(
+                            link.get_attribute("href") or "",
+                            page.url,
+                        )
+                        if not safe.startswith("REDACTED_"):
+                            branch_page_url = safe
+                            break
     except Exception:
         pass
 
-    if branch_page_url and not branch_page_url.startswith("REDACTED_"):
+    if targeted_button is None and branch_page_url:
         recorder.set_action("branch:page")
         page.goto(branch_page_url, wait_until="domcontentloaded", timeout=45000)
         page.wait_for_timeout(400)
+        button = page.get_by_role(
+            "button",
+            name=re.compile(r"Wybierz\s+oddzia[lł]", re.IGNORECASE),
+        )
+        if button.count():
+            targeted_button = button.first
 
     raw_dir.mkdir(parents=True, exist_ok=True)
     (raw_dir / "branch-before-select.html").write_text(
@@ -1030,14 +1063,10 @@ def choose_branch(
     )
 
     recorder.set_action("branch:select")
-    button = page.get_by_role(
-        "button",
-        name=re.compile(r"Wybierz\s+oddzia[lł]", re.IGNORECASE),
-    )
     try:
-        if not button.count():
+        if targeted_button is None:
             return False, branch_page_url or page.url
-        button.first.click(timeout=7000)
+        targeted_button.click(timeout=7000)
         try:
             page.wait_for_load_state("networkidle", timeout=10000)
         except Exception:
