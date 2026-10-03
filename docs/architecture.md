@@ -242,3 +242,19 @@ Server-side instructions define Taksula as a practical in-store home-improvement
 - Web pages are untrusted external reference data. Server instructions reject page attempts to change role/tool/trust rules, disclose secrets, or exfiltrate unrelated conversation data.
 - Usage telemetry adds `webSearchCalls`. The current pricing version adds USD 0.01 per completed search action to the existing token cost. Tool availability alone does not count as a call; unknown/unpriceable model usage remains unpriced.
 - Existing advisor call timeout remains unchanged at 30 seconds because built-in search is limited to one action and no background/deep-research flow is introduced.
+
+## Neutral product-provider foundation
+
+The product layer now defines a minimal provider-owned identity boundary for future multi-provider work:
+
+- `ProviderId` identifies a product source; the existing OBI Poland provider is `obi-pl`.
+- `BranchId` is an opaque provider-owned branch identifier. The provider-neutral layer does not assume three digits or OBI store semantics.
+- `WorkingProfile(providerId, branchId)` pairs the active provider and branch. The current default profile is `obi-pl` + the existing default OBI store `075`.
+- `ProductRef(providerId, productId)` owns a product identifier explicitly, so the neutral boundary does not assume every provider uses OBIK.
+
+`ProductProvider` intentionally exposes only the two operations already proven by the application: bounded product search and exact product lookup in a branch. `ObiProductProvider` is a thin adapter over the existing `ProductSearchRepository` / `ProductLookupRepository`; it translates between neutral provider types and the unchanged OBI-specific repositories, parsers, HTTP transport, error semantics, stock/price/image/URL fields, and current OBI search capacities. No OBI parser or network behavior is duplicated.
+
+`ProductProviderRegistry` resolves providers by `ProviderId`. Production currently registers only `obi-pl`; unknown provider IDs fail explicitly and never fall back to OBI.
+
+This is a foundation boundary only. Existing OBI-specific UI, conversation persistence, advisor tool contracts, `LocalProduct`, OBIK fields, and store-number flows remain intentionally unchanged in this PR. They should move behind the neutral boundary incrementally when the second provider is introduced, rather than through a broad rename/rewrite now.
+

@@ -369,3 +369,14 @@ These decisions describe the broader intended product behavior. The currently im
 - Persist the local image URL with verified assistant product snapshots. Room v5→v6 adds nullable `message_products.imageUrl`; historical rows remain valid with NULL.
 - Reuse the same exact lookup/enrichment for manual-search thumbnails. Preserve the 25-candidate cap, five-at-a-time reveal, search-more action behavior, advisor five-product limit, orchestration, protocol, and OBI search/parser boundaries.
 - Render thumbnails with standard Coil 3 Compose + OkHttp networking, bounded `ContentScale.Fit`, and fail-soft presentation-only error handling.
+
+## Neutral ProductProvider foundation v0.1
+
+- Introduce provider-owned identity with `ProviderId`, opaque `BranchId`, `WorkingProfile(providerId, branchId)`, and `ProductRef(providerId, productId)`.
+- Define the existing OBI Poland provider ID as `obi-pl`; the current default working profile remains `obi-pl` + branch `075`.
+- Keep `ProductProvider` deliberately small: only the existing bounded search and exact branch lookup operations are part of the neutral contract.
+- Implement `ObiProductProvider` as an adapter over the existing OBI search/lookup repositories. Preserve OBIK/EAN/text search, exact OBIK lookup, store propagation, stock, price, trusted URL/image, and existing failure behavior without rewriting OBI parsers or HTTP code.
+- Resolve providers through a small `ProviderId -> ProductProvider` registry. Unknown provider IDs fail explicitly; there is no implicit OBI fallback.
+- Do not add KWANT, capability matrices, branch directories, UI/settings changes, advisor-tool changes, Worker/prompt changes, persistence migrations, or a wholesale rename of current OBI-specific models in this foundation PR.
+- Existing OBI-specific call sites remain intentionally coupled until the next provider integration can migrate them incrementally against a real second implementation.
+
