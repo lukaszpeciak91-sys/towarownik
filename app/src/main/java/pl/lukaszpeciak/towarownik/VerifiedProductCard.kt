@@ -271,7 +271,15 @@ internal fun AdvisorVerifiedProductCard(
                     contentColor = MaterialTheme.colorScheme.primary,
                 ),
             ) {
-                Text(stringResource(R.string.open_in_obi))
+                Text(
+            stringResource(
+                if (product.providerId == KWANT_PROVIDER_ID.value) {
+                    R.string.open_in_kwant
+                } else {
+                    R.string.open_in_obi
+                },
+            ),
+        )
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     painter = painterResource(
@@ -398,7 +406,15 @@ internal fun VerifiedProductCard(
                     contentColor = MaterialTheme.colorScheme.primary,
                 ),
             ) {
-                Text(stringResource(R.string.open_in_obi))
+                Text(
+            stringResource(
+                if (product.providerId == KWANT_PROVIDER_ID.value) {
+                    R.string.open_in_kwant
+                } else {
+                    R.string.open_in_obi
+                },
+            ),
+        )
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(
                     painter = painterResource(R.drawable.ic_open_in_new_24),
