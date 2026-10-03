@@ -4,6 +4,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.ManualProductSearchResult
+import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchInput
 import pl.lukaszpeciak.towarownik.product.classifyProductSearchInput
 import pl.lukaszpeciak.towarownik.product.normalizeProductSearchInput
@@ -11,6 +14,7 @@ import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.DEFAULT_WORKING_PROFILE
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ObiProductProvider
 import pl.lukaszpeciak.towarownik.product.provider.ProductProviderFailure
 import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
 import pl.lukaszpeciak.towarownik.product.provider.ProductRef
@@ -42,6 +46,18 @@ internal data class ManualSearchResultItem(
     val enrichment: ManualResultEnrichment =
         ManualResultEnrichment.Pending,
 ) {
+    constructor(
+        obik: String,
+        name: String?,
+        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        enrichment: ManualResultEnrichment =
+            ManualResultEnrichment.Pending,
+    ) : this(
+        ref = ProductRef(OBI_PROVIDER_ID, obik),
+        name = name,
+        branchId = BranchId(storeNumber),
+        enrichment = enrichment,
+    )
     val obik: String
         get() = ref.productId
 
@@ -97,6 +113,25 @@ internal class ManualSearchController(
         ProductProviderRegistry.production(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    constructor(
+        lookupObik: (String, String) -> ProductLookupResult,
+        searchProducts: (String) -> ManualProductSearchResult,
+        ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    ) : this(
+        providers = ProductProviderRegistry(
+            listOf(
+                ObiProductProvider(
+                    boundedSearch = {
+                        error("Bounded search is not used by manual search")
+                    },
+                    manualSearch = searchProducts,
+                    lookupObik = lookupObik,
+                ),
+            ),
+        ),
+        ioDispatcher = ioDispatcher,
+    )
+
     suspend fun submit(
         input: String,
         workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
@@ -121,25 +156,69 @@ internal class ManualSearchController(
                     )
 
                 val classified = classifyProductSearchInput(normalized)
-                if (
+                when {
                     workingProfile.providerId == OBI_PROVIDER_ID &&
-                    classified is ProductSearchInput.Obik
-                ) {
-                    provider.lookup(
-                        ProductRef(
-                            providerId = OBI_PROVIDER_ID,
-                            productId = classified.value,
-                        ),
-                        workingProfile.branchId,
-                    ).toManualUiState(branchLabel)
-                } else {
-                    provider.search(
-                        query = normalized,
-                        maxResults = MANUAL_RESULTS_MAX,
-                    ).toManualSearchResults(
-                        workingProfile = workingProfile,
-                        branchLabel = branchLabel,
-                    )
+                        classified is ProductSearchInput.Obik ->
+                        provider.lookup(
+                            ProductRef(
+                                providerId = OBI_PROVIDER_ID,
+                                productId = classified.value,
+                            ),
+                            workingProfile.branchId,
+                        ).toManualUiState(branchLabel)
+
+                    workingProfile.providerId == OBI_PROVIDER_ID &&
+                        classified is ProductSearchInput.Ean -> {
+                        val search = provider.search(
+                            query = normalized,
+                            maxResults = MANUAL_RESULTS_MAX,
+                        )
+                        if (
+                            search is ProviderSearchResult.Candidates &&
+                            search.items.size == 1
+                        ) {
+                            val candidate = search.items.single()
+                            when (
+                                val lookup = provider.lookup(
+                                    candidate.ref,
+                                    workingProfile.branchId,
+                                )
+                            ) {
+                                is ProviderLookupResult.Found ->
+                                    if (lookup.product.ean == classified.value) {
+                                        ManualSearchUiState.Product(
+                                            lookup.product.toManualProductUiModel(
+                                                branchLabel,
+                                            ),
+                                        )
+                                    } else {
+                                        search.toManualSearchResults(
+                                            workingProfile,
+                                            branchLabel,
+                                        )
+                                    }
+                                else ->
+                                    search.toManualSearchResults(
+                                        workingProfile,
+                                        branchLabel,
+                                    )
+                            }
+                        } else {
+                            search.toManualSearchResults(
+                                workingProfile,
+                                branchLabel,
+                            )
+                        }
+                    }
+
+                    else ->
+                        provider.search(
+                            query = normalized,
+                            maxResults = MANUAL_RESULTS_MAX,
+                        ).toManualSearchResults(
+                            workingProfile = workingProfile,
+                            branchLabel = branchLabel,
+                        )
                 }
             }
         } catch (exception: CancellationException) {
@@ -163,6 +242,19 @@ internal class ManualSearchController(
         }
     }
 
+    suspend fun submit(
+        input: String,
+        storeNumber: String,
+        onState: (ManualSearchUiState) -> Unit,
+    ) = submit(
+        input = input,
+        workingProfile = WorkingProfile(
+            providerId = OBI_PROVIDER_ID,
+            branchId = BranchId(storeNumber),
+        ),
+        onState = onState,
+    )
+
     suspend fun showMore(
         current: ManualSearchUiState.SearchResults,
         workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
@@ -181,6 +273,19 @@ internal class ManualSearchController(
             onState = onState,
         )
     }
+
+    suspend fun showMore(
+        current: ManualSearchUiState.SearchResults,
+        storeNumber: String,
+        onState: (ManualSearchUiState) -> Unit,
+    ) = showMore(
+        current = current,
+        workingProfile = WorkingProfile(
+            providerId = OBI_PROVIDER_ID,
+            branchId = BranchId(storeNumber),
+        ),
+        onState = onState,
+    )
 
     suspend fun select(
         item: ManualSearchResultItem,
@@ -209,6 +314,19 @@ internal class ManualSearchController(
         }
         onState(result)
     }
+
+    suspend fun select(
+        item: ManualSearchResultItem,
+        storeNumber: String = item.storeNumber,
+        onState: (ManualSearchUiState) -> Unit,
+    ) = select(
+        item = item,
+        workingProfile = WorkingProfile(
+            providerId = OBI_PROVIDER_ID,
+            branchId = BranchId(storeNumber),
+        ),
+        onState = onState,
+    )
 
     private suspend fun enrichRange(
         initial: ManualSearchUiState.SearchResults,
@@ -278,7 +396,36 @@ internal class ManualSearchController(
             )
             onState(current)
         }
+        current = current.sortVisibleByAvailability()
+        onState(current)
+        }
     }
+}
+
+private fun ManualSearchUiState.SearchResults.sortVisibleByAvailability():
+    ManualSearchUiState.SearchResults {
+    val visible = items.take(visibleCount).withIndex()
+        .sortedWith(
+            compareByDescending<IndexedValue<ManualSearchResultItem>> { indexed ->
+                val product = (
+                    indexed.value.enrichment as?
+                        ManualResultEnrichment.Verified
+                    )?.product
+                when {
+                    product?.stock != null && product.stock > 0 -> 3
+                    product?.stock == 0 -> 2
+                    product != null -> 1
+                    else -> 0
+                }
+            }.thenByDescending { indexed ->
+                (
+                    indexed.value.enrichment as?
+                        ManualResultEnrichment.Verified
+                    )?.product?.stock ?: Int.MIN_VALUE
+            }.thenBy { it.index },
+        )
+        .map { it.value }
+    return copy(items = visible + items.drop(visibleCount))
 }
 
 private fun ProviderSearchResult.toManualSearchResults(
