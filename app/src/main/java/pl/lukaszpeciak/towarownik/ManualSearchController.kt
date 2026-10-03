@@ -317,7 +317,7 @@ internal class ManualSearchController(
 
     suspend fun select(
         item: ManualSearchResultItem,
-        storeNumber: String = item.storeNumber,
+        storeNumber: String,
         onState: (ManualSearchUiState) -> Unit,
     ) = select(
         item = item,
