@@ -398,7 +398,6 @@ internal class ManualSearchController(
         }
         current = current.sortVisibleByAvailability()
         onState(current)
-        }
     }
 }
 
