@@ -122,20 +122,6 @@ internal abstract class ConversationDao {
     @Query(
         """
         UPDATE conversations
-        SET storeNumber = :storeNumber,
-            updatedAt = :updatedAt
-        WHERE id = :conversationId
-        """,
-    )
-    abstract suspend fun updateStoreNumber(
-        conversationId: Long,
-        storeNumber: String,
-        updatedAt: Long,
-    ): Int
-
-    @Query(
-        """
-        UPDATE conversations
         SET draft = '',
             updatedAt = :updatedAt
         WHERE id = :conversationId
