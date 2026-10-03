@@ -41,6 +41,7 @@ class KwantProductProviderTest {
             assertEquals(KWANT_PROVIDER_ID, candidate.ref.providerId)
             assertEquals("580", candidate.ref.productId)
             assertEquals(PRODUCT_NAME, candidate.name)
+            assertNull(result.reportedTotalCount)
         }
 
         assertEquals(
@@ -54,7 +55,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun `exact lookup passes requested branch cookie and returns online price and stock`() {
+    fun `search then lookup may use cached canonical product URL`() {
         val frontend = FakeFrontend(productHtml = productHtml("140"))
         val provider = KwantProductProvider(frontend = frontend)
         val ref = searchRef(provider)
@@ -62,18 +63,35 @@ class KwantProductProviderTest {
         val result = provider.lookup(ref, BranchId("205"))
             as ProviderLookupResult.Found
 
-        assertEquals(BranchId("205"), result.product.branchId)
-        assertEquals(140, result.product.stock)
-        assertEquals(BigDecimal("14.55"), result.product.grossPrice)
-        assertEquals(ProviderPriceScope.ONLINE, result.product.priceScope)
-        assertEquals("MBN116E/HAG", result.product.articleNumber)
-        assertEquals("3250614312762", result.product.ean)
-        assertEquals("HAGER", result.product.brand)
+        assertProductFixture(result)
         assertEquals(
             NOWY_SACZ.departmentCookieJson(),
             frontend.lastDepartmentCookie,
         )
         assertEquals(PRODUCT_URL, frontend.lastProductUrl)
+        assertNull(frontend.lastProductId)
+    }
+
+    @Test
+    fun `fresh exact lookup resolves directly by numeric product route without search`() {
+        val frontend = FakeFrontend(productHtml = productHtml("140"))
+        val provider = KwantProductProvider(frontend = frontend)
+        val ref = ProductRef(
+            providerId = KWANT_PROVIDER_ID,
+            productId = "580",
+        )
+
+        val result = provider.lookup(ref, BranchId("205"))
+            as ProviderLookupResult.Found
+
+        assertProductFixture(result)
+        assertTrue(frontend.searchQueries.isEmpty())
+        assertEquals("580", frontend.lastProductId)
+        assertNull(frontend.lastProductUrl)
+        assertEquals(
+            NOWY_SACZ.departmentCookieJson(),
+            frontend.lastDepartmentCookie,
+        )
     }
 
     @Test
@@ -132,6 +150,28 @@ class KwantProductProviderTest {
     }
 
     @Test
+    fun `KWANT URL policy requires exact https host and product route`() {
+        assertTrue(
+            KwantUrlPolicy.isTrustedProductUrl(PRODUCT_URL),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedProductUrl(
+                "https://kwant.net.pl.evil.example/produkt/test-580",
+            ),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedProductUrl(
+                "http://kwant.net.pl/produkt/test-580",
+            ),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedProductUrl(
+                "https://kwant.net.pl/kategorie/test-580",
+            ),
+        )
+    }
+
+    @Test
     fun `registry resolves both production providers`() {
         val registry = ProductProviderRegistry.production()
 
@@ -155,6 +195,16 @@ class KwantProductProviderTest {
         assertSame(kwant, registry.resolve(KWANT_PROVIDER_ID))
     }
 
+    private fun assertProductFixture(result: ProviderLookupResult.Found) {
+        assertEquals(BranchId("205"), result.product.branchId)
+        assertEquals(140, result.product.stock)
+        assertEquals(BigDecimal("14.55"), result.product.grossPrice)
+        assertEquals(ProviderPriceScope.ONLINE, result.product.priceScope)
+        assertEquals("MBN116E/HAG", result.product.articleNumber)
+        assertEquals("3250614312762", result.product.ean)
+        assertEquals("HAGER", result.product.brand)
+    }
+
     private fun searchRef(provider: KwantProductProvider): ProductRef =
         (
             provider.search("MBN116E", 5)
@@ -165,6 +215,7 @@ class KwantProductProviderTest {
         private val productHtml: String = productHtml("140"),
     ) : KwantFrontendClient {
         val searchQueries = mutableListOf<String>()
+        var lastProductId: String? = null
         var lastProductUrl: String? = null
         var lastDepartmentCookie: String? = null
 
@@ -175,6 +226,9 @@ class KwantProductProviderTest {
             )
 
         override fun fetchSearch(query: String): KwantFrontendResult {
+            check(query != "580") {
+                "Numeric internal product ID search is not a supported KWANT contract"
+            }
             searchQueries += query
             return KwantFrontendResult.Success(
                 html = SEARCH_HTML,
@@ -183,7 +237,19 @@ class KwantProductProviderTest {
             )
         }
 
-        override fun fetchProduct(
+        override fun fetchProductById(
+            productId: String,
+            departmentCookieJson: String,
+        ): KwantFrontendResult {
+            lastProductId = productId
+            lastDepartmentCookie = departmentCookieJson
+            return KwantFrontendResult.Success(
+                html = productHtml,
+                finalUrl = PRODUCT_URL,
+            )
+        }
+
+        override fun fetchProductByUrl(
             productUrl: String,
             departmentCookieJson: String,
         ): KwantFrontendResult {
