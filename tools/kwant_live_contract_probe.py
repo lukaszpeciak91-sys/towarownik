@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import parse_qsl, quote, unquote, urljoin, urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 KWANT_ORIGIN = "https://kwant.net.pl"
 KWANT_HOST = "kwant.net.pl"
@@ -143,7 +144,12 @@ class NetworkRecorder:
         )
 
 
-def validate_inputs(product_query: str, branch_label: str, text_query: str) -> None:
+def validate_inputs(
+    product_query: str,
+    branch_label: str,
+    text_query: str,
+    numeric_product_id: str = "580",
+) -> None:
     for label, value, limit in (
         ("product query", product_query, 120),
         ("branch label", branch_label, 120),
@@ -155,6 +161,105 @@ def validate_inputs(product_query: str, branch_label: str, text_query: str) -> N
             raise ValueError(f"{label} is too long")
         if any(ord(char) < 32 for char in value):
             raise ValueError(f"{label} contains control characters")
+    if not re.fullmatch(r"[0-9]{1,12}", numeric_product_id.strip()):
+        raise ValueError("numeric product id must contain 1-12 digits")
+
+
+class NumericRouteRedirectRecorder(HTTPRedirectHandler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.redirects: list[dict[str, Any]] = []
+
+    def redirect_request(
+        self,
+        req: Any,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> Any:
+        source_ok, source = sanitize_kwant_url(req.full_url)
+        target_ok, target = sanitize_kwant_url(newurl)
+        self.redirects.append(
+            {
+                "status": code,
+                "fromPath": urlsplit(source).path if source_ok else REDACTED,
+                "toPath": urlsplit(target).path if target_ok else REDACTED,
+            }
+        )
+        return super().redirect_request(
+            req,
+            fp,
+            code,
+            msg,
+            headers,
+            newurl,
+        )
+
+
+def next_data_product_id(html: str) -> str:
+    match = re.search(
+        r"""<script[^>]+id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>""",
+        html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return UNKNOWN
+    try:
+        root = json.loads(match.group(1))
+        product = root["props"]["pageProps"]["product"]
+        product_id = product.get("id")
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return UNKNOWN
+    rendered = str(product_id).strip()
+    return rendered if re.fullmatch(r"[0-9]{1,12}", rendered) else UNKNOWN
+
+
+def probe_numeric_product_route_http(product_id: str) -> dict[str, Any]:
+    normalized_id = product_id.strip()
+    if not re.fullmatch(r"[0-9]{1,12}", normalized_id):
+        raise ValueError("numeric product id must contain 1-12 digits")
+
+    requested_url = f"{KWANT_ORIGIN}/produkt/{normalized_id}"
+    recorder = NumericRouteRedirectRecorder()
+    opener = build_opener(recorder)
+    request = Request(
+        requested_url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Linux; Android 13; Mobile) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/140.0.0.0 Mobile Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "pl-PL,pl;q=0.9",
+        },
+        method="GET",
+    )
+
+    with opener.open(request, timeout=30) as response:
+        final_status = int(getattr(response, "status", response.getcode()))
+        final_raw_url = response.geturl()
+        body = response.read().decode("utf-8", errors="replace")
+
+    final_ok, final_url = sanitize_kwant_url(final_raw_url)
+    parsed_product_id = next_data_product_id(body)
+    redirect_chain = list(recorder.redirects)
+    initial_status = (
+        redirect_chain[0]["status"]
+        if redirect_chain
+        else final_status
+    )
+    return {
+        "requestedPath": f"/produkt/{normalized_id}",
+        "responseStatus": initial_status,
+        "redirectChain": redirect_chain,
+        "finalStatus": final_status,
+        "finalUrl": final_url if final_ok else REDACTED,
+        "finalParsedProductId": parsed_product_id,
+        "matchesRequestedProductId": parsed_product_id == normalized_id,
+    }
 
 
 def sanitize_kwant_url(raw_url: str) -> tuple[bool, str]:
@@ -1233,6 +1338,7 @@ def build_safe_summary(
     state: dict[str, Any] | None = None,
     frontend_clues: list[dict[str, Any]] | None = None,
     department_cookie_research: dict[str, Any] | None = None,
+    numeric_product_route: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     searches = searches or {}
     product = product_after or product_before or {}
@@ -1304,6 +1410,15 @@ def build_safe_summary(
         "departmentCookieResearch": safe_department_cookie_research(
             department_cookie_research
         ),
+        "numericProductRoute": numeric_product_route or {
+            "requestedPath": UNKNOWN,
+            "responseStatus": UNKNOWN,
+            "redirectChain": [],
+            "finalStatus": UNKNOWN,
+            "finalUrl": UNKNOWN,
+            "finalParsedProductId": UNKNOWN,
+            "matchesRequestedProductId": UNKNOWN,
+        },
     }
 
 
@@ -1391,6 +1506,36 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
         f"selectedBranchStock={format_scalar(product['selectedBranchStock'])}",
         f"centralStock={format_scalar(product['centralStock'])}",
         f"aggregateBranchStock={format_scalar(product['aggregateBranchStock'])}",
+        "",
+        "NUMERIC PRODUCT ROUTE",
+        (
+            "requestedPath="
+            f"{summary['numericProductRoute'].get('requestedPath', UNKNOWN)}"
+        ),
+        (
+            "responseStatus="
+            f"{format_scalar(summary['numericProductRoute'].get('responseStatus', UNKNOWN))}"
+        ),
+        (
+            "redirectChain="
+            f"{format_scalar(summary['numericProductRoute'].get('redirectChain', []))}"
+        ),
+        (
+            "finalStatus="
+            f"{format_scalar(summary['numericProductRoute'].get('finalStatus', UNKNOWN))}"
+        ),
+        (
+            "finalUrl="
+            f"{summary['numericProductRoute'].get('finalUrl', UNKNOWN)}"
+        ),
+        (
+            "finalParsedProductId="
+            f"{format_scalar(summary['numericProductRoute'].get('finalParsedProductId', UNKNOWN))}"
+        ),
+        (
+            "matchesRequestedProductId="
+            f"{format_scalar(summary['numericProductRoute'].get('matchesRequestedProductId', UNKNOWN))}"
+        ),
         "",
         "NETWORK",
     ]
@@ -2387,6 +2532,7 @@ def run_live_probe(
     product_query: str,
     branch_label: str,
     text_query: str,
+    numeric_product_id: str,
     out_dir: Path,
 ) -> dict[str, Any]:
     try:
@@ -2399,6 +2545,9 @@ def run_live_probe(
     raw_dir = out_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     recorder = NetworkRecorder()
+    numeric_product_route = probe_numeric_product_route_http(
+        numeric_product_id
+    )
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -2681,6 +2830,7 @@ def run_live_probe(
             },
             frontend_clues=frontend_clues,
             department_cookie_research=department_cookie_research,
+            numeric_product_route=numeric_product_route,
         )
         browser.close()
         return summary
@@ -2705,6 +2855,10 @@ def main() -> int:
         default="wyłącznik nadprądowy B16 Hager",
     )
     parser.add_argument(
+        "--numeric-product-id",
+        default="580",
+    )
+    parser.add_argument(
         "--out-dir",
         default="build/kwant-live-contract",
     )
@@ -2715,6 +2869,7 @@ def main() -> int:
             args.product_query,
             args.branch_label,
             args.text_query,
+            args.numeric_product_id,
         )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
@@ -2726,6 +2881,7 @@ def main() -> int:
         product_query=args.product_query.strip(),
         branch_label=args.branch_label.strip(),
         text_query=args.text_query.strip(),
+        numeric_product_id=args.numeric_product_id.strip(),
         out_dir=out_dir,
     )
     write_safe_summary(summary, out_dir)
