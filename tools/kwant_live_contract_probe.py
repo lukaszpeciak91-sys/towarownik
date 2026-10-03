@@ -19,6 +19,9 @@ from urllib.parse import parse_qsl, quote, unquote, urljoin, urlsplit, urlunspli
 KWANT_ORIGIN = "https://kwant.net.pl"
 KWANT_HOST = "kwant.net.pl"
 UNKNOWN = "UNKNOWN"
+REDACTED = "REDACTED"
+DEPARTMENT_COOKIE_NAME = "departmentCookie"
+MAX_DEPARTMENT_COOKIE_ID_LENGTH = 20
 MAX_NETWORK_RECORDS = 350
 MAX_RESULT_LINKS = 25
 MAX_TECHNICAL_LINES = 60
@@ -40,6 +43,16 @@ BRANCH_PAGE_ID_RE = re.compile(r"/(?:[^/]+/)*(\d+)/?$")
 BRANCH_EVIDENCE_KEY_RE = re.compile(
     r"(branch|oddzial|oddzia[lł]|warehouse|magazyn|store)",
     re.IGNORECASE,
+)
+PUBLIC_DEPARTMENT_ID_RE = re.compile(
+    r"(?:"
+    r"[0-9]{1,8}|"
+    r"[A-Za-z]{1,4}[0-9]{1,8}|"
+    r"[0-9]{1,8}[A-Za-z]{1,4}|"
+    r"(?=[A-Za-z0-9_-]*[0-9])"
+    r"(?:[A-Za-z]{1,4}|[0-9]{1,8})"
+    r"(?:[-_](?:[A-Za-z]{1,4}|[0-9]{1,8})){1,2}"
+    r")"
 )
 BRANCH_SELECTION_PATH_RE = re.compile(
     r"(?:(?:select|set|change|choose|wyb)[^?]*"
@@ -295,6 +308,73 @@ def cookie_summary(cookies: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(result, key=lambda item: (item["domain"], item["name"]))
 
 
+def cookie_state_name(key: str) -> str:
+    parts = key.split("|", 2)
+    return parts[2] if len(parts) == 3 else ""
+
+
+def is_department_cookie_state_key(key: str) -> bool:
+    return cookie_state_name(key) == DEPARTMENT_COOKIE_NAME
+
+
+def safe_department_cookie_value(value: str | None) -> str:
+    if value is None:
+        return UNKNOWN
+    rendered = str(value).strip()
+    if not rendered:
+        return UNKNOWN
+    if len(rendered) > MAX_DEPARTMENT_COOKIE_ID_LENGTH:
+        return REDACTED
+    if SECRET_KEY_RE.search(rendered):
+        return REDACTED
+    if not PUBLIC_DEPARTMENT_ID_RE.fullmatch(rendered):
+        return REDACTED
+    return rendered
+
+
+def department_cookie_value(
+    cookies: dict[str, str],
+) -> str:
+    values = [
+        value
+        for key, value in cookies.items()
+        if is_department_cookie_state_key(key)
+    ]
+    if not values:
+        return UNKNOWN
+
+    safe_values = [safe_department_cookie_value(value) for value in values]
+    if any(value == REDACTED for value in safe_values):
+        return REDACTED
+
+    public_values = {
+        value
+        for value in safe_values
+        if value != UNKNOWN
+    }
+    if len(public_values) == 1:
+        return next(iter(public_values))
+    return UNKNOWN
+
+
+def department_cookie_observed(
+    changed: dict[str, list[str]],
+) -> bool:
+    return any(
+        is_department_cookie_state_key(key)
+        for key in changed.get("cookies", [])
+    )
+
+
+def department_cookie_persisted(
+    persisted: dict[str, list[str]],
+) -> bool:
+    return any(
+        is_department_cookie_state_key(key)
+        for key in persisted.get("cookies", [])
+    )
+
+
 def storage_key_summary(storage: dict[str, dict[str, str]]) -> dict[str, list[str]]:
     return {
         "localStorage": sorted(storage.get("localStorage", {}).keys())[:120],
@@ -373,6 +453,10 @@ def branch_related_state_keys(
             key
             for key in evidence.get(scope, [])
             if BRANCH_EVIDENCE_KEY_RE.search(key)
+            or (
+                scope == "cookies"
+                and is_department_cookie_state_key(key)
+            )
         ]
         for scope in ("cookies", "localStorage", "sessionStorage")
     }
@@ -926,6 +1010,9 @@ def build_safe_summary(
     target_branch_resolved: bool = False,
     selection_observed: bool | None = None,
     selection_persisted: bool | None = None,
+    department_cookie_observed: bool | None = None,
+    department_cookie_persisted: bool | None = None,
+    department_cookie_value_safe: str = UNKNOWN,
     backend_branch_identifier: str = UNKNOWN,
     searches: dict[str, dict[str, Any]] | None = None,
     product_before: dict[str, Any] | None = None,
@@ -953,6 +1040,15 @@ def build_safe_summary(
             ),
             "selectionObserved": tri_state(selection_observed),
             "selectionPersisted": tri_state(selection_persisted),
+            "departmentCookieObserved": tri_state(
+                department_cookie_observed
+            ),
+            "departmentCookiePersisted": tri_state(
+                department_cookie_persisted
+            ),
+            "departmentCookieValue": (
+                department_cookie_value_safe or UNKNOWN
+            ),
             "branchPageIdentifier": (
                 extract_branch_page_identifier(branch_page_url)
                 if branch_page_url
@@ -1020,6 +1116,9 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
         f"branchPageIdentifier={branch['branchPageIdentifier']}",
         f"selectionObserved={format_scalar(branch['selectionObserved'])}",
         f"selectionPersisted={format_scalar(branch['selectionPersisted'])}",
+        f"departmentCookieObserved={format_scalar(branch['departmentCookieObserved'])}",
+        f"departmentCookiePersisted={format_scalar(branch['departmentCookiePersisted'])}",
+        f"departmentCookieValue={format_scalar(branch['departmentCookieValue'])}",
         f"backendBranchIdentifier={branch['backendBranchIdentifier']}",
         "",
         "SEARCH",
@@ -1744,6 +1843,9 @@ def run_live_probe(
             reload_storage,
             changed,
         )
+        department_observed = department_cookie_observed(changed)
+        department_persisted = department_cookie_persisted(persisted)
+        department_value = department_cookie_value(after_cookie_values)
 
         selection_observed, selection_persisted = (
             derive_branch_selection_status(
@@ -1815,6 +1917,9 @@ def run_live_probe(
             target_branch_resolved=target_branch_resolved,
             selection_observed=selection_observed,
             selection_persisted=selection_persisted,
+            department_cookie_observed=department_observed,
+            department_cookie_persisted=department_persisted,
+            department_cookie_value_safe=department_value,
             backend_branch_identifier=infer_backend_branch_identifier(
                 recorder.records
             ),
