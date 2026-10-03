@@ -380,3 +380,15 @@ These decisions describe the broader intended product behavior. The currently im
 - Do not add KWANT, capability matrices, branch directories, UI/settings changes, advisor-tool changes, Worker/prompt changes, persistence migrations, or a wholesale rename of current OBI-specific models in this foundation PR.
 - Existing OBI-specific call sites remain intentionally coupled until the next provider integration can migrate them incrementally against a real second implementation.
 
+
+
+## KWANT ProductProvider v0.1
+
+- Add the second production provider ID `kwant-pl`; the production registry now contains `obi-pl` and `kwant-pl`.
+- Use KWANT's public numeric product ID as `ProductRef.productId`; public URL slugs remain provider transport data rather than neutral identity.
+- Use the public `department_stock_id` as KWANT `BranchId`. Resolve branch metadata from the public branch directory and construct `departmentCookie` deterministically from the four proven fields: `department_stock_id`, `department_stock_name`, `department_stock_postcode`, and `department_stock_street`.
+- Keep KWANT production transport HTTP-only. No browser automation or Playwright is part of Android production code.
+- Preserve selected-branch stock exactly: an observed zero is `0`; missing/unparseable branch stock is unknown (`null`).
+- Extend neutral price semantics only with proven scope: `BRANCH` and `ONLINE`. OBI keeps its current branch-price meaning; KWANT's public storefront price is `ONLINE` and must not be described as a counter or customer-specific branch price.
+- Invalid KWANT branch IDs fail explicitly and never substitute another branch.
+- No UI, conversation/profile persistence, advisor tools, Worker, automatic provider switching, natural-language branch resolution, or database migration is included.
