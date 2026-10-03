@@ -88,6 +88,8 @@ internal class KwantHttpFrontendClient(
         )
     }
 
+    // Live-confirmed by tools/kwant_live_contract_probe.py:
+    // GET /produkt/580 -> 308 canonical product route -> 200, payload product.id=580.
     override fun fetchProductById(
         productId: String,
         departmentCookieJson: String,
