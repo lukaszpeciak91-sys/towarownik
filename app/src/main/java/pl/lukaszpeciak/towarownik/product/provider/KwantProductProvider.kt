@@ -177,7 +177,7 @@ internal object KwantUrlPolicy {
     fun isTrustedProductUrl(rawUrl: String): Boolean {
         val url = rawUrl.toHttpUrlOrNull() ?: return false
         return isTrustedOriginUrl(rawUrl) &&
-            url.pathSegments.size >= 2 &&
+            url.pathSegments.size == 2 &&
             url.pathSegments[0] == "produkt" &&
             url.pathSegments[1].isNotBlank()
     }
