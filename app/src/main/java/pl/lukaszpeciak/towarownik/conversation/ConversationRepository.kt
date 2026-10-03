@@ -242,18 +242,6 @@ internal class ConversationRepository(
         )
     }
 
-    suspend fun updateStoreNumber(
-        conversationId: Long,
-        storeNumber: String,
-    ): Boolean {
-        require(isSupportedObiStoreNumber(storeNumber))
-        return dao.updateStoreNumber(
-            conversationId = conversationId,
-            storeNumber = storeNumber,
-            updatedAt = now(),
-        ) > 0
-    }
-
     suspend fun completeAssistantTurn(
         conversationId: Long,
         text: String,
