@@ -43,6 +43,8 @@ import coil3.compose.AsyncImage
 import java.time.format.DateTimeFormatter
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
 internal data class VerifiedProductUiModel(
@@ -54,6 +56,11 @@ internal data class VerifiedProductUiModel(
     val verifiedAt: Long? = null,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val primaryImageUrl: String? = null,
+    val providerId: String = OBI_PROVIDER_ID.value,
+    val productId: String = obik,
+    val branchId: String = storeNumber,
+    val articleNumber: String? = null,
+    val branchLabel: String? = null,
 )
 
 internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
@@ -67,6 +74,9 @@ internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
         primaryImageUrl = primaryImageUrl,
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
+        providerId = OBI_PROVIDER_ID.value,
+        productId = obik,
+        branchId = storeNumber,
     )
 
 internal fun verifiedProductOpenUrl(
@@ -183,20 +193,14 @@ internal fun AdvisorVerifiedProductCard(
                             Arrangement.spacedBy(7.dp),
                     ) {
                         Text(
-                            text = stringResource(
-                                R.string.product_store,
-                                product.storeNumber,
-                            ),
+                            text = productBranchText(product),
                             style =
                                 MaterialTheme.typography.labelMedium,
                             color =
                                 MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = stringResource(
-                                R.string.product_obik,
-                                product.obik,
-                            ),
+                            text = productIdentifierText(product),
                             style =
                                 MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme
@@ -335,18 +339,12 @@ internal fun VerifiedProductCard(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        text = stringResource(
-                            R.string.product_store,
-                            product.storeNumber,
-                        ),
+                        text = productBranchText(product),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Text(
-                        text = stringResource(
-                            R.string.product_obik,
-                            product.obik,
-                        ),
+                        text = productIdentifierText(product),
                         style = MaterialTheme.typography.bodySmall,
                         color =
                             MaterialTheme.colorScheme.onSurfaceVariant,
@@ -444,6 +442,27 @@ internal fun VerifiedProductThumbnail(
         )
     }
 }
+
+@Composable
+internal fun productBranchText(product: VerifiedProductUiModel): String =
+    if (product.providerId == KWANT_PROVIDER_ID.value) {
+        product.branchLabel?.let {
+            stringResource(R.string.product_branch_kwant_named, it)
+        } ?: stringResource(R.string.product_branch_kwant, product.branchId)
+    } else {
+        stringResource(R.string.product_store, product.storeNumber)
+    }
+
+@Composable
+internal fun productIdentifierText(product: VerifiedProductUiModel): String =
+    if (product.providerId == KWANT_PROVIDER_ID.value) {
+        stringResource(
+            R.string.product_article_number,
+            product.articleNumber ?: product.productId,
+        )
+    } else {
+        stringResource(R.string.product_obik, product.obik)
+    }
 
 private val VERIFIED_AT_FORMATTER =
     DateTimeFormatter.ofPattern("dd.MM, HH:mm")
