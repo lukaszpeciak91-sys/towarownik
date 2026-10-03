@@ -432,7 +432,7 @@ class BranchTargetingTest(unittest.TestCase):
             label="Szczegóły oddziału",
             page_url=(
                 "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
-                "oddzial/312"
+                "hurtownia-elektryczna/312"
             ),
             card_text="Tarnów Wybierz oddział",
         )
