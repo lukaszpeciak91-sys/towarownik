@@ -1248,6 +1248,9 @@ def branch_candidate_from_link(
         safe_url = sanitize_public_url(raw_href, page_url)
         if safe_url.startswith("REDACTED_"):
             return None
+        expected_kwant, _ = sanitize_kwant_url(safe_url)
+        if not expected_kwant:
+            return None
         link_text = normalize_text(link.inner_text(timeout=300))
         if not branch_label_matches(
             branch_label,
@@ -1267,8 +1270,10 @@ def branch_candidate_from_link(
         for index in range(min(branch_links.count(), 8)):
             href = branch_links.nth(index).get_attribute("href") or ""
             safe = sanitize_public_url(href, page_url)
+            expected_kwant, _ = sanitize_kwant_url(safe)
             if (
                 not safe.startswith("REDACTED_")
+                and expected_kwant
                 and safe not in branch_page_urls
             ):
                 branch_page_urls.append(safe)
