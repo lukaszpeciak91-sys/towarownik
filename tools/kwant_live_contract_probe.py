@@ -25,6 +25,7 @@ MAX_DEPARTMENT_COOKIE_ID_LENGTH = 20
 MAX_NETWORK_RECORDS = 350
 MAX_RESULT_LINKS = 25
 MAX_TECHNICAL_LINES = 60
+MAX_COOKIE_BUNDLE_EXCERPT_CHARS = 5000
 SECRET_KEY_RE = re.compile(
     r"(token|secret|password|passwd|cookie|session|auth|csrf|xsrf|jwt|bearer|key)",
     re.IGNORECASE,
@@ -1022,6 +1023,7 @@ def build_safe_summary(
     network: list[dict[str, Any]] | None = None,
     state: dict[str, Any] | None = None,
     frontend_clues: list[dict[str, Any]] | None = None,
+    department_cookie_research: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     searches = searches or {}
     product = product_after or product_before or {}
@@ -1089,6 +1091,17 @@ def build_safe_summary(
         "network": network or [],
         "state": state or {},
         "frontendClues": frontend_clues or [],
+        "departmentCookieResearch": department_cookie_research or {
+            "departmentCookieConstructorFound": UNKNOWN,
+            "constructorSourcePath": UNKNOWN,
+            "valueFormat": UNKNOWN,
+            "sourceBranchFields": UNKNOWN,
+            "encodingSteps": UNKNOWN,
+            "cookieOptions": UNKNOWN,
+            "reproducibleFromPublicData": UNKNOWN,
+            "constructedValueMatchesObserved": UNKNOWN,
+            "backendBranchIdentifier": UNKNOWN,
+        },
     }
 
 
@@ -1122,6 +1135,40 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
         f"departmentCookiePersisted={format_scalar(branch['departmentCookiePersisted'])}",
         f"departmentCookieValue={format_scalar(branch['departmentCookieValue'])}",
         f"backendBranchIdentifier={branch['backendBranchIdentifier']}",
+        "",
+        "DEPARTMENT COOKIE CONSTRUCTOR",
+        (
+            "departmentCookieConstructorFound="
+            f"{format_scalar(summary['departmentCookieResearch'].get('departmentCookieConstructorFound', UNKNOWN))}"
+        ),
+        (
+            "constructorSourcePath="
+            f"{summary['departmentCookieResearch'].get('constructorSourcePath', UNKNOWN)}"
+        ),
+        (
+            "valueFormat="
+            f"{format_scalar(summary['departmentCookieResearch'].get('valueFormat', UNKNOWN))}"
+        ),
+        (
+            "sourceBranchFields="
+            f"{format_scalar(summary['departmentCookieResearch'].get('sourceBranchFields', UNKNOWN))}"
+        ),
+        (
+            "encodingSteps="
+            f"{format_scalar(summary['departmentCookieResearch'].get('encodingSteps', UNKNOWN))}"
+        ),
+        (
+            "cookieOptions="
+            f"{format_scalar(summary['departmentCookieResearch'].get('cookieOptions', UNKNOWN))}"
+        ),
+        (
+            "reproducibleFromPublicData="
+            f"{format_scalar(summary['departmentCookieResearch'].get('reproducibleFromPublicData', UNKNOWN))}"
+        ),
+        (
+            "constructedValueMatchesObserved="
+            f"{format_scalar(summary['departmentCookieResearch'].get('constructedValueMatchesObserved', UNKNOWN))}"
+        ),
         "",
         "SEARCH",
         f"articleCode={search['articleCode'].get('status', UNKNOWN)}",
@@ -1695,6 +1742,148 @@ def selected_marker_after_reload(page: Any, branch_label: str) -> bool:
     return branch_marker(page, branch_label)
 
 
+def same_origin_script_sources(page: Any) -> list[str]:
+    try:
+        raw_sources = page.locator("script[src]").evaluate_all(
+            "els => els.map(el => el.src)"
+        )
+    except Exception:
+        return []
+
+    result: list[str] = []
+    for source in raw_sources:
+        expected, safe = sanitize_kwant_url(str(source))
+        if not expected or not safe.endswith(".js"):
+            continue
+        if safe not in result:
+            result.append(safe)
+    return result
+
+
+def bounded_cookie_excerpt(
+    text: str,
+    marker: str = DEPARTMENT_COOKIE_NAME,
+) -> str:
+    index = text.find(marker)
+    if index < 0:
+        return ""
+    half = MAX_COOKIE_BUNDLE_EXCERPT_CHARS // 2
+    start = max(0, index - half)
+    end = min(len(text), index + len(marker) + half)
+    return text[start:end]
+
+
+def cookie_code_markers(excerpt: str) -> list[str]:
+    markers = (
+        "JSON.stringify",
+        "encodeURIComponent",
+        "decodeURIComponent",
+        "btoa(",
+        "atob(",
+        "document.cookie",
+        "Cookies.set",
+        ".set(",
+        "maxAge",
+        "expires",
+        "sameSite",
+        "secure",
+        "path",
+        "department_id",
+    )
+    return [marker for marker in markers if marker in excerpt]
+
+
+def collect_department_cookie_bundle_evidence(
+    page: Any,
+    context: Any,
+    *,
+    page_urls: Iterable[str],
+    raw_dir: Path,
+) -> dict[str, Any]:
+    script_sources: list[str] = []
+    matched: list[dict[str, Any]] = []
+    for page_url in page_urls:
+        if not page_url:
+            continue
+        expected, safe_page_url = sanitize_kwant_url(page_url)
+        if not expected:
+            continue
+        try:
+            page.goto(
+                safe_page_url,
+                wait_until="domcontentloaded",
+                timeout=45000,
+            )
+            page.wait_for_timeout(300)
+        except Exception:
+            continue
+        for source in same_origin_script_sources(page):
+            if source not in script_sources:
+                script_sources.append(source)
+
+    for source in script_sources[:120]:
+        try:
+            response = context.request.get(source, timeout=15000)
+            if not response.ok:
+                continue
+            text = response.text()
+        except Exception:
+            continue
+        excerpt = bounded_cookie_excerpt(text)
+        if not excerpt:
+            continue
+        matched.append(
+            {
+                "scriptPath": urlsplit(source).path,
+                "markers": cookie_code_markers(excerpt),
+                "_excerpt": excerpt,
+            }
+        )
+
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    if matched:
+        raw_lines: list[str] = []
+        for item in matched:
+            raw_lines.extend(
+                [
+                    f"SOURCE {item['scriptPath']}",
+                    item["_excerpt"],
+                    "",
+                ]
+            )
+        (raw_dir / "department-cookie-bundle-excerpts.txt").write_text(
+            "\n".join(raw_lines),
+            encoding="utf-8",
+        )
+
+    safe_matches = [
+        {
+            "scriptPath": item["scriptPath"],
+            "markers": item["markers"],
+        }
+        for item in matched
+    ]
+    return {
+        "departmentCookieConstructorFound": bool(safe_matches)
+        if script_sources
+        else UNKNOWN,
+        "constructorSourcePath": (
+            safe_matches[0]["scriptPath"]
+            if len(safe_matches) == 1
+            else UNKNOWN
+        ),
+        "valueFormat": UNKNOWN,
+        "sourceBranchFields": UNKNOWN,
+        "encodingSteps": UNKNOWN,
+        "cookieOptions": UNKNOWN,
+        "reproducibleFromPublicData": UNKNOWN,
+        "constructedValueMatchesObserved": UNKNOWN,
+        "backendBranchIdentifier": UNKNOWN,
+        "matchedBundles": safe_matches,
+        "scannedSameOriginScriptCount": len(script_sources),
+    }
+
+
 def collect_frontend_clues(page: Any, context: Any) -> list[dict[str, Any]]:
     terms = (
         "branch",
@@ -1912,6 +2101,18 @@ def run_live_probe(
 
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
         frontend_clues = collect_frontend_clues(page, context)
+        department_cookie_research = (
+            collect_department_cookie_bundle_evidence(
+                page,
+                context,
+                page_urls=(
+                    f"{KWANT_ORIGIN}/lista-hurtowni-elektrycznych",
+                    branch_page_url,
+                    product_url,
+                ),
+                raw_dir=raw_dir,
+            )
+        )
 
         summary = build_safe_summary(
             requested_branch_label=branch_label,
@@ -1952,6 +2153,7 @@ def run_live_probe(
                 },
             },
             frontend_clues=frontend_clues,
+            department_cookie_research=department_cookie_research,
         )
         browser.close()
         return summary
