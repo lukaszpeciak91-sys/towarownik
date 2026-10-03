@@ -54,7 +54,7 @@ internal enum class ProviderPriceScope {
 internal sealed interface ProviderSearchResult {
     data class Candidates(
         val items: List<ProviderProductCandidate>,
-        val reportedTotalCount: Int = items.size,
+        val reportedTotalCount: Int? = null,
     ) : ProviderSearchResult
 
     data object NotFound : ProviderSearchResult
