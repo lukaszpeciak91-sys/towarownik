@@ -1,7 +1,6 @@
 name: KWANT live contract probe
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       product_query:
