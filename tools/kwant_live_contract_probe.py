@@ -516,6 +516,7 @@ def branch_target_candidate_valid(
         branch_label,
         link_text=str(candidate.get("linkText", "")),
         page_url=page_url,
+        card_text=str(candidate.get("cardText", "")),
     ):
         return False
     if not branch_label_matches(
@@ -1252,17 +1253,18 @@ def branch_candidate_from_link(
         if not expected_kwant:
             return None
         link_text = normalize_text(link.inner_text(timeout=300))
-        if not branch_label_matches(
-            branch_label,
-            link_text=link_text,
-            page_url=safe_url,
-        ):
-            return None
 
         card = branch_card_for_link(link)
         if card is None:
             return None
         card_text = normalize_text(card.inner_text(timeout=500))
+        if not branch_label_matches(
+            branch_label,
+            link_text=link_text,
+            page_url=safe_url,
+            card_text=card_text,
+        ):
+            return None
         branch_links = card.locator(
             "a[href*='hurtownia-elektryczna']"
         )
