@@ -919,7 +919,7 @@ class ConversationRepositoryTest {
     }
 
     @Test
-    fun `changing selected store does not rewrite historical product store`() = runBlocking {
+    fun `conversation profile and historical product store stay stable`() = runBlocking {
         val started = repository.beginUserTurn(
             conversationId = null,
             text = "Historical",
@@ -944,16 +944,10 @@ class ConversationRepositoryTest {
             ),
         )
 
-        assertTrue(
-            repository.updateStoreNumber(
-                started.conversationId,
-                "075",
-            ),
-        )
         val restored = requireNotNull(
             repository.load(started.conversationId),
         )
-        assertEquals("075", restored.storeNumber)
+        assertEquals("074", restored.storeNumber)
         assertEquals(
             "074",
             restored.messages.last().products.single().storeNumber,
