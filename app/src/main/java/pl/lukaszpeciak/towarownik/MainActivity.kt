@@ -406,7 +406,8 @@ private fun TowarownikApp() {
             if (freshCase != null) {
                 clearManualProfileContext()
                 activeConversationId = null
-                selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
+                selectedWorkingProfile = globalWorkingProfile
+                selectedStoreNumber = globalWorkingProfile.branchId.value
                 freshCaseSelected = true
                 emptyPromptIndex = (emptyPromptIndex + 1) % EMPTY_ADVISOR_PROMPTS.size
                 advisorState = AdvisorUiState.Idle
@@ -1365,9 +1366,12 @@ private fun AdvisorChatScreen(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
-    selectedStoreNumber: String,
-    storeSelectorEnabled: Boolean,
-    onStoreSelected: (String) -> Unit,
+    workingProfile: WorkingProfile,
+    profileBranches: List<ProviderBranch>,
+    profileSelectorEnabled: Boolean,
+    profileBranchesLoading: Boolean,
+    onProviderSelected: (ProviderId) -> Unit,
+    onBranchSelected: (ProviderBranch) -> Unit,
     onReportAssistantMessage: (Long) -> Unit,
     onOpenSearchAction: (PersistedSearchAction) -> Unit,
     emptyPromptIndex: Int,
@@ -1383,9 +1387,12 @@ private fun AdvisorChatScreen(
                 onOpenDrawer = onOpenDrawer,
                 onNewCase = onNewCase,
                 onOpenSearch = onOpenSearch,
-                selectedStoreNumber = selectedStoreNumber,
-                storeSelectorEnabled = storeSelectorEnabled,
-                onStoreSelected = onStoreSelected,
+                workingProfile = workingProfile,
+                profileBranches = profileBranches,
+                profileSelectorEnabled = profileSelectorEnabled,
+                profileBranchesLoading = profileBranchesLoading,
+                onProviderSelected = onProviderSelected,
+                onBranchSelected = onBranchSelected,
             )
         },
         bottomBar = {
@@ -1485,9 +1492,12 @@ private fun AdvisorTopBar(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
-    selectedStoreNumber: String,
-    storeSelectorEnabled: Boolean,
-    onStoreSelected: (String) -> Unit,
+    workingProfile: WorkingProfile,
+    profileBranches: List<ProviderBranch>,
+    profileSelectorEnabled: Boolean,
+    profileBranchesLoading: Boolean,
+    onProviderSelected: (ProviderId) -> Unit,
+    onBranchSelected: (ProviderBranch) -> Unit,
 ) {
     Surface(
         modifier = Modifier.topBarSafeArea(),
@@ -1521,10 +1531,13 @@ private fun AdvisorTopBar(
                         text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.titleMedium,
                     )
-                    ObiStoreSelector(
-                        selectedStoreNumber = selectedStoreNumber,
-                        enabled = storeSelectorEnabled,
-                        onStoreSelected = onStoreSelected,
+                    WorkingProfileSelector(
+                        workingProfile = workingProfile,
+                        branches = profileBranches,
+                        enabled = profileSelectorEnabled,
+                        loading = profileBranchesLoading,
+                        onProviderSelected = onProviderSelected,
+                        onBranchSelected = onBranchSelected,
                     )
                 }
 
@@ -1563,42 +1576,112 @@ private fun AdvisorTopBar(
 }
 
 @Composable
-private fun ObiStoreSelector(
-    selectedStoreNumber: String,
+private fun WorkingProfileSelector(
+    workingProfile: WorkingProfile,
+    branches: List<ProviderBranch>,
     enabled: Boolean,
-    onStoreSelected: (String) -> Unit,
+    loading: Boolean,
+    onProviderSelected: (ProviderId) -> Unit,
+    onBranchSelected: (ProviderBranch) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var providerExpanded by remember { mutableStateOf(false) }
+    var branchExpanded by remember { mutableStateOf(false) }
+    val providerLabel = if (workingProfile.providerId == KWANT_PROVIDER_ID) {
+        stringResource(R.string.provider_kwant)
+    } else {
+        stringResource(R.string.provider_obi)
+    }
+    val branch = branches.firstOrNull {
+        it.branchId == workingProfile.branchId
+    }
+    val branchLabel = branch?.name ?: workingProfile.branchId.value
 
-    Box {
-        TextButton(
-            onClick = { expanded = true },
-            enabled = enabled,
-            contentPadding = PaddingValues(
-                horizontal = 8.dp,
-                vertical = 0.dp,
-            ),
-        ) {
-            Text(
-                text = stringResource(
-                    R.string.obi_store_selector,
-                    selectedStoreNumber,
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            TextButton(
+                onClick = { providerExpanded = true },
+                enabled = enabled && !loading,
+                contentPadding = PaddingValues(
+                    horizontal = 6.dp,
+                    vertical = 0.dp,
                 ),
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            SUPPORTED_OBI_STORE_NUMBERS.forEach { storeNumber ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.obi_store_item, storeNumber)) },
-                    onClick = {
-                        expanded = false
-                        onStoreSelected(storeNumber)
-                    },
+            ) {
+                Text(
+                    text = providerLabel,
+                    style = MaterialTheme.typography.labelMedium,
                 )
+            }
+            DropdownMenu(
+                expanded = providerExpanded,
+                onDismissRequest = { providerExpanded = false },
+            ) {
+                listOf(
+                    OBI_PROVIDER_ID to R.string.provider_obi,
+                    KWANT_PROVIDER_ID to R.string.provider_kwant,
+                ).forEach { (providerId, labelRes) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(labelRes)) },
+                        onClick = {
+                            providerExpanded = false
+                            onProviderSelected(providerId)
+                        },
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = "•",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Box {
+            TextButton(
+                onClick = { branchExpanded = true },
+                enabled = enabled && !loading && branches.isNotEmpty(),
+                contentPadding = PaddingValues(
+                    horizontal = 6.dp,
+                    vertical = 0.dp,
+                ),
+            ) {
+                Text(
+                    text = if (loading) {
+                        stringResource(R.string.profile_loading_branches)
+                    } else {
+                        branchLabel
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
+            DropdownMenu(
+                expanded = branchExpanded,
+                onDismissRequest = { branchExpanded = false },
+            ) {
+                branches.forEach { option ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(option.name)
+                                option.address?.let { address ->
+                                    Text(
+                                        text = address,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        },
+                        onClick = {
+                            branchExpanded = false
+                            onBranchSelected(option)
+                        },
+                    )
+                }
             }
         }
     }
@@ -2134,7 +2217,8 @@ private fun ManualObiSearchScreen(
     onClear: () -> Unit,
     onSelectResult: (ManualSearchResultItem) -> Unit,
     onShowMore: () -> Unit,
-    storeNumber: String,
+    workingProfile: WorkingProfile,
+    branchLabel: String?,
     onBack: () -> Unit,
 ) {
     val isLoading = state is ManualSearchUiState.Loading
@@ -2165,8 +2249,13 @@ private fun ManualObiSearchScreen(
             ) {
                 Text(
                     text = stringResource(
-                        R.string.manual_search_store,
-                        storeNumber,
+                        R.string.manual_search_profile,
+                        if (workingProfile.providerId == KWANT_PROVIDER_ID) {
+                            stringResource(R.string.provider_kwant)
+                        } else {
+                            stringResource(R.string.provider_obi)
+                        },
+                        branchLabel ?: workingProfile.branchId.value,
                     ),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
@@ -2355,14 +2444,16 @@ private fun ManualSearchResults(
             ),
             style = MaterialTheme.typography.titleMedium,
         )
-        Text(
-            text = stringResource(
-                R.string.manual_search_reported_total,
-                state.reportedTotalCount,
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        state.reportedTotalCount?.let { total ->
+            Text(
+                text = stringResource(
+                    R.string.manual_search_reported_total,
+                    total,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         state.visibleItems.forEach { item ->
             Surface(
@@ -2409,20 +2500,14 @@ private fun ManualSearchResults(
                                         )
                                     }
                                     Text(
-                                        text = stringResource(
-                                            R.string.product_obik,
-                                            item.obik,
-                                        ),
+                                        text = manualResultIdentifierText(item),
                                         style =
                                             MaterialTheme.typography.bodyMedium,
                                         color =
                                             MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        text = stringResource(
-                                            R.string.product_store,
-                                            item.storeNumber,
-                                        ),
+                                        text = manualResultBranchText(item),
                                         style =
                                             MaterialTheme.typography.labelMedium,
                                         color =
@@ -2445,20 +2530,14 @@ private fun ManualSearchResults(
                                     )
                                 }
                                 Text(
-                                    text = stringResource(
-                                        R.string.product_obik,
-                                        item.obik,
-                                    ),
+                                    text = manualResultIdentifierText(item),
                                     style =
                                         MaterialTheme.typography.bodyMedium,
                                     color =
                                         MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Text(
-                                    text = stringResource(
-                                        R.string.product_store,
-                                        item.storeNumber,
-                                    ),
+                                    text = manualResultBranchText(item),
                                     style =
                                         MaterialTheme.typography.labelMedium,
                                     color =
@@ -2551,6 +2630,32 @@ private fun ManualSearchResults(
         }
     }
 }
+
+@Composable
+private fun manualResultIdentifierText(
+    item: ManualSearchResultItem,
+): String =
+    if (item.ref.providerId == KWANT_PROVIDER_ID) {
+        stringResource(
+            R.string.product_article_number,
+            item.articleNumber ?: item.ref.productId,
+        )
+    } else {
+        stringResource(R.string.product_obik, item.ref.productId)
+    }
+
+@Composable
+private fun manualResultBranchText(
+    item: ManualSearchResultItem,
+): String =
+    if (item.ref.providerId == KWANT_PROVIDER_ID) {
+        stringResource(
+            R.string.product_branch_kwant_named,
+            item.branchLabel ?: item.branchId.value,
+        )
+    } else {
+        stringResource(R.string.product_store, item.branchId.value)
+    }
 
 @Composable
 private fun ManualVerifiedProductLink(
@@ -2673,9 +2778,12 @@ private fun AdvisorChatPreview() {
             onOpenDrawer = {},
             onNewCase = {},
             onOpenSearch = {},
-            selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER,
-            storeSelectorEnabled = true,
-            onStoreSelected = {},
+            workingProfile = DEFAULT_WORKING_PROFILE,
+            profileBranches = emptyList(),
+            profileSelectorEnabled = true,
+            profileBranchesLoading = false,
+            onProviderSelected = {},
+            onBranchSelected = {},
             onReportAssistantMessage = {},
             onOpenSearchAction = {},
             emptyPromptIndex = 0,
