@@ -25,7 +25,13 @@ from kwant_live_contract_probe import (
 )
 
 MAX_EXCERPT_RADIUS = 1400
-MAX_EXCERPTS = 12
+MAX_EXCERPTS = 24
+RESEARCH_TERMS = (
+    "departmentCookie",
+    "setUnauthDepartmentCookie",
+    "getUnauthDepartmentCookie",
+    "department_stock_id",
+)
 
 
 def same_origin_script_urls(page: Any) -> list[str]:
@@ -51,20 +57,29 @@ def cookie_excerpts(
     text: str,
 ) -> list[dict[str, str]]:
     result: list[dict[str, str]] = []
-    offset = 0
-    while len(result) < MAX_EXCERPTS:
-        index = text.find(DEPARTMENT_COOKIE_NAME, offset)
-        if index < 0:
-            break
-        start = max(0, index - MAX_EXCERPT_RADIUS)
-        end = min(len(text), index + len(DEPARTMENT_COOKIE_NAME) + MAX_EXCERPT_RADIUS)
-        result.append(
-            {
-                "scriptPath": script_path,
-                "excerpt": text[start:end],
-            }
-        )
-        offset = index + len(DEPARTMENT_COOKIE_NAME)
+    seen: set[tuple[str, int]] = set()
+    for term in RESEARCH_TERMS:
+        offset = 0
+        while len(result) < MAX_EXCERPTS:
+            index = text.find(term, offset)
+            if index < 0:
+                break
+            marker = (term, index)
+            if marker not in seen:
+                seen.add(marker)
+                start = max(0, index - MAX_EXCERPT_RADIUS)
+                end = min(
+                    len(text),
+                    index + len(term) + MAX_EXCERPT_RADIUS,
+                )
+                result.append(
+                    {
+                        "scriptPath": script_path,
+                        "matchTerm": term,
+                        "excerpt": text[start:end],
+                    }
+                )
+            offset = index + len(term)
     return result
 
 
@@ -87,7 +102,7 @@ def collect_cookie_bundle_evidence(
             body = response.text()
         except Exception:
             continue
-        if DEPARTMENT_COOKIE_NAME not in body:
+        if not any(term in body for term in RESEARCH_TERMS):
             continue
         excerpts.extend(cookie_excerpts(path, body))
         if len(excerpts) >= MAX_EXCERPTS:
