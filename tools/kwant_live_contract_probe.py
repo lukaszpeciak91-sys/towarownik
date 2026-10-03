@@ -67,6 +67,19 @@ SEARCH_VALUE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 
+CONFIRMED_DEPARTMENT_COOKIE_FIELDS = (
+    "department_stock_id",
+    "department_stock_name",
+    "department_stock_postcode",
+    "department_stock_street",
+)
+PUBLIC_BRANCH_FIELD_FOR_COOKIE_FIELD = {
+    "department_stock_id": "department_id",
+    "department_stock_name": "name",
+    "department_stock_postcode": "postcode",
+    "department_stock_street": "street",
+}
+
 
 @dataclass
 class NetworkRecorder:
@@ -408,31 +421,51 @@ def public_branch_object_from_html(
     return json_object_around_marker(html, marker)
 
 
-def public_scalar_field_mapping(
-    cookie_object: dict[str, Any] | None,
+def evidenced_department_cookie_fields(
+    excerpt: str,
+) -> list[str]:
+    compact = re.sub(r"\s+", "", excerpt or "")
+    if "setUnauthDepartmentCookie" not in compact:
+        return []
+    ordered = "|".join(
+        re.escape(field)
+        for field in CONFIRMED_DEPARTMENT_COOKIE_FIELDS
+    )
+    if not re.search(
+        rf"department_stock_id[^{{}}]{{0,700}}"
+        rf"department_stock_name[^{{}}]{{0,700}}"
+        rf"department_stock_postcode[^{{}}]{{0,700}}"
+        rf"department_stock_street",
+        compact,
+    ):
+        return []
+    return [
+        field
+        for field in CONFIRMED_DEPARTMENT_COOKIE_FIELDS
+        if re.search(rf"\b{re.escape(field)}\b", excerpt)
+    ]
+
+
+def public_branch_field_mapping(
+    evidenced_fields: Iterable[str],
     public_branch: dict[str, Any] | None,
 ) -> dict[str, str]:
-    if not cookie_object or not public_branch:
+    if not public_branch:
         return {}
     result: dict[str, str] = {}
-    for cookie_key, cookie_value in cookie_object.items():
-        if not isinstance(cookie_value, (str, int, float)) or isinstance(
-            cookie_value, bool
+    for cookie_field in evidenced_fields:
+        public_field = PUBLIC_BRANCH_FIELD_FOR_COOKIE_FIELD.get(
+            cookie_field
+        )
+        if (
+            public_field is not None
+            and public_field in public_branch
         ):
-            continue
-        matches = [
-            key
-            for key, value in public_branch.items()
-            if isinstance(value, (str, int, float))
-            and not isinstance(value, bool)
-            and str(value) == str(cookie_value)
-        ]
-        if len(matches) == 1:
-            result[str(cookie_key)] = matches[0]
+            result[cookie_field] = public_field
     return result
 
 
-def constructed_cookie_matches_observed(
+def public_branch_reproduces_cookie_fields(
     cookie_object: dict[str, Any] | None,
     source_mapping: dict[str, str],
     public_branch: dict[str, Any] | None,
@@ -441,15 +474,74 @@ def constructed_cookie_matches_observed(
         return None
     if set(source_mapping) != set(cookie_object):
         return None
-    constructed = {
-        cookie_key: public_branch[source_key]
-        for cookie_key, source_key in source_mapping.items()
-        if source_key in public_branch
-    }
-    if set(constructed) != set(cookie_object):
-        return None
-    return constructed == cookie_object
+    for cookie_field, public_field in source_mapping.items():
+        if public_field not in public_branch:
+            return None
+        if str(cookie_object[cookie_field]) != str(
+            public_branch[public_field]
+        ):
+            return False
+    return True
 
+
+def constructed_cookie_value_matches_observed(
+    raw_value: str | None,
+    source_mapping: dict[str, str],
+    public_branch: dict[str, Any] | None,
+) -> bool | None:
+    if not raw_value or not source_mapping or not public_branch:
+        return None
+    if set(source_mapping) != set(
+        CONFIRMED_DEPARTMENT_COOKIE_FIELDS
+    ):
+        return None
+    if any(
+        public_field not in public_branch
+        for public_field in source_mapping.values()
+    ):
+        return None
+
+    constructed = {
+        cookie_field: public_branch[public_field]
+        for cookie_field, public_field in source_mapping.items()
+    }
+    serialized = json.dumps(
+        constructed,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    observed_candidates = {raw_value, unquote(raw_value)}
+    return serialized in observed_candidates
+
+
+def safe_department_stock_id(
+    cookie_object: dict[str, Any] | None,
+    source_mapping: dict[str, str],
+    public_branch: dict[str, Any] | None,
+    branch_page_identifier: str,
+) -> str:
+    if (
+        not cookie_object
+        or not public_branch
+        or source_mapping.get("department_stock_id")
+        != "department_id"
+    ):
+        return UNKNOWN
+    cookie_value = cookie_object.get("department_stock_id")
+    public_value = public_branch.get("department_id")
+    if (
+        cookie_value is None
+        or public_value is None
+        or str(cookie_value) != str(public_value)
+        or str(public_value) != str(branch_page_identifier)
+    ):
+        return UNKNOWN
+    rendered = str(cookie_value).strip()
+    return (
+        rendered
+        if PUBLIC_DEPARTMENT_ID_RE.fullmatch(rendered)
+        else UNKNOWN
+    )
 
 def department_cookie_value(
     cookies: dict[str, str],
@@ -1132,6 +1224,7 @@ def build_safe_summary(
     department_cookie_observed: bool | None = None,
     department_cookie_persisted: bool | None = None,
     department_cookie_value_safe: str = UNKNOWN,
+    department_stock_id: str = UNKNOWN,
     backend_branch_identifier: str = UNKNOWN,
     searches: dict[str, dict[str, Any]] | None = None,
     product_before: dict[str, Any] | None = None,
@@ -1174,6 +1267,7 @@ def build_safe_summary(
                 if branch_page_url
                 else UNKNOWN
             ),
+            "departmentStockId": department_stock_id or UNKNOWN,
             "backendBranchIdentifier": backend_branch_identifier or UNKNOWN,
         },
         "search": {
@@ -1237,6 +1331,7 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
         f"targetBranchResolved={format_scalar(branch['targetBranchResolved'])}",
         f"targetBranchPagePath={branch['targetBranchPagePath']}",
         f"branchPageIdentifier={branch['branchPageIdentifier']}",
+        f"departmentStockId={branch['departmentStockId']}",
         f"selectionObserved={format_scalar(branch['selectionObserved'])}",
         f"selectionPersisted={format_scalar(branch['selectionPersisted'])}",
         f"departmentCookieObserved={format_scalar(branch['departmentCookieObserved'])}",
@@ -1908,49 +2003,71 @@ def analyze_department_cookie_constructor(
     script_path: str,
     excerpt: str,
 ) -> dict[str, Any]:
+    unknown = {
+        "departmentCookieConstructorFound": UNKNOWN,
+        "constructorSourcePath": UNKNOWN,
+        "valueFormat": UNKNOWN,
+        "sourceBranchFields": UNKNOWN,
+        "encodingSteps": UNKNOWN,
+        "cookieOptions": UNKNOWN,
+    }
     if DEPARTMENT_COOKIE_NAME not in excerpt:
-        return {
-            "departmentCookieConstructorFound": UNKNOWN,
-            "constructorSourcePath": UNKNOWN,
-            "valueFormat": UNKNOWN,
-            "encodingSteps": UNKNOWN,
-            "cookieOptions": UNKNOWN,
-        }
+        return unknown
 
-    has_setter = bool(
+    compact = re.sub(r"\s+", "", excerpt)
+    cookie_var_match = re.search(
+        r"(?:let|const|var)([A-Za-z_$][\w$]*)="
+        r"[\"']departmentCookie[\"']",
+        compact,
+    )
+    if not cookie_var_match:
+        return unknown
+
+    cookie_ref = re.escape(cookie_var_match.group(1))
+    getter_reads_cookie = bool(
         re.search(
-            r"setCookie\)\([^,]+,JSON\.stringify\([^)]*\),\{expires:",
-            excerpt,
-        )
-        or (
-            "setCookie" in excerpt
-            and "JSON.stringify" in excerpt
-            and "expires:" in excerpt
+            rf"(?:getCookie\)\(|getCookie\()"
+            rf"{cookie_ref}\)",
+            compact,
         )
     )
-    has_getter = "getCookie" in excerpt and "JSON.parse" in excerpt
-    if not (has_setter and has_getter):
-        return {
-            "departmentCookieConstructorFound": UNKNOWN,
-            "constructorSourcePath": UNKNOWN,
-            "valueFormat": UNKNOWN,
-            "encodingSteps": UNKNOWN,
-            "cookieOptions": UNKNOWN,
-        }
+    getter_parses_json = getter_reads_cookie and "JSON.parse" in compact
+    setter_writes_cookie = bool(
+        re.search(
+            rf"(?:setCookie\)\(|setCookie\()"
+            rf"{cookie_ref},JSON\.stringify\(",
+            compact,
+        )
+    )
+    setter_has_expires = bool(
+        setter_writes_cookie
+        and re.search(r"\{expires:[^}]+\}", compact)
+    )
+    expires_360_days = bool(
+        setter_has_expires
+        and re.search(r"add\(360,[\"']days[\"']\)", compact)
+    )
 
-    expires = (
-        "now + 360 days"
-        if re.search(r"add\(360,[\"']days[\"']\)", excerpt)
-        else UNKNOWN
-    )
+    if not (
+        getter_parses_json
+        and setter_writes_cookie
+        and setter_has_expires
+    ):
+        return unknown
+
+    fields = evidenced_department_cookie_fields(excerpt)
     return {
         "departmentCookieConstructorFound": True,
         "constructorSourcePath": script_path or UNKNOWN,
-        "valueFormat": "JSON object",
-        "encodingSteps": ["JSON.stringify"],
-        "cookieOptions": {"expires": expires},
+        "valueFormat": "JSON serialized branch object",
+        "sourceBranchFields": fields if fields else UNKNOWN,
+        "encodingSteps": ["JSON.stringify -> cookie value"],
+        "cookieOptions": (
+            {"expires": "360 days"}
+            if expires_360_days
+            else {"expires": UNKNOWN}
+        ),
     }
-
 
 def safe_department_cookie_research(
     research: dict[str, Any] | None,
@@ -2068,6 +2185,9 @@ def safe_department_cookie_research(
 def cookie_code_markers(excerpt: str) -> list[str]:
     markers = (
         "JSON.stringify",
+        "JSON.parse",
+        "getCookie",
+        "setCookie",
         "encodeURIComponent",
         "decodeURIComponent",
         "btoa(",
@@ -2383,15 +2503,10 @@ def run_live_probe(
             branch_before_html,
             branch_identifier,
         )
-        source_mapping = public_scalar_field_mapping(
-            parsed_department_cookie,
-            public_branch,
-        )
-        constructed_matches = constructed_cookie_matches_observed(
-            parsed_department_cookie,
-            source_mapping,
-            public_branch,
-        )
+        source_mapping: dict[str, str] = {}
+        public_data_reproducible: bool | None = None
+        constructed_matches: bool | None = None
+        department_stock_id = UNKNOWN
 
         selection_observed, selection_persisted = (
             derive_branch_selection_status(
@@ -2474,55 +2589,49 @@ def run_live_probe(
                 for key in parsed_department_cookie
                 if not SECRET_KEY_RE.search(str(key))
             )
+            evidenced_fields = department_cookie_research.get(
+                "sourceBranchFields"
+            )
+            source_mapping = public_branch_field_mapping(
+                (
+                    evidenced_fields
+                    if isinstance(evidenced_fields, list)
+                    else []
+                ),
+                public_branch,
+            )
+            public_data_reproducible = (
+                public_branch_reproduces_cookie_fields(
+                    parsed_department_cookie,
+                    source_mapping,
+                    public_branch,
+                )
+            )
+            constructed_matches = (
+                constructed_cookie_value_matches_observed(
+                    raw_department_value,
+                    source_mapping,
+                    public_branch,
+                )
+            )
+            department_stock_id = safe_department_stock_id(
+                parsed_department_cookie,
+                source_mapping,
+                public_branch,
+                branch_identifier,
+            )
             department_cookie_research.update(
                 {
-                    "valueFormat": "JSON object",
-                    "sourceBranchFields": source_mapping
-                    if source_mapping
-                    else cookie_keys,
-                    "encodingSteps": cookie_encoding_steps
-                    or ["JSON.stringify"],
-                    "reproducibleFromPublicData": (
-                        True
-                        if constructed_matches is True
-                        else UNKNOWN
+                    "reproducibleFromPublicData": tri_state(
+                        public_data_reproducible
                     ),
                     "constructedValueMatchesObserved": tri_state(
                         constructed_matches
                     ),
-                    "backendBranchIdentifier": (
-                        str(
-                            parsed_department_cookie.get(
-                                "department_stock_id"
-                            )
-                        )
-                        if (
-                            isinstance(
-                                parsed_department_cookie.get(
-                                    "department_stock_id"
-                                ),
-                                (str, int),
-                            )
-                            and str(
-                                parsed_department_cookie.get(
-                                    "department_stock_id"
-                                )
-                            )
-                            == branch_identifier
-                        )
-                        else UNKNOWN
-                    ),
+                    "backendBranchIdentifier": UNKNOWN,
                     "cookieObjectFieldNames": cookie_keys,
                 }
             )
-        department_cookie_research["cookieOptions"] = {
-            "expires": "now + 360 days",
-            "pathObserved": "/",
-            "sameSiteObserved": "Lax",
-            "secureObserved": False,
-            "httpOnlyObserved": False,
-            "domainObserved": KWANT_HOST,
-        }
 
         summary = build_safe_summary(
             requested_branch_label=branch_label,
@@ -2533,6 +2642,7 @@ def run_live_probe(
             department_cookie_observed=department_observed,
             department_cookie_persisted=department_persisted,
             department_cookie_value_safe=department_value,
+            department_stock_id=department_stock_id,
             backend_branch_identifier=infer_backend_branch_identifier(
                 recorder.records
             ),
