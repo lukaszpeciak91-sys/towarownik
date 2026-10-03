@@ -1821,9 +1821,9 @@ def collect_department_cookie_bundle_evidence(
             if source not in script_sources:
                 script_sources.append(source)
 
-    for source in script_sources[:120]:
+    for source in script_sources[:60]:
         try:
-            response = context.request.get(source, timeout=15000)
+            response = context.request.get(source, timeout=5000)
             if not response.ok:
                 continue
             text = response.text()
@@ -1839,6 +1839,8 @@ def collect_department_cookie_bundle_evidence(
                 "_excerpt": excerpt,
             }
         )
+        if len(matched) >= 3:
+            break
 
     raw_dir.mkdir(parents=True, exist_ok=True)
     if matched:
