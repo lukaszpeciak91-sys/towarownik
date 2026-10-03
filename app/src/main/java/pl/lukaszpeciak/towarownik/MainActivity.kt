@@ -69,6 +69,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -953,6 +954,18 @@ private fun TowarownikApp() {
     }
 }
 
+internal const val CONVERSATION_DRAWER_MAX_WIDTH_DP = 320
+internal const val CONVERSATION_DRAWER_MIN_REVEAL_DP = 56
+
+internal fun conversationDrawerWidthDp(
+    windowWidthDp: Int,
+): Int =
+    minOf(
+        CONVERSATION_DRAWER_MAX_WIDTH_DP,
+        (windowWidthDp - CONVERSATION_DRAWER_MIN_REVEAL_DP)
+            .coerceAtLeast(0),
+    )
+
 @Composable
 private fun ConversationDrawer(
     query: String,
@@ -967,8 +980,12 @@ private fun ConversationDrawer(
         mutableStateOf<ConversationSummary?>(null)
     }
     val warmColors = MaterialTheme.towarownikColors
+    val drawerWidth = conversationDrawerWidthDp(
+        LocalConfiguration.current.screenWidthDp,
+    ).dp
 
     ModalDrawerSheet(
+        modifier = Modifier.width(drawerWidth),
         drawerContainerColor = MaterialTheme.colorScheme.surface,
         drawerContentColor = MaterialTheme.colorScheme.onSurface,
     ) {
