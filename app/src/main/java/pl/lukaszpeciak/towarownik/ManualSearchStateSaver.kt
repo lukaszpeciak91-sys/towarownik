@@ -13,6 +13,11 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProductRef
+import pl.lukaszpeciak.towarownik.product.provider.ProviderId
 
 internal val ManualSearchUiStateSaver = Saver<ManualSearchUiState, String>(
     save = { state -> encodeManualSearchState(state) },
@@ -28,13 +33,8 @@ internal fun encodeManualSearchState(state: ManualSearchUiState): String {
 
     return buildJsonObject {
         when (persistable) {
-            ManualSearchUiState.Idle -> {
-                put("type", "idle")
-            }
-
-            ManualSearchUiState.Loading -> {
-                put("type", "idle")
-            }
+            ManualSearchUiState.Idle,
+            ManualSearchUiState.Loading -> put("type", "idle")
 
             is ManualSearchUiState.Error -> {
                 put("type", "error")
@@ -43,69 +43,36 @@ internal fun encodeManualSearchState(state: ManualSearchUiState): String {
 
             is ManualSearchUiState.Product -> {
                 put("type", "product")
-                put("name", persistable.item.name)
-                put("obik", persistable.item.obik)
-                put(
-                    "price",
-                    persistable.item.grossPrice
-                        ?.let { JsonPrimitive(it.toPlainString()) }
-                        ?: JsonNull,
-                )
-                put(
-                    "stock",
-                    persistable.item.stock
-                        ?.let(::JsonPrimitive)
-                        ?: JsonNull,
-                )
-                put("url", persistable.item.productUrl)
-                put(
-                    "imageUrl",
-                    persistable.item.primaryImageUrl
-                        ?.let(::JsonPrimitive)
-                        ?: JsonNull,
-                )
-                put("store", persistable.item.storeNumber)
-                put(
-                    "verifiedAt",
-                    persistable.item.verifiedAt
-                        ?.let(::JsonPrimitive)
-                        ?: JsonNull,
-                )
+                putProduct("product", persistable.item)
             }
 
             is ManualSearchUiState.SearchResults -> {
                 put("type", "results")
-                put("reportedTotal", persistable.reportedTotalCount)
+                put(
+                    "reportedTotal",
+                    persistable.reportedTotalCount
+                        ?.let(::JsonPrimitive)
+                        ?: JsonNull,
+                )
                 put("visibleCount", persistable.visibleCount)
                 put(
                     "items",
                     buildJsonArray {
-                        persistable.items.forEachIndexed {
-                                index,
-                                item,
-                            ->
+                        persistable.items.forEachIndexed { index, item ->
                             add(
                                 buildJsonObject {
-                                    put("obik", item.obik)
-                                    put(
-                                        "name",
-                                        item.name
-                                            ?.let(::JsonPrimitive)
-                                            ?: JsonNull,
-                                    )
-                                    put("store", item.storeNumber)
-                                    when (
-                                        val enrichment =
-                                            item.enrichment
-                                    ) {
+                                    put("providerId", item.ref.providerId.value)
+                                    put("productId", item.ref.productId)
+                                    put("branchId", item.branchId.value)
+                                    putNullable("branchLabel", item.branchLabel)
+                                    putNullable("articleNumber", item.articleNumber)
+                                    putNullable("name", item.name)
+                                    when (val enrichment = item.enrichment) {
                                         ManualResultEnrichment.Pending,
                                         ManualResultEnrichment.Loading -> {
                                             put(
                                                 "enrichment",
-                                                if (
-                                                    index <
-                                                        persistable.visibleCount
-                                                ) {
+                                                if (index < persistable.visibleCount) {
                                                     "unavailable"
                                                 } else {
                                                     "pending"
@@ -113,51 +80,14 @@ internal fun encodeManualSearchState(state: ManualSearchUiState): String {
                                             )
                                         }
 
-                                        ManualResultEnrichment.Unavailable -> {
-                                            put(
-                                                "enrichment",
-                                                "unavailable",
-                                            )
-                                        }
+                                        ManualResultEnrichment.Unavailable ->
+                                            put("enrichment", "unavailable")
 
                                         is ManualResultEnrichment.Verified -> {
-                                            put(
-                                                "enrichment",
-                                                "verified",
-                                            )
-                                            put(
-                                                "verifiedName",
-                                                enrichment.product.name,
-                                            )
-                                            put(
-                                                "verifiedStore",
-                                                enrichment.product.storeNumber,
-                                            )
-                                            put(
-                                                "verifiedUrl",
-                                                enrichment.product.productUrl,
-                                            )
-                                            put(
-                                                "verifiedImageUrl",
-                                                enrichment.product.primaryImageUrl
-                                                    ?.let(::JsonPrimitive)
-                                                    ?: JsonNull,
-                                            )
-                                            put(
-                                                "verifiedStock",
-                                                enrichment.product.stock
-                                                    ?.let(::JsonPrimitive)
-                                                    ?: JsonNull,
-                                            )
-                                            put(
-                                                "verifiedPrice",
-                                                enrichment.product.grossPrice
-                                                    ?.let {
-                                                        JsonPrimitive(
-                                                            it.toPlainString(),
-                                                        )
-                                                    }
-                                                    ?: JsonNull,
+                                            put("enrichment", "verified")
+                                            putProduct(
+                                                "verifiedProduct",
+                                                enrichment.product,
                                             )
                                         }
                                     }
@@ -185,120 +115,44 @@ internal fun decodeManualSearchState(raw: String): ManualSearchUiState =
                     }
                     ?: SearchUiError.LOOKUP,
             )
-            "product" -> ManualSearchUiState.Product(
-                VerifiedProductUiModel(
-                    name = checkNotNull(root["name"]?.jsonPrimitive?.contentOrNull),
-                    obik = checkNotNull(root["obik"]?.jsonPrimitive?.contentOrNull),
-                    grossPrice = root["price"]
-                        ?.takeUnless { it is JsonNull }
-                        ?.jsonPrimitive
-                        ?.contentOrNull
-                        ?.let(::BigDecimal),
-                    stock = root["stock"]
-                        ?.takeUnless { it is JsonNull }
-                        ?.jsonPrimitive
-                        ?.intOrNull,
-                    productUrl = checkNotNull(root["url"]?.jsonPrimitive?.contentOrNull),
-                    primaryImageUrl = root["imageUrl"]
-                        ?.takeUnless { it is JsonNull }
-                        ?.jsonPrimitive
-                        ?.contentOrNull,
-                    storeNumber = root["store"]
-                        ?.jsonPrimitive
-                        ?.contentOrNull
-                        ?: pl.lukaszpeciak.towarownik.product
-                            .DEFAULT_OBI_STORE_NUMBER,
-                    verifiedAt = root["verifiedAt"]
-                        ?.takeUnless { it is JsonNull }
-                        ?.jsonPrimitive
-                        ?.contentOrNull
-                        ?.toLongOrNull(),
-                ),
-            )
+
+            "product" -> {
+                val product = root.product("product")
+                    ?: return@runCatching ManualSearchUiState.Idle
+                ManualSearchUiState.Product(product)
+            }
+
             "results" -> {
                 val items = (root["items"] as? JsonArray)
                     ?.mapNotNull { element ->
-                        val item = element as? JsonObject ?: return@mapNotNull null
-                        val obik = item["obik"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
+                        val item = element as? JsonObject
                             ?: return@mapNotNull null
-                        val name = item["name"]
-                            ?.takeUnless { it is JsonNull }
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                        val storeNumber = item["store"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            ?: pl.lukaszpeciak.towarownik.product
-                                .DEFAULT_OBI_STORE_NUMBER
-                        val enrichment = when (
-                            item["enrichment"]
-                                ?.jsonPrimitive
-                                ?.contentOrNull
-                        ) {
-                            "verified" -> {
-                                val verifiedName =
-                                    item["verifiedName"]
-                                        ?.jsonPrimitive
-                                        ?.contentOrNull
-                                val verifiedUrl =
-                                    item["verifiedUrl"]
-                                        ?.jsonPrimitive
-                                        ?.contentOrNull
-                                val verifiedStore =
-                                    item["verifiedStore"]
-                                        ?.jsonPrimitive
-                                        ?.contentOrNull
-                                if (
-                                    verifiedName != null &&
-                                    verifiedUrl != null &&
-                                    verifiedStore != null
-                                ) {
-                                    ManualResultEnrichment.Verified(
-                                        VerifiedProductUiModel(
-                                            name = verifiedName,
-                                            obik = obik,
-                                            grossPrice =
-                                                item["verifiedPrice"]
-                                                    ?.takeUnless {
-                                                        it is JsonNull
-                                                    }
-                                                    ?.jsonPrimitive
-                                                    ?.contentOrNull
-                                                    ?.let(::BigDecimal),
-                                            stock =
-                                                item["verifiedStock"]
-                                                    ?.takeUnless {
-                                                        it is JsonNull
-                                                    }
-                                                    ?.jsonPrimitive
-                                                    ?.intOrNull,
-                                            productUrl = verifiedUrl,
-                                            primaryImageUrl =
-                                                item["verifiedImageUrl"]
-                                                    ?.takeUnless {
-                                                        it is JsonNull
-                                                    }
-                                                    ?.jsonPrimitive
-                                                    ?.contentOrNull,
-                                            storeNumber = verifiedStore,
-                                        ),
-                                    )
-                                } else {
-                                    ManualResultEnrichment.Pending
-                                }
-                            }
-
-                            "unavailable" ->
-                                ManualResultEnrichment.Unavailable
-
+                        val providerId = item.string("providerId")
+                            ?: OBI_PROVIDER_ID.value
+                        val productId = item.string("productId")
+                            ?: item.string("obik")
+                            ?: return@mapNotNull null
+                        val branchId = item.string("branchId")
+                            ?: item.string("store")
+                            ?: DEFAULT_OBI_STORE_NUMBER
+                        val enrichment = when (item.string("enrichment")) {
+                            "verified" ->
+                                item.product("verifiedProduct")
+                                    ?.let(ManualResultEnrichment::Verified)
+                                    ?: ManualResultEnrichment.Pending
+                            "unavailable" -> ManualResultEnrichment.Unavailable
                             else -> ManualResultEnrichment.Pending
                         }
+
                         ManualSearchResultItem(
-                            obik = obik,
-                            name = name,
-                            storeNumber = storeNumber,
+                            ref = ProductRef(
+                                providerId = ProviderId(providerId),
+                                productId = productId,
+                            ),
+                            name = item.string("name"),
+                            branchId = BranchId(branchId),
+                            branchLabel = item.string("branchLabel"),
+                            articleNumber = item.string("articleNumber"),
                             enrichment = enrichment,
                         )
                     }
@@ -307,9 +161,9 @@ internal fun decodeManualSearchState(raw: String): ManualSearchUiState =
                 ManualSearchUiState.SearchResults(
                     items = items,
                     reportedTotalCount = root["reportedTotal"]
+                        ?.takeUnless { it is JsonNull }
                         ?.jsonPrimitive
-                        ?.intOrNull
-                        ?: items.size,
+                        ?.intOrNull,
                     visibleCount = root["visibleCount"]
                         ?.jsonPrimitive
                         ?.intOrNull
@@ -317,6 +171,82 @@ internal fun decodeManualSearchState(raw: String): ManualSearchUiState =
                         ?: minOf(MANUAL_RESULTS_PAGE_SIZE, items.size),
                 )
             }
+
             else -> ManualSearchUiState.Idle
         }
     }.getOrDefault(ManualSearchUiState.Idle)
+
+private fun kotlinx.serialization.json.JsonObjectBuilder.putProduct(
+    key: String,
+    product: VerifiedProductUiModel,
+) {
+    put(
+        key,
+        buildJsonObject {
+            put("name", product.name)
+            put("providerId", product.providerId)
+            put("productId", product.productId)
+            put("branchId", product.branchId)
+            putNullable("branchLabel", product.branchLabel)
+            putNullable("articleNumber", product.articleNumber)
+            put("obik", product.obik)
+            put("store", product.storeNumber)
+            put("url", product.productUrl)
+            putNullable("imageUrl", product.primaryImageUrl)
+            putNullable("price", product.grossPrice?.toPlainString())
+            put(
+                "stock",
+                product.stock?.let(::JsonPrimitive) ?: JsonNull,
+            )
+            put(
+                "verifiedAt",
+                product.verifiedAt?.let(::JsonPrimitive) ?: JsonNull,
+            )
+        },
+    )
+}
+
+private fun kotlinx.serialization.json.JsonObjectBuilder.putNullable(
+    key: String,
+    value: String?,
+) {
+    put(key, value?.let(::JsonPrimitive) ?: JsonNull)
+}
+
+private fun JsonObject.string(key: String): String? =
+    this[key]
+        ?.takeUnless { it is JsonNull }
+        ?.jsonPrimitive
+        ?.contentOrNull
+
+private fun JsonObject.product(key: String): VerifiedProductUiModel? {
+    val value = this[key] as? JsonObject ?: return null
+    val name = value.string("name") ?: return null
+    val productId = value.string("productId")
+        ?: value.string("obik")
+        ?: return null
+    val providerId = value.string("providerId") ?: OBI_PROVIDER_ID.value
+    val branchId = value.string("branchId")
+        ?: value.string("store")
+        ?: DEFAULT_OBI_STORE_NUMBER
+    val url = value.string("url") ?: return null
+
+    return VerifiedProductUiModel(
+        name = name,
+        obik = value.string("obik") ?: productId,
+        grossPrice = value.string("price")?.let(::BigDecimal),
+        stock = value["stock"]
+            ?.takeUnless { it is JsonNull }
+            ?.jsonPrimitive
+            ?.intOrNull,
+        productUrl = url,
+        verifiedAt = value.string("verifiedAt")?.toLongOrNull(),
+        storeNumber = value.string("store") ?: branchId,
+        primaryImageUrl = value.string("imageUrl"),
+        providerId = providerId,
+        productId = productId,
+        branchId = branchId,
+        articleNumber = value.string("articleNumber"),
+        branchLabel = value.string("branchLabel"),
+    )
+}
