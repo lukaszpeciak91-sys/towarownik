@@ -321,6 +321,8 @@ def safe_department_cookie_value(value: str | None) -> str:
     if value is None:
         return UNKNOWN
     rendered = str(value).strip()
+    if rendered in {UNKNOWN, REDACTED}:
+        return rendered
     if not rendered:
         return UNKNOWN
     if len(rendered) > MAX_DEPARTMENT_COOKIE_ID_LENGTH:
@@ -1046,8 +1048,8 @@ def build_safe_summary(
             "departmentCookiePersisted": tri_state(
                 department_cookie_persisted
             ),
-            "departmentCookieValue": (
-                department_cookie_value_safe or UNKNOWN
+            "departmentCookieValue": safe_department_cookie_value(
+                department_cookie_value_safe
             ),
             "branchPageIdentifier": (
                 extract_branch_page_identifier(branch_page_url)
