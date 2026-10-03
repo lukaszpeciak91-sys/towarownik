@@ -16,14 +16,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
-
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class ConversationRepositoryTest {
     private lateinit var context: Context
     private lateinit var database: ConversationDatabase
