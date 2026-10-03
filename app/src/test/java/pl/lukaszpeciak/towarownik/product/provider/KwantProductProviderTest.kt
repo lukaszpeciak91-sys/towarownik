@@ -9,7 +9,7 @@ import org.junit.Test
 
 class KwantProductProviderTest {
     @Test
-    fun \`department cookie is deterministic from public branch metadata\`() {
+    fun `department cookie is deterministic from public branch metadata`() {
         assertEquals(
             """{"department_stock_id":205,"department_stock_name":"Nowy Sącz","department_stock_postcode":"33-300","department_stock_street":"Tarnowska 149"}""",
             NOWY_SACZ.departmentCookieJson(),
@@ -17,7 +17,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`public branch directory resolves Nowy Sacz 205 fixture\`() {
+    fun `public branch directory resolves Nowy Sacz 205 fixture`() {
         val branches = KwantFrontendParser().parseBranches(BRANCH_HTML)
 
         assertTrue(branches.contains(NOWY_SACZ))
@@ -25,7 +25,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`article EAN and text searches preserve stable KWANT product ref\`() {
+    fun `article EAN and text searches preserve stable KWANT product ref`() {
         val frontend = FakeFrontend()
         val provider = KwantProductProvider(frontend = frontend)
 
@@ -54,7 +54,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`exact lookup passes requested branch cookie and returns online price and stock\`() {
+    fun `exact lookup passes requested branch cookie and returns online price and stock`() {
         val frontend = FakeFrontend(productHtml = productHtml("140"))
         val provider = KwantProductProvider(frontend = frontend)
         val ref = searchRef(provider)
@@ -77,7 +77,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`zero selected branch stock remains zero\`() {
+    fun `zero selected branch stock remains zero`() {
         val product = KwantFrontendParser().parseProduct(
             html = productHtml("0"),
             finalUrl = PRODUCT_URL,
@@ -89,7 +89,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`missing selected branch stock remains unknown\`() {
+    fun `missing selected branch stock remains unknown`() {
         val product = KwantFrontendParser().parseProduct(
             html = productHtml(null),
             finalUrl = PRODUCT_URL,
@@ -101,7 +101,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`invalid KWANT branch never falls back\`() {
+    fun `invalid KWANT branch never falls back`() {
         val frontend = FakeFrontend()
         val provider = KwantProductProvider(frontend = frontend)
         val ref = searchRef(provider)
@@ -116,7 +116,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`KWANT rejects product ref owned by another provider\`() {
+    fun `KWANT rejects product ref owned by another provider`() {
         val frontend = FakeFrontend()
         val provider = KwantProductProvider(frontend = frontend)
         val ref = ProductRef(
@@ -132,7 +132,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`registry resolves both production providers\`() {
+    fun `registry resolves both production providers`() {
         val registry = ProductProviderRegistry.production()
 
         assertEquals(
@@ -146,7 +146,7 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun \`explicit registry resolves OBI and KWANT instances\`() {
+    fun `explicit registry resolves OBI and KWANT instances`() {
         val obi = ObiProductProvider()
         val kwant = KwantProductProvider(frontend = FakeFrontend())
         val registry = ProductProviderRegistry(listOf(obi, kwant))
