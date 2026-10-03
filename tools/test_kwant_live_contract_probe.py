@@ -215,6 +215,69 @@ class SanitizationTest(unittest.TestCase):
         )
 
 
+
+class NumericProductRouteProbeTest(unittest.TestCase):
+    def test_next_data_product_id_reads_public_product_identity(self):
+        html = """
+        <html><body>
+        <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"product":{"id":580}}}}
+        </script>
+        </body></html>
+        """
+        self.assertEqual(
+            "580",
+            probe.next_data_product_id(html),
+        )
+
+    def test_next_data_product_id_is_unknown_when_missing(self):
+        self.assertEqual(
+            probe.UNKNOWN,
+            probe.next_data_product_id("<html></html>"),
+        )
+
+    def test_safe_summary_carries_only_safe_numeric_route_evidence(self):
+        route = {
+            "requestedPath": "/produkt/580",
+            "responseStatus": 308,
+            "redirectChain": [
+                {
+                    "status": 308,
+                    "fromPath": "/produkt/580",
+                    "toPath": "/produkt/example-580",
+                }
+            ],
+            "finalStatus": 200,
+            "finalUrl": "https://kwant.net.pl/produkt/example-580",
+            "finalParsedProductId": "580",
+            "matchesRequestedProductId": True,
+        }
+        summary = probe.build_safe_summary(
+            requested_branch_label="Nowy Sącz",
+            numeric_product_route=route,
+        )
+
+        self.assertEqual(route, summary["numericProductRoute"])
+        serialized = json.dumps(summary, ensure_ascii=False)
+        self.assertNotIn("COOKIE_SECRET_VALUE", serialized)
+        self.assertNotIn("AUTHORIZATION_SECRET_VALUE", serialized)
+
+    def test_numeric_product_id_input_is_strictly_bounded_digits(self):
+        probe.validate_inputs(
+            "MBN116E",
+            "Nowy Sącz",
+            "wyłącznik nadprądowy B16 Hager",
+            "580",
+        )
+        with self.assertRaises(ValueError):
+            probe.validate_inputs(
+                "MBN116E",
+                "Nowy Sącz",
+                "wyłącznik nadprądowy B16 Hager",
+                "../580",
+            )
+
+
 class MissingEvidenceTest(unittest.TestCase):
     def test_unknown_is_used_when_evidence_is_absent(self):
         summary = probe.build_safe_summary(

@@ -15,6 +15,10 @@ on:
         description: Product-name/text query to investigate
         required: true
         default: "wyłącznik nadprądowy B16 Hager"
+      numeric_product_id:
+        description: Numeric public product ID to verify through /produkt/<id>
+        required: true
+        default: "580"
 
 permissions:
   contents: read
@@ -26,6 +30,7 @@ jobs:
       PRODUCT_QUERY: ${{ inputs.product_query || 'MBN116E' }}
       BRANCH_LABEL: ${{ inputs.branch_label || 'Nowy Sącz' }}
       TEXT_QUERY: ${{ inputs.text_query || 'wyłącznik nadprądowy B16 Hager' }}
+      NUMERIC_PRODUCT_ID: ${{ inputs.numeric_product_id || '580' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,11 +38,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PYTHONPATH=tools python3 - "$PRODUCT_QUERY" "$BRANCH_LABEL" "$TEXT_QUERY" <<'PY'
+          PYTHONPATH=tools python3 - "$PRODUCT_QUERY" "$BRANCH_LABEL" "$TEXT_QUERY" "$NUMERIC_PRODUCT_ID" <<'PY'
           import sys
           from kwant_live_contract_probe import validate_inputs
 
-          validate_inputs(sys.argv[1], sys.argv[2], sys.argv[3])
+          validate_inputs(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
           PY
 
       - name: Install Playwright Chromium
@@ -55,6 +60,7 @@ jobs:
             --product-query "$PRODUCT_QUERY" \
             --branch-label "$BRANCH_LABEL" \
             --text-query "$TEXT_QUERY" \
+            --numeric-product-id "$NUMERIC_PRODUCT_ID" \
             --out-dir build/kwant-live-contract
 
       - name: Print safe contract summary

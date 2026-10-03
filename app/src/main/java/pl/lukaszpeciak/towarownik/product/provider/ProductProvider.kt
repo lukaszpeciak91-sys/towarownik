@@ -46,10 +46,15 @@ internal enum class ProductProviderFailure {
     DATA,
 }
 
+internal enum class ProviderPriceScope {
+    BRANCH,
+    ONLINE,
+}
+
 internal sealed interface ProviderSearchResult {
     data class Candidates(
         val items: List<ProviderProductCandidate>,
-        val reportedTotalCount: Int = items.size,
+        val reportedTotalCount: Int? = null,
     ) : ProviderSearchResult
 
     data object NotFound : ProviderSearchResult
@@ -66,8 +71,10 @@ internal data class ProviderProduct(
     val name: String,
     val stock: Int?,
     val grossPrice: BigDecimal?,
+    val priceScope: ProviderPriceScope?,
     val productUrl: String,
     val ean: String?,
+    val articleNumber: String? = null,
     val brand: String? = null,
     val shortDescription: String? = null,
     val technicalFacts: List<TechnicalFact> = emptyList(),
@@ -137,7 +144,10 @@ internal class ProductProviderRegistry(
     companion object {
         fun production(): ProductProviderRegistry =
             ProductProviderRegistry(
-                listOf(ObiProductProvider()),
+                listOf(
+                    ObiProductProvider(),
+                    KwantProductProvider(),
+                ),
             )
     }
 }

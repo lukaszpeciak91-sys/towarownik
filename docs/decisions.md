@@ -380,3 +380,18 @@ These decisions describe the broader intended product behavior. The currently im
 - Do not add KWANT, capability matrices, branch directories, UI/settings changes, advisor-tool changes, Worker/prompt changes, persistence migrations, or a wholesale rename of current OBI-specific models in this foundation PR.
 - Existing OBI-specific call sites remain intentionally coupled until the next provider integration can migrate them incrementally against a real second implementation.
 
+
+
+## KWANT ProductProvider v0.1
+
+- Add the second production provider ID `kwant-pl`; the production registry now contains `obi-pl` and `kwant-pl`.
+- Use KWANT's public numeric product ID as `ProductRef.productId`; public URL slugs remain provider transport data rather than neutral identity.
+- Use the public `department_stock_id` as KWANT `BranchId`. Resolve branch metadata from the public branch directory and construct `departmentCookie` deterministically from the four proven fields: `department_stock_id`, `department_stock_name`, `department_stock_postcode`, and `department_stock_street`.
+- Keep KWANT production transport HTTP-only. No browser automation or Playwright is part of Android production code.
+- Preserve selected-branch stock exactly: an observed zero is `0`; missing/unparseable branch stock is unknown (`null`).
+- Extend neutral price semantics only with proven scope: `BRANCH` and `ONLINE`. OBI keeps its current branch-price meaning; KWANT's public storefront price is `ONLINE` and must not be described as a counter or customer-specific branch price.
+- Invalid KWANT branch IDs fail explicitly and never substitute another branch.
+- Exact KWANT lookup must work on a fresh provider instance. The stable numeric product ID is sent through the public dynamic `/produkt/<id>` route; a previous search/cache is optional only. Numeric-ID search is not used because research only confirmed article/catalog, EAN, and text search. This numeric route is live-confirmed by `tools/kwant_live_contract_probe.py`: on 2026-10-03, `GET /produkt/580` returned 308 to `/produkt/wylacznik-nadpradowy-b16-a-1p-6ka-mbn116e-hager-580`, then 200, and the final public `__NEXT_DATA__` product ID was `580`.
+- KWANT search leaves the neutral reported total unknown unless an authoritative frontend total is evidenced; the number of parsed candidates is not promoted to a total.
+- Validate KWANT request/response URLs using parsed scheme/host/path rules, not string-prefix checks.
+- No UI, conversation/profile persistence, advisor tools, Worker, automatic provider switching, natural-language branch resolution, or database migration is included.
