@@ -395,3 +395,14 @@ These decisions describe the broader intended product behavior. The currently im
 - KWANT search leaves the neutral reported total unknown unless an authoritative frontend total is evidenced; the number of parsed candidates is not promoted to a total.
 - Validate KWANT request/response URLs using parsed scheme/host/path rules, not string-prefix checks.
 - No UI, conversation/profile persistence, advisor tools, Worker, automatic provider switching, natural-language branch resolution, or database migration is included.
+
+
+## Persistent WorkingProfile selection
+
+- Persist one global `WorkingProfile(providerId, branchId)` using app preferences; existing/default state is `obi-pl / 075`.
+- Expose explicit user selection for OBI or KWANT and one branch owned by that provider. Technical provider IDs are not shown in UI.
+- Treat a saved conversation's working profile as conversation-owned state. A new conversation captures the current global profile at first USER message; later global profile changes do not rewrite it.
+- Room v7 migrates historical conversations to provider `obi-pl` and preserves their previous OBI store number as `branchId`; no destructive migration is allowed.
+- Manual search follows the global working profile and resolves the exact `ProductProvider`; unknown providers or branches fail explicitly and never fall back to another provider/branch.
+- KWANT branch choices come from its public directory and use public `department_stock_id`; no single-branch hardcode or natural-language resolver is introduced.
+- Keep the existing advisor integration OBI-specific for this PR. The model does not choose or switch providers automatically.
