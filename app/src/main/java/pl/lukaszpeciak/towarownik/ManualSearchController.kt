@@ -4,19 +4,23 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
-import pl.lukaszpeciak.towarownik.product.LocalProduct
-import pl.lukaszpeciak.towarownik.product.ManualProductSearchResult
-import pl.lukaszpeciak.towarownik.product.ProductLookupFailure
-import pl.lukaszpeciak.towarownik.product.ProductLookupRepository
-import pl.lukaszpeciak.towarownik.product.ProductLookupResult
-import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
 import pl.lukaszpeciak.towarownik.product.ProductSearchInput
-import pl.lukaszpeciak.towarownik.product.ProductSearchRepository
 import pl.lukaszpeciak.towarownik.product.classifyProductSearchInput
 import pl.lukaszpeciak.towarownik.product.normalizeProductSearchInput
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.DEFAULT_WORKING_PROFILE
+import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProductProviderFailure
+import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
+import pl.lukaszpeciak.towarownik.product.provider.ProductRef
+import pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult
+import pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
+import pl.lukaszpeciak.towarownik.product.provider.ProviderSearchResult
+import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 internal const val MANUAL_RESULTS_PAGE_SIZE = 5
+internal const val MANUAL_RESULTS_MAX = 25
 
 internal sealed interface ManualResultEnrichment {
     data object Pending : ManualResultEnrichment
@@ -30,12 +34,20 @@ internal sealed interface ManualResultEnrichment {
 }
 
 internal data class ManualSearchResultItem(
-    val obik: String,
+    val ref: ProductRef,
     val name: String?,
-    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val branchId: BranchId,
+    val branchLabel: String? = null,
+    val articleNumber: String? = null,
     val enrichment: ManualResultEnrichment =
         ManualResultEnrichment.Pending,
-)
+) {
+    val obik: String
+        get() = ref.productId
+
+    val storeNumber: String
+        get() = branchId.value
+}
 
 internal sealed interface ManualSearchUiState {
     data object Idle : ManualSearchUiState
@@ -43,7 +55,7 @@ internal sealed interface ManualSearchUiState {
 
     data class SearchResults(
         val items: List<ManualSearchResultItem>,
-        val reportedTotalCount: Int,
+        val reportedTotalCount: Int?,
         val visibleCount: Int = minOf(MANUAL_RESULTS_PAGE_SIZE, items.size),
     ) : ManualSearchUiState {
         val visibleItems: List<ManualSearchResultItem>
@@ -81,22 +93,18 @@ internal sealed interface ManualSearchUiState {
 }
 
 internal class ManualSearchController(
-    private val lookupObik: (String, String) -> ProductLookupResult =
-        { obik, storeNumber ->
-            ProductLookupRepository().lookupObik(obik, storeNumber)
-        },
-    private val searchProducts: (String) -> ManualProductSearchResult =
-        ProductSearchRepository()::searchManual,
+    private val providers: ProductProviderRegistry =
+        ProductProviderRegistry.production(),
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     suspend fun submit(
         input: String,
-        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
+        branchLabel: String? = null,
         onState: (ManualSearchUiState) -> Unit,
     ) {
-        val normalizedInput = normalizeProductSearchInput(input)
-        val classified = classifyProductSearchInput(normalizedInput)
-        if (classified is ProductSearchInput.Invalid) {
+        val normalized = normalizeProductSearchInput(input)
+        if (normalized.isBlank()) {
             onState(ManualSearchUiState.Error(SearchUiError.INVALID_INPUT))
             return
         }
@@ -105,13 +113,33 @@ internal class ManualSearchController(
 
         val result = try {
             withContext(ioDispatcher) {
-                when (classified) {
-                    is ProductSearchInput.Obik -> lookupObik(classified.value, storeNumber).toManualUiState()
-                    is ProductSearchInput.Ean ->
-                        resolveEan(classified.value, storeNumber)
-                    is ProductSearchInput.Text ->
-                        resolveText(classified.value, storeNumber)
-                    ProductSearchInput.Invalid -> ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
+                val provider = runCatching {
+                    providers.resolve(workingProfile.providerId)
+                }.getOrNull()
+                    ?: return@withContext ManualSearchUiState.Error(
+                        SearchUiError.INVALID_INPUT,
+                    )
+
+                val classified = classifyProductSearchInput(normalized)
+                if (
+                    workingProfile.providerId == OBI_PROVIDER_ID &&
+                    classified is ProductSearchInput.Obik
+                ) {
+                    provider.lookup(
+                        ProductRef(
+                            providerId = OBI_PROVIDER_ID,
+                            productId = classified.value,
+                        ),
+                        workingProfile.branchId,
+                    ).toManualUiState(branchLabel)
+                } else {
+                    provider.search(
+                        query = normalized,
+                        maxResults = MANUAL_RESULTS_MAX,
+                    ).toManualSearchResults(
+                        workingProfile = workingProfile,
+                        branchLabel = branchLabel,
+                    )
                 }
             }
         } catch (exception: CancellationException) {
@@ -126,7 +154,7 @@ internal class ManualSearchController(
                     initial = result,
                     fromIndex = 0,
                     toIndexExclusive = result.visibleCount,
-                    storeNumber = storeNumber,
+                    workingProfile = workingProfile,
                     onState = onState,
                 )
             }
@@ -137,7 +165,7 @@ internal class ManualSearchController(
 
     suspend fun showMore(
         current: ManualSearchUiState.SearchResults,
-        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
         onState: (ManualSearchUiState) -> Unit,
     ) {
         if (!current.canShowMore) {
@@ -149,79 +177,44 @@ internal class ManualSearchController(
             initial = expanded,
             fromIndex = current.visibleCount,
             toIndexExclusive = expanded.visibleCount,
-            storeNumber = storeNumber,
+            workingProfile = workingProfile,
             onState = onState,
         )
     }
 
     suspend fun select(
         item: ManualSearchResultItem,
-        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
         onState: (ManualSearchUiState) -> Unit,
     ) {
-        onState(ManualSearchUiState.Loading)
+        if (
+            item.ref.providerId != workingProfile.providerId ||
+            item.branchId != workingProfile.branchId
+        ) {
+            onState(ManualSearchUiState.Error(SearchUiError.INVALID_INPUT))
+            return
+        }
 
+        onState(ManualSearchUiState.Loading)
         val result = try {
             withContext(ioDispatcher) {
-                lookupObik(item.obik, storeNumber).toManualUiState()
+                providers.resolve(workingProfile.providerId)
+                    .lookup(item.ref, workingProfile.branchId)
+                    .toManualUiState(item.branchLabel)
             }
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
             ManualSearchUiState.Error(SearchUiError.LOOKUP)
         }
-
         onState(result)
-    }
-
-    private fun resolveEan(
-        ean: String,
-        storeNumber: String,
-    ): ManualSearchUiState {
-        return when (val search = searchProducts(ean)) {
-            is ManualProductSearchResult.Candidates -> {
-                if (search.items.size != 1) {
-                    search.toManualSearchResults(
-                        storeNumber = storeNumber,
-                    )
-                } else {
-                    val candidate = search.items.single()
-                    when (val lookup = lookupObik(candidate.obik, storeNumber)) {
-                        is ProductLookupResult.Found -> {
-                            if (lookup.product.ean == ean) {
-                                lookup.toManualUiState()
-                            } else {
-                                search.toManualSearchResults(
-                                    storeNumber = storeNumber,
-                                    existingVerified =
-                                        lookup.product,
-                                )
-                            }
-                        }
-
-                        is ProductLookupResult.InvalidObik,
-                        is ProductLookupResult.InvalidStore ->
-                            ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
-
-                        is ProductLookupResult.Unavailable ->
-                            lookup.toManualUiState()
-                    }
-                }
-            }
-
-            ManualProductSearchResult.NotFound ->
-                ManualSearchUiState.Error(SearchUiError.NOT_FOUND)
-
-            is ManualProductSearchResult.Unavailable ->
-                search.toManualUiState()
-        }
     }
 
     private suspend fun enrichRange(
         initial: ManualSearchUiState.SearchResults,
         fromIndex: Int,
         toIndexExclusive: Int,
-        storeNumber: String,
+        workingProfile: WorkingProfile,
         onState: (ManualSearchUiState) -> Unit,
     ) {
         var current = initial.copy(
@@ -242,26 +235,29 @@ internal class ManualSearchController(
 
         for (index in fromIndex until toIndexExclusive) {
             val item = current.items[index]
-            if (item.enrichment !is ManualResultEnrichment.Loading) {
-                continue
-            }
+            if (item.enrichment !is ManualResultEnrichment.Loading) continue
+
             val enrichment = try {
                 withContext(ioDispatcher) {
                     when (
-                        val lookup = lookupObik(
-                            item.obik,
-                            storeNumber,
+                        val lookup = providers.resolve(
+                            workingProfile.providerId,
+                        ).lookup(
+                            item.ref,
+                            workingProfile.branchId,
                         )
                     ) {
-                        is ProductLookupResult.Found ->
+                        is ProviderLookupResult.Found ->
                             ManualResultEnrichment.Verified(
-                                lookup.product
-                                    .toVerifiedProductUiModel(),
+                                lookup.product.toManualProductUiModel(
+                                    branchLabel = item.branchLabel,
+                                ),
                             )
 
-                        is ProductLookupResult.InvalidObik,
-                        is ProductLookupResult.InvalidStore,
-                        is ProductLookupResult.Unavailable ->
+                        is ProviderLookupResult.WrongProvider,
+                        is ProviderLookupResult.InvalidProductId,
+                        is ProviderLookupResult.InvalidBranch,
+                        is ProviderLookupResult.Unavailable ->
                             ManualResultEnrichment.Unavailable
                     }
                 }
@@ -272,162 +268,99 @@ internal class ManualSearchController(
             }
 
             current = current.copy(
-                items = current.items.mapIndexed {
-                        candidateIndex,
-                        candidate,
-                    ->
-                    if (candidateIndex == index) {
-                        candidate.copy(
-                            enrichment = enrichment,
-                        )
+                items = current.items.mapIndexed { itemIndex, value ->
+                    if (itemIndex == index) {
+                        value.copy(enrichment = enrichment)
                     } else {
-                        candidate
+                        value
                     }
                 },
             )
             onState(current)
         }
-
-        val sorted = current.sortVisibleByStock()
-        if (sorted != current) {
-            onState(sorted)
-        }
     }
+}
 
-    private fun resolveText(
-        query: String,
-        storeNumber: String,
-    ): ManualSearchUiState {
-        return when (val search = searchProducts(query)) {
-            is ManualProductSearchResult.Candidates ->
-                search.toManualSearchResults(
-                    storeNumber = storeNumber,
-                )
-            ManualProductSearchResult.NotFound ->
+private fun ProviderSearchResult.toManualSearchResults(
+    workingProfile: WorkingProfile,
+    branchLabel: String?,
+): ManualSearchUiState =
+    when (this) {
+        is ProviderSearchResult.Candidates -> {
+            if (items.isEmpty()) {
                 ManualSearchUiState.Error(SearchUiError.NOT_FOUND)
-            is ManualProductSearchResult.Unavailable ->
-                search.toManualUiState()
-        }
-    }
-}
-
-private fun ManualSearchUiState.SearchResults.sortVisibleByStock():
-    ManualSearchUiState.SearchResults {
-    if (visibleCount <= 1) return this
-
-    val sortedVisible = items
-        .take(visibleCount)
-        .sortedWith(
-            compareBy<ManualSearchResultItem> {
-                it.stockSortBucket()
-            }.thenByDescending {
-                it.verifiedStockForSort()
-            },
-        )
-    val reordered = sortedVisible + items.drop(visibleCount)
-    return if (reordered == items) this else copy(items = reordered)
-}
-
-private fun ManualSearchResultItem.stockSortBucket(): Int =
-    when (val value = enrichment) {
-        is ManualResultEnrichment.Verified ->
-            when (value.product.stock) {
-                null -> 2
-                0 -> 1
-                else -> 0
+            } else {
+                ManualSearchUiState.SearchResults(
+                    items = items.map { candidate ->
+                        ManualSearchResultItem(
+                            ref = candidate.ref,
+                            name = candidate.name,
+                            branchId = workingProfile.branchId,
+                            branchLabel = branchLabel,
+                            articleNumber = candidate.articleNumber,
+                        )
+                    },
+                    reportedTotalCount = reportedTotalCount,
+                )
             }
+        }
 
-        ManualResultEnrichment.Unavailable -> 3
-        ManualResultEnrichment.Pending,
-        ManualResultEnrichment.Loading -> 4
+        ProviderSearchResult.NotFound ->
+            ManualSearchUiState.Error(SearchUiError.NOT_FOUND)
+
+        is ProviderSearchResult.Unavailable ->
+            ManualSearchUiState.Error(failure.toSearchUiError())
     }
 
-private fun ManualSearchResultItem.verifiedStockForSort(): Int =
-    (enrichment as? ManualResultEnrichment.Verified)
-        ?.product
-        ?.stock
-        ?: 0
+private fun ProviderLookupResult.toManualUiState(
+    branchLabel: String?,
+): ManualSearchUiState =
+    when (this) {
+        is ProviderLookupResult.Found ->
+            ManualSearchUiState.Product(
+                product.toManualProductUiModel(branchLabel),
+            )
+
+        is ProviderLookupResult.WrongProvider,
+        is ProviderLookupResult.InvalidProductId,
+        is ProviderLookupResult.InvalidBranch ->
+            ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
+
+        is ProviderLookupResult.Unavailable ->
+            ManualSearchUiState.Error(failure.toSearchUiError())
+    }
+
+private fun ProviderProduct.toManualProductUiModel(
+    branchLabel: String?,
+): VerifiedProductUiModel =
+    VerifiedProductUiModel(
+        name = name,
+        obik = ref.productId,
+        grossPrice = grossPrice,
+        stock = stock,
+        productUrl = productUrl,
+        storeNumber = branchId.value,
+        primaryImageUrl = primaryImageUrl,
+        providerId = ref.providerId.value,
+        productId = ref.productId,
+        branchId = branchId.value,
+        articleNumber = articleNumber,
+        branchLabel = branchLabel,
+    )
+
+private fun ProductProviderFailure.toSearchUiError(): SearchUiError =
+    when (this) {
+        ProductProviderFailure.NETWORK -> SearchUiError.NETWORK
+        ProductProviderFailure.NOT_FOUND -> SearchUiError.NOT_FOUND
+        ProductProviderFailure.DATA -> SearchUiError.PRODUCT_DATA
+    }
 
 internal fun manualResultDisplayName(
     item: ManualSearchResultItem,
 ): String? =
-    (item.enrichment as? ManualResultEnrichment.Verified)
-        ?.product
-        ?.name
-        ?: item.name
-
-private fun ManualProductSearchResult.Candidates.toManualSearchResults(
-    storeNumber: String,
-    existingVerified: LocalProduct? = null,
-): ManualSearchUiState.SearchResults =
-    ManualSearchUiState.SearchResults(
-        items = items.map { candidate ->
-            candidate.toManualResultItem(
-                storeNumber = storeNumber,
-                existingVerified = existingVerified,
-            )
-        },
-        reportedTotalCount = reportedTotalCount,
-    )
-
-private fun ProductSearchCandidate.toManualResultItem(
-    storeNumber: String,
-    existingVerified: LocalProduct?,
-): ManualSearchResultItem =
-    ManualSearchResultItem(
-        obik = obik,
-        name = name,
-        storeNumber = storeNumber,
-        enrichment = if (
-            existingVerified?.obik == obik &&
-            existingVerified.storeNumber == storeNumber
-        ) {
-            ManualResultEnrichment.Verified(
-                existingVerified.toVerifiedProductUiModel(),
-            )
-        } else {
-            ManualResultEnrichment.Pending
-        },
-    )
-
-private fun ProductLookupResult.toManualUiState(): ManualSearchUiState = when (this) {
-    is ProductLookupResult.Found -> ManualSearchUiState.Product(
-        item = product.toVerifiedProductUiModel(),
-    )
-
-    is ProductLookupResult.InvalidObik ->
-        ManualSearchUiState.Error(SearchUiError.INVALID_INPUT)
-
-    is ProductLookupResult.InvalidStore ->
-        ManualSearchUiState.Error(SearchUiError.LOOKUP)
-
-    is ProductLookupResult.Unavailable ->
-        ManualSearchUiState.Error(
-            when (failure) {
-                ProductLookupFailure.NETWORK -> SearchUiError.NETWORK
-                ProductLookupFailure.NOT_FOUND -> SearchUiError.NOT_FOUND
-                ProductLookupFailure.DATA -> SearchUiError.PRODUCT_DATA
-            },
-        )
-}
-
-private fun ManualProductSearchResult.Unavailable.toManualUiState():
-    ManualSearchUiState.Error =
-    ManualSearchUiState.Error(
-        when (failure) {
-            ProductLookupFailure.NETWORK -> SearchUiError.NETWORK
-            ProductLookupFailure.NOT_FOUND -> SearchUiError.NOT_FOUND
-            ProductLookupFailure.DATA -> SearchUiError.SEARCH_DATA
-        },
-    )
-
-internal fun LocalProduct.toVerifiedProductUiModel(): VerifiedProductUiModel =
-    VerifiedProductUiModel(
-        name = name,
-        obik = obik,
-        grossPrice = grossPrice,
-        stock = stock,
-        productUrl = productUrl,
-        primaryImageUrl = primaryImageUrl,
-        storeNumber = storeNumber,
-    )
+    when (val enrichment = item.enrichment) {
+        is ManualResultEnrichment.Verified -> enrichment.product.name
+        ManualResultEnrichment.Pending,
+        ManualResultEnrichment.Loading,
+        ManualResultEnrichment.Unavailable -> item.name
+    }
