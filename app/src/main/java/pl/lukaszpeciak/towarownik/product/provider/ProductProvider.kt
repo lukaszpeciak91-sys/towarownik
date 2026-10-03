@@ -137,7 +137,7 @@ internal class ProductProviderRegistry(
     companion object {
         fun production(): ProductProviderRegistry =
             ProductProviderRegistry(
-                listOf(ObiProductProvider()),
+                listOf(\n                    ObiProductProvider(),\n                    KwantProductProvider(),\n                ),
             )
     }
 }
