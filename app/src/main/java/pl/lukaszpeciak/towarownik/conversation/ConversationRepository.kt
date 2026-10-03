@@ -224,6 +224,24 @@ internal class ConversationRepository(
         }
     }
 
+    suspend fun beginUserTurn(
+        conversationId: Long?,
+        text: String,
+        storeNumber: String,
+        createdAt: Long = now(),
+    ): UserTurnStart {
+        require(isSupportedObiStoreNumber(storeNumber))
+        return beginUserTurn(
+            conversationId = conversationId,
+            text = text,
+            createdAt = createdAt,
+            workingProfile = WorkingProfile(
+                providerId = OBI_PROVIDER_ID,
+                branchId = BranchId(storeNumber),
+            ),
+        )
+    }
+
     suspend fun updateStoreNumber(
         conversationId: Long,
         storeNumber: String,
