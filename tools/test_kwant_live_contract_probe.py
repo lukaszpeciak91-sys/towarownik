@@ -1172,6 +1172,153 @@ class BranchEvidenceTest(unittest.TestCase):
         )
 
 
+class DepartmentCookieConstructorResearchTest(unittest.TestCase):
+    CONSTRUCTOR_EXCERPT = (
+        'let a=()=>dayjs().add(360,"days").toDate();'
+        'let o="departmentCookie";'
+        'getUnauthDepartmentCookie=()=>{let e=getCookie(o);'
+        'return e?JSON.parse(`${e}`):null};'
+        'setUnauthDepartmentCookie=e=>{'
+        'setCookie(o,JSON.stringify(e),{expires:a()})}'
+    )
+
+    def test_constructor_parser_recognizes_json_stringify_and_expiry(self):
+        result = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/example.js",
+            self.CONSTRUCTOR_EXCERPT,
+        )
+
+        self.assertTrue(
+            result["departmentCookieConstructorFound"]
+        )
+        self.assertEqual(
+            "/_next/static/chunks/example.js",
+            result["constructorSourcePath"],
+        )
+        self.assertEqual("JSON object", result["valueFormat"])
+        self.assertEqual(
+            ["JSON.stringify"],
+            result["encodingSteps"],
+        )
+        self.assertEqual(
+            {"expires": "now + 360 days"},
+            result["cookieOptions"],
+        )
+
+    def test_constructor_parser_keeps_absent_or_ambiguous_evidence_unknown(self):
+        absent = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/unrelated.js",
+            "console.log('no cookie constructor here')",
+        )
+        ambiguous = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/partial.js",
+            'let o="departmentCookie";getCookie(o)',
+        )
+
+        self.assertEqual(
+            probe.UNKNOWN,
+            absent["departmentCookieConstructorFound"],
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            ambiguous["departmentCookieConstructorFound"],
+        )
+
+    def test_percent_encoded_public_cookie_shape_is_recognized_without_exposure(self):
+        public_branch = {
+            "department_id": 205,
+            "name": "Nowy Sącz",
+            "postcode": "33-300",
+            "street": "Tarnowska 149",
+        }
+        logical = {
+            "department_stock_id": 205,
+            "department_stock_name": "Nowy Sącz",
+            "department_stock_postcode": "33-300",
+            "department_stock_street": "Tarnowska 149",
+        }
+        encoded = (
+            "%7B%22department_stock_id%22%3A205%2C"
+            "%22department_stock_name%22%3A%22Nowy%20S%C4%85cz%22%2C"
+            "%22department_stock_postcode%22%3A%2233-300%22%2C"
+            "%22department_stock_street%22%3A%22Tarnowska%20149%22%7D"
+        )
+
+        parsed, steps = probe.parse_department_cookie_object(encoded)
+        mapping = probe.public_scalar_field_mapping(
+            parsed,
+            public_branch,
+        )
+
+        self.assertEqual(logical, parsed)
+        self.assertEqual(
+            ["JSON.stringify", "percent-encoding-by-cookie-helper"],
+            steps,
+        )
+        self.assertEqual(
+            {
+                "department_stock_id": "department_id",
+                "department_stock_name": "name",
+                "department_stock_postcode": "postcode",
+                "department_stock_street": "street",
+            },
+            mapping,
+        )
+        self.assertTrue(
+            probe.constructed_cookie_matches_observed(
+                parsed,
+                mapping,
+                public_branch,
+            )
+        )
+
+    def test_public_branch_object_is_extracted_by_page_identifier(self):
+        html = (
+            '<script>self.__next_f.push([1,"'
+            '{\\"department_id\\":204,\\"name\\":\\"Other\\"},'
+            '{\\"department_id\\":205,\\"name\\":\\"Nowy Sącz\\",'
+            '\\"postcode\\":\\"33-300\\",'
+            '\\"street\\":\\"Tarnowska 149\\"}'
+            '"])</script>'
+        ).replace('\\\"', '"')
+
+        branch = probe.public_branch_object_from_html(html, "205")
+
+        self.assertEqual(205, branch["department_id"])
+        self.assertEqual("Nowy Sącz", branch["name"])
+        self.assertEqual("33-300", branch["postcode"])
+        self.assertEqual("Tarnowska 149", branch["street"])
+
+    def test_safe_research_summary_does_not_leak_cookie_or_secret_values(self):
+        secret = "SUPER_SECRET_COOKIE_VALUE"
+        safe = probe.safe_department_cookie_research(
+            {
+                "departmentCookieConstructorFound": True,
+                "constructorSourcePath":
+                    "/_next/static/chunks/example.js",
+                "valueFormat": "JSON object",
+                "sourceBranchFields": {
+                    "department_stock_id": "department_id",
+                    "authToken": secret,
+                },
+                "encodingSteps": ["JSON.stringify"],
+                "cookieOptions": {
+                    "expires": "now + 360 days",
+                    "auth": secret,
+                },
+                "constructedValueMatchesObserved": True,
+            }
+        )
+        serialized = json.dumps(safe, ensure_ascii=False)
+
+        self.assertNotIn(secret, serialized)
+        self.assertNotIn("authToken", serialized)
+        self.assertNotIn('"auth"', serialized)
+        self.assertTrue(
+            safe["constructedValueMatchesObserved"]
+        )
+
+
 class SearchEvidenceTest(unittest.TestCase):
     def test_unrelated_product_links_do_not_prove_search_support(self):
         status = probe.safe_search_status(
