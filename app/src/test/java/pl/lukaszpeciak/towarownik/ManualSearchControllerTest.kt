@@ -329,7 +329,8 @@ class ManualSearchControllerTest {
                         in 2..5 -> ManualResultEnrichment.Verified(
                             product(
                                 obik = (1_000_000 + index).toString(),
-                            ).toVerifiedProductUiModel(),
+                            ).toVerifiedProductSnapshot(verifiedAt = 0L)
+                                .toVerifiedProductUiModel(),
                         )
                         else -> ManualResultEnrichment.Pending
                     },
