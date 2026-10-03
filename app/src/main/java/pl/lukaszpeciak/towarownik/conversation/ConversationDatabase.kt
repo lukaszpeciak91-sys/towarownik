@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageSourceEntity::class,
         MessageSearchActionEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 internal abstract class ConversationDatabase : RoomDatabase() {
@@ -38,6 +38,7 @@ internal abstract class ConversationDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
+                        MIGRATION_6_7,
                     )
                     .build()
                     .also { database ->
@@ -148,6 +149,23 @@ internal val MIGRATION_5_6 = object : Migration(5, 6) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             "ALTER TABLE message_products ADD COLUMN imageUrl TEXT",
+        )
+    }
+}
+
+
+internal val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE conversations " +
+                "ADD COLUMN providerId TEXT NOT NULL DEFAULT 'obi-pl'",
+        )
+        db.execSQL(
+            "ALTER TABLE conversations " +
+                "ADD COLUMN branchId TEXT NOT NULL DEFAULT '075'",
+        )
+        db.execSQL(
+            "UPDATE conversations SET branchId = storeNumber",
         )
     }
 }
