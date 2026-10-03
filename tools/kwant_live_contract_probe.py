@@ -2142,10 +2142,18 @@ def safe_department_cookie_research(
                 result[key] = UNKNOWN
         elif key == "encodingSteps":
             if isinstance(value, list):
+                safe_steps = {
+                    "JSON.stringify",
+                    "JSON.stringify -> cookie value",
+                    "percent-encoding-by-cookie-helper",
+                }
                 result[key] = [
                     str(item)[:120]
                     for item in value
-                    if not SECRET_KEY_RE.search(str(item))
+                    if (
+                        str(item) in safe_steps
+                        or not SECRET_KEY_RE.search(str(item))
+                    )
                 ][:20]
             elif value == UNKNOWN:
                 result[key] = UNKNOWN
@@ -2319,7 +2327,6 @@ def collect_department_cookie_bundle_evidence(
     )
     return {
         **base,
-        "sourceBranchFields": UNKNOWN,
         "reproducibleFromPublicData": UNKNOWN,
         "constructedValueMatchesObserved": UNKNOWN,
         "backendBranchIdentifier": UNKNOWN,
