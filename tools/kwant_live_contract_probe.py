@@ -14,7 +14,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import parse_qsl, unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urljoin, urlsplit, urlunsplit
 
 KWANT_ORIGIN = "https://kwant.net.pl"
 KWANT_HOST = "kwant.net.pl"
@@ -502,18 +502,53 @@ def branch_label_matches(
     )
 
 
-def target_branch_page_path(branch_page_url: str) -> str:
-    expected, safe = sanitize_kwant_url(branch_page_url)
+def canonical_branch_page_url(
+    raw_url: str,
+    base_url: str = KWANT_ORIGIN,
+) -> str:
+    safe = sanitize_public_url(raw_url, base_url)
+    if safe.startswith("REDACTED_"):
+        return ""
+    expected, kwant_safe = sanitize_kwant_url(safe)
     if not expected:
+        return ""
+    parsed = urlsplit(kwant_safe)
+    decoded_path = unquote(parsed.path or "/")
+    canonical_path = quote(
+        decoded_path.rstrip("/") or "/",
+        safe="/:@-._~",
+    )
+    return urlunsplit(("https", KWANT_HOST, canonical_path, "", ""))
+
+
+def unique_branch_page_urls(
+    raw_urls: Iterable[str],
+    base_url: str = KWANT_ORIGIN,
+) -> list[str]:
+    unique: list[str] = []
+    for raw_url in raw_urls:
+        canonical = canonical_branch_page_url(raw_url, base_url)
+        if canonical and canonical not in unique:
+            unique.append(canonical)
+    return unique
+
+
+def target_branch_page_path(branch_page_url: str) -> str:
+    canonical = canonical_branch_page_url(branch_page_url)
+    if not canonical:
         return UNKNOWN
-    return urlsplit(safe).path or "/"
+    return urlsplit(canonical).path or "/"
 
 
 def branch_target_candidate_valid(
     candidate: dict[str, Any],
     branch_label: str,
 ) -> bool:
-    page_url = str(candidate.get("pageUrl", ""))
+    page_url = canonical_branch_page_url(
+        str(candidate.get("pageUrl", ""))
+    )
+    if not page_url:
+        return False
     if not branch_label_matches(
         branch_label,
         link_text=str(candidate.get("linkText", "")),
@@ -526,14 +561,16 @@ def branch_target_candidate_valid(
         card_text=str(candidate.get("cardText", "")),
     ):
         return False
-    branch_urls = [
-        str(value)
-        for value in candidate.get("branchPageUrls", [])
-        if isinstance(value, str)
-    ]
-    if len(branch_urls) != 1 or branch_urls[0] != page_url:
+    branch_urls = unique_branch_page_urls(
+        [
+            str(value)
+            for value in candidate.get("branchPageUrls", [])
+            if isinstance(value, str)
+        ]
+    )
+    if branch_urls != [page_url]:
         return False
-    return candidate.get("selectButtonCount") == 1
+    return int(candidate.get("selectButtonCount", 0)) >= 1
 
 
 def resolve_unique_branch_candidate(
@@ -545,7 +582,18 @@ def resolve_unique_branch_candidate(
         for candidate in candidates
         if branch_target_candidate_valid(candidate, branch_label)
     ]
-    return matching[0] if len(matching) == 1 else None
+    by_branch_url: dict[str, dict[str, Any]] = {}
+    for candidate in matching:
+        canonical = canonical_branch_page_url(
+            str(candidate.get("pageUrl", ""))
+        )
+        if canonical and canonical not in by_branch_url:
+            by_branch_url[canonical] = candidate
+    return (
+        next(iter(by_branch_url.values()))
+        if len(by_branch_url) == 1
+        else None
+    )
 
 
 def parse_number_text(value: str) -> str:
