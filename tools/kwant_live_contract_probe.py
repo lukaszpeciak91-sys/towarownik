@@ -467,7 +467,9 @@ def normalize_text(value: str) -> str:
 
 
 def normalize_branch_identity(value: str) -> str:
-    decoded = unquote(value or "")
+    decoded = unquote(value or "").translate(
+        str.maketrans({"ł": "l", "Ł": "L"})
+    )
     ascii_text = "".join(
         char
         for char in unicodedata.normalize("NFKD", decoded)
