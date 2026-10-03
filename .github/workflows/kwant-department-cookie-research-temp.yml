@@ -1,0 +1,57 @@
+name: KWANT department cookie research temp
+
+on:
+  push:
+    branches:
+      - research/kwant-department-cookie-format
+
+permissions:
+  contents: read
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Playwright Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "playwright==1.63.0"
+          python3 -m playwright install --with-deps chromium
+
+      - name: Research public KWANT department cookie constructor
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=tools python3 tools/kwant_department_cookie_research.py             --out-dir build/kwant-department-cookie-research
+
+      - name: Print safe summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f build/kwant-department-cookie-research/summary.txt ]]; then
+            cat build/kwant-department-cookie-research/summary.txt
+          fi
+
+      - name: Upload safe research summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kwant-department-cookie-summary
+          path: |
+            build/kwant-department-cookie-research/summary.json
+            build/kwant-department-cookie-research/summary.txt
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Upload short-lived frontend excerpts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kwant-department-cookie-raw
+          path: |
+            build/kwant-department-cookie-research/raw/frontend-cookie-excerpts.json
+          if-no-files-found: warn
+          retention-days: 1
