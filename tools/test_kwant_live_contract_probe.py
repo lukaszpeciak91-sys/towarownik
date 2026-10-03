@@ -384,6 +384,34 @@ class BranchEvidenceTest(unittest.TestCase):
         self.assertTrue(observed)
         self.assertTrue(persisted)
 
+    def test_generic_branch_page_request_is_not_selection_request_evidence(self):
+        network = [
+            {
+                "action": "branch:select",
+                "path": "/store/nowy-sacz",
+                "query": {"safeValues": {}},
+                "body": None,
+            }
+        ]
+
+        self.assertFalse(
+            probe.branch_selection_request_observed(network)
+        )
+
+    def test_explicit_branch_change_request_is_selection_evidence(self):
+        network = [
+            {
+                "action": "branch:select",
+                "path": "/api/store/change",
+                "query": {"safeValues": {}},
+                "body": None,
+            }
+        ]
+
+        self.assertTrue(
+            probe.branch_selection_request_observed(network)
+        )
+
     def test_backend_identifier_requires_observed_selection_request_field(self):
         network = [
             {
@@ -429,13 +457,16 @@ class SearchEvidenceTest(unittest.TestCase):
 
         self.assertEqual("SUPPORTED", status)
 
-    def test_explicit_no_results_remains_unsupported(self):
+    def test_explicit_no_results_remains_unsupported_even_with_unrelated_products(self):
         status = probe.safe_search_status(
             interaction_ok=True,
             target_found=False,
             query_specific_evidence=True,
-            any_products=False,
-            body_text="Brak wyników dla podanego zapytania",
+            any_products=True,
+            body_text=(
+                "Brak wyników dla podanego zapytania. "
+                "Polecane produkty poniżej."
+            ),
         )
 
         self.assertEqual("UNSUPPORTED", status)
