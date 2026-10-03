@@ -7,6 +7,11 @@ import kotlinx.coroutines.flow.map
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.DEFAULT_WORKING_PROFILE
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProviderId
+import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 internal const val CONVERSATION_TITLE_MAX_CHARS = 50
 internal const val CONVERSATION_RETENTION_DAYS = 30L
@@ -26,7 +31,8 @@ internal data class PersistedConversation(
     val updatedAt: Long,
     val lastResponseId: String?,
     val draft: String,
-    val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
+    val storeNumber: String = workingProfile.branchId.value,
     val messages: List<PersistedMessage>,
 )
 
@@ -116,8 +122,11 @@ internal data class PersistedMessage(
 internal data class UserTurnStart(
     val conversationId: Long,
     val previousResponseId: String?,
-    val storeNumber: String,
-)
+    val workingProfile: WorkingProfile,
+) {
+    val storeNumber: String
+        get() = workingProfile.branchId.value
+}
 
 internal class ConversationRepository(
     private val dao: ConversationDao,
@@ -181,11 +190,10 @@ internal class ConversationRepository(
         conversationId: Long?,
         text: String,
         createdAt: Long = now(),
-        storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
     ): UserTurnStart {
         val normalized = normalizeConversationText(text)
         require(normalized.isNotBlank())
-        require(isSupportedObiStoreNumber(storeNumber))
 
         return if (conversationId == null) {
             val (newId, previousResponseId) =
@@ -193,12 +201,13 @@ internal class ConversationRepository(
                     title = deriveConversationTitle(normalized),
                     text = normalized,
                     createdAt = createdAt,
-                    storeNumber = storeNumber,
+                    providerId = workingProfile.providerId.value,
+                    branchId = workingProfile.branchId.value,
                 )
             UserTurnStart(
                 conversationId = newId,
                 previousResponseId = previousResponseId,
-                storeNumber = storeNumber,
+                workingProfile = workingProfile,
             )
         } else {
             UserTurnStart(
@@ -207,9 +216,10 @@ internal class ConversationRepository(
                     conversationId = conversationId,
                     text = normalized,
                     createdAt = createdAt,
-                    expectedStoreNumber = storeNumber,
+                    expectedProviderId = workingProfile.providerId.value,
+                    expectedBranchId = workingProfile.branchId.value,
                 ),
-                storeNumber = storeNumber,
+                workingProfile = workingProfile,
             )
         }
     }
@@ -309,6 +319,10 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
         updatedAt = conversation.updatedAt,
         lastResponseId = conversation.lastResponseId,
         draft = conversation.draft,
+        workingProfile = WorkingProfile(
+            providerId = ProviderId(conversation.providerId),
+            branchId = BranchId(conversation.branchId),
+        ),
         storeNumber = conversation.storeNumber,
         messages = messages
             .sortedWith(
