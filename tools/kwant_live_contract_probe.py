@@ -36,6 +36,18 @@ NO_RESULTS_RE = re.compile(
 )
 PRODUCT_PATH_RE = re.compile(r"^/produkt/[^?#]*/?(?:$|[?#])", re.IGNORECASE)
 BRANCH_PAGE_ID_RE = re.compile(r"/(?:[^/]+/)*(\d+)/?$")
+BRANCH_EVIDENCE_KEY_RE = re.compile(
+    r"(branch|oddzial|oddzia[lł]|warehouse|magazyn|store)",
+    re.IGNORECASE,
+)
+BRANCH_SELECTION_PATH_RE = re.compile(
+    r"(branch|oddzial|oddzia[lł]|warehouse|magazyn|store)",
+    re.IGNORECASE,
+)
+SEARCH_VALUE_KEY_RE = re.compile(
+    r"(query|search|term|phrase|q$|article|ean|sku|product)",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -349,6 +361,72 @@ def persisted_state_keys(
     }
 
 
+def branch_related_state_keys(
+    evidence: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    return {
+        scope: [
+            key
+            for key in evidence.get(scope, [])
+            if BRANCH_EVIDENCE_KEY_RE.search(key)
+        ]
+        for scope in ("cookies", "localStorage", "sessionStorage")
+    }
+
+
+def branch_selection_request_observed(
+    network: list[dict[str, Any]],
+) -> bool:
+    for record in network:
+        if record.get("action") != "branch:select":
+            continue
+
+        path = str(record.get("path", ""))
+        if BRANCH_SELECTION_PATH_RE.search(path):
+            return True
+
+        for source in (
+            record.get("query", {}).get("safeValues", {}),
+            (record.get("body") or {}).get("safeValues", {}),
+        ):
+            if any(
+                BRANCH_EVIDENCE_KEY_RE.search(str(key))
+                for key in source
+            ):
+                return True
+    return False
+
+
+def derive_branch_selection_status(
+    *,
+    branch_click_ok: bool,
+    marker_after_select: bool,
+    marker_after_reload: bool,
+    changed: dict[str, list[str]],
+    persisted: dict[str, list[str]],
+    network: list[dict[str, Any]],
+) -> tuple[bool | None, bool | None]:
+    if not branch_click_ok:
+        return None, None
+
+    branch_changed = branch_related_state_keys(changed)
+    branch_persisted = branch_related_state_keys(persisted)
+    selection_observed = bool(
+        marker_after_select
+        or any(branch_changed.values())
+        or branch_selection_request_observed(network)
+    )
+    selection_persisted = bool(
+        marker_after_reload
+        or any(branch_persisted.values())
+    )
+
+    return (
+        True if selection_observed else None,
+        True if selection_persisted else None,
+    )
+
+
 def extract_branch_page_identifier(url: str) -> str:
     expected, safe = sanitize_kwant_url(url)
     if not expected:
@@ -627,14 +705,70 @@ def coalesce(*values: Any) -> Any:
     return UNKNOWN
 
 
+def normalized_evidence_value(value: Any) -> str:
+    return normalize_text(str(value)).casefold()
+
+
+def search_request_observed(
+    network: list[dict[str, Any]],
+    *,
+    action: str,
+    query: str,
+) -> bool:
+    expected = normalized_evidence_value(query)
+    if not expected:
+        return False
+
+    for record in network:
+        if record.get("action") != action:
+            continue
+        for source in (
+            record.get("query", {}).get("safeValues", {}),
+            (record.get("body") or {}).get("safeValues", {}),
+        ):
+            for key, value in source.items():
+                if (
+                    SEARCH_VALUE_KEY_RE.search(str(key))
+                    and normalized_evidence_value(value) == expected
+                ):
+                    return True
+    return False
+
+
+def query_reflected_in_url(raw_url: str, query: str) -> bool:
+    expected = normalized_evidence_value(query)
+    if not expected:
+        return False
+    try:
+        values = [
+            value
+            for key, value in parse_qsl(
+                urlsplit(raw_url).query,
+                keep_blank_values=True,
+            )
+            if SEARCH_VALUE_KEY_RE.search(key)
+        ]
+    except ValueError:
+        return False
+    return any(
+        normalized_evidence_value(value) == expected
+        for value in values
+    )
+
+
 def safe_search_status(
     *,
     interaction_ok: bool,
     target_found: bool,
+    query_specific_evidence: bool,
     any_products: bool,
     body_text: str,
 ) -> str:
-    if target_found or any_products:
+    if (
+        interaction_ok
+        and query_specific_evidence
+        and (target_found or any_products)
+    ):
         return "SUPPORTED"
     if interaction_ok and NO_RESULTS_RE.search(body_text or ""):
         return "UNSUPPORTED"
@@ -838,17 +972,20 @@ def cookie_values(context: Any) -> tuple[dict[str, str], list[dict[str, Any]]]:
 def branch_marker(page: Any, branch_label: str) -> bool:
     escaped = re.escape(branch_label)
     selector = (
-        "[class*='branch'],[id*='branch'],"
-        "[class*='oddzial'],[id*='oddzial'],"
-        "[class*='store'],[id*='store'],"
-        "[class*='warehouse'],[id*='warehouse'],"
-        "[aria-label*='oddział'],[aria-label*='Oddział']"
+        "[aria-current='true'],[aria-current='page'],"
+        "[aria-selected='true'],"
+        "[data-state='selected'],[data-state='active'],"
+        "[class*='selected'],[class*='active'],[class*='current'],"
+        "[class*='wybran'],[class*='aktywn'],"
+        "[id*='selected'],[id*='active'],[id*='current']"
     )
     try:
         candidates = page.locator(selector)
         count = min(candidates.count(), 40)
         for index in range(count):
-            text = normalize_text(candidates.nth(index).inner_text(timeout=300))
+            text = normalize_text(
+                candidates.nth(index).inner_text(timeout=300)
+            )
             if re.search(escaped, text, re.IGNORECASE):
                 return True
     except Exception:
@@ -960,9 +1097,18 @@ def run_search(
             for item in links
         )
     )
+    query_specific_evidence = (
+        search_request_observed(
+            recorder.records,
+            action=action,
+            query=query,
+        )
+        or query_reflected_in_url(page.url, query)
+    )
     status = safe_search_status(
         interaction_ok=True,
         target_found=target_found,
+        query_specific_evidence=query_specific_evidence,
         any_products=bool(links),
         body_text=body,
     )
@@ -1128,7 +1274,7 @@ def matching_product_url(
     for item in links:
         if lowered in f"{item.get('text', '')} {item.get('url', '')}".lower():
             return item.get("url", "")
-    return links[0]["url"] if links else ""
+    return ""
 
 
 def selected_marker_after_reload(page: Any, branch_label: str) -> bool:
@@ -1282,26 +1428,16 @@ def run_live_probe(
             changed,
         )
 
-        selection_observed = (
-            branch_click_ok
-            and (
-                marker_after_select
-                or any(changed.values())
-                or any(
-                    record.get("action") == "branch:select"
-                    for record in recorder.records
-                )
+        selection_observed, selection_persisted = (
+            derive_branch_selection_status(
+                branch_click_ok=branch_click_ok,
+                marker_after_select=marker_after_select,
+                marker_after_reload=marker_after_reload,
+                changed=changed,
+                persisted=persisted,
+                network=recorder.records,
             )
         )
-        selection_persisted: bool | None
-        if not branch_click_ok:
-            selection_persisted = None
-        elif marker_after_reload or any(persisted.values()):
-            selection_persisted = True
-        elif selection_observed:
-            selection_persisted = False
-        else:
-            selection_persisted = None
 
         article_after = run_search(
             page,
