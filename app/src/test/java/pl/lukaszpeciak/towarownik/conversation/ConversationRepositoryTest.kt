@@ -19,6 +19,11 @@ import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
+
 class ConversationRepositoryTest {
     private lateinit var context: Context
     private lateinit var database: ConversationDatabase
@@ -848,6 +853,68 @@ class ConversationRepositoryTest {
             "074",
             requireNotNull(repository.load(alternateTurn.conversationId))
                 .storeNumber,
+        )
+    }
+
+    @Test
+    fun `new conversation captures selected working profile and survives recreation`() = runBlocking {
+        val kwant = WorkingProfile(
+            providerId = KWANT_PROVIDER_ID,
+            branchId = BranchId("205"),
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "KWANT case",
+            createdAt = 210L,
+            workingProfile = kwant,
+        )
+
+        assertEquals(
+            kwant,
+            requireNotNull(repository.load(started.conversationId))
+                .workingProfile,
+        )
+
+        database.close()
+        openDatabase()
+
+        assertEquals(
+            kwant,
+            requireNotNull(repository.load(started.conversationId))
+                .workingProfile,
+        )
+    }
+
+    @Test
+    fun `existing conversation rejects a different global working profile`() = runBlocking {
+        val obi = WorkingProfile(
+            providerId = OBI_PROVIDER_ID,
+            branchId = BranchId("075"),
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "OBI case",
+            createdAt = 220L,
+            workingProfile = obi,
+        )
+
+        val error = runCatching {
+            repository.beginUserTurn(
+                conversationId = started.conversationId,
+                text = "Must stay OBI",
+                createdAt = 230L,
+                workingProfile = WorkingProfile(
+                    providerId = KWANT_PROVIDER_ID,
+                    branchId = BranchId("205"),
+                ),
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+        assertEquals(
+            obi,
+            requireNotNull(repository.load(started.conversationId))
+                .workingProfile,
         )
     }
 
