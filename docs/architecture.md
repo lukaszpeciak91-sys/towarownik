@@ -254,7 +254,11 @@ The product layer now defines a minimal provider-owned identity boundary for fut
 
 `ProductProvider` intentionally exposes only the two operations already proven by the application: bounded product search and exact product lookup in a branch. `ObiProductProvider` is a thin adapter over the existing `ProductSearchRepository` / `ProductLookupRepository`; it translates between neutral provider types and the unchanged OBI-specific repositories, parsers, HTTP transport, error semantics, stock/price/image/URL fields, and current OBI search capacities. No OBI parser or network behavior is duplicated.
 
-`ProductProviderRegistry` resolves providers by `ProviderId`. Production currently registers only `obi-pl`; unknown provider IDs fail explicitly and never fall back to OBI.
+`ProductProviderRegistry` resolves providers by `ProviderId`. Production registers `obi-pl` and `kwant-pl`; unknown provider IDs fail explicitly and never fall back to another provider. KWANT `BranchId` is the public `department_stock_id`. The provider resolves the public branch directory metadata and builds the proven compact `departmentCookie` JSON object from `department_stock_id`, `department_stock_name`, `department_stock_postcode`, and `department_stock_street` before exact lookup.
+
+Neutral product results distinguish price scope with `BRANCH` and `ONLINE`. Existing OBI exact prices map to `BRANCH`; KWANT's public storefront price maps to `ONLINE` and is not represented as a branch/counter/customer-specific price. Provider search totals are nullable: OBI supplies its existing reported total, while KWANT leaves the total unknown when the public payload does not expose an evidenced authoritative count.
+
+KWANT exact lookup does not depend on a previous search. On a cold provider instance it requests the public dynamic product route using the stable numeric product ID (`/produkt/<id>`), lets the frontend canonicalize the route, then verifies the returned product payload still owns that ID. Search-populated canonical URLs are retained only as an optimization. KWANT URLs are accepted only when parsed as HTTPS on the exact `kwant.net.pl` host, with the expected `/produkt/<slug>` path for product requests.
 
 This is a foundation boundary only. Existing OBI-specific UI, conversation persistence, advisor tool contracts, `LocalProduct`, OBIK fields, and store-number flows remain intentionally unchanged in this PR. They should move behind the neutral boundary incrementally when the second provider is introduced, rather than through a broad rename/rewrite now.
 

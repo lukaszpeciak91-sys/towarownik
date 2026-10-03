@@ -144,3 +144,11 @@ The currently planned AI capability stage is complete after this selective web-s
 - Nearby-store fallback behavior
 - Product images
 - Final Play release polish
+
+
+## 2026-10-03 — KWANT provider integration
+
+- Added `kwant-pl` behind the neutral `ProductProvider` boundary using the researched public KWANT frontend contract.
+- Added provider-owned KWANT branch metadata/`departmentCookie` construction and selected-branch stock parsing.
+- Added explicit neutral price scope so KWANT public prices are `ONLINE` while current OBI prices remain `BRANCH`.
+- Production provider registry now resolves both OBI and KWANT; UI/advisor/persistence remain unchanged.
