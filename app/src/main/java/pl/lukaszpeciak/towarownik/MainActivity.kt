@@ -854,7 +854,15 @@ private fun TowarownikApp() {
                     onNewCase = ::newAdvisorCase,
                     onOpenSearch = ::openManualSearch,
                     workingProfile = selectedWorkingProfile,
-                    profileBranches = profileBranches,
+                    profileBranches =
+                        if (
+                            selectedWorkingProfile.providerId ==
+                                globalWorkingProfile.providerId
+                        ) {
+                            profileBranches
+                        } else {
+                            emptyList()
+                        },
                     profileSelectorEnabled =
                         activeConversationId == null &&
                             advisorJob?.isActive != true,
@@ -874,7 +882,7 @@ private fun TowarownikApp() {
                     navigateBackFrom(AppSurface.MANUAL_SEARCH)
                 },
             )
-            ManualObiSearchScreen(
+            ManualSearchScreen(
                 query = manualQuery,
                 state = manualState,
                 onQueryChange = { value ->
@@ -2194,7 +2202,7 @@ private fun AdvisorErrorBubble(
 }
 
 @Composable
-private fun ManualObiSearchScreen(
+private fun ManualSearchScreen(
     query: String,
     state: ManualSearchUiState,
     onQueryChange: (String) -> Unit,
