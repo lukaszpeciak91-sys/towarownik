@@ -32,6 +32,9 @@ RESEARCH_TERMS = (
     "getUnauthDepartmentCookie",
     "department_stock_id",
     "480495",
+    "r.setCookie=function",
+    "document.cookie",
+    "path:\"/\"",
 )
 
 
