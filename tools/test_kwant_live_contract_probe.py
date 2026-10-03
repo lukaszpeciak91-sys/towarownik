@@ -257,6 +257,43 @@ class ProductParsingTest(unittest.TestCase):
         )
 
 
+class _FakeCandidate:
+    def __init__(self, text):
+        self._text = text
+
+    def inner_text(self, timeout=0):
+        return self._text
+
+
+class _FakeLocator:
+    def __init__(self, items):
+        self._items = items
+
+    def count(self):
+        return len(self._items)
+
+    def nth(self, index):
+        return self._items[index]
+
+
+class _GenericBranchListPage:
+    def locator(self, selector):
+        if "[class*='branch']" in selector:
+            return _FakeLocator(
+                [_FakeCandidate("Oddział Nowy Sącz Wybierz oddział")]
+            )
+        return _FakeLocator([])
+
+
+class _SelectedBranchPage:
+    def locator(self, selector):
+        if "[aria-current='true']" in selector:
+            return _FakeLocator(
+                [_FakeCandidate("Aktualny oddział Nowy Sącz")]
+            )
+        return _FakeLocator([])
+
+
 class BranchEvidenceTest(unittest.TestCase):
     def test_page_identifier_is_not_automatically_backend_identifier(self):
         summary = probe.build_safe_summary(
@@ -277,6 +314,76 @@ class BranchEvidenceTest(unittest.TestCase):
             summary["branch"]["backendBranchIdentifier"],
         )
 
+    def test_generic_branch_list_label_is_not_selection_evidence(self):
+        self.assertFalse(
+            probe.branch_marker(
+                _GenericBranchListPage(),
+                "Nowy Sącz",
+            )
+        )
+
+        observed, persisted = probe.derive_branch_selection_status(
+            branch_click_ok=True,
+            marker_after_select=False,
+            marker_after_reload=False,
+            changed={
+                "cookies": [],
+                "localStorage": [],
+                "sessionStorage": [],
+            },
+            persisted={
+                "cookies": [],
+                "localStorage": [],
+                "sessionStorage": [],
+            },
+            network=[],
+        )
+
+        self.assertIsNone(observed)
+        self.assertIsNone(persisted)
+        summary = probe.build_safe_summary(
+            requested_branch_label="Nowy Sącz",
+            selection_observed=observed,
+            selection_persisted=persisted,
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            summary["branch"]["selectionObserved"],
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            summary["branch"]["selectionPersisted"],
+        )
+
+    def test_explicit_selected_branch_ui_is_valid_selection_evidence(self):
+        self.assertTrue(
+            probe.branch_marker(
+                _SelectedBranchPage(),
+                "Nowy Sącz",
+            )
+        )
+
+    def test_branch_related_state_change_and_reload_can_prove_selection(self):
+        observed, persisted = probe.derive_branch_selection_status(
+            branch_click_ok=True,
+            marker_after_select=False,
+            marker_after_reload=False,
+            changed={
+                "cookies": ["kwant.net.pl|/|selectedBranch"],
+                "localStorage": [],
+                "sessionStorage": [],
+            },
+            persisted={
+                "cookies": ["kwant.net.pl|/|selectedBranch"],
+                "localStorage": [],
+                "sessionStorage": [],
+            },
+            network=[],
+        )
+
+        self.assertTrue(observed)
+        self.assertTrue(persisted)
+
     def test_backend_identifier_requires_observed_selection_request_field(self):
         network = [
             {
@@ -293,6 +400,91 @@ class BranchEvidenceTest(unittest.TestCase):
         self.assertEqual(
             "NS-12",
             probe.infer_backend_branch_identifier(network),
+        )
+
+
+class SearchEvidenceTest(unittest.TestCase):
+    def test_unrelated_product_links_do_not_prove_search_support(self):
+        status = probe.safe_search_status(
+            interaction_ok=True,
+            target_found=False,
+            query_specific_evidence=False,
+            any_products=True,
+            body_text=(
+                "Polecane produkty "
+                "/produkt/unrelated-one /produkt/unrelated-two"
+            ),
+        )
+
+        self.assertEqual(probe.UNKNOWN, status)
+
+    def test_query_specific_success_with_products_is_supported(self):
+        status = probe.safe_search_status(
+            interaction_ok=True,
+            target_found=False,
+            query_specific_evidence=True,
+            any_products=True,
+            body_text="Wyniki wyszukiwania dla MBN116E",
+        )
+
+        self.assertEqual("SUPPORTED", status)
+
+    def test_explicit_no_results_remains_unsupported(self):
+        status = probe.safe_search_status(
+            interaction_ok=True,
+            target_found=False,
+            query_specific_evidence=True,
+            any_products=False,
+            body_text="Brak wyników dla podanego zapytania",
+        )
+
+        self.assertEqual("UNSUPPORTED", status)
+
+    def test_search_request_requires_submitted_query_value(self):
+        network = [
+            {
+                "action": "search:article",
+                "path": "/search",
+                "query": {
+                    "safeValues": {
+                        "query": "MBN116E",
+                    }
+                },
+                "body": None,
+            }
+        ]
+
+        self.assertTrue(
+            probe.search_request_observed(
+                network,
+                action="search:article",
+                query="MBN116E",
+            )
+        )
+        self.assertFalse(
+            probe.search_request_observed(
+                network,
+                action="search:article",
+                query="6743009",
+            )
+        )
+
+    def test_matching_product_url_does_not_fall_back_to_unrelated_link(self):
+        result = {
+            "_links": [
+                {
+                    "url": (
+                        "https://kwant.net.pl/produkt/"
+                        "unrelated-product-580"
+                    ),
+                    "text": "Polecany inny produkt",
+                }
+            ]
+        }
+
+        self.assertEqual(
+            "",
+            probe.matching_product_url(result, "MBN116E"),
         )
 
 
