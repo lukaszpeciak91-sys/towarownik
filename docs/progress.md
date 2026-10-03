@@ -152,3 +152,4 @@ The currently planned AI capability stage is complete after this selective web-s
 - Added provider-owned KWANT branch metadata/`departmentCookie` construction and selected-branch stock parsing.
 - Added explicit neutral price scope so KWANT public prices are `ONLINE` while current OBI prices remain `BRANCH`.
 - Production provider registry now resolves both OBI and KWANT; UI/advisor/persistence remain unchanged.
+- Fresh KWANT lookup route is live-proven: `/produkt/580` -> HTTP 308 -> canonical `...-580` product URL -> HTTP 200, with final public product ID `580`; the reusable live probe records only safe status/path/URL/product-ID evidence.
