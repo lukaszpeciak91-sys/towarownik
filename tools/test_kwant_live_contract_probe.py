@@ -283,6 +283,101 @@ class _FakeLocator:
         return self._items[index]
 
 
+class _FakeBranchButton:
+    def __init__(self, token, *, visible=True, enabled=True):
+        self.token = token
+        self._visible = visible
+        self._enabled = enabled
+        self.clicked = False
+
+    def is_visible(self):
+        return self._visible
+
+    def is_enabled(self):
+        return self._enabled
+
+    def click(self, timeout=0):
+        self.clicked = True
+
+
+class _FakeBranchLink:
+    def __init__(self, href, text, parent=None):
+        self.href = href
+        self.text = text
+        self.parent = parent
+
+    def get_attribute(self, name):
+        return self.href if name == "href" else None
+
+    def inner_text(self, timeout=0):
+        return self.text
+
+    def locator(self, selector):
+        if selector == "xpath=.." and self.parent is not None:
+            return _FakeLocatorWithFirst([self.parent])
+        return _FakeLocatorWithFirst([])
+
+
+class _FakeBranchCard:
+    def __init__(self, text, links, buttons, parent=None):
+        self.text = text
+        self.links = links
+        self.buttons = buttons
+        self.parent = parent
+        for link in self.links:
+            link.parent = self
+
+    def inner_text(self, timeout=0):
+        return self.text
+
+    def locator(self, selector):
+        if selector == "xpath=..":
+            return _FakeLocatorWithFirst(
+                [self.parent] if self.parent is not None else []
+            )
+        if "a[href*='hurtownia-elektryczna']" in selector:
+            return _FakeLocatorWithFirst(self.links)
+        return _FakeLocatorWithFirst([])
+
+    def get_by_role(self, role, name=None):
+        if role == "button":
+            return _FakeLocatorWithFirst(self.buttons)
+        return _FakeLocatorWithFirst([])
+
+
+class _FakeLocatorWithFirst(_FakeLocator):
+    @property
+    def first(self):
+        return self._items[0]
+
+
+class _FakeBranchPage:
+    def __init__(self, url, cards):
+        self.url = url
+        self.links = [
+            link
+            for card in cards
+            for link in card.links
+        ]
+
+    def locator(self, selector):
+        if "a[href*='hurtownia-elektryczna']" in selector:
+            return _FakeLocatorWithFirst(self.links)
+        return _FakeLocatorWithFirst([])
+
+
+def _fake_branch_page(*, hrefs, buttons, card_text="Nowy Sącz Wybierz oddział"):
+    links = [
+        _FakeBranchLink(href, "Nowy Sącz")
+        for href in hrefs
+    ]
+    card = _FakeBranchCard(card_text, links, buttons)
+    return _FakeBranchPage(
+        "https://kwant.net.pl/lista-hurtowni-elektrycznych",
+        [card],
+    ), card
+
+
 class _GenericBranchListPage:
     def locator(self, selector):
         if "[class*='branch']" in selector:
@@ -401,7 +496,7 @@ class BranchTargetingTest(unittest.TestCase):
             )
         )
 
-    def test_ambiguous_or_missing_requested_branch_never_resolves(self):
+    def test_duplicate_candidates_same_branch_identity_resolve_but_missing_label_does_not(self):
         first = self.candidate(
             label="Nowy Sącz",
             page_url=(
@@ -412,20 +507,222 @@ class BranchTargetingTest(unittest.TestCase):
             button_token="first",
         )
         duplicate = dict(first)
+        duplicate["linkIndex"] = 1
         duplicate["buttonToken"] = "second"
 
-        self.assertIsNone(
-            probe.resolve_unique_branch_candidate(
-                [first, duplicate],
-                "Nowy Sącz",
-            )
+        resolved = probe.resolve_unique_branch_candidate(
+            [first, duplicate],
+            "Nowy Sącz",
         )
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual("first", resolved["buttonToken"])
         self.assertIsNone(
             probe.resolve_unique_branch_candidate(
                 [first],
                 "Kraków",
             )
         )
+
+    def test_three_raw_links_to_same_nowy_sacz_url_are_one_unique_identity(self):
+        url = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-nowy%20sacz/205"
+        )
+        candidate = self.candidate(
+            label="Nowy Sącz",
+            page_url=url,
+            card_text="Nowy Sącz Wybierz oddział",
+            branch_page_urls=[url, f"{url}/", url],
+            select_button_count=2,
+        )
+
+        self.assertEqual(
+            [url],
+            probe.unique_branch_page_urls(
+                candidate["branchPageUrls"],
+            ),
+        )
+        self.assertTrue(
+            probe.branch_target_candidate_valid(
+                candidate,
+                "Nowy Sącz",
+            )
+        )
+
+    def test_two_matching_buttons_keep_candidate_valid_and_first_visible_enabled_is_selected(self):
+        url = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-nowy%20sacz/205"
+        )
+        first = _FakeBranchButton("first")
+        second = _FakeBranchButton("second")
+        page, _ = _fake_branch_page(
+            hrefs=[url, url, url],
+            buttons=[first, second],
+        )
+
+        candidates = probe.enumerate_branch_candidates(
+            page,
+            "Nowy Sącz",
+        )
+        target = probe.resolve_unique_branch_candidate(
+            candidates,
+            "Nowy Sącz",
+        )
+        selected = probe.validated_branch_button(
+            page,
+            candidate=target,
+            branch_label="Nowy Sącz",
+        )
+
+        self.assertIsNotNone(target)
+        self.assertEqual(2, target["selectButtonCount"])
+        self.assertIs(first, selected)
+
+    def test_hidden_or_disabled_first_button_falls_through_to_visible_enabled_second(self):
+        url = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-nowy%20sacz/205"
+        )
+        hidden = _FakeBranchButton(
+            "hidden",
+            visible=False,
+            enabled=True,
+        )
+        disabled = _FakeBranchButton(
+            "disabled",
+            visible=True,
+            enabled=False,
+        )
+        usable = _FakeBranchButton(
+            "usable",
+            visible=True,
+            enabled=True,
+        )
+        page, _ = _fake_branch_page(
+            hrefs=[url, url],
+            buttons=[hidden, disabled, usable],
+        )
+
+        target = probe.resolve_unique_branch_candidate(
+            probe.enumerate_branch_candidates(
+                page,
+                "Nowy Sącz",
+            ),
+            "Nowy Sącz",
+        )
+        selected = probe.validated_branch_button(
+            page,
+            candidate=target,
+            branch_label="Nowy Sącz",
+        )
+
+        self.assertIs(usable, selected)
+
+    def test_multiple_raw_links_to_different_branch_urls_are_rejected(self):
+        nowy_sacz = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-nowy%20sacz/205"
+        )
+        bialystok = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-bialystok/216"
+        )
+        candidate = self.candidate(
+            label="Nowy Sącz",
+            page_url=nowy_sacz,
+            card_text=(
+                "Białystok Wybierz oddział "
+                "Nowy Sącz Wybierz oddział"
+            ),
+            branch_page_urls=[
+                nowy_sacz,
+                bialystok,
+                nowy_sacz,
+            ],
+            select_button_count=3,
+        )
+
+        self.assertFalse(
+            probe.branch_target_candidate_valid(
+                candidate,
+                "Nowy Sącz",
+            )
+        )
+        self.assertIsNone(
+            probe.resolve_unique_branch_candidate(
+                [candidate],
+                "Nowy Sącz",
+            )
+        )
+
+    def test_generic_multi_branch_ancestor_with_multiple_buttons_never_selects(self):
+        nowy_sacz = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-nowy%20sacz/205"
+        )
+        bialystok = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-bialystok/216"
+        )
+        page, _ = _fake_branch_page(
+            hrefs=[bialystok, nowy_sacz],
+            buttons=[
+                _FakeBranchButton("first"),
+                _FakeBranchButton("second"),
+            ],
+            card_text=(
+                "Białystok Wybierz oddział "
+                "Nowy Sącz Wybierz oddział"
+            ),
+        )
+
+        self.assertEqual(
+            [],
+            probe.enumerate_branch_candidates(
+                page,
+                "Nowy Sącz",
+            ),
+        )
+
+    def test_no_visible_enabled_button_returns_none_without_clicking(self):
+        url = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-nowy%20sacz/205"
+        )
+        hidden = _FakeBranchButton(
+            "hidden",
+            visible=False,
+            enabled=True,
+        )
+        disabled = _FakeBranchButton(
+            "disabled",
+            visible=True,
+            enabled=False,
+        )
+        page, _ = _fake_branch_page(
+            hrefs=[url, url],
+            buttons=[hidden, disabled],
+        )
+
+        target = probe.resolve_unique_branch_candidate(
+            probe.enumerate_branch_candidates(
+                page,
+                "Nowy Sącz",
+            ),
+            "Nowy Sącz",
+        )
+        selected = probe.validated_branch_button(
+            page,
+            candidate=target,
+            branch_label="Nowy Sącz",
+        )
+
+        self.assertIsNotNone(target)
+        self.assertIsNone(selected)
+        self.assertFalse(hidden.clicked)
+        self.assertFalse(disabled.clicked)
 
     def test_branch_card_text_can_resolve_when_href_slug_omits_label(self):
         numeric_href = self.candidate(

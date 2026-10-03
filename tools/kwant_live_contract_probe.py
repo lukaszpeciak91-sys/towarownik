@@ -14,7 +14,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import parse_qsl, unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote, urljoin, urlsplit, urlunsplit
 
 KWANT_ORIGIN = "https://kwant.net.pl"
 KWANT_HOST = "kwant.net.pl"
@@ -502,18 +502,53 @@ def branch_label_matches(
     )
 
 
-def target_branch_page_path(branch_page_url: str) -> str:
-    expected, safe = sanitize_kwant_url(branch_page_url)
+def canonical_branch_page_url(
+    raw_url: str,
+    base_url: str = KWANT_ORIGIN,
+) -> str:
+    safe = sanitize_public_url(raw_url, base_url)
+    if safe.startswith("REDACTED_"):
+        return ""
+    expected, kwant_safe = sanitize_kwant_url(safe)
     if not expected:
+        return ""
+    parsed = urlsplit(kwant_safe)
+    decoded_path = unquote(parsed.path or "/")
+    canonical_path = quote(
+        decoded_path.rstrip("/") or "/",
+        safe="/:@-._~",
+    )
+    return urlunsplit(("https", KWANT_HOST, canonical_path, "", ""))
+
+
+def unique_branch_page_urls(
+    raw_urls: Iterable[str],
+    base_url: str = KWANT_ORIGIN,
+) -> list[str]:
+    unique: list[str] = []
+    for raw_url in raw_urls:
+        canonical = canonical_branch_page_url(raw_url, base_url)
+        if canonical and canonical not in unique:
+            unique.append(canonical)
+    return unique
+
+
+def target_branch_page_path(branch_page_url: str) -> str:
+    canonical = canonical_branch_page_url(branch_page_url)
+    if not canonical:
         return UNKNOWN
-    return urlsplit(safe).path or "/"
+    return urlsplit(canonical).path or "/"
 
 
 def branch_target_candidate_valid(
     candidate: dict[str, Any],
     branch_label: str,
 ) -> bool:
-    page_url = str(candidate.get("pageUrl", ""))
+    page_url = canonical_branch_page_url(
+        str(candidate.get("pageUrl", ""))
+    )
+    if not page_url:
+        return False
     if not branch_label_matches(
         branch_label,
         link_text=str(candidate.get("linkText", "")),
@@ -526,14 +561,16 @@ def branch_target_candidate_valid(
         card_text=str(candidate.get("cardText", "")),
     ):
         return False
-    branch_urls = [
-        str(value)
-        for value in candidate.get("branchPageUrls", [])
-        if isinstance(value, str)
-    ]
-    if len(branch_urls) != 1 or branch_urls[0] != page_url:
+    branch_urls = unique_branch_page_urls(
+        [
+            str(value)
+            for value in candidate.get("branchPageUrls", [])
+            if isinstance(value, str)
+        ]
+    )
+    if branch_urls != [page_url]:
         return False
-    return candidate.get("selectButtonCount") == 1
+    return int(candidate.get("selectButtonCount", 0)) >= 1
 
 
 def resolve_unique_branch_candidate(
@@ -545,7 +582,18 @@ def resolve_unique_branch_candidate(
         for candidate in candidates
         if branch_target_candidate_valid(candidate, branch_label)
     ]
-    return matching[0] if len(matching) == 1 else None
+    by_branch_url: dict[str, dict[str, Any]] = {}
+    for candidate in matching:
+        canonical = canonical_branch_page_url(
+            str(candidate.get("pageUrl", ""))
+        )
+        if canonical and canonical not in by_branch_url:
+            by_branch_url[canonical] = candidate
+    return (
+        next(iter(by_branch_url.values()))
+        if len(by_branch_url) == 1
+        else None
+    )
 
 
 def parse_number_text(value: str) -> str:
@@ -1226,6 +1274,42 @@ def run_search(
     }
 
 
+def branch_page_urls_in_card(
+    card: Any,
+    *,
+    page_url: str,
+) -> list[str]:
+    branch_links = card.locator(
+        "a[href*='hurtownia-elektryczna']"
+    )
+    raw_urls: list[str] = []
+    for index in range(min(branch_links.count(), 12)):
+        href = branch_links.nth(index).get_attribute("href") or ""
+        raw_urls.append(href)
+    return unique_branch_page_urls(raw_urls, page_url)
+
+
+def matching_branch_buttons(card: Any) -> Any:
+    return card.get_by_role(
+        "button",
+        name=re.compile(
+            r"Wybierz\s+oddzia[lł]",
+            re.IGNORECASE,
+        ),
+    )
+
+
+def first_visible_enabled_button(buttons: Any) -> Any | None:
+    for index in range(buttons.count()):
+        button = buttons.nth(index)
+        try:
+            if button.is_visible() and button.is_enabled():
+                return button
+        except Exception:
+            continue
+    return None
+
+
 def branch_card_for_link(
     link: Any,
     *,
@@ -1233,6 +1317,12 @@ def branch_card_for_link(
     page_url: str,
     expected_page_url: str,
 ) -> Any | None:
+    canonical_expected = canonical_branch_page_url(
+        expected_page_url,
+        page_url,
+    )
+    if not canonical_expected:
+        return None
     try:
         current = link
         for _ in range(16):
@@ -1241,38 +1331,18 @@ def branch_card_for_link(
                 return None
             card = parent.first
             card_text = normalize_text(card.inner_text(timeout=500))
-            branch_links = card.locator(
-                "a[href*='hurtownia-elektryczna']"
+            branch_page_urls = branch_page_urls_in_card(
+                card,
+                page_url=page_url,
             )
-            branch_page_urls: list[str] = []
-            for index in range(min(branch_links.count(), 12)):
-                href = (
-                    branch_links.nth(index).get_attribute("href")
-                    or ""
-                )
-                safe = sanitize_public_url(href, page_url)
-                expected_kwant, _ = sanitize_kwant_url(safe)
-                if (
-                    not safe.startswith("REDACTED_")
-                    and expected_kwant
-                    and safe not in branch_page_urls
-                ):
-                    branch_page_urls.append(safe)
-
-            buttons = card.get_by_role(
-                "button",
-                name=re.compile(
-                    r"Wybierz\s+oddzia[lł]",
-                    re.IGNORECASE,
-                ),
-            )
+            buttons = matching_branch_buttons(card)
             if (
                 branch_label_matches(
                     branch_label,
                     card_text=card_text,
                 )
-                and branch_page_urls == [expected_page_url]
-                and buttons.count() == 1
+                and branch_page_urls == [canonical_expected]
+                and buttons.count() >= 1
             ):
                 return card
             current = card
@@ -1290,11 +1360,11 @@ def branch_candidate_from_link(
 ) -> dict[str, Any] | None:
     try:
         raw_href = link.get_attribute("href") or ""
-        safe_url = sanitize_public_url(raw_href, page_url)
-        if safe_url.startswith("REDACTED_"):
-            return None
-        expected_kwant, _ = sanitize_kwant_url(safe_url)
-        if not expected_kwant:
+        canonical_url = canonical_branch_page_url(
+            raw_href,
+            page_url,
+        )
+        if not canonical_url:
             return None
         link_text = normalize_text(link.inner_text(timeout=300))
 
@@ -1302,7 +1372,7 @@ def branch_candidate_from_link(
             link,
             branch_label=branch_label,
             page_url=page_url,
-            expected_page_url=safe_url,
+            expected_page_url=canonical_url,
         )
         if card is None:
             return None
@@ -1310,36 +1380,20 @@ def branch_candidate_from_link(
         if not branch_label_matches(
             branch_label,
             link_text=link_text,
-            page_url=safe_url,
+            page_url=canonical_url,
             card_text=card_text,
         ):
             return None
-        branch_links = card.locator(
-            "a[href*='hurtownia-elektryczna']"
-        )
-        branch_page_urls: list[str] = []
-        for index in range(min(branch_links.count(), 8)):
-            href = branch_links.nth(index).get_attribute("href") or ""
-            safe = sanitize_public_url(href, page_url)
-            expected_kwant, _ = sanitize_kwant_url(safe)
-            if (
-                not safe.startswith("REDACTED_")
-                and expected_kwant
-                and safe not in branch_page_urls
-            ):
-                branch_page_urls.append(safe)
 
-        buttons = card.get_by_role(
-            "button",
-            name=re.compile(
-                r"Wybierz\s+oddzia[lł]",
-                re.IGNORECASE,
-            ),
+        branch_page_urls = branch_page_urls_in_card(
+            card,
+            page_url=page_url,
         )
+        buttons = matching_branch_buttons(card)
         return {
             "linkIndex": link_index,
             "linkText": link_text,
-            "pageUrl": safe_url,
+            "pageUrl": canonical_url,
             "cardText": card_text,
             "branchPageUrls": branch_page_urls,
             "selectButtonCount": buttons.count(),
@@ -1393,7 +1447,14 @@ def validated_branch_button(
         )
         if refreshed is None:
             return None
-        if refreshed.get("pageUrl") != candidate.get("pageUrl"):
+
+        expected_url = canonical_branch_page_url(
+            str(candidate.get("pageUrl", ""))
+        )
+        refreshed_url = canonical_branch_page_url(
+            str(refreshed.get("pageUrl", ""))
+        )
+        if not expected_url or refreshed_url != expected_url:
             return None
         if not branch_target_candidate_valid(
             refreshed,
@@ -1405,20 +1466,21 @@ def validated_branch_button(
             link,
             branch_label=branch_label,
             page_url=page.url,
-            expected_page_url=str(candidate.get("pageUrl", "")),
+            expected_page_url=expected_url,
         )
         if card is None:
             return None
-        buttons = card.get_by_role(
-            "button",
-            name=re.compile(
-                r"Wybierz\s+oddzia[lł]",
-                re.IGNORECASE,
-            ),
+
+        branch_urls = branch_page_urls_in_card(
+            card,
+            page_url=page.url,
         )
-        if buttons.count() != 1:
+        if branch_urls != [expected_url]:
             return None
-        return buttons.first
+
+        return first_visible_enabled_button(
+            matching_branch_buttons(card)
+        )
     except Exception:
         return None
 
