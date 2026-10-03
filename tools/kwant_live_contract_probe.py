@@ -1207,17 +1207,9 @@ def build_safe_summary(
         "network": network or [],
         "state": state or {},
         "frontendClues": frontend_clues or [],
-        "departmentCookieResearch": department_cookie_research or {
-            "departmentCookieConstructorFound": UNKNOWN,
-            "constructorSourcePath": UNKNOWN,
-            "valueFormat": UNKNOWN,
-            "sourceBranchFields": UNKNOWN,
-            "encodingSteps": UNKNOWN,
-            "cookieOptions": UNKNOWN,
-            "reproducibleFromPublicData": UNKNOWN,
-            "constructedValueMatchesObserved": UNKNOWN,
-            "backendBranchIdentifier": UNKNOWN,
-        },
+        "departmentCookieResearch": safe_department_cookie_research(
+            department_cookie_research
+        ),
     }
 
 
@@ -1912,6 +1904,167 @@ def bounded_cookie_excerpt(
     return text[start:end]
 
 
+def analyze_department_cookie_constructor(
+    script_path: str,
+    excerpt: str,
+) -> dict[str, Any]:
+    if DEPARTMENT_COOKIE_NAME not in excerpt:
+        return {
+            "departmentCookieConstructorFound": False,
+            "constructorSourcePath": UNKNOWN,
+            "valueFormat": UNKNOWN,
+            "encodingSteps": UNKNOWN,
+            "cookieOptions": UNKNOWN,
+        }
+
+    has_setter = bool(
+        re.search(
+            r"setCookie\)\([^,]+,JSON\.stringify\([^)]*\),\{expires:",
+            excerpt,
+        )
+        or (
+            "setCookie" in excerpt
+            and "JSON.stringify" in excerpt
+            and "expires:" in excerpt
+        )
+    )
+    has_getter = "getCookie" in excerpt and "JSON.parse" in excerpt
+    if not (has_setter and has_getter):
+        return {
+            "departmentCookieConstructorFound": UNKNOWN,
+            "constructorSourcePath": UNKNOWN,
+            "valueFormat": UNKNOWN,
+            "encodingSteps": UNKNOWN,
+            "cookieOptions": UNKNOWN,
+        }
+
+    expires = (
+        "now + 360 days"
+        if re.search(r"add\(360,[\"']days[\"']\)", excerpt)
+        else UNKNOWN
+    )
+    return {
+        "departmentCookieConstructorFound": True,
+        "constructorSourcePath": script_path or UNKNOWN,
+        "valueFormat": "JSON object",
+        "encodingSteps": ["JSON.stringify"],
+        "cookieOptions": {"expires": expires},
+    }
+
+
+def safe_department_cookie_research(
+    research: dict[str, Any] | None,
+) -> dict[str, Any]:
+    source = research or {}
+    allowed = {
+        "departmentCookieConstructorFound",
+        "constructorSourcePath",
+        "valueFormat",
+        "sourceBranchFields",
+        "encodingSteps",
+        "cookieOptions",
+        "reproducibleFromPublicData",
+        "constructedValueMatchesObserved",
+        "backendBranchIdentifier",
+        "cookieObjectFieldNames",
+        "matchedBundles",
+        "scannedSameOriginScriptCount",
+    }
+    result: dict[str, Any] = {
+        "departmentCookieConstructorFound": UNKNOWN,
+        "constructorSourcePath": UNKNOWN,
+        "valueFormat": UNKNOWN,
+        "sourceBranchFields": UNKNOWN,
+        "encodingSteps": UNKNOWN,
+        "cookieOptions": UNKNOWN,
+        "reproducibleFromPublicData": UNKNOWN,
+        "constructedValueMatchesObserved": UNKNOWN,
+        "backendBranchIdentifier": UNKNOWN,
+    }
+    for key in allowed:
+        if key not in source:
+            continue
+        value = source[key]
+        if key in {
+            "constructorSourcePath",
+            "valueFormat",
+            "backendBranchIdentifier",
+        }:
+            rendered = str(value)
+            if (
+                len(rendered) <= 500
+                and not SECRET_KEY_RE.search(rendered)
+            ):
+                result[key] = rendered
+        elif key in {
+            "departmentCookieConstructorFound",
+            "reproducibleFromPublicData",
+            "constructedValueMatchesObserved",
+            "scannedSameOriginScriptCount",
+        }:
+            if isinstance(value, (bool, int)) or value == UNKNOWN:
+                result[key] = value
+        elif key in {
+            "sourceBranchFields",
+            "cookieObjectFieldNames",
+        }:
+            if isinstance(value, dict):
+                result[key] = {
+                    str(k)[:120]: str(v)[:120]
+                    for k, v in value.items()
+                    if not SECRET_KEY_RE.search(str(k))
+                    and not SECRET_KEY_RE.search(str(v))
+                }
+            elif isinstance(value, list):
+                result[key] = [
+                    str(item)[:120]
+                    for item in value
+                    if not SECRET_KEY_RE.search(str(item))
+                ][:40]
+            elif value == UNKNOWN:
+                result[key] = UNKNOWN
+        elif key == "encodingSteps":
+            if isinstance(value, list):
+                result[key] = [
+                    str(item)[:120]
+                    for item in value
+                    if not SECRET_KEY_RE.search(str(item))
+                ][:20]
+            elif value == UNKNOWN:
+                result[key] = UNKNOWN
+        elif key == "cookieOptions":
+            if isinstance(value, dict):
+                result[key] = {
+                    str(k)[:120]: (
+                        value[k]
+                        if isinstance(value[k], (bool, int))
+                        else str(value[k])[:160]
+                    )
+                    for k in value
+                    if not SECRET_KEY_RE.search(str(k))
+                }
+            elif value == UNKNOWN:
+                result[key] = UNKNOWN
+        elif key == "matchedBundles" and isinstance(value, list):
+            safe_matches = []
+            for item in value[:20]:
+                if not isinstance(item, dict):
+                    continue
+                safe_matches.append(
+                    {
+                        "scriptPath": str(
+                            item.get("scriptPath", UNKNOWN)
+                        )[:500],
+                        "markers": [
+                            str(marker)[:120]
+                            for marker in item.get("markers", [])[:40]
+                        ],
+                    }
+                )
+            result[key] = safe_matches
+    return result
+
+
 def cookie_code_markers(excerpt: str) -> list[str]:
     markers = (
         "JSON.stringify",
@@ -2021,19 +2174,34 @@ def collect_department_cookie_bundle_evidence(
         }
         for item in matched
     ]
+    constructor_analyses = [
+        analyze_department_cookie_constructor(
+            item["scriptPath"],
+            item["_excerpt"],
+        )
+        for item in matched
+    ]
+    confirmed = [
+        item
+        for item in constructor_analyses
+        if item["departmentCookieConstructorFound"] is True
+    ]
+    base = (
+        confirmed[0]
+        if len(confirmed) == 1
+        else {
+            "departmentCookieConstructorFound": (
+                False if not matched and script_sources else UNKNOWN
+            ),
+            "constructorSourcePath": UNKNOWN,
+            "valueFormat": UNKNOWN,
+            "encodingSteps": UNKNOWN,
+            "cookieOptions": UNKNOWN,
+        }
+    )
     return {
-        "departmentCookieConstructorFound": bool(safe_matches)
-        if script_sources
-        else UNKNOWN,
-        "constructorSourcePath": (
-            safe_matches[0]["scriptPath"]
-            if len(safe_matches) == 1
-            else UNKNOWN
-        ),
-        "valueFormat": UNKNOWN,
+        **base,
         "sourceBranchFields": UNKNOWN,
-        "encodingSteps": UNKNOWN,
-        "cookieOptions": UNKNOWN,
         "reproducibleFromPublicData": UNKNOWN,
         "constructedValueMatchesObserved": UNKNOWN,
         "backendBranchIdentifier": UNKNOWN,
