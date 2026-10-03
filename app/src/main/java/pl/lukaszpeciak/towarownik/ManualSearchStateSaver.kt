@@ -118,6 +118,7 @@ internal fun decodeManualSearchState(raw: String): ManualSearchUiState =
 
             "product" -> {
                 val product = root.product("product")
+                    ?: root.legacyProduct()
                     ?: return@runCatching ManualSearchUiState.Idle
                 ManualSearchUiState.Product(product)
             }
@@ -248,5 +249,29 @@ private fun JsonObject.product(key: String): VerifiedProductUiModel? {
         branchId = branchId,
         articleNumber = value.string("articleNumber"),
         branchLabel = value.string("branchLabel"),
+    )
+}
+
+
+private fun JsonObject.legacyProduct(): VerifiedProductUiModel? {
+    val name = string("name") ?: return null
+    val obik = string("obik") ?: return null
+    val url = string("url") ?: return null
+    val store = string("store") ?: DEFAULT_OBI_STORE_NUMBER
+    return VerifiedProductUiModel(
+        name = name,
+        obik = obik,
+        grossPrice = string("price")?.let(::BigDecimal),
+        stock = this["stock"]
+            ?.takeUnless { it is JsonNull }
+            ?.jsonPrimitive
+            ?.intOrNull,
+        productUrl = url,
+        verifiedAt = string("verifiedAt")?.toLongOrNull(),
+        storeNumber = store,
+        primaryImageUrl = string("imageUrl"),
+        providerId = OBI_PROVIDER_ID.value,
+        productId = obik,
+        branchId = store,
     )
 }
