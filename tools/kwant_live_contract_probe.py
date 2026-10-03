@@ -41,7 +41,10 @@ BRANCH_EVIDENCE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 BRANCH_SELECTION_PATH_RE = re.compile(
-    r"(branch|oddzial|oddzia[lł]|warehouse|magazyn|store)",
+    r"(?:(?:select|set|change|choose|wyb)[^?]*"
+    r"(?:branch|oddzial|oddzia[lł]|warehouse|magazyn|store)|"
+    r"(?:branch|oddzial|oddzia[lł]|warehouse|magazyn|store)[^?]*"
+    r"(?:select|set|change|choose|wyb))",
     re.IGNORECASE,
 )
 SEARCH_VALUE_KEY_RE = re.compile(
@@ -764,14 +767,14 @@ def safe_search_status(
     any_products: bool,
     body_text: str,
 ) -> str:
+    if interaction_ok and NO_RESULTS_RE.search(body_text or ""):
+        return "UNSUPPORTED"
     if (
         interaction_ok
         and query_specific_evidence
         and (target_found or any_products)
     ):
         return "SUPPORTED"
-    if interaction_ok and NO_RESULTS_RE.search(body_text or ""):
-        return "UNSUPPORTED"
     return UNKNOWN
 
 
@@ -975,9 +978,8 @@ def branch_marker(page: Any, branch_label: str) -> bool:
         "[aria-current='true'],[aria-current='page'],"
         "[aria-selected='true'],"
         "[data-state='selected'],[data-state='active'],"
-        "[class*='selected'],[class*='active'],[class*='current'],"
-        "[class*='wybran'],[class*='aktywn'],"
-        "[id*='selected'],[id*='active'],[id*='current']"
+        "[class~='selected'],[class~='active'],[class~='current'],"
+        "[class~='wybrany'],[class~='aktywny']"
     )
     try:
         candidates = page.locator(selector)
