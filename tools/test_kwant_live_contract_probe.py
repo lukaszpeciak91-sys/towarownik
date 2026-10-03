@@ -1177,12 +1177,32 @@ class DepartmentCookieConstructorResearchTest(unittest.TestCase):
         'let a=()=>dayjs().add(360,"days").toDate();'
         'let o="departmentCookie";'
         'getUnauthDepartmentCookie=()=>{let e=getCookie(o);'
-        'return e?JSON.parse(`${e}`):null};'
+        'return e?JSON.parse(e):null};'
         'setUnauthDepartmentCookie=e=>{'
-        'setCookie(o,JSON.stringify(e),{expires:a()})}'
+        'setCookie(o,JSON.stringify(e),{expires:a()})};'
+        'useUserStockDepartment=()=>{'
+        'let{department_stock_id:e,department_stock_name:t,'
+        'department_stock_postcode:r,department_stock_street:a}=p;'
+        'return{department_stock_id:e,department_stock_name:t,'
+        'department_stock_postcode:r,department_stock_street:a};'
+        'f=e=>setUnauthDepartmentCookie(e)}'
     )
 
-    def test_constructor_parser_recognizes_json_stringify_and_expiry(self):
+    PUBLIC_BRANCH = {
+        "department_id": 205,
+        "city": "Nowy Sącz",
+        "name": "Nowy Sącz",
+        "postcode": "33-300",
+        "street": "Tarnowska 149",
+    }
+    COOKIE_OBJECT = {
+        "department_stock_id": 205,
+        "department_stock_name": "Nowy Sącz",
+        "department_stock_postcode": "33-300",
+        "department_stock_street": "Tarnowska 149",
+    }
+
+    def test_real_style_setter_getter_constructor_is_confirmed(self):
         result = probe.analyze_department_cookie_constructor(
             "/_next/static/chunks/example.js",
             self.CONSTRUCTOR_EXCERPT,
@@ -1195,65 +1215,49 @@ class DepartmentCookieConstructorResearchTest(unittest.TestCase):
             "/_next/static/chunks/example.js",
             result["constructorSourcePath"],
         )
-        self.assertEqual("JSON object", result["valueFormat"])
         self.assertEqual(
-            ["JSON.stringify"],
+            "JSON serialized branch object",
+            result["valueFormat"],
+        )
+        self.assertEqual(
+            ["JSON.stringify -> cookie value"],
             result["encodingSteps"],
         )
         self.assertEqual(
-            {"expires": "now + 360 days"},
+            {"expires": "360 days"},
             result["cookieOptions"],
         )
 
-    def test_constructor_parser_keeps_absent_or_ambiguous_evidence_unknown(self):
-        absent = probe.analyze_department_cookie_constructor(
-            "/_next/static/chunks/unrelated.js",
-            "console.log('no cookie constructor here')",
+    def test_getter_must_read_department_cookie_with_json_parse(self):
+        confirmed = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/example.js",
+            self.CONSTRUCTOR_EXCERPT,
         )
-        ambiguous = probe.analyze_department_cookie_constructor(
-            "/_next/static/chunks/partial.js",
-            'let o="departmentCookie";getCookie(o)',
+        missing_parse = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/example.js",
+            self.CONSTRUCTOR_EXCERPT.replace(
+                "JSON.parse(e)",
+                "String(e)",
+            ),
         )
 
+        self.assertTrue(
+            confirmed["departmentCookieConstructorFound"]
+        )
         self.assertEqual(
             probe.UNKNOWN,
-            absent["departmentCookieConstructorFound"],
+            missing_parse["departmentCookieConstructorFound"],
         )
+
+    def test_branch_fields_are_extracted_only_from_confirmed_use_path(self):
+        result = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/example.js",
+            self.CONSTRUCTOR_EXCERPT,
+        )
+
         self.assertEqual(
-            probe.UNKNOWN,
-            ambiguous["departmentCookieConstructorFound"],
-        )
-
-    def test_percent_encoded_public_cookie_shape_is_recognized_without_exposure(self):
-        public_branch = {
-            "department_id": 205,
-            "name": "Nowy Sącz",
-            "postcode": "33-300",
-            "street": "Tarnowska 149",
-        }
-        logical = {
-            "department_stock_id": 205,
-            "department_stock_name": "Nowy Sącz",
-            "department_stock_postcode": "33-300",
-            "department_stock_street": "Tarnowska 149",
-        }
-        encoded = (
-            "%7B%22department_stock_id%22%3A205%2C"
-            "%22department_stock_name%22%3A%22Nowy%20S%C4%85cz%22%2C"
-            "%22department_stock_postcode%22%3A%2233-300%22%2C"
-            "%22department_stock_street%22%3A%22Tarnowska%20149%22%7D"
-        )
-
-        parsed, steps = probe.parse_department_cookie_object(encoded)
-        mapping = probe.public_scalar_field_mapping(
-            parsed,
-            public_branch,
-        )
-
-        self.assertEqual(logical, parsed)
-        self.assertEqual(
-            ["JSON.stringify", "percent-encoding-by-cookie-helper"],
-            steps,
+            list(probe.CONFIRMED_DEPARTMENT_COOKIE_FIELDS),
+            result["sourceBranchFields"],
         )
         self.assertEqual(
             {
@@ -1262,13 +1266,137 @@ class DepartmentCookieConstructorResearchTest(unittest.TestCase):
                 "department_stock_postcode": "postcode",
                 "department_stock_street": "street",
             },
-            mapping,
+            probe.public_branch_field_mapping(
+                result["sourceBranchFields"],
+                self.PUBLIC_BRANCH,
+            ),
+        )
+
+    def test_unrelated_department_cookie_string_does_not_confirm_constructor(self):
+        unrelated = (
+            'const label="departmentCookie";'
+            'const serialized=JSON.stringify(otherObject);'
+            'const options={expires:360};'
+            'console.log(label,serialized,options)'
+        )
+
+        result = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/unrelated.js",
+            unrelated,
+        )
+
+        self.assertEqual(
+            probe.UNKNOWN,
+            result["departmentCookieConstructorFound"],
+        )
+
+    def test_missing_or_ambiguous_constructor_stays_unknown(self):
+        absent = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/unrelated.js",
+            "console.log('no cookie constructor here')",
+        )
+        partial = probe.analyze_department_cookie_constructor(
+            "/_next/static/chunks/partial.js",
+            'let o="departmentCookie";getCookie(o);'
+            'JSON.parse("{}")',
+        )
+
+        self.assertEqual(
+            probe.UNKNOWN,
+            absent["departmentCookieConstructorFound"],
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            partial["departmentCookieConstructorFound"],
+        )
+
+    def test_public_branch_data_reproduces_confirmed_cookie_object(self):
+        fields = list(probe.CONFIRMED_DEPARTMENT_COOKIE_FIELDS)
+        mapping = probe.public_branch_field_mapping(
+            fields,
+            self.PUBLIC_BRANCH,
+        )
+
+        self.assertTrue(
+            probe.public_branch_reproduces_cookie_fields(
+                self.COOKIE_OBJECT,
+                mapping,
+                self.PUBLIC_BRANCH,
+            )
+        )
+        self.assertEqual(
+            "205",
+            probe.safe_department_stock_id(
+                self.COOKIE_OBJECT,
+                mapping,
+                self.PUBLIC_BRANCH,
+                "205",
+            ),
+        )
+
+    def test_controlled_serialized_comparison_true_false_and_unknown(self):
+        fields = list(probe.CONFIRMED_DEPARTMENT_COOKIE_FIELDS)
+        mapping = probe.public_branch_field_mapping(
+            fields,
+            self.PUBLIC_BRANCH,
+        )
+        observed = json.dumps(
+            self.COOKIE_OBJECT,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+        self.assertTrue(
+            probe.constructed_cookie_value_matches_observed(
+                observed,
+                mapping,
+                self.PUBLIC_BRANCH,
+            )
+        )
+        self.assertFalse(
+            probe.constructed_cookie_value_matches_observed(
+                observed.replace("Tarnowska 149", "Different street"),
+                mapping,
+                self.PUBLIC_BRANCH,
+            )
+        )
+        incomplete_public = dict(self.PUBLIC_BRANCH)
+        incomplete_public.pop("postcode")
+        self.assertIsNone(
+            probe.constructed_cookie_value_matches_observed(
+                observed,
+                probe.public_branch_field_mapping(
+                    fields,
+                    incomplete_public,
+                ),
+                incomplete_public,
+            )
+        )
+
+    def test_percent_encoded_observed_cookie_matches_without_exposure(self):
+        fields = list(probe.CONFIRMED_DEPARTMENT_COOKIE_FIELDS)
+        mapping = probe.public_branch_field_mapping(
+            fields,
+            self.PUBLIC_BRANCH,
+        )
+        encoded = (
+            "%7B%22department_stock_id%22%3A205%2C"
+            "%22department_stock_name%22%3A%22Nowy%20S%C4%85cz%22%2C"
+            "%22department_stock_postcode%22%3A%2233-300%22%2C"
+            "%22department_stock_street%22%3A%22Tarnowska%20149%22%7D"
+        )
+        parsed, steps = probe.parse_department_cookie_object(encoded)
+
+        self.assertEqual(self.COOKIE_OBJECT, parsed)
+        self.assertEqual(
+            ["JSON.stringify", "percent-encoding-by-cookie-helper"],
+            steps,
         )
         self.assertTrue(
-            probe.constructed_cookie_matches_observed(
-                parsed,
+            probe.constructed_cookie_value_matches_observed(
+                encoded,
                 mapping,
-                public_branch,
+                self.PUBLIC_BRANCH,
             )
         )
 
@@ -1289,34 +1417,59 @@ class DepartmentCookieConstructorResearchTest(unittest.TestCase):
         self.assertEqual("33-300", branch["postcode"])
         self.assertEqual("Tarnowska 149", branch["street"])
 
-    def test_safe_research_summary_does_not_leak_cookie_or_secret_values(self):
+    def test_safe_summary_never_exposes_raw_cookie_session_or_token_values(self):
         secret = "SUPER_SECRET_COOKIE_VALUE"
         safe = probe.safe_department_cookie_research(
             {
                 "departmentCookieConstructorFound": True,
                 "constructorSourcePath":
                     "/_next/static/chunks/example.js",
-                "valueFormat": "JSON object",
-                "sourceBranchFields": {
-                    "department_stock_id": "department_id",
-                    "authToken": secret,
-                },
-                "encodingSteps": ["JSON.stringify"],
+                "valueFormat": "JSON serialized branch object",
+                "sourceBranchFields": [
+                    "department_stock_id",
+                    "department_stock_name",
+                    "authToken",
+                ],
+                "encodingSteps": [
+                    "JSON.stringify -> cookie value",
+                ],
                 "cookieOptions": {
-                    "expires": "now + 360 days",
+                    "expires": "360 days",
                     "auth": secret,
                 },
+                "reproducibleFromPublicData": True,
                 "constructedValueMatchesObserved": True,
             }
         )
-        serialized = json.dumps(safe, ensure_ascii=False)
+        summary = probe.build_safe_summary(
+            requested_branch_label="Nowy Sącz",
+            branch_page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-nowy-sacz/205"
+            ),
+            department_cookie_value_safe=secret,
+            department_stock_id="205",
+            department_cookie_research=safe,
+        )
+        serialized = json.dumps(summary, ensure_ascii=False)
 
         self.assertNotIn(secret, serialized)
         self.assertNotIn("authToken", serialized)
         self.assertNotIn('"auth"', serialized)
-        self.assertTrue(
-            safe["constructedValueMatchesObserved"]
+        self.assertEqual(
+            probe.REDACTED,
+            summary["branch"]["departmentCookieValue"],
         )
+        self.assertEqual(
+            "205",
+            summary["branch"]["departmentStockId"],
+        )
+        self.assertTrue(
+            summary["departmentCookieResearch"][
+                "constructedValueMatchesObserved"
+            ]
+        )
+
 
 
 class SearchEvidenceTest(unittest.TestCase):
