@@ -10,10 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urljoin, urlsplit, urlunsplit
 
 KWANT_ORIGIN = "https://kwant.net.pl"
 KWANT_HOST = "kwant.net.pl"
@@ -465,6 +466,88 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+def normalize_branch_identity(value: str) -> str:
+    decoded = unquote(value or "").translate(
+        str.maketrans({"ł": "l", "Ł": "L"})
+    )
+    ascii_text = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", decoded)
+        if not unicodedata.combining(char)
+    )
+    return normalize_text(
+        re.sub(r"[^a-z0-9]+", " ", ascii_text.lower())
+    )
+
+
+def branch_label_matches(
+    branch_label: str,
+    *,
+    link_text: str = "",
+    page_url: str = "",
+    card_text: str = "",
+) -> bool:
+    wanted = normalize_branch_identity(branch_label)
+    if not wanted:
+        return False
+    haystacks = (
+        normalize_branch_identity(link_text),
+        normalize_branch_identity(urlsplit(page_url).path),
+        normalize_branch_identity(card_text),
+    )
+    return any(
+        re.search(rf"\b{re.escape(wanted)}\b", value)
+        for value in haystacks
+        if value
+    )
+
+
+def target_branch_page_path(branch_page_url: str) -> str:
+    expected, safe = sanitize_kwant_url(branch_page_url)
+    if not expected:
+        return UNKNOWN
+    return urlsplit(safe).path or "/"
+
+
+def branch_target_candidate_valid(
+    candidate: dict[str, Any],
+    branch_label: str,
+) -> bool:
+    page_url = str(candidate.get("pageUrl", ""))
+    if not branch_label_matches(
+        branch_label,
+        link_text=str(candidate.get("linkText", "")),
+        page_url=page_url,
+        card_text=str(candidate.get("cardText", "")),
+    ):
+        return False
+    if not branch_label_matches(
+        branch_label,
+        card_text=str(candidate.get("cardText", "")),
+    ):
+        return False
+    branch_urls = [
+        str(value)
+        for value in candidate.get("branchPageUrls", [])
+        if isinstance(value, str)
+    ]
+    if len(branch_urls) != 1 or branch_urls[0] != page_url:
+        return False
+    return candidate.get("selectButtonCount") == 1
+
+
+def resolve_unique_branch_candidate(
+    candidates: list[dict[str, Any]],
+    branch_label: str,
+) -> dict[str, Any] | None:
+    matching = [
+        candidate
+        for candidate in candidates
+        if branch_target_candidate_valid(candidate, branch_label)
+    ]
+    return matching[0] if len(matching) == 1 else None
+
+
 def parse_number_text(value: str) -> str:
     return value.replace("\xa0", " ").strip()
 
@@ -792,6 +875,7 @@ def build_safe_summary(
     *,
     requested_branch_label: str,
     branch_page_url: str = "",
+    target_branch_resolved: bool = False,
     selection_observed: bool | None = None,
     selection_persisted: bool | None = None,
     backend_branch_identifier: str = UNKNOWN,
@@ -808,6 +892,17 @@ def build_safe_summary(
     return {
         "branch": {
             "requestedLabel": requested_branch_label,
+            "targetBranchResolved": target_branch_resolved,
+            "targetBranchPageUrl": (
+                strip_query(branch_page_url)
+                if branch_page_url
+                else UNKNOWN
+            ),
+            "targetBranchPagePath": (
+                target_branch_page_path(branch_page_url)
+                if branch_page_url
+                else UNKNOWN
+            ),
             "selectionObserved": tri_state(selection_observed),
             "selectionPersisted": tri_state(selection_persisted),
             "branchPageIdentifier": (
@@ -872,9 +967,11 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
         "",
         "BRANCH",
         f"requestedLabel={branch['requestedLabel']}",
+        f"targetBranchResolved={format_scalar(branch['targetBranchResolved'])}",
+        f"targetBranchPagePath={branch['targetBranchPagePath']}",
+        f"branchPageIdentifier={branch['branchPageIdentifier']}",
         f"selectionObserved={format_scalar(branch['selectionObserved'])}",
         f"selectionPersisted={format_scalar(branch['selectionPersisted'])}",
-        f"branchPageIdentifier={branch['branchPageIdentifier']}",
         f"backendBranchIdentifier={branch['backendBranchIdentifier']}",
         "",
         "SEARCH",
@@ -1129,12 +1226,209 @@ def run_search(
     }
 
 
+def branch_card_for_link(
+    link: Any,
+    *,
+    branch_label: str,
+    page_url: str,
+    expected_page_url: str,
+) -> Any | None:
+    try:
+        current = link
+        for _ in range(16):
+            parent = current.locator("xpath=..")
+            if not parent.count():
+                return None
+            card = parent.first
+            card_text = normalize_text(card.inner_text(timeout=500))
+            branch_links = card.locator(
+                "a[href*='hurtownia-elektryczna']"
+            )
+            branch_page_urls: list[str] = []
+            for index in range(min(branch_links.count(), 12)):
+                href = (
+                    branch_links.nth(index).get_attribute("href")
+                    or ""
+                )
+                safe = sanitize_public_url(href, page_url)
+                expected_kwant, _ = sanitize_kwant_url(safe)
+                if (
+                    not safe.startswith("REDACTED_")
+                    and expected_kwant
+                    and safe not in branch_page_urls
+                ):
+                    branch_page_urls.append(safe)
+
+            buttons = card.get_by_role(
+                "button",
+                name=re.compile(
+                    r"Wybierz\s+oddzia[lł]",
+                    re.IGNORECASE,
+                ),
+            )
+            if (
+                branch_label_matches(
+                    branch_label,
+                    card_text=card_text,
+                )
+                and branch_page_urls == [expected_page_url]
+                and buttons.count() == 1
+            ):
+                return card
+            current = card
+    except Exception:
+        return None
+    return None
+
+
+def branch_candidate_from_link(
+    link: Any,
+    *,
+    link_index: int,
+    page_url: str,
+    branch_label: str,
+) -> dict[str, Any] | None:
+    try:
+        raw_href = link.get_attribute("href") or ""
+        safe_url = sanitize_public_url(raw_href, page_url)
+        if safe_url.startswith("REDACTED_"):
+            return None
+        expected_kwant, _ = sanitize_kwant_url(safe_url)
+        if not expected_kwant:
+            return None
+        link_text = normalize_text(link.inner_text(timeout=300))
+
+        card = branch_card_for_link(
+            link,
+            branch_label=branch_label,
+            page_url=page_url,
+            expected_page_url=safe_url,
+        )
+        if card is None:
+            return None
+        card_text = normalize_text(card.inner_text(timeout=500))
+        if not branch_label_matches(
+            branch_label,
+            link_text=link_text,
+            page_url=safe_url,
+            card_text=card_text,
+        ):
+            return None
+        branch_links = card.locator(
+            "a[href*='hurtownia-elektryczna']"
+        )
+        branch_page_urls: list[str] = []
+        for index in range(min(branch_links.count(), 8)):
+            href = branch_links.nth(index).get_attribute("href") or ""
+            safe = sanitize_public_url(href, page_url)
+            expected_kwant, _ = sanitize_kwant_url(safe)
+            if (
+                not safe.startswith("REDACTED_")
+                and expected_kwant
+                and safe not in branch_page_urls
+            ):
+                branch_page_urls.append(safe)
+
+        buttons = card.get_by_role(
+            "button",
+            name=re.compile(
+                r"Wybierz\s+oddzia[lł]",
+                re.IGNORECASE,
+            ),
+        )
+        return {
+            "linkIndex": link_index,
+            "linkText": link_text,
+            "pageUrl": safe_url,
+            "cardText": card_text,
+            "branchPageUrls": branch_page_urls,
+            "selectButtonCount": buttons.count(),
+        }
+    except Exception:
+        return None
+
+
+def enumerate_branch_candidates(
+    page: Any,
+    branch_label: str,
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    try:
+        links = page.locator(
+            "a[href*='hurtownia-elektryczna']"
+        )
+        for index in range(min(links.count(), 120)):
+            candidate = branch_candidate_from_link(
+                links.nth(index),
+                link_index=index,
+                page_url=page.url,
+                branch_label=branch_label,
+            )
+            if candidate is not None:
+                result.append(candidate)
+    except Exception:
+        return []
+    return result
+
+
+def validated_branch_button(
+    page: Any,
+    *,
+    candidate: dict[str, Any],
+    branch_label: str,
+) -> Any | None:
+    try:
+        links = page.locator(
+            "a[href*='hurtownia-elektryczna']"
+        )
+        link_index = int(candidate["linkIndex"])
+        if link_index < 0 or link_index >= links.count():
+            return None
+        link = links.nth(link_index)
+        refreshed = branch_candidate_from_link(
+            link,
+            link_index=link_index,
+            page_url=page.url,
+            branch_label=branch_label,
+        )
+        if refreshed is None:
+            return None
+        if refreshed.get("pageUrl") != candidate.get("pageUrl"):
+            return None
+        if not branch_target_candidate_valid(
+            refreshed,
+            branch_label,
+        ):
+            return None
+
+        card = branch_card_for_link(
+            link,
+            branch_label=branch_label,
+            page_url=page.url,
+            expected_page_url=str(candidate.get("pageUrl", "")),
+        )
+        if card is None:
+            return None
+        buttons = card.get_by_role(
+            "button",
+            name=re.compile(
+                r"Wybierz\s+oddzia[lł]",
+                re.IGNORECASE,
+            ),
+        )
+        if buttons.count() != 1:
+            return None
+        return buttons.first
+    except Exception:
+        return None
+
+
 def choose_branch(
     page: Any,
     recorder: NetworkRecorder,
     branch_label: str,
     raw_dir: Path,
-) -> tuple[bool, str]:
+) -> tuple[bool, str, bool]:
     recorder.set_action("branch:list")
     page.goto(
         f"{KWANT_ORIGIN}/lista-hurtowni-elektrycznych",
@@ -1143,73 +1437,20 @@ def choose_branch(
     )
     page.wait_for_timeout(500)
 
-    branch_page_url = ""
-    targeted_button = None
-    label_locator = page.get_by_text(branch_label, exact=False)
-    try:
-        if label_locator.count():
-            label = label_locator.first
-            container = label.locator(
-                "xpath=ancestor::*[.//button][1]"
-            )
-            if container.count():
-                candidate = container.get_by_role(
-                    "button",
-                    name=re.compile(
-                        r"Wybierz\s+oddzia[lł]",
-                        re.IGNORECASE,
-                    ),
-                )
-                if candidate.count():
-                    targeted_button = candidate.first
-
-                href_locator = container.locator(
-                    "a[href*='hurtownia-elektryczna']"
-                )
-                for index in range(min(href_locator.count(), 12)):
-                    href = href_locator.nth(index).get_attribute("href") or ""
-                    safe = sanitize_public_url(href, page.url)
-                    if not safe.startswith("REDACTED_"):
-                        branch_page_url = safe
-                        break
-
-            if not branch_page_url:
-                links = page.locator(
-                    "a[href*='hurtownia-elektryczna']"
-                )
-                for index in range(min(links.count(), 80)):
-                    link = links.nth(index)
-                    text = normalize_text(
-                        link.inner_text(timeout=300)
-                    )
-                    parent_text = normalize_text(
-                        link.locator("xpath=..").inner_text(
-                            timeout=300
-                        )
-                    )
-                    if branch_label.lower() in (
-                        f"{text} {parent_text}".lower()
-                    ):
-                        safe = sanitize_public_url(
-                            link.get_attribute("href") or "",
-                            page.url,
-                        )
-                        if not safe.startswith("REDACTED_"):
-                            branch_page_url = safe
-                            break
-    except Exception:
-        pass
-
-    if targeted_button is None and branch_page_url:
-        recorder.set_action("branch:page")
-        page.goto(branch_page_url, wait_until="domcontentloaded", timeout=45000)
-        page.wait_for_timeout(400)
-        button = page.get_by_role(
-            "button",
-            name=re.compile(r"Wybierz\s+oddzia[lł]", re.IGNORECASE),
-        )
-        if button.count():
-            targeted_button = button.first
+    candidates = enumerate_branch_candidates(
+        page,
+        branch_label,
+    )
+    target = resolve_unique_branch_candidate(
+        candidates,
+        branch_label,
+    )
+    branch_page_url = (
+        str(target.get("pageUrl", ""))
+        if target is not None
+        else ""
+    )
+    target_resolved = target is not None
 
     raw_dir.mkdir(parents=True, exist_ok=True)
     (raw_dir / "branch-before-select.html").write_text(
@@ -1217,10 +1458,18 @@ def choose_branch(
         encoding="utf-8",
     )
 
+    if target is None:
+        return False, branch_page_url, False
+
     recorder.set_action("branch:select")
     try:
+        targeted_button = validated_branch_button(
+            page,
+            candidate=target,
+            branch_label=branch_label,
+        )
         if targeted_button is None:
-            return False, branch_page_url or page.url
+            return False, branch_page_url, False
         targeted_button.click(timeout=7000)
         try:
             page.wait_for_load_state("networkidle", timeout=10000)
@@ -1230,9 +1479,9 @@ def choose_branch(
             page.content(),
             encoding="utf-8",
         )
-        return True, branch_page_url or page.url
+        return True, branch_page_url, target_resolved
     except Exception:
-        return False, branch_page_url or page.url
+        return False, branch_page_url, target_resolved
 
 
 def open_product(
@@ -1397,7 +1646,11 @@ def run_live_probe(
         )
 
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
-        branch_click_ok, branch_page_url = choose_branch(
+        (
+            branch_click_ok,
+            branch_page_url,
+            target_branch_resolved,
+        ) = choose_branch(
             page,
             recorder,
             branch_label,
@@ -1497,6 +1750,7 @@ def run_live_probe(
         summary = build_safe_summary(
             requested_branch_label=branch_label,
             branch_page_url=branch_page_url,
+            target_branch_resolved=target_branch_resolved,
             selection_observed=selection_observed,
             selection_persisted=selection_persisted,
             backend_branch_identifier=infer_backend_branch_identifier(

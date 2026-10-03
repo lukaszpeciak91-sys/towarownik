@@ -118,6 +118,13 @@ class MissingEvidenceTest(unittest.TestCase):
             requested_branch_label="Nowy Sącz",
         )
 
+        self.assertFalse(
+            summary["branch"]["targetBranchResolved"]
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            summary["branch"]["targetBranchPagePath"],
+        )
         self.assertEqual(
             probe.UNKNOWN,
             summary["branch"]["selectionObserved"],
@@ -294,6 +301,179 @@ class _SelectedBranchPage:
         return _FakeLocator([])
 
 
+class BranchTargetingTest(unittest.TestCase):
+    def candidate(
+        self,
+        *,
+        label,
+        page_url,
+        card_text,
+        branch_page_urls=None,
+        select_button_count=1,
+        button_token="button",
+    ):
+        return {
+            "linkIndex": 0,
+            "linkText": label,
+            "pageUrl": page_url,
+            "cardText": card_text,
+            "branchPageUrls": (
+                branch_page_urls
+                if branch_page_urls is not None
+                else [page_url]
+            ),
+            "selectButtonCount": select_button_count,
+            "buttonToken": button_token,
+        }
+
+    def test_multiple_branch_cards_resolve_exact_requested_branch(self):
+        bialystok = self.candidate(
+            label="Białystok",
+            page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-bialystok/216"
+            ),
+            card_text="Białystok Wybierz oddział",
+            button_token="bialystok-button",
+        )
+        nowy_sacz = self.candidate(
+            label="Nowy Sącz",
+            page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-nowy%20sacz/205"
+            ),
+            card_text="Nowy Sącz Wybierz oddział",
+            button_token="nowy-sacz-button",
+        )
+        central = self.candidate(
+            label="Magazyn centralny",
+            page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "magazyn-centralny/1"
+            ),
+            card_text="Magazyn centralny Wybierz oddział",
+            button_token="central-button",
+        )
+
+        resolved = probe.resolve_unique_branch_candidate(
+            [bialystok, nowy_sacz, central],
+            "Nowy Sącz",
+        )
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual("nowy-sacz-button", resolved["buttonToken"])
+        self.assertEqual(
+            "205",
+            probe.extract_branch_page_identifier(
+                resolved["pageUrl"]
+            ),
+        )
+
+    def test_generic_ancestor_with_multiple_branch_buttons_is_ineligible(self):
+        generic_ancestor = self.candidate(
+            label="Nowy Sącz",
+            page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-nowy%20sacz/205"
+            ),
+            card_text=(
+                "Białystok Wybierz oddział "
+                "Nowy Sącz Wybierz oddział"
+            ),
+            branch_page_urls=[
+                (
+                    "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                    "hurtownia-elektryczna-bialystok/216"
+                ),
+                (
+                    "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                    "hurtownia-elektryczna-nowy%20sacz/205"
+                ),
+            ],
+            select_button_count=2,
+            button_token="first-generic-button",
+        )
+
+        self.assertIsNone(
+            probe.resolve_unique_branch_candidate(
+                [generic_ancestor],
+                "Nowy Sącz",
+            )
+        )
+
+    def test_ambiguous_or_missing_requested_branch_never_resolves(self):
+        first = self.candidate(
+            label="Nowy Sącz",
+            page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-nowy%20sacz/205"
+            ),
+            card_text="Nowy Sącz Wybierz oddział",
+            button_token="first",
+        )
+        duplicate = dict(first)
+        duplicate["buttonToken"] = "second"
+
+        self.assertIsNone(
+            probe.resolve_unique_branch_candidate(
+                [first, duplicate],
+                "Nowy Sącz",
+            )
+        )
+        self.assertIsNone(
+            probe.resolve_unique_branch_candidate(
+                [first],
+                "Kraków",
+            )
+        )
+
+    def test_branch_card_text_can_resolve_when_href_slug_omits_label(self):
+        numeric_href = self.candidate(
+            label="Szczegóły oddziału",
+            page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna/312"
+            ),
+            card_text="Tarnów Wybierz oddział",
+        )
+
+        resolved = probe.resolve_unique_branch_candidate(
+            [numeric_href],
+            "Tarnów",
+        )
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(
+            "312",
+            probe.extract_branch_page_identifier(
+                resolved["pageUrl"]
+            ),
+        )
+
+    def test_branch_resolution_uses_label_and_link_not_hard_coded_205(self):
+        tarnow = self.candidate(
+            label="Tarnów",
+            page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-tarnow/312"
+            ),
+            card_text="Tarnów Wybierz oddział",
+        )
+
+        resolved = probe.resolve_unique_branch_candidate(
+            [tarnow],
+            "Tarnów",
+        )
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(
+            "312",
+            probe.extract_branch_page_identifier(
+                resolved["pageUrl"]
+            ),
+        )
+
+
 class BranchEvidenceTest(unittest.TestCase):
     def test_page_identifier_is_not_automatically_backend_identifier(self):
         summary = probe.build_safe_summary(
@@ -305,6 +485,47 @@ class BranchEvidenceTest(unittest.TestCase):
             network=[],
         )
 
+        self.assertEqual(
+            False,
+            summary["branch"]["targetBranchResolved"],
+        )
+        self.assertEqual(
+            (
+                "/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-nowy-sacz/205"
+            ),
+            summary["branch"]["targetBranchPagePath"],
+        )
+        self.assertEqual(
+            "205",
+            summary["branch"]["branchPageIdentifier"],
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            summary["branch"]["backendBranchIdentifier"],
+        )
+
+    def test_safe_summary_reports_uniquely_resolved_target_branch(self):
+        summary = probe.build_safe_summary(
+            requested_branch_label="Nowy Sącz",
+            branch_page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-nowy%20sacz/205"
+            ),
+            target_branch_resolved=True,
+            backend_branch_identifier=probe.UNKNOWN,
+        )
+
+        self.assertTrue(
+            summary["branch"]["targetBranchResolved"]
+        )
+        self.assertEqual(
+            (
+                "/lista-hurtowni-elektrycznych/"
+                "hurtownia-elektryczna-nowy%20sacz/205"
+            ),
+            summary["branch"]["targetBranchPagePath"],
+        )
         self.assertEqual(
             "205",
             summary["branch"]["branchPageIdentifier"],
