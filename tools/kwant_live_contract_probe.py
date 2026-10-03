@@ -1224,17 +1224,59 @@ def run_search(
     }
 
 
-def branch_card_for_link(link: Any) -> Any | None:
+def branch_card_for_link(
+    link: Any,
+    *,
+    branch_label: str,
+    page_url: str,
+    expected_page_url: str,
+) -> Any | None:
     try:
-        card = link.locator(
-            "xpath=ancestor::*["
-            "count(.//a[contains(@href,'hurtownia-elektryczna')])=1 "
-            "and .//button"
-            "][1]"
-        )
-        return card.first if card.count() else None
+        current = link
+        for _ in range(16):
+            parent = current.locator("xpath=..")
+            if not parent.count():
+                return None
+            card = parent.first
+            card_text = normalize_text(card.inner_text(timeout=500))
+            branch_links = card.locator(
+                "a[href*='hurtownia-elektryczna']"
+            )
+            branch_page_urls: list[str] = []
+            for index in range(min(branch_links.count(), 12)):
+                href = (
+                    branch_links.nth(index).get_attribute("href")
+                    or ""
+                )
+                safe = sanitize_public_url(href, page_url)
+                expected_kwant, _ = sanitize_kwant_url(safe)
+                if (
+                    not safe.startswith("REDACTED_")
+                    and expected_kwant
+                    and safe not in branch_page_urls
+                ):
+                    branch_page_urls.append(safe)
+
+            buttons = card.get_by_role(
+                "button",
+                name=re.compile(
+                    r"Wybierz\s+oddzia[lł]",
+                    re.IGNORECASE,
+                ),
+            )
+            if (
+                branch_label_matches(
+                    branch_label,
+                    card_text=card_text,
+                )
+                and branch_page_urls == [expected_page_url]
+                and buttons.count() == 1
+            ):
+                return card
+            current = card
     except Exception:
         return None
+    return None
 
 
 def branch_candidate_from_link(
@@ -1254,7 +1296,12 @@ def branch_candidate_from_link(
             return None
         link_text = normalize_text(link.inner_text(timeout=300))
 
-        card = branch_card_for_link(link)
+        card = branch_card_for_link(
+            link,
+            branch_label=branch_label,
+            page_url=page_url,
+            expected_page_url=safe_url,
+        )
         if card is None:
             return None
         card_text = normalize_text(card.inner_text(timeout=500))
@@ -1352,7 +1399,12 @@ def validated_branch_button(
         ):
             return None
 
-        card = branch_card_for_link(link)
+        card = branch_card_for_link(
+            link,
+            branch_label=branch_label,
+            page_url=page.url,
+            expected_page_url=str(candidate.get("pageUrl", "")),
+        )
         if card is None:
             return None
         buttons = card.get_by_role(
