@@ -166,7 +166,6 @@ private fun LocalProduct.toProviderProduct(): ProviderProduct =
         priceScope = grossPrice?.let { ProviderPriceScope.BRANCH },
         productUrl = productUrl,
         ean = ean,
-        articleNumber = obik,
         brand = brand,
         shortDescription = shortDescription,
         technicalFacts = technicalFacts,
