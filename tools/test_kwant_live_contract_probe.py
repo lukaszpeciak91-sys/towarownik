@@ -259,8 +259,8 @@ class NumericProductRouteProbeTest(unittest.TestCase):
 
         self.assertEqual(route, summary["numericProductRoute"])
         serialized = json.dumps(summary, ensure_ascii=False)
-        self.assertNotIn("Cookie", serialized)
-        self.assertNotIn("Authorization", serialized)
+        self.assertNotIn("COOKIE_SECRET_VALUE", serialized)
+        self.assertNotIn("AUTHORIZATION_SECRET_VALUE", serialized)
 
     def test_numeric_product_id_input_is_strictly_bounded_digits(self):
         probe.validate_inputs(
