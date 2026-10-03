@@ -42,7 +42,7 @@
     <string name="advisor_error_input">Opisz czego potrzebuje klient.</string>
 
     <string name="manual_search_title">Wyszukiwarka</string>
-    <string name="manual_search_input_label">OBIK / EAN / nazwa</string>
+    <string name="manual_search_input_label">Nr produktu / EAN / nazwa</string>
     <string name="search">Szukaj</string>
     <string name="manual_search_progress">Szukam produktu…</string>
     <string name="manual_search_store">Sklep OBI: %1$s</string>
@@ -51,13 +51,13 @@
     <string name="manual_search_enrichment_failed">Nie udało się pobrać stanu i ceny</string>
     <string name="manual_search_retry_exact">Spróbuj ponownie</string>
     <string name="manual_search_results_range">Wyniki 1–%1$d</string>
-    <string name="manual_search_reported_total">OBI raportuje: %1$d wyników</string>
+    <string name="manual_search_reported_total">Liczba wyników: %1$d</string>
     <string name="show_more">Pokaż więcej</string>
     <string name="search_error_invalid_input">Wpisz numer produktu, EAN lub nazwę produktu.</string>
     <string name="search_error_network">Nie udało się połączyć z dostawcą. Sprawdź internet i spróbuj ponownie.</string>
     <string name="search_error_not_found">Nie znaleziono produktu.</string>
     <string name="search_error_product_data">Nie udało się odczytać danych produktu.</string>
-    <string name="search_error_search_data">Nie udało się odczytać wyników wyszukiwania z OBI.</string>
+    <string name="search_error_search_data">Nie udało się odczytać wyników wyszukiwania.</string>
     <string name="search_error_lookup">Nie udało się wyszukać produktu.</string>
 
     <string name="product_store">OBI %1$s</string>
