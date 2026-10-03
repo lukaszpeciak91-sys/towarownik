@@ -23,9 +23,9 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     env:
-      PRODUCT_QUERY: ${{ inputs.product_query }}
-      BRANCH_LABEL: ${{ inputs.branch_label }}
-      TEXT_QUERY: ${{ inputs.text_query }}
+      PRODUCT_QUERY: ${{ inputs.product_query || 'MBN116E' }}
+      BRANCH_LABEL: ${{ inputs.branch_label || 'Nowy Sącz' }}
+      TEXT_QUERY: ${{ inputs.text_query || 'wyłącznik nadprądowy B16 Hager' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -83,5 +83,6 @@ jobs:
           name: kwant-live-contract-raw
           path: |
             build/kwant-live-contract/raw/*.html
+            build/kwant-live-contract/raw/*.txt
           if-no-files-found: ignore
           retention-days: 1
