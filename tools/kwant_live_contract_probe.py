@@ -1910,7 +1910,7 @@ def analyze_department_cookie_constructor(
 ) -> dict[str, Any]:
     if DEPARTMENT_COOKIE_NAME not in excerpt:
         return {
-            "departmentCookieConstructorFound": False,
+            "departmentCookieConstructorFound": UNKNOWN,
             "constructorSourcePath": UNKNOWN,
             "valueFormat": UNKNOWN,
             "encodingSteps": UNKNOWN,
@@ -2190,9 +2190,7 @@ def collect_department_cookie_bundle_evidence(
         confirmed[0]
         if len(confirmed) == 1
         else {
-            "departmentCookieConstructorFound": (
-                False if not matched and script_sources else UNKNOWN
-            ),
+            "departmentCookieConstructorFound": UNKNOWN,
             "constructorSourcePath": UNKNOWN,
             "valueFormat": UNKNOWN,
             "encodingSteps": UNKNOWN,
