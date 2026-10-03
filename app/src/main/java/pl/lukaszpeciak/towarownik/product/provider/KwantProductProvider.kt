@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import pl.lukaszpeciak.towarownik.product.TechnicalFact
@@ -55,7 +56,12 @@ internal interface KwantFrontendClient {
 
     fun fetchSearch(query: String): KwantFrontendResult
 
-    fun fetchProduct(
+    fun fetchProductById(
+        productId: String,
+        departmentCookieJson: String,
+    ): KwantFrontendResult
+
+    fun fetchProductByUrl(
         productUrl: String,
         departmentCookieJson: String,
     ): KwantFrontendResult
@@ -82,15 +88,24 @@ internal class KwantHttpFrontendClient(
         )
     }
 
-    override fun fetchProduct(
+    override fun fetchProductById(
+        productId: String,
+        departmentCookieJson: String,
+    ): KwantFrontendResult =
+        fetchProductByUrl(
+            productUrl = "$KWANT_ORIGIN/produkt/$productId",
+            departmentCookieJson = departmentCookieJson,
+        )
+
+    override fun fetchProductByUrl(
         productUrl: String,
         departmentCookieJson: String,
     ): KwantFrontendResult {
-        if (!productUrl.startsWith("$KWANT_ORIGIN/produkt/")) {
+        if (!KwantUrlPolicy.isTrustedProductUrl(productUrl)) {
             return KwantFrontendResult.Failure("Untrusted KWANT product URL")
         }
         return execute(
-            Request.Builder()
+            request = Request.Builder()
                 .url(productUrl)
                 .header(
                     "Cookie",
@@ -98,10 +113,14 @@ internal class KwantHttpFrontendClient(
                 )
                 .get()
                 .build(),
+            requireProductPath = true,
         )
     }
 
-    private fun execute(request: Request): KwantFrontendResult =
+    private fun execute(
+        request: Request,
+        requireProductPath: Boolean = false,
+    ): KwantFrontendResult =
         try {
             client.newCall(request).execute().use { response ->
                 when {
@@ -112,9 +131,14 @@ internal class KwantHttpFrontendClient(
                         )
                     else -> {
                         val finalUrl = response.request.url.toString()
-                        if (!finalUrl.startsWith(KWANT_ORIGIN)) {
+                        val trusted = if (requireProductPath) {
+                            KwantUrlPolicy.isTrustedProductUrl(finalUrl)
+                        } else {
+                            KwantUrlPolicy.isTrustedOriginUrl(finalUrl)
+                        }
+                        if (!trusted) {
                             KwantFrontendResult.Failure(
-                                "Unexpected KWANT response host",
+                                "Unexpected KWANT response origin",
                             )
                         } else {
                             KwantFrontendResult.Success(
@@ -140,6 +164,25 @@ internal class KwantHttpFrontendClient(
     private companion object {
         const val KWANT_ORIGIN = "https://kwant.net.pl"
     }
+}
+
+internal object KwantUrlPolicy {
+    fun isTrustedOriginUrl(rawUrl: String): Boolean {
+        val url = rawUrl.toHttpUrlOrNull() ?: return false
+        return url.scheme == "https" &&
+            url.host == KWANT_HOST &&
+            url.port == 443
+    }
+
+    fun isTrustedProductUrl(rawUrl: String): Boolean {
+        val url = rawUrl.toHttpUrlOrNull() ?: return false
+        return isTrustedOriginUrl(rawUrl) &&
+            url.pathSegments.size >= 2 &&
+            url.pathSegments[0] == "produkt" &&
+            url.pathSegments[1].isNotBlank()
+    }
+
+    private const val KWANT_HOST = "kwant.net.pl"
 }
 
 internal class KwantProductProvider(
@@ -179,7 +222,7 @@ internal class KwantProductProvider(
                                     name = candidate.name,
                                 )
                             },
-                        reportedTotalCount = parsed.size,
+                        reportedTotalCount = null,
                     )
                 }
             }
@@ -216,19 +259,20 @@ internal class KwantProductProvider(
                 )
         }
 
-        val productUrl = productUrls[ref.productId]
-            ?: resolveProductUrl(ref.productId)
-            ?: return ProviderLookupResult.Unavailable(
-                failure = ProductProviderFailure.DATA,
-                reason = "KWANT product URL could not be resolved",
-            )
-
-        return when (
-            val response = frontend.fetchProduct(
-                productUrl = productUrl,
+        val cachedUrl = productUrls[ref.productId]
+        val response = if (cachedUrl != null) {
+            frontend.fetchProductByUrl(
+                productUrl = cachedUrl,
                 departmentCookieJson = branch.departmentCookieJson(),
             )
-        ) {
+        } else {
+            frontend.fetchProductById(
+                productId = ref.productId,
+                departmentCookieJson = branch.departmentCookieJson(),
+            )
+        }
+
+        return when (response) {
             is KwantFrontendResult.Success -> {
                 val product = parser.parseProduct(
                     html = response.html,
@@ -239,6 +283,7 @@ internal class KwantProductProvider(
                     failure = ProductProviderFailure.DATA,
                     reason = "KWANT product payload could not be parsed",
                 )
+                productUrls[ref.productId] = product.productUrl
                 ProviderLookupResult.Found(
                     product.copy(
                         ref = ref,
@@ -259,16 +304,6 @@ internal class KwantProductProvider(
                     reason = response.reason,
                 )
         }
-    }
-
-    private fun resolveProductUrl(productId: String): String? {
-        val response = frontend.fetchSearch(productId)
-        if (response !is KwantFrontendResult.Success) return null
-        val match = parser.parseSearch(response.html, productId)
-            .firstOrNull { it.productId == productId }
-            ?: return null
-        productUrls[productId] = match.productUrl
-        return match.productUrl
     }
 
     private fun resolveBranch(branchId: BranchId): BranchResolution =
