@@ -105,8 +105,6 @@ import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
-import pl.lukaszpeciak.towarownik.product.SUPPORTED_OBI_STORE_NUMBERS
-import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.DEFAULT_WORKING_PROFILE
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
@@ -261,9 +259,6 @@ private fun TowarownikApp() {
     var profileBranchesLoading by remember {
         mutableStateOf(false)
     }
-    var selectedStoreNumber by rememberSaveable {
-        mutableStateOf(selectedWorkingProfile.branchId.value)
-    }
     var freshCaseSelected by rememberSaveable {
         mutableStateOf(false)
     }
@@ -283,7 +278,6 @@ private fun TowarownikApp() {
         mutableStateOf(false)
     }
     var draftPersistJob by remember { mutableStateOf<Job?>(null) }
-    var storePersistJob by remember { mutableStateOf<Job?>(null) }
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
 
     var manualQuery by rememberSaveable { mutableStateOf("") }
@@ -331,14 +325,12 @@ private fun TowarownikApp() {
         if (conversation == null) {
             activeConversationId = null
             selectedWorkingProfile = globalWorkingProfile
-            selectedStoreNumber = selectedWorkingProfile.branchId.value
             advisorCase = AdvisorCaseUiState()
             return
         }
 
         activeConversationId = conversation.id
         selectedWorkingProfile = conversation.workingProfile
-        selectedStoreNumber = conversation.workingProfile.branchId.value
         advisorCase = conversation.toAdvisorCaseUiState()
     }
 
@@ -350,8 +342,6 @@ private fun TowarownikApp() {
         advisorJob = null
         draftPersistJob?.cancelAndJoin()
         draftPersistJob = null
-        storePersistJob?.join()
-        storePersistJob = null
 
         if (recoverInterrupted) {
             activeConversationId?.let { conversationId ->
@@ -368,7 +358,6 @@ private fun TowarownikApp() {
             emptyPromptIndex = (emptyPromptIndex + 1) % EMPTY_ADVISOR_PROMPTS.size
             activeConversationId = null
             selectedWorkingProfile = globalWorkingProfile
-            selectedStoreNumber = globalWorkingProfile.branchId.value
             advisorState = AdvisorUiState.Idle
             advisorCase = AdvisorCaseUiState()
         }
@@ -407,8 +396,7 @@ private fun TowarownikApp() {
                 clearManualProfileContext()
                 activeConversationId = null
                 selectedWorkingProfile = globalWorkingProfile
-                selectedStoreNumber = globalWorkingProfile.branchId.value
-                freshCaseSelected = true
+                    freshCaseSelected = true
                 emptyPromptIndex = (emptyPromptIndex + 1) % EMPTY_ADVISOR_PROMPTS.size
                 advisorState = AdvisorUiState.Idle
                 advisorCase = freshCase
@@ -427,7 +415,6 @@ private fun TowarownikApp() {
         workingProfileRepository.save(profile)
         globalWorkingProfile = profile
         selectedWorkingProfile = profile
-        selectedStoreNumber = profile.branchId.value
         profileBranches = branches
         clearManualProfileContext()
     }
@@ -505,8 +492,6 @@ private fun TowarownikApp() {
         advisorJob = scope.launch {
             draftPersistJob?.cancelAndJoin()
             draftPersistJob = null
-            storePersistJob?.join()
-            storePersistJob = null
 
             val turn = conversationRepository.beginUserTurn(
                 conversationId = activeConversationId,
