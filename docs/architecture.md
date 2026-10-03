@@ -262,3 +262,14 @@ KWANT exact lookup does not depend on a previous search. On a cold provider inst
 
 This is a foundation boundary only. Existing OBI-specific UI, conversation persistence, advisor tool contracts, `LocalProduct`, OBIK fields, and store-number flows remain intentionally unchanged in this PR. They should move behind the neutral boundary incrementally when the second provider is introduced, rather than through a broad rename/rewrite now.
 
+
+
+## Persistent working profile and conversation ownership
+
+The app now persists one global neutral `WorkingProfile(providerId, branchId)` in app settings. The default remains `obi-pl / 075`. Provider and branch selection is explicit and manual; there is no model-driven or automatic provider switching.
+
+Each newly created conversation captures the then-current working profile in Room and keeps that provider/branch identity for its lifetime. Room schema v7 adds `providerId` and `branchId` to conversations; the v6→v7 migration assigns every historical conversation to `obi-pl` and copies its existing OBI `storeNumber` into `branchId`, preserving history. The legacy conversation `storeNumber` field remains temporarily for the still-OBI-specific advisor transport.
+
+`ProductProvider` now also exposes provider-owned branch discovery. OBI returns the existing supported store allowlist. KWANT resolves its public branch directory and exposes `department_stock_id` as `BranchId`, with branch name and public address metadata.
+
+Manual product search resolves the provider from the current global working profile and performs search/exact enrichment through that provider. Product candidates and exact products keep provider-owned `ProductRef(providerId, productId)`. OBI presentation may label its identifier as OBIK; KWANT presentation uses article-number terminology. The advisor tool remains OBI-only in this iteration.
