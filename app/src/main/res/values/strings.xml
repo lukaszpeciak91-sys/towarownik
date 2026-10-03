@@ -12,6 +12,9 @@
     <string name="cancel">Anuluj</string>
 
     <string name="advisor_title">Doradca</string>
+    <string name="provider_obi">OBI</string>
+    <string name="provider_kwant">KWANT</string>
+    <string name="profile_loading_branches">Ładowanie…</string>
     <string name="obi_store_selector">OBI • %1$s</string>
     <string name="obi_store_item">OBI %1$s</string>
     <string name="advisor_empty_body">Opisz, czego potrzebuje klient.</string>
@@ -38,26 +41,30 @@
     <string name="advisor_error_obi">Nie udało się odczytać danych z OBI.</string>
     <string name="advisor_error_input">Opisz czego potrzebuje klient.</string>
 
-    <string name="manual_search_title">Wyszukiwarka OBI</string>
+    <string name="manual_search_title">Wyszukiwarka</string>
     <string name="manual_search_input_label">OBIK / EAN / nazwa</string>
     <string name="search">Szukaj</string>
     <string name="manual_search_progress">Szukam produktu…</string>
-    <string name="manual_search_store">Market OBI: %1$s</string>
+    <string name="manual_search_store">Sklep OBI: %1$s</string>
+    <string name="manual_search_profile">%1$s • %2$s</string>
     <string name="manual_search_enriching">Pobieram stan i cenę…</string>
     <string name="manual_search_enrichment_failed">Nie udało się pobrać stanu i ceny</string>
     <string name="manual_search_retry_exact">Spróbuj ponownie</string>
     <string name="manual_search_results_range">Wyniki 1–%1$d</string>
     <string name="manual_search_reported_total">OBI raportuje: %1$d wyników</string>
     <string name="show_more">Pokaż więcej</string>
-    <string name="search_error_invalid_input">Wpisz 7-cyfrowy OBIK, EAN lub nazwę produktu.</string>
-    <string name="search_error_network">Nie udało się połączyć z OBI. Sprawdź internet i spróbuj ponownie.</string>
+    <string name="search_error_invalid_input">Wpisz numer produktu, EAN lub nazwę produktu.</string>
+    <string name="search_error_network">Nie udało się połączyć z dostawcą. Sprawdź internet i spróbuj ponownie.</string>
     <string name="search_error_not_found">Nie znaleziono produktu.</string>
-    <string name="search_error_product_data">Nie udało się odczytać danych produktu z OBI.</string>
+    <string name="search_error_product_data">Nie udało się odczytać danych produktu.</string>
     <string name="search_error_search_data">Nie udało się odczytać wyników wyszukiwania z OBI.</string>
     <string name="search_error_lookup">Nie udało się wyszukać produktu.</string>
 
     <string name="product_store">OBI %1$s</string>
     <string name="product_obik">OBIK: %1$s</string>
+    <string name="product_article_number">Nr art.: %1$s</string>
+    <string name="product_branch_kwant">KWANT %1$s</string>
+    <string name="product_branch_kwant_named">KWANT • %1$s</string>
     <string name="product_price">Cena: %1$s zł</string>
     <string name="product_price_unknown">Cena: brak danych</string>
     <string name="product_stock_count">Stan: %1$d szt.</string>
@@ -65,6 +72,7 @@
     <string name="product_stock_unknown">Stan: brak danych</string>
     <string name="product_verified_at">Sprawdzono %1$s</string>
     <string name="open_in_obi">Otwórz w OBI</string>
+    <string name="open_in_kwant">Otwórz w KWANT</string>
 
     <string name="diagnostics_title">Diagnostyka OBI</string>
     <string name="diagnostics_mode_on">Tryb diagnostyczny: ON</string>
