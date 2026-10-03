@@ -87,6 +87,109 @@ class SanitizationTest(unittest.TestCase):
         self.assertIn("branch", serialized)
         self.assertNotIn(secret, serialized)
 
+    def test_department_cookie_exposes_only_conservative_public_branch_ids(self):
+        accepted = {
+            "205": "205",
+            "NS205": "NS205",
+            "205-NS": "205-NS",
+            "NS-205": "NS-205",
+        }
+        for raw, expected in accepted.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    expected,
+                    probe.safe_department_cookie_value(raw),
+                )
+
+    def test_department_cookie_rejects_secret_random_and_structured_values(self):
+        rejected = [
+            "eyJhbGciOiJIUzI1NiJ9.abc.def",
+            "aZ9K3mP2xQ8L7tR5",
+            '{"branch":205}',
+            "%7B%22branch%22%3A205%7D",
+            "session-205",
+            "205 Nowy Sącz",
+            "A" * 40,
+        ]
+        for raw in rejected:
+            with self.subTest(raw=raw):
+                self.assertEqual(
+                    probe.REDACTED,
+                    probe.safe_department_cookie_value(raw),
+                )
+
+    def test_unrelated_cookie_values_remain_names_only(self):
+        secret = "UNRELATED_COOKIE_SECRET_VALUE"
+        cookies = [
+            {
+                "name": "trackingCookie",
+                "value": secret,
+                "domain": "kwant.net.pl",
+                "path": "/",
+                "secure": True,
+                "httpOnly": False,
+                "sameSite": "Lax",
+            }
+        ]
+
+        serialized = json.dumps(
+            probe.cookie_summary(cookies),
+            ensure_ascii=False,
+        )
+
+        self.assertIn("trackingCookie", serialized)
+        self.assertNotIn(secret, serialized)
+        self.assertEqual(
+            probe.UNKNOWN,
+            probe.department_cookie_value(
+                {
+                    "kwant.net.pl|/|trackingCookie": secret,
+                }
+            ),
+        )
+
+    def test_safe_summary_revalidates_department_cookie_value_at_report_boundary(self):
+        secret = "eyJhbGciOiJIUzI1NiJ9.secret.signature"
+        summary = probe.build_safe_summary(
+            requested_branch_label="Nowy Sącz",
+            department_cookie_observed=True,
+            department_cookie_persisted=True,
+            department_cookie_value_safe=secret,
+        )
+
+        self.assertEqual(
+            probe.REDACTED,
+            summary["branch"]["departmentCookieValue"],
+        )
+        self.assertFalse(
+            probe.safe_report_contains_secret(summary, secret)
+        )
+
+    def test_generic_secret_sanitization_is_unchanged_by_department_cookie_exception(self):
+        secret = "GENERIC_AUTH_SECRET"
+        body = probe.sanitize_body_shape(
+            json.dumps(
+                {
+                    "warehouseId": "205",
+                    "authToken": secret,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(
+            "205",
+            body["safeValues"]["warehouseId"],
+        )
+        self.assertNotIn(
+            "authToken",
+            body["safeValues"],
+        )
+        self.assertNotIn(
+            secret,
+            json.dumps(body),
+        )
+
     def test_safe_summary_does_not_contain_injected_secret(self):
         secret = "VERY_SECRET_TOKEN"
         summary = probe.build_safe_summary(
@@ -132,6 +235,18 @@ class MissingEvidenceTest(unittest.TestCase):
         self.assertEqual(
             probe.UNKNOWN,
             summary["branch"]["selectionPersisted"],
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            summary["branch"]["departmentCookieObserved"],
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            summary["branch"]["departmentCookiePersisted"],
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            summary["branch"]["departmentCookieValue"],
         )
         self.assertEqual(
             probe.UNKNOWN,
@@ -902,6 +1017,114 @@ class BranchEvidenceTest(unittest.TestCase):
         self.assertTrue(observed)
         self.assertTrue(persisted)
 
+    def test_department_cookie_creation_proves_selection_and_exposes_public_id(self):
+        changed = {
+            "cookies": [
+                "kwant.net.pl|/|departmentCookie",
+            ],
+            "localStorage": [],
+            "sessionStorage": [],
+        }
+        persisted = {
+            "cookies": [],
+            "localStorage": [],
+            "sessionStorage": [],
+        }
+
+        observed, selection_persisted = (
+            probe.derive_branch_selection_status(
+                branch_click_ok=True,
+                marker_after_select=False,
+                marker_after_reload=False,
+                changed=changed,
+                persisted=persisted,
+                network=[],
+            )
+        )
+        value = probe.department_cookie_value(
+            {
+                "kwant.net.pl|/|departmentCookie": "205",
+            }
+        )
+        summary = probe.build_safe_summary(
+            requested_branch_label="Nowy Sącz",
+            selection_observed=observed,
+            selection_persisted=selection_persisted,
+            department_cookie_observed=(
+                probe.department_cookie_observed(changed)
+            ),
+            department_cookie_persisted=(
+                probe.department_cookie_persisted(persisted)
+            ),
+            department_cookie_value_safe=value,
+            backend_branch_identifier=probe.UNKNOWN,
+        )
+
+        self.assertTrue(observed)
+        self.assertIsNone(selection_persisted)
+        self.assertTrue(
+            summary["branch"]["departmentCookieObserved"]
+        )
+        self.assertFalse(
+            summary["branch"]["departmentCookiePersisted"]
+        )
+        self.assertEqual(
+            "205",
+            summary["branch"]["departmentCookieValue"],
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            summary["branch"]["backendBranchIdentifier"],
+        )
+
+    def test_same_department_cookie_survives_reload_and_proves_persistence(self):
+        before_cookies = {}
+        after_cookies = {
+            "kwant.net.pl|/|departmentCookie": "205",
+        }
+        reload_cookies = dict(after_cookies)
+        empty_storage = {
+            "localStorage": {},
+            "sessionStorage": {},
+        }
+
+        changed = probe.state_changed_keys(
+            before_cookies,
+            after_cookies,
+            empty_storage,
+            empty_storage,
+        )
+        persisted = probe.persisted_state_keys(
+            after_cookies,
+            reload_cookies,
+            empty_storage,
+            empty_storage,
+            changed,
+        )
+        observed, selection_persisted = (
+            probe.derive_branch_selection_status(
+                branch_click_ok=True,
+                marker_after_select=False,
+                marker_after_reload=False,
+                changed=changed,
+                persisted=persisted,
+                network=[],
+            )
+        )
+
+        self.assertTrue(observed)
+        self.assertTrue(selection_persisted)
+        self.assertTrue(
+            probe.department_cookie_observed(changed)
+        )
+        self.assertTrue(
+            probe.department_cookie_persisted(persisted)
+        )
+        self.assertEqual(
+            "205",
+            probe.department_cookie_value(after_cookies),
+        )
+
     def test_generic_branch_page_request_is_not_selection_request_evidence(self):
         network = [
             {
@@ -1120,6 +1343,9 @@ class ReportWriterTest(unittest.TestCase):
 
         self.assertIn("selectionObserved=true", text)
         self.assertIn("selectionPersisted=UNKNOWN", text)
+        self.assertIn("departmentCookieObserved=UNKNOWN", text)
+        self.assertIn("departmentCookiePersisted=UNKNOWN", text)
+        self.assertIn("departmentCookieValue=UNKNOWN", text)
         self.assertIn("articleCode=UNKNOWN", text)
         self.assertEqual(
             probe.UNKNOWN,
