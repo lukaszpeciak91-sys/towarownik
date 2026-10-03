@@ -34,7 +34,7 @@ internal data class KwantBranchMetadata(
             "}"
 
     private fun jsonString(value: String): String =
-        Json.encodeToString(JsonPrimitive.serializer(), JsonPrimitive(value))
+        JsonPrimitive(value).toString()
 }
 
 internal sealed interface KwantFrontendResult {
