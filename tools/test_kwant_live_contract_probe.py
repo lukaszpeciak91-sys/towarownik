@@ -427,6 +427,29 @@ class BranchTargetingTest(unittest.TestCase):
             )
         )
 
+    def test_branch_card_text_can_resolve_when_href_slug_omits_label(self):
+        numeric_href = self.candidate(
+            label="Szczegóły oddziału",
+            page_url=(
+                "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+                "oddzial/312"
+            ),
+            card_text="Tarnów Wybierz oddział",
+        )
+
+        resolved = probe.resolve_unique_branch_candidate(
+            [numeric_href],
+            "Tarnów",
+        )
+
+        self.assertIsNotNone(resolved)
+        self.assertEqual(
+            "312",
+            probe.extract_branch_page_identifier(
+                resolved["pageUrl"]
+            ),
+        )
+
     def test_branch_resolution_uses_label_and_link_not_hard_coded_205(self):
         tarnow = self.candidate(
             label="Tarnów",
