@@ -1353,11 +1353,13 @@ class DepartmentCookieConstructorResearchTest(unittest.TestCase):
                 self.PUBLIC_BRANCH,
             )
         )
+        different_public = dict(self.PUBLIC_BRANCH)
+        different_public["street"] = "Different street"
         self.assertFalse(
             probe.constructed_cookie_value_matches_observed(
-                observed.replace("Tarnowska 149", "Different street"),
+                observed,
                 mapping,
-                self.PUBLIC_BRANCH,
+                different_public,
             )
         )
         incomplete_public = dict(self.PUBLIC_BRANCH)
