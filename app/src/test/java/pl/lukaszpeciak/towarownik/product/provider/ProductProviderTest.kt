@@ -31,6 +31,18 @@ class ProductProviderTest {
     }
 
     @Test
+    fun `OBI provider exposes existing supported branches including 075`() {
+        val branches = ObiProductProvider().branches()
+            as ProviderBranchResult.Available
+
+        assertTrue(
+            branches.branches.any {
+                it.branchId == BranchId("075")
+            },
+        )
+    }
+
+    @Test
     fun `OBI provider delegates existing OBIK EAN and text searches unchanged`() {
         val seenQueries = mutableListOf<String>()
         val provider = ObiProductProvider(
@@ -229,7 +241,7 @@ class ProductProviderTest {
     }
 
     @Test
-    fun `production registry contains existing OBI provider only`() {
+    fun `production registry still resolves existing OBI provider`() {
         val resolved =
             ProductProviderRegistry.production()
                 .resolve(OBI_PROVIDER_ID)
