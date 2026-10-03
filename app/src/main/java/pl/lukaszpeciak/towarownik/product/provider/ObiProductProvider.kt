@@ -37,7 +37,7 @@ internal class ObiProductProvider(
             branches = SUPPORTED_OBI_STORE_NUMBERS.map { storeNumber ->
                 ProviderBranch(
                     branchId = BranchId(storeNumber),
-                    name = "OBI $storeNumber",
+                    name = storeNumber,
                 )
             },
         )
