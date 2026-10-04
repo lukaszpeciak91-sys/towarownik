@@ -11,6 +11,7 @@ import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 class AdvisorControllerTest {
     @Test
