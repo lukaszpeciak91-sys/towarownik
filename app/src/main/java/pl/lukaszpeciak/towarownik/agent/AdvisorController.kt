@@ -333,9 +333,65 @@ internal class AdvisorController(
                     BuildConfig.TOWAROWNIK_APP_TOKEN.isNotBlank() &&
                         proxyClient.isConfigured()
                 },
-                startAgent = proxyClient::start,
-                messageAgent = proxyClient::message,
-                continueAgent = proxyClient::continueTurn,
+                startAgent = { message, providerId, branchId ->
+                    if (providerId == OBI_PROVIDER_ID.value) {
+                        proxyClient.start(
+                            message = message,
+                            storeNumber = branchId,
+                        )
+                    } else {
+                        proxyClient.start(
+                            message = message,
+                            providerId = providerId,
+                            branchId = branchId,
+                        )
+                    }
+                },
+                messageAgent = {
+                        previousResponseId,
+                        message,
+                        providerId,
+                        branchId,
+                    ->
+                    if (providerId == OBI_PROVIDER_ID.value) {
+                        proxyClient.message(
+                            previousResponseId = previousResponseId,
+                            message = message,
+                            storeNumber = branchId,
+                        )
+                    } else {
+                        proxyClient.message(
+                            previousResponseId = previousResponseId,
+                            message = message,
+                            providerId = providerId,
+                            branchId = branchId,
+                        )
+                    }
+                },
+                continueAgent = {
+                        responseId,
+                        callId,
+                        providerId,
+                        branchId,
+                        continuation,
+                    ->
+                    if (providerId == OBI_PROVIDER_ID.value) {
+                        proxyClient.continueTurn(
+                            responseId = responseId,
+                            callId = callId,
+                            storeNumber = branchId,
+                            continuation = continuation,
+                        )
+                    } else {
+                        proxyClient.continueTurn(
+                            responseId = responseId,
+                            callId = callId,
+                            providerId = providerId,
+                            branchId = branchId,
+                            continuation = continuation,
+                        )
+                    }
+                },
                 executeTool = localTool::execute,
             )
         }
