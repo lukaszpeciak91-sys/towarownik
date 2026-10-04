@@ -643,6 +643,137 @@ class AdvisorControllerTest {
     }
 
     @Test
+    fun `KWANT conversation executes provider tool and selects current turn card`() = runBlocking {
+        var toolCalls = 0
+        val snapshot = snapshot(
+            obik = "580",
+            name = "Wyłącznik",
+            stock = 140,
+            price = BigDecimal("14.55"),
+            storeNumber = "205",
+        ).copy(
+            providerId = "kwant-pl",
+            productId = "580",
+            branchId = "205",
+            articleNumber = "MBN116E/HAG",
+        )
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.ToolRequest(
+                        responseId = "resp_kwant_tool",
+                        callId = "call_kwant",
+                        arguments = AdvisorToolArguments(
+                            providerId = "kwant-pl",
+                            storeNumber = "205",
+                            queries = listOf(
+                                AdvisorToolQuery("MBN116E", 1),
+                            ),
+                        ),
+                    ),
+                )
+            },
+            continueCall = { _, _, _ ->
+                successAnswerRefs(
+                    responseId = "resp_kwant_final",
+                    text = "Mam produkt.",
+                    productRefs = listOf(
+                        AdvisorProductRef(
+                            storeNumber = "205",
+                            obik = "580",
+                            providerId = "kwant-pl",
+                        ),
+                    ),
+                )
+            },
+            tool = { arguments ->
+                toolCalls += 1
+                assertEquals("kwant-pl", arguments.providerId)
+                assertEquals("205", arguments.branchId)
+                AdvisorToolExecutionResult.Success(
+                    result = AdvisorVerifiedToolResult(
+                        providerId = "kwant-pl",
+                        storeNumber = "205",
+                        results = listOf(
+                            AdvisorVerifiedQueryResult(
+                                query = "MBN116E",
+                                status =
+                                    AdvisorQueryResultStatus.VERIFIED,
+                                products = listOf(
+                                    AdvisorVerifiedProduct(
+                                        obik = "580",
+                                        productId = "580",
+                                        articleNumber = "MBN116E/HAG",
+                                        name = "Wyłącznik",
+                                        stock = 140,
+                                        price = BigDecimal("14.55"),
+                                        priceScope = "online",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                    snapshots = listOf(snapshot),
+                )
+            },
+        )
+
+        val result = controller.runTurn(
+            input = "Sprawdź MBN116E",
+            previousResponseId = null,
+            conversationStoreNumber = "205",
+            conversationProviderId = "kwant-pl",
+        ) { } as AdvisorUiState.Success
+
+        assertEquals(1, toolCalls)
+        assertEquals(listOf(snapshot), result.products)
+    }
+
+    @Test
+    fun `KWANT conversation rejects OBI provider tool request before local execution`() = runBlocking {
+        var toolCalls = 0
+        var rejectedProvider: String? = null
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.ToolRequest(
+                        responseId = "resp_wrong_provider",
+                        callId = "call_wrong_provider",
+                        arguments = AdvisorToolArguments(
+                            providerId = "obi-pl",
+                            storeNumber = "075",
+                            queries = listOf(
+                                AdvisorToolQuery("klej", 1),
+                            ),
+                        ),
+                    ),
+                )
+            },
+            rejectedContinueCall = { _, _, rejected ->
+                rejectedProvider = rejected.providerId
+                successAnswer(
+                    responseId = "resp_final",
+                    text = "Provider mismatch.",
+                )
+            },
+            tool = {
+                toolCalls += 1
+                error("OBI tool must not run for KWANT conversation")
+            },
+        )
+
+        controller.runTurn(
+            input = "Sprawdź produkt",
+            previousResponseId = null,
+            conversationStoreNumber = "205",
+            conversationProviderId = "kwant-pl",
+        ) { }
+
+        assertEquals(0, toolCalls)
+        assertEquals("obi-pl", rejectedProvider)
+    }
+
+    @Test
     fun `proxy failure stops with no retry loop`() = runBlocking {
         var starts = 0
         var messages = 0
