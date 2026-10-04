@@ -172,6 +172,6 @@ The currently planned AI capability stage is complete after this selective web-s
 - Added Android local advisor tool execution through `ProductProviderRegistry`.
 - KWANT conversations now enter the advisor using their saved WorkingProfile (e.g. `kwant-pl / 205`) instead of returning unsupported-provider.
 - Kept existing OBI advisor transport on protocol v2 for rollout compatibility.
-- Added Room v8 provider-owned advisor product persistence. The already-shipped v6→v7 migration remains unchanged; v7→v8 maps historical OBI products to provider-owned identity and branch price scope.
+- Added Room v8 provider-owned advisor product persistence. The already-shipped v6→v7 migration remains unchanged; v7→v8 adds providerId/productId/branchId/articleNumber and maps historical OBI products safely. Price scope is restored from provider identity rather than adding another database column.
 - Added provider isolation: a KWANT conversation cannot execute an OBI tool request and vice versa.
 - Added Worker and Android coverage for protocol v3, KWANT 205, no branch fallback, provider-owned product refs, and KWANT online price scope.
