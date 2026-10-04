@@ -348,11 +348,14 @@ function validateProviderToolArguments(
   return {
     providerId: validateProviderId(object.providerId),
     branchId: validateBranchId(object.branchId),
-    queries: validateToolQueries(object.queries),
+    queries: validateToolQueries(object.queries, true),
   };
 }
 
-function validateToolQueries(value: unknown): ToolQuery[] {
+function validateToolQueries(
+  value: unknown,
+  allowProductId = false,
+): ToolQuery[] {
   if (
     !Array.isArray(value) ||
     value.length < 1 ||
@@ -362,7 +365,11 @@ function validateToolQueries(value: unknown): ToolQuery[] {
   }
 
   const queries = value.map((entry): ToolQuery => {
-    const object = exactObject(entry, ["query", "limit"]);
+    const object = exactObjectShape(
+      entry,
+      ["query", "limit"],
+      ["productId"],
+    );
     const query = normalizedToolQuery(object.query);
     if (
       typeof object.limit !== "number" ||
@@ -372,9 +379,19 @@ function validateToolQueries(value: unknown): ToolQuery[] {
     ) {
       throw new InvalidRequestError();
     }
+    const productId = object.productId === undefined || object.productId === null
+      ? undefined
+      : validateProductId(object.productId);
+    if (
+      productId !== undefined &&
+      (!allowProductId || object.limit !== 1)
+    ) {
+      throw new InvalidRequestError();
+    }
     return {
       query,
       limit: object.limit,
+      ...(productId === undefined ? {} : { productId }),
     };
   });
 
@@ -614,7 +631,7 @@ function validateProviderRejectedToolResult(
   );
   const providerId = validateProviderId(object.providerId);
   const branchId = validateBranchId(object.branchId);
-  const queries = validateToolQueries(object.queries);
+  const queries = validateToolQueries(object.queries, true);
 
   if (object.rejection === "branch_not_authorized") {
     return {

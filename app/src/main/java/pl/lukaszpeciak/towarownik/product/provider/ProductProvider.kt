@@ -122,6 +122,19 @@ internal sealed interface ProviderLookupResult {
     ) : ProviderLookupResult
 }
 
+internal sealed interface ProviderLookupScopeResult {
+    data class Available(
+        val lookup: (ProductRef) -> ProviderLookupResult,
+    ) : ProviderLookupScopeResult
+
+    data object InvalidBranch : ProviderLookupScopeResult
+
+    data class Unavailable(
+        val failure: ProductProviderFailure,
+        internal val reason: String,
+    ) : ProviderLookupScopeResult
+}
+
 internal interface ProductProvider {
     val providerId: ProviderId
 
@@ -136,6 +149,23 @@ internal interface ProductProvider {
         ref: ProductRef,
         branchId: BranchId,
     ): ProviderLookupResult
+
+    fun openLookupScope(branchId: BranchId): ProviderLookupScopeResult =
+        when (val result = branches()) {
+            is ProviderBranchResult.Available ->
+                if (result.branches.any { it.branchId == branchId }) {
+                    ProviderLookupScopeResult.Available { ref ->
+                        lookup(ref, branchId)
+                    }
+                } else {
+                    ProviderLookupScopeResult.InvalidBranch
+                }
+            is ProviderBranchResult.Unavailable ->
+                ProviderLookupScopeResult.Unavailable(
+                    result.failure,
+                    result.reason,
+                )
+        }
 }
 
 internal class UnknownProductProviderException(

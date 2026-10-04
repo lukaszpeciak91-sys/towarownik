@@ -22,6 +22,33 @@ import pl.lukaszpeciak.towarownik.product.provider.ProviderSearchResult
 
 class FindProviderProductsToolTest {
     @Test
+    fun `explicit KWANT productId bypasses search and uses exact lookup`() = runBlocking {
+        val provider = FakeKwantProvider()
+        val tool = FindProviderProductsTool(
+            providers = ProductProviderRegistry(listOf(provider)),
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        val result = tool.execute(
+            AdvisorToolArguments(
+                providerId = "kwant-pl",
+                storeNumber = "205",
+                queries = listOf(
+                    AdvisorToolQuery(
+                        query = "KWANT productId 580",
+                        limit = 1,
+                        productId = "580",
+                    ),
+                ),
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(0, provider.searchCalls)
+        assertEquals(listOf("580"), provider.lookupProductIds)
+        assertEquals("580", result.result.products.single().productId)
+    }
+
+    @Test
     fun `KWANT product tool preserves provider branch article stock and online price scope`() = runBlocking {
         val provider = FakeKwantProvider()
         val tool = FindProviderProductsTool(
@@ -95,6 +122,7 @@ class FindProviderProductsToolTest {
         override val providerId: ProviderId = KWANT_PROVIDER_ID
         var searchCalls: Int = 0
         val lookupBranches = mutableListOf<String>()
+        val lookupProductIds = mutableListOf<String>()
 
         override fun branches(): ProviderBranchResult =
             ProviderBranchResult.Available(
@@ -132,6 +160,7 @@ class FindProviderProductsToolTest {
             branchId: BranchId,
         ): ProviderLookupResult {
             lookupBranches += branchId.value
+            lookupProductIds += ref.productId
             return ProviderLookupResult.Found(
                 ProviderProduct(
                     ref = ref,

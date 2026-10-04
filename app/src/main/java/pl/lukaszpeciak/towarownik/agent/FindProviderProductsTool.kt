@@ -7,11 +7,11 @@ import kotlinx.coroutines.withContext
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
-import pl.lukaszpeciak.towarownik.product.provider.ProductProviderFailure
 import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
-import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
+import pl.lukaszpeciak.towarownik.product.provider.ProductRef
 import pl.lukaszpeciak.towarownik.product.provider.ProviderId
 import pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult
+import pl.lukaszpeciak.towarownik.product.provider.ProviderLookupScopeResult
 import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 import pl.lukaszpeciak.towarownik.product.provider.ProviderSearchResult
 
@@ -48,7 +48,11 @@ internal class FindProviderProductsTool(
             queries.all {
                 it.query.isNotBlank() &&
                     it.query.length <= MAX_TOOL_QUERY_CHARS &&
-                    it.limit in 1..MAX_TOOL_PRODUCTS
+                    it.limit in 1..MAX_TOOL_PRODUCTS &&
+                    (
+                        it.productId == null ||
+                            it.productId.isNotBlank() && it.limit == 1
+                    )
             }
 
     private fun executeBlocking(
@@ -70,13 +74,11 @@ internal class FindProviderProductsTool(
             return AdvisorToolExecutionResult.Failure
         }
 
-        when (val branches = provider.branches()) {
-            is ProviderBranchResult.Available -> {
-                if (branches.branches.none { it.branchId == branchId }) {
-                    return AdvisorToolExecutionResult.UnsupportedStore
-                }
-            }
-            is ProviderBranchResult.Unavailable ->
+        val lookup = when (val scope = provider.openLookupScope(branchId)) {
+            is ProviderLookupScopeResult.Available -> scope.lookup
+            ProviderLookupScopeResult.InvalidBranch ->
+                return AdvisorToolExecutionResult.UnsupportedStore
+            is ProviderLookupScopeResult.Unavailable ->
                 return AdvisorToolExecutionResult.Failure
         }
 
@@ -85,6 +87,35 @@ internal class FindProviderProductsTool(
         val searchActions = mutableListOf<AdvisorSearchAction>()
 
         arguments.queries.forEach { requested ->
+            requested.productId?.let { exactProductId ->
+                val exact = try {
+                    lookup(ProductRef(providerId, exactProductId))
+                } catch (exception: CancellationException) {
+                    throw exception
+                } catch (_: Exception) {
+                    groupedResults += unavailable(requested.query)
+                    return@forEach
+                }
+                when (exact) {
+                    is ProviderLookupResult.Found -> {
+                        val product = exact.product
+                        groupedResults += AdvisorVerifiedQueryResult(
+                            query = requested.query,
+                            status = AdvisorQueryResultStatus.VERIFIED,
+                            products = listOf(product.toAdvisorProduct()),
+                        )
+                        snapshots += product.toSnapshot(now())
+                    }
+                    is ProviderLookupResult.InvalidBranch ->
+                        return AdvisorToolExecutionResult.UnsupportedStore
+                    is ProviderLookupResult.WrongProvider,
+                    is ProviderLookupResult.InvalidProductId ->
+                        groupedResults += notFound(requested.query)
+                    is ProviderLookupResult.Unavailable ->
+                        groupedResults += unavailable(requested.query)
+                }
+                return@forEach
+            }
             val search = try {
                 provider.search(
                     query = requested.query,
@@ -133,10 +164,7 @@ internal class FindProviderProductsTool(
                         .forEach { candidate ->
                             when (
                                 val lookup = try {
-                                    provider.lookup(
-                                        ref = candidate.ref,
-                                        branchId = branchId,
-                                    )
+                                    lookup(candidate.ref)
                                 } catch (exception: CancellationException) {
                                     throw exception
                                 } catch (_: Exception) {
@@ -146,45 +174,8 @@ internal class FindProviderProductsTool(
                             ) {
                                 is ProviderLookupResult.Found -> {
                                     val product = lookup.product
-                                    verified += AdvisorVerifiedProduct(
-                                        obik = product.ref.productId,
-                                        productId = product.ref.productId,
-                                        articleNumber = product.articleNumber,
-                                        name = product.name,
-                                        brand = product.brand,
-                                        shortDescription =
-                                            product.shortDescription,
-                                        technicalFacts =
-                                            product.technicalFacts.map {
-                                                AdvisorTechnicalFact(
-                                                    label = it.label,
-                                                    value = it.value,
-                                                )
-                                            },
-                                        stock = product.stock,
-                                        price = product.grossPrice,
-                                        priceScope = when (product.priceScope) {
-                                            ProviderPriceScope.BRANCH -> "branch"
-                                            ProviderPriceScope.ONLINE -> "online"
-                                            null -> null
-                                        },
-                                    )
-                                    snapshots += VerifiedProductSnapshot(
-                                        obik = product.ref.productId,
-                                        productId = product.ref.productId,
-                                        providerId = product.ref.providerId.value,
-                                        branchId = product.branchId.value,
-                                        articleNumber = product.articleNumber,
-                                        name = product.name,
-                                        stock = product.stock,
-                                        grossPrice = product.grossPrice,
-                                        productUrl = product.productUrl,
-                                        primaryImageUrl =
-                                            product.primaryImageUrl,
-                                        verifiedAt = now(),
-                                        storeNumber = product.branchId.value,
-                                        priceScope = product.priceScope,
-                                    )
+                                    verified += product.toAdvisorProduct()
+                                    snapshots += product.toSnapshot(now())
                                 }
 
                                 is ProviderLookupResult.InvalidBranch ->
@@ -230,6 +221,43 @@ internal class FindProviderProductsTool(
             status = AdvisorQueryResultStatus.NOT_FOUND,
             products = emptyList(),
         )
+
+    private fun pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
+        .toAdvisorProduct() = AdvisorVerifiedProduct(
+        obik = ref.productId,
+        productId = ref.productId,
+        articleNumber = articleNumber,
+        name = name,
+        brand = brand,
+        shortDescription = shortDescription,
+        technicalFacts = technicalFacts.map {
+            AdvisorTechnicalFact(it.label, it.value)
+        },
+        stock = stock,
+        price = grossPrice,
+        priceScope = when (priceScope) {
+            ProviderPriceScope.BRANCH -> "branch"
+            ProviderPriceScope.ONLINE -> "online"
+            null -> null
+        },
+    )
+
+    private fun pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
+        .toSnapshot(verifiedAt: Long) = VerifiedProductSnapshot(
+        obik = ref.productId,
+        productId = ref.productId,
+        providerId = ref.providerId.value,
+        branchId = branchId.value,
+        articleNumber = articleNumber,
+        name = name,
+        stock = stock,
+        grossPrice = grossPrice,
+        productUrl = productUrl,
+        primaryImageUrl = primaryImageUrl,
+        verifiedAt = verifiedAt,
+        storeNumber = branchId.value,
+        priceScope = priceScope,
+    )
 
     private fun unavailable(query: String): AdvisorVerifiedQueryResult =
         AdvisorVerifiedQueryResult(

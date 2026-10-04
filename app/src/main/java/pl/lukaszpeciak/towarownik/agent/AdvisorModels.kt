@@ -21,6 +21,7 @@ internal const val MAX_TOOL_QUERY_CHARS = 200
 internal data class AdvisorToolQuery(
     val query: String,
     val limit: Int,
+    val productId: String? = null,
 )
 
 internal data class AdvisorToolArguments(

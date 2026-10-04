@@ -564,7 +564,12 @@ internal class AdvisorProxyClient(
                     ?.map { element ->
                         val requested = element as? JsonObject
                             ?: error("Invalid tool query entry")
-                        requireExactKeys(requested, setOf("query", "limit"))
+                        val basicKeys = setOf("query", "limit")
+                        require(
+                            requested.keys == basicKeys ||
+                                toolName == FIND_PRODUCTS &&
+                                requested.keys == basicKeys + "productId",
+                        )
                         val query = requested["query"]
                             ?.jsonPrimitive
                             ?.contentOrNull
@@ -579,9 +584,18 @@ internal class AdvisorProxyClient(
                             ?.intOrNull
                             ?.takeIf { it in 1..MAX_TOOL_PRODUCTS }
                             ?: error("Invalid tool limit")
+                        val productId = requested["productId"]
+                            ?.jsonPrimitive
+                            ?.contentOrNull
+                        require(
+                            productId == null ||
+                                PRODUCT_ID_PATTERN.matches(productId) &&
+                                limit == 1,
+                        )
                         AdvisorToolQuery(
                             query = query,
                             limit = limit,
+                            productId = productId,
                         )
                     }
                     ?.takeIf {
@@ -835,6 +849,7 @@ internal class AdvisorProxyClient(
                     buildJsonObject {
                         put("query", requested.query)
                         put("limit", requested.limit)
+                        requested.productId?.let { put("productId", it) }
                     },
                 )
             }

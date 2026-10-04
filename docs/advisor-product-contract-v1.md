@@ -25,9 +25,9 @@ Before using `find_obi_products`, decide whether the current user turn is asking
 2. clarification-dependent product selection;
 3. explicit assortment/browse information;
 4. direct current OBI facts such as price, stock, availability, or a specific OBIK;
-5. concrete products from the selected market for an already-understood need.
+5. concrete products or recommendations for an already-understood need.
 
-Use OBI immediately for cases 3, 4, and 5.
+Use the current conversation provider immediately for cases 3, 4, and 5. Clear concrete-product intent is sufficient; the user does not need a second “check in the market” message.
 
 For cases 1 and 2, do not search merely because OBI access exists.
 
@@ -43,9 +43,9 @@ Taksula should explain the appropriate product type, important substrate or comp
 
 It should not automatically search OBI just because a product category can be inferred.
 
-After useful advice, Taksula may offer to check matching products in the selected market.
+After useful advice, Taksula may offer to check matching products in the selected market only when the user did not already ask for a concrete product or recommendation.
 
-Future preferred UX: a compact action such as **"Sprawdź w markecie"** instead of requiring the user to type another message.
+General advice alone still does not trigger lookup merely because it mentions a product category.
 
 ## 4. Ambiguous product selection
 

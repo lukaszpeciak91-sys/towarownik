@@ -175,3 +175,11 @@ The currently planned AI capability stage is complete after this selective web-s
 - Added Room v8 provider-owned advisor product persistence. The already-shipped v6→v7 migration remains unchanged; v7→v8 adds providerId/productId/branchId/articleNumber and maps historical OBI products safely. Price scope is restored from provider identity rather than adding another database column.
 - Added provider isolation: a KWANT conversation cannot execute an OBI tool request and vice versa.
 - Added Worker and Android coverage for protocol v3, KWANT 205, no branch fallback, provider-owned product refs, and KWANT online price scope.
+
+
+## 2026-10-04 — advisor product intent and exact lookup
+
+- Clear concrete-product, recommendation, assortment, price/stock, and identifier intent now proactively uses the current conversation provider; general technical advice remains lookup-free by default and decision-critical ambiguity still clarifies first.
+- Exact seven-digit OBIK tool queries bypass OBI text search and use the existing exact store lookup directly.
+- KWANT direct lookup is reserved for an explicitly identified public `productId`; article number, EAN, product name, manufacturer text, and unlabelled numeric values remain search-then-exact-verification inputs.
+- KWANT branch metadata is resolved once per provider-tool execution and reused for all verified candidates without adding a broad cache.

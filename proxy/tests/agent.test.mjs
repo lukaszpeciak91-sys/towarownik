@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   AGENT_INSTRUCTIONS,
+  KWANT_V3_APPENDIX,
+  PROVIDER_V3_INSTRUCTIONS,
   agentInstructionsForStore,
   FINAL_ANSWER_FORMAT,
   LOCAL_TOOL_NAME,
@@ -2193,7 +2195,7 @@ test("final Taksula instructions encode retail advisor trust and scope rules", (
   );
   assert.match(
     instructions,
-    /Use find_obi_products immediately for explicit assortment\/browse requests, current price, current stock, availability, direct OBIK or specific-product verification/i,
+    /Use find_obi_products immediately when the USER clearly wants a concrete product, recommendation, assortment option, current price, current stock, availability, direct OBIK or specific-product verification/i,
   );
   assert.doesNotMatch(
     instructions,
@@ -2262,7 +2264,7 @@ test('A understood job contract gives essentials-first advice without automatic 
   );
   assert.match(
     instructions,
-    /Search OBI for a job only when the USER explicitly asks for concrete products from the selected market/i,
+    /Search OBI for a job when the USER clearly asks for a concrete product or recommendation/i,
   );
 });
 
@@ -2270,7 +2272,7 @@ test('B explicit selected-market complete-kit contract may search and assemble a
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
-    /explicitly asks for a complete verified kit from that market/i,
+    /explicitly asks for a complete verified kit/i,
   );
   assert.match(
     instructions,
@@ -2454,7 +2456,7 @@ test("Product Contract v1 decision policy keeps advisor-first paths before expli
     "For task, project, or 'what do I need' intent",
   );
   const explicitObiIndex = instructions.indexOf(
-    "Use find_obi_products immediately for explicit assortment/browse requests",
+    "Use find_obi_products immediately when the USER clearly wants a concrete product",
   );
 
   assert.notEqual(decisionIndex, -1);
@@ -2515,7 +2517,7 @@ test("bounded assortment results are never presented as exhaustive without verif
   );
 });
 
-test('ambiguity C — sufficiently specified selection with explicit market request proceeds to OBI verification', () => {
+test('ambiguity C — sufficiently specified concrete product intent proceeds to OBI verification', () => {
   const instructions = AGENT_INSTRUCTIONS;
   assert.match(
     instructions,
@@ -2523,7 +2525,26 @@ test('ambiguity C — sufficiently specified selection with explicit market requ
   );
   assert.match(
     instructions,
-    /sufficiently specified product selection when the USER explicitly asks what the selected market has/i,
+    /concrete product intent itself authorizes lookup in the selected market/i,
+  );
+});
+
+test("OBI exact identifier and provider product intent rules avoid an extra market-check turn", () => {
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /For an exact seven-digit OBIK, send that OBIK as the query with limit 1/i,
+  );
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /Do not wait for an extra phrase such as 'check in the market'/i,
+  );
+  assert.match(
+    PROVIDER_V3_INSTRUCTIONS,
+    /Use find_products immediately when the user clearly wants a concrete product, recommendation, assortment option/i,
+  );
+  assert.match(
+    KWANT_V3_APPENDIX,
+    /Article numbers, EANs, product names, and manufacturer text are not productId/i,
   );
 });
 

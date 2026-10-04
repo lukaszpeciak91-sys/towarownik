@@ -8,6 +8,7 @@ export type AdvisorProtocolVersion = 1 | 2 | 3;
 export interface ToolQuery {
   query: string;
   limit: number;
+  productId?: string;
 }
 
 export interface LegacyToolArguments {
