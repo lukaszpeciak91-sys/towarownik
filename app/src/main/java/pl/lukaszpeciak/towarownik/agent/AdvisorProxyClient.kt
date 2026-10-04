@@ -29,6 +29,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import pl.lukaszpeciak.towarownik.BuildConfig
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 
 internal class AdvisorProxyClient(
     private val appToken: String = BuildConfig.TOWAROWNIK_APP_TOKEN,
@@ -62,7 +63,7 @@ internal class AdvisorProxyClient(
         }
 
         val body = buildJsonObject {
-            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("protocolVersion", OBI_ADVISOR_PROTOCOL_VERSION)
             put("message", message)
             put("storeNumber", storeNumber)
         }
@@ -70,6 +71,33 @@ internal class AdvisorProxyClient(
         return execute(
             endpoint = "v1/agent/start",
             body = body,
+        )
+    }
+
+    suspend fun start(
+        message: String,
+        providerId: String,
+        branchId: String,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.NOT_CONFIGURED,
+            )
+        }
+        if (!isValidProfile(providerId, branchId)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
+        return execute(
+            endpoint = "v1/agent/start",
+            body = buildJsonObject {
+                put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+                put("message", message)
+                put("providerId", providerId)
+                put("branchId", branchId)
+            },
         )
     }
 
@@ -91,7 +119,7 @@ internal class AdvisorProxyClient(
         }
 
         val body = buildJsonObject {
-            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("protocolVersion", OBI_ADVISOR_PROTOCOL_VERSION)
             put("previousResponseId", previousResponseId)
             put("message", message)
             put("storeNumber", storeNumber)
@@ -100,6 +128,35 @@ internal class AdvisorProxyClient(
         return execute(
             endpoint = "v1/agent/message",
             body = body,
+        )
+    }
+
+    suspend fun message(
+        previousResponseId: String,
+        message: String,
+        providerId: String,
+        branchId: String,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.NOT_CONFIGURED,
+            )
+        }
+        if (!isValidProfile(providerId, branchId)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
+        return execute(
+            endpoint = "v1/agent/message",
+            body = buildJsonObject {
+                put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+                put("previousResponseId", previousResponseId)
+                put("message", message)
+                put("providerId", providerId)
+                put("branchId", branchId)
+            },
         )
     }
 
@@ -150,6 +207,74 @@ internal class AdvisorProxyClient(
                     storeNumber = storeNumber,
                     result = buildJsonObject {
                         put("storeNumber", continuation.storeNumber)
+                        put("queries", continuation.queries.toJson())
+                        put(
+                            "rejection",
+                            "local_tool_limit_reached",
+                        )
+                    },
+                ).takeIf(::fitsContinueByteBudget)
+        } ?: return AdvisorProxyCallResult.Failure(
+            AdvisorProxyFailureKind.PROTOCOL,
+        )
+
+        return execute(
+            endpoint = "v1/agent/continue",
+            body = body,
+        )
+    }
+
+    suspend fun continueTurn(
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        continuation: AdvisorToolContinuation,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.NOT_CONFIGURED,
+            )
+        }
+        if (!isValidProfile(providerId, branchId)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
+        val body = when (continuation) {
+            is AdvisorToolContinuation.Verified ->
+                buildBudgetedVerifiedContinueBodyV3(
+                    responseId = responseId,
+                    callId = callId,
+                    providerId = providerId,
+                    branchId = branchId,
+                    result = continuation.result,
+                )
+
+            is AdvisorToolContinuation.RejectedStore ->
+                buildContinueBodyV3(
+                    responseId = responseId,
+                    callId = callId,
+                    providerId = providerId,
+                    branchId = branchId,
+                    result = buildJsonObject {
+                        put("providerId", continuation.providerId)
+                        put("branchId", continuation.storeNumber)
+                        put("queries", continuation.queries.toJson())
+                        put("rejection", "branch_not_authorized")
+                    },
+                ).takeIf(::fitsContinueByteBudget)
+
+            is AdvisorToolContinuation.LocalToolLimitReached ->
+                buildContinueBodyV3(
+                    responseId = responseId,
+                    callId = callId,
+                    providerId = providerId,
+                    branchId = branchId,
+                    result = buildJsonObject {
+                        put("providerId", continuation.providerId)
+                        put("branchId", continuation.storeNumber)
                         put("queries", continuation.queries.toJson())
                         put(
                             "rejection",
@@ -531,7 +656,7 @@ internal class AdvisorProxyClient(
         result: JsonObject,
     ): JsonObject =
         buildJsonObject {
-            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("protocolVersion", OBI_ADVISOR_PROTOCOL_VERSION)
             put("responseId", responseId)
             put("callId", callId)
             put("storeNumber", storeNumber)
@@ -834,11 +959,22 @@ internal class AdvisorProxyClient(
     private fun String.normalizeWhitespace(): String =
         replace(CONTROL_OR_WHITESPACE, " ").trim()
 
+    private fun isValidProfile(
+        providerId: String,
+        branchId: String,
+    ): Boolean =
+        PROVIDER_ID_PATTERN.matches(providerId) &&
+            BRANCH_ID_PATTERN.matches(branchId)
+
     private companion object {
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
         val CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
         val OBIK_PATTERN = Regex("""\d{7}""")
         val STORE_NUMBER_PATTERN = Regex("""\d{3}""")
+        val PROVIDER_ID_PATTERN =
+            Regex("""[a-z0-9]+(?:-[a-z0-9]+)*""")
+        val BRANCH_ID_PATTERN = Regex("""[A-Za-z0-9._-]{1,64}""")
+        val PRODUCT_ID_PATTERN = Regex("""[A-Za-z0-9._-]{1,128}""")
         val MODEL_PATTERN = Regex("""[A-Za-z0-9._-]+""")
         val SAFE_PROXY_ERROR_CODES = setOf(
             "unauthorized",
