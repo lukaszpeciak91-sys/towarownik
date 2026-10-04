@@ -520,11 +520,12 @@ private fun TowarownikApp() {
                         aiUsageRepository.recordTurnStarted()
                     }
                 },
-            ) { obiStoreNumber ->
+            ) { providerId, branchId ->
                 advisorController.runTurn(
                     input = submitted,
                     previousResponseId = turn.previousResponseId,
-                    conversationStoreNumber = obiStoreNumber,
+                    conversationStoreNumber = branchId,
+                    conversationProviderId = providerId,
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(
@@ -2741,13 +2742,18 @@ private fun formatLocalTime(createdAt: Long): String =
 internal suspend fun runAdvisorForWorkingProfile(
     workingProfile: WorkingProfile,
     onAdvisorStarted: suspend () -> Unit = {},
-    runObiAdvisor: suspend (String) -> AdvisorUiState,
+    runAdvisor: suspend (String, String) -> AdvisorUiState,
 ): AdvisorUiState =
-    if (workingProfile.providerId == OBI_PROVIDER_ID) {
-        onAdvisorStarted()
-        runObiAdvisor(workingProfile.branchId.value)
-    } else {
-        AdvisorUiState.Error(AdvisorError.UNSUPPORTED_PROVIDER)
+    when (workingProfile.providerId) {
+        OBI_PROVIDER_ID,
+        KWANT_PROVIDER_ID -> {
+            onAdvisorStarted()
+            runAdvisor(
+                workingProfile.providerId.value,
+                workingProfile.branchId.value,
+            )
+        }
+        else -> AdvisorUiState.Error(AdvisorError.UNSUPPORTED_PROVIDER)
     }
 
 @Composable
@@ -2763,6 +2769,8 @@ private fun advisorErrorText(error: AdvisorError): String =
             AdvisorError.INPUT -> R.string.advisor_error_input
             AdvisorError.UNSUPPORTED_PROVIDER ->
                 R.string.advisor_error_unsupported_provider
+            AdvisorError.PRODUCT_PROVIDER ->
+                R.string.advisor_error_product_provider
         },
     )
 
