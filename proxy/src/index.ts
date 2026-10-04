@@ -125,7 +125,8 @@ async function handleProtectedAgentRequest(
       protocolVersion = input.protocolVersion;
       result = await startAgent(
         input.message,
-        input.storeNumber,
+        input.providerId,
+        input.branchId,
         apiKey,
         upstreamFetch,
         input.protocolVersion,
@@ -136,7 +137,8 @@ async function handleProtectedAgentRequest(
       result = await messageAgent(
         input.previousResponseId,
         input.message,
-        input.storeNumber,
+        input.providerId,
+        input.branchId,
         apiKey,
         upstreamFetch,
         input.protocolVersion,
@@ -147,7 +149,8 @@ async function handleProtectedAgentRequest(
       result = await continueAgent(
         input.responseId,
         input.callId,
-        input.storeNumber,
+        input.providerId,
+        input.branchId,
         input.result,
         apiKey,
         upstreamFetch,
