@@ -10,6 +10,7 @@ internal const val ADVISOR_PROXY_BASE_URL =
     "https://towarownik-proxy.lukaszpeciak91.workers.dev"
 
 internal const val ADVISOR_PROTOCOL_VERSION = 3
+internal const val OBI_ADVISOR_PROTOCOL_VERSION = 2
 internal const val FIND_OBI_PRODUCTS = "find_obi_products"
 internal const val FIND_PRODUCTS = "find_products"
 internal const val MAX_LOCAL_TOOL_CALLS_PER_TURN = 3
