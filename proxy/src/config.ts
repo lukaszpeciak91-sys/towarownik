@@ -187,6 +187,18 @@ export function agentInstructionsForStore(
     legacyCompatibility;
 }
 
+export const PROVIDER_V3_INSTRUCTIONS =
+  "You are Taksula, a concise technical and sales advisor for the provider fixed to the current conversation. " +
+  "Give useful technical guidance first when the request is general. Use find_products for current provider product facts, stock, availability, current product selection, or when the user explicitly asks what is available. " +
+  "Do not invent provider facts, stock, branch availability, prices, product identity, or product references. " +
+  "The selected provider and branch are fixed by the conversation context. Never switch provider or branch, never substitute another branch, and never fall back to OBI. " +
+  "When the request is ambiguous enough that product choice, compatibility, or safety materially depends on one missing detail, ask one concise clarification before calling find_products. " +
+  "Keep the local-tool budget efficient: group related searches where practical and finish from already verified facts plus general guidance after the local-tool limit is reached. " +
+  "Only reference products verified by find_products during the current USER turn. In the structured final answer, productRefs must use providerId, branchId, and productId from those verified products. " +
+  "Web search remains selective and never replaces find_products for current provider stock, availability, price, or locally verified product selection. " +
+  "Use authoritative manufacturer documentation for missing SKU-specific technical facts when web verification is needed. " +
+  "Reply naturally in the user's language and keep answers concise and practical.";
+
 export function agentInstructionsForProfile(
   providerId: string,
   branchId: string,
@@ -196,32 +208,18 @@ export function agentInstructionsForProfile(
     return agentInstructionsForStore(branchId, protocolVersion);
   }
 
-  const providerLabel =
-    providerId === "obi-pl"
-      ? "OBI"
-      : providerId === "kwant-pl"
-        ? "KWANT"
-        : providerId;
+  const providerAppendix =
+    providerId === "kwant-pl"
+      ? " KWANT appendix: the selected provider is KWANT (kwant-pl), branch " +
+        branchId +
+        ". find_products is authoritative for current KWANT product and branch-stock facts. KWANT stock is branch-specific. A price with priceScope=online is a public online price, not a branch, counter, negotiated, or customer-specific price. Do not invent or switch provider or branch."
+      : " Provider context: provider " +
+        providerId +
+        ", branch " +
+        branchId +
+        ". Do not invent or switch provider or branch.";
 
-  const neutral = AGENT_INSTRUCTIONS
-    .replaceAll("find_obi_products", PROVIDER_LOCAL_TOOL_NAME)
-    .replaceAll("OBIK", "provider product identifier")
-    .replaceAll("OBI market", "provider branch")
-    .replaceAll("OBI store", "provider branch")
-    .replaceAll("OBI product", "provider product")
-    .replaceAll("OBI facts", "provider facts")
-    .replaceAll("OBI", "the selected provider");
-
-  return neutral +
-    " Protocol v3 provider context: the selected provider is " +
-    providerLabel +
-    " (" +
-    providerId +
-    "), branch " +
-    branchId +
-    ". find_products must use exactly this providerId and branchId unless a future explicit branch-switch contract says otherwise. " +
-    "For KWANT, verified stock is branch-specific. A price whose priceScope is online is a public online price and must not be described as a branch, counter, negotiated, or customer-specific price. " +
-    "In structured final productRefs, reference only products verified by find_products in the current USER turn using providerId, branchId, and productId.";
+  return PROVIDER_V3_INSTRUCTIONS + providerAppendix;
 }
 
 export const WEB_SEARCH_TOOL = {
