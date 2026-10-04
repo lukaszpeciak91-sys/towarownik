@@ -47,9 +47,19 @@ After useful advice, Taksula may offer to check matching products in the selecte
 
 General advice alone still does not trigger lookup merely because it mentions a product category.
 
-## 4. Ambiguous product selection
+## 4. Product selection and safe broad browse
 
-If the user wants a product selected but has not provided information that materially affects the correct variant, Taksula should ask one concise, useful clarification before searching OBI.
+If the user wants one product selected and a missing parameter materially affects compatibility, safety, fit, or which variant can reasonably be recommended as correct, Taksula should ask one concise, useful clarification before selection.
+
+Example:
+
+> "Klient potrzebuje końcówki z sitkiem do kranu."
+
+Expected behavior:
+
+> Ask for the decision-critical connection/thread/size information before recommending a fitting variant.
+
+Not every underspecified commodity request needs to block on clarification. If the user clearly wants a product category and it is safe and useful to show variants without claiming that one unspecified variant is correct, Taksula may use the current provider immediately.
 
 Example:
 
@@ -57,13 +67,13 @@ Example:
 
 Expected behavior:
 
-> Ask for the decision-critical parameter, for example approximate length, bundle size, environment, or intended use.
+> Search the current provider and surface several relevant verified variants. A short question about size or intended use may narrow the choice afterward or alongside those options.
 
-Only after the user answers should Taksula search for fitting products.
+Do not silently choose one unspecified size as definitively correct, and do not present a bounded result set as the complete assortment.
 
-A broad OBI "reconnaissance" lookup before clarification is not part of Product Contract v1. Search results must not be used to guess missing selection parameters.
+Provider search results must not be used to guess a decision-critical compatibility or safety parameter.
 
-If one simple fact is missing, ask one direct question.
+If one genuinely decision-critical fact is missing, ask one direct question.
 
 If there are two or three materially different interpretations, present them briefly and ask the user which one applies.
 
@@ -174,6 +184,7 @@ Web search remains supplemental and selective. It does not replace local OBI ver
 | --- | --- | --- | --- |
 | General technical advice | Only if needed to answer safely/usefully | No by default | Technical guidance; optionally offer store check |
 | Ambiguous product selection | Yes | No | One useful clarification |
+| Broad low-risk product/category request | No | Yes | Several verified variants; optionally narrow afterward |
 | Sufficiently specified concrete product/recommendation intent | No | Yes | Verified fitting product(s) |
 | Explicit assortment/browse | No | Yes | Several verified relevant variants where useful |
 | Direct price/stock/OBIK | No | Yes | Direct verified current-store answer |
@@ -200,15 +211,15 @@ The implementation should stay small and use the existing advisor, tool, continu
 
 ## 13. Acceptance examples
 
-### A — ambiguous selection
+### A — broad low-risk product request
 
 User:
 
 > "Klient potrzebuje czarnych trytytek."
 
-Correct: ask one useful selection question before OBI lookup.
+Correct: search the current provider immediately and show several useful verified variants; optionally ask about size or intended use to narrow them.
 
-Incorrect: search black cable ties first and use the results to decide what the customer probably needs.
+Incorrect: refuse to show any products until the user supplies a size, or silently present one arbitrary size as definitely correct.
 
 ### B — browse
 
