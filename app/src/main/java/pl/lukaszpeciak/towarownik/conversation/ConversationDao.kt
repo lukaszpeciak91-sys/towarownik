@@ -270,13 +270,6 @@ internal abstract class ConversationDao {
                         productId = product.effectiveProductId,
                         branchId = product.effectiveBranchId,
                         articleNumber = product.articleNumber,
-                        priceScope = when (product.priceScope) {
-                            pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope.BRANCH ->
-                                "branch"
-                            pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope.ONLINE ->
-                                "online"
-                            null -> null
-                        },
                     )
                 },
             )
