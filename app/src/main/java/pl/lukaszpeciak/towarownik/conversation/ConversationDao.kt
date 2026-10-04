@@ -267,8 +267,8 @@ internal abstract class ConversationDao {
                         verifiedAt = product.verifiedAt,
                         storeNumber = product.storeNumber,
                         providerId = product.providerId,
-                        productId = product.productId,
-                        branchId = product.branchId,
+                        productId = product.effectiveProductId,
+                        branchId = product.effectiveBranchId,
                         articleNumber = product.articleNumber,
                     )
                 },
