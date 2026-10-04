@@ -57,7 +57,10 @@ internal class AdvisorController(
         branchId: String,
         continuation: AdvisorToolContinuation,
     ) -> AdvisorProxyCallResult,
-    private val executeTool: suspend (
+    private val executeObiTool: suspend (
+        AdvisorToolArguments,
+    ) -> AdvisorToolExecutionResult,
+    private val executeProviderTool: suspend (
         AdvisorToolArguments,
     ) -> AdvisorToolExecutionResult,
 ) {
@@ -229,7 +232,10 @@ internal class AdvisorController(
                         } else {
                             onState(AdvisorUiState.RunningLocalTool)
                             when (
-                                val localResult = safeExecuteTool(arguments)
+                                val localResult = safeExecuteTool(
+                                    conversationProviderId = conversationProviderId,
+                                    arguments = arguments,
+                                )
                             ) {
                                 is AdvisorToolExecutionResult.Success -> {
                                     localResult.snapshots.forEach {
@@ -317,10 +323,15 @@ internal class AdvisorController(
     }
 
     private suspend fun safeExecuteTool(
+        conversationProviderId: String,
         arguments: AdvisorToolArguments,
     ): AdvisorToolExecutionResult =
         try {
-            executeTool(arguments)
+            if (conversationProviderId == OBI_PROVIDER_ID.value) {
+                executeObiTool(arguments)
+            } else {
+                executeProviderTool(arguments)
+            }
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
@@ -343,7 +354,8 @@ internal class AdvisorController(
     companion object {
         fun production(): AdvisorController {
             val proxyClient = AdvisorProxyClient()
-            val localTool = FindProviderProductsTool()
+            val obiTool = FindObiProductsTool()
+            val providerTool = FindProviderProductsTool()
             return AdvisorController(
                 isConfigured = {
                     BuildConfig.TOWAROWNIK_APP_TOKEN.isNotBlank() &&
@@ -408,7 +420,8 @@ internal class AdvisorController(
                         )
                     }
                 },
-                executeTool = localTool::execute,
+                executeObiTool = obiTool::execute,
+                executeProviderTool = providerTool::execute,
             )
         }
     }
