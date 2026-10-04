@@ -284,6 +284,6 @@ Advisor execution is now owned by the conversation WorkingProfile.
 - Protocol v3 exposes the neutral local tool `find_products`; Android resolves the exact `ProductProvider` through `ProductProviderRegistry`.
 - The model may not choose or switch provider. The provider and branch are fixed by the saved conversation WorkingProfile.
 - Provider-owned product references use `providerId + branchId + productId`.
-- Room schema v8 adds provider-owned identity and price-scope fields to persisted message products. The shipped v6→v7 migration remains unchanged; v7→v8 maps historical OBI rows from legacy `obik + storeNumber`.
+- Room schema v8 adds provider-owned identity fields to persisted message products. The shipped v6→v7 migration remains unchanged; v7→v8 maps historical OBI rows from legacy `obik + storeNumber`. Price scope is not a new Room column; restored cards derive it from the persisted provider identity.
 - KWANT branch stock remains branch-specific. KWANT public price keeps `ONLINE` scope and must not be described as a branch/counter/customer-specific price.
 - Worker protocols v1/v2 remain accepted for existing OBI clients.
