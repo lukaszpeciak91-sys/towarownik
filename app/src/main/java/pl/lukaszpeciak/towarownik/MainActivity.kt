@@ -516,11 +516,14 @@ private fun TowarownikApp() {
             }
             var toolAssistedRecorded = false
 
-            val finalState = advisorController.runTurn(
-                input = submitted,
-                previousResponseId = turn.previousResponseId,
-                conversationStoreNumber = turn.workingProfile.branchId.value,
-                onOpenAiResponse = { usage, webSearchCalls ->
+            val finalState = runAdvisorForWorkingProfile(
+                workingProfile = turn.workingProfile,
+            ) { obiStoreNumber ->
+                advisorController.runTurn(
+                    input = submitted,
+                    previousResponseId = turn.previousResponseId,
+                    conversationStoreNumber = obiStoreNumber,
+                    onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(
                             usage = usage,
@@ -528,16 +531,30 @@ private fun TowarownikApp() {
                         )
                     }
                 },
-                onToolRequestObserved = {
-                    if (!toolAssistedRecorded) {
-                        toolAssistedRecorded = true
-                        runCatching {
-                            aiUsageRepository.recordToolAssistedTurn()
+                    onToolRequestObserved = {
+                        if (!toolAssistedRecorded) {
+                            toolAssistedRecorded = true
+                            runCatching {
+                                aiUsageRepository.recordToolAssistedTurn()
+                            }
                         }
+                    },
+                ) { state ->
+                    if (
+                        advisorRequestGuard.isCurrent(
+                            token = generation,
+                            expectedConversationId = turn.conversationId,
+                            activeConversationId = activeConversationId,
+                        )
+                    ) {
+                        advisorState = state
                     }
-                },
-            ) { state ->
+                }
+            }.also { state ->
                 if (
+                    state == AdvisorUiState.Error(
+                        AdvisorError.UNSUPPORTED_PROVIDER,
+                    ) &&
                     advisorRequestGuard.isCurrent(
                         token = generation,
                         expectedConversationId = turn.conversationId,
@@ -2719,6 +2736,16 @@ private fun formatLocalTime(createdAt: Long): String =
         .atZone(ZoneId.systemDefault())
         .format(CHAT_TIME_FORMATTER)
 
+internal suspend fun runAdvisorForWorkingProfile(
+    workingProfile: WorkingProfile,
+    runObiAdvisor: suspend (String) -> AdvisorUiState,
+): AdvisorUiState =
+    if (workingProfile.providerId == OBI_PROVIDER_ID) {
+        runObiAdvisor(workingProfile.branchId.value)
+    } else {
+        AdvisorUiState.Error(AdvisorError.UNSUPPORTED_PROVIDER)
+    }
+
 @Composable
 private fun advisorErrorText(error: AdvisorError): String =
     stringResource(
@@ -2730,6 +2757,8 @@ private fun advisorErrorText(error: AdvisorError): String =
             AdvisorError.PROTOCOL -> R.string.advisor_error_protocol
             AdvisorError.OBI -> R.string.advisor_error_obi
             AdvisorError.INPUT -> R.string.advisor_error_input
+            AdvisorError.UNSUPPORTED_PROVIDER ->
+                R.string.advisor_error_unsupported_provider
         },
     )
 
