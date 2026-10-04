@@ -511,13 +511,15 @@ private fun TowarownikApp() {
             conversationRepository.load(turn.conversationId)
                 ?.let(::applyConversation)
 
-            runCatching {
-                aiUsageRepository.recordTurnStarted()
-            }
             var toolAssistedRecorded = false
 
             val finalState = runAdvisorForWorkingProfile(
                 workingProfile = turn.workingProfile,
+                onAdvisorStarted = {
+                    runCatching {
+                        aiUsageRepository.recordTurnStarted()
+                    }
+                },
             ) { obiStoreNumber ->
                 advisorController.runTurn(
                     input = submitted,
@@ -2738,9 +2740,11 @@ private fun formatLocalTime(createdAt: Long): String =
 
 internal suspend fun runAdvisorForWorkingProfile(
     workingProfile: WorkingProfile,
+    onAdvisorStarted: suspend () -> Unit = {},
     runObiAdvisor: suspend (String) -> AdvisorUiState,
 ): AdvisorUiState =
     if (workingProfile.providerId == OBI_PROVIDER_ID) {
+        onAdvisorStarted()
         runObiAdvisor(workingProfile.branchId.value)
     } else {
         AdvisorUiState.Error(AdvisorError.UNSUPPORTED_PROVIDER)
