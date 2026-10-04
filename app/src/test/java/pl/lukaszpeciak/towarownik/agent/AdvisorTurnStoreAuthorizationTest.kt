@@ -12,30 +12,9 @@ class AdvisorTurnStoreAuthorizationTest {
             currentUserMessage = "Porównaj z marketem 074",
         )
 
-        assertTrue(
-            authorization.isAuthorized(
-                providerId = "obi-pl",
-                storeNumber = "075",
-            ),
-        )
-        assertTrue(
-            authorization.isAuthorized(
-                providerId = "obi-pl",
-                storeNumber = "074",
-            ),
-        )
-        assertFalse(
-            authorization.isAuthorized(
-                providerId = "obi-pl",
-                storeNumber = "078",
-            ),
-        )
-        assertFalse(
-            authorization.isAuthorized(
-                providerId = "kwant-pl",
-                storeNumber = "205",
-            ),
-        )
+        assertTrue(authorization.isAuthorized("075"))
+        assertTrue(authorization.isAuthorized("074"))
+        assertFalse(authorization.isAuthorized("078"))
     }
 
     @Test
