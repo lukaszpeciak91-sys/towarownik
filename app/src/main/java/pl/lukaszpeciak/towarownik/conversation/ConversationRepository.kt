@@ -351,6 +351,7 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 obik = product.obik,
                                 name = product.name,
                                 stock = product.stock,
+                                centralStock = product.centralStock,
                                 grossPrice = product.grossPrice?.let(::BigDecimal),
                                 productUrl = product.productUrl,
                                 primaryImageUrl = product.imageUrl,

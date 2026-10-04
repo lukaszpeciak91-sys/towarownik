@@ -1,5 +1,20 @@
 # Architecture
 
+## KWANT logistics facts and one-off branch lookup
+
+`ProviderProduct` carries nullable `centralStock` independently from the
+existing selected-branch `stock`. The KWANT parser reads the labelled
+`Centrala` row and never combines it with the branch value; OBI leaves the new
+field null. Advisor snapshots persist the value in Room v9 so restored cards
+retain the same evidence.
+
+Protocol v3 keeps the WorkingProfile provider/branch as immutable request
+context. Its optional `requestedBranch` is accepted only for KWANT when the
+literal location occurs in the current user message. Android resolves an exact,
+diacritic-insensitive unique name from `ProductProvider.branches()` and uses
+that branch only for the current tool execution. Missing, unknown, or ambiguous
+names never fall back to a guessed branch.
+
 ## Goal
 
 Taksula should remain a small native Android application. Its intended data flow is:

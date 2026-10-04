@@ -534,7 +534,10 @@ internal class AdvisorProxyClient(
                 if (toolName == FIND_PRODUCTS) {
                     requireExactKeys(
                         arguments,
-                        setOf("providerId", "branchId", "queries"),
+                        setOf(
+                            "providerId", "branchId",
+                            "requestedBranch", "queries",
+                        ),
                     )
                     providerId = arguments["providerId"]
                         ?.jsonPrimitive
@@ -592,6 +595,19 @@ internal class AdvisorProxyClient(
                     }
                     ?: error("Invalid tool queries")
 
+                val requestedBranch = if (toolName == FIND_PRODUCTS) {
+                    arguments["requestedBranch"]
+                        ?.let { value ->
+                            if (value is JsonNull) null else value.jsonPrimitive
+                                .contentOrNull
+                                ?.normalizeWhitespace()
+                                ?.takeIf { it.isNotBlank() && it.length <= 100 }
+                                ?: error("Invalid requested branch")
+                        }
+                } else {
+                    null
+                }
+
                 AdvisorProxyResult.ToolRequest(
                     responseId = responseId,
                     callId = callId,
@@ -599,6 +615,7 @@ internal class AdvisorProxyClient(
                         storeNumber = branchId,
                         queries = queries,
                         providerId = providerId,
+                        requestedBranch = requestedBranch,
                     ),
                     webSearchCalls = root.requireWebSearchCallCount(),
                     usage = parseUsageOrNull(root["usage"]),
@@ -904,6 +921,10 @@ internal class AdvisorProxyClient(
                 },
             )
             put("stock", stock?.let(::JsonPrimitive) ?: JsonNull)
+            put(
+                "centralStock",
+                centralStock?.let(::JsonPrimitive) ?: JsonNull,
+            )
             put("price", price?.let(::JsonPrimitive) ?: JsonNull)
             put(
                 "priceScope",

@@ -143,6 +143,23 @@ class KwantProductProviderTest {
         )
 
         assertNull(product?.stock)
+        assertEquals(5918, product?.centralStock)
+    }
+
+    @Test
+    fun `selected and central stock stay distinct and missing central stays null`() {
+        val parser = KwantFrontendParser()
+        val distinct = parser.parseProduct(
+            productHtml("140"), PRODUCT_URL, "580", NOWY_SACZ,
+        )
+        val missingCentral = parser.parseProduct(
+            productHtml("140", null), PRODUCT_URL, "580", NOWY_SACZ,
+        )
+
+        assertEquals(140, distinct?.stock)
+        assertEquals(5918, distinct?.centralStock)
+        assertTrue(distinct?.stock != 6058)
+        assertNull(missingCentral?.centralStock)
     }
 
     @Test
@@ -225,6 +242,7 @@ class KwantProductProviderTest {
     private fun assertProductFixture(result: ProviderLookupResult.Found) {
         assertEquals(BranchId("205"), result.product.branchId)
         assertEquals(140, result.product.stock)
+        assertEquals(5918, result.product.centralStock)
         assertEquals(BigDecimal("14.55"), result.product.grossPrice)
         assertEquals(ProviderPriceScope.ONLINE, result.product.priceScope)
         assertEquals("MBN116E/HAG", result.product.articleNumber)
@@ -354,9 +372,15 @@ class KwantProductProviderTest {
             """,
         )
 
-        fun productHtml(stock: String?): String {
+        fun productHtml(
+            stock: String?,
+            centralStock: String? = "5918",
+        ): String {
             val stockMarkup = stock?.let {
                 """<p>Nowy Sącz: <span>$it szt.</span></p>"""
+            }.orEmpty()
+            val centralStockMarkup = centralStock?.let {
+                """<p>Centrala: <span>$it szt.</span></p>"""
             }.orEmpty()
             return nextData(
                 """
@@ -378,7 +402,7 @@ class KwantProductProviderTest {
                   }
                 }
                 """,
-            ) + stockMarkup
+            ) + stockMarkup + centralStockMarkup
         }
 
         fun nextData(pageProps: String): String =

@@ -13,6 +13,7 @@ class VerifiedProductUiModelTest {
             obik = "580",
             name = "Wyłącznik",
             stock = 140,
+            centralStock = 5918,
             grossPrice = BigDecimal("14.55"),
             productUrl = "https://kwant.net.pl/produkt/test-580",
             verifiedAt = 1L,
@@ -29,6 +30,7 @@ class VerifiedProductUiModelTest {
         assertEquals("580", ui.productId)
         assertEquals("MBN116E/HAG", ui.articleNumber)
         assertEquals(140, ui.stock)
+        assertEquals(5918, ui.centralStock)
         assertEquals(BigDecimal("14.55"), ui.grossPrice)
     }
 

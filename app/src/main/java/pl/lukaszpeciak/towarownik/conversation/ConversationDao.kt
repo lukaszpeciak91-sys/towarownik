@@ -261,6 +261,7 @@ internal abstract class ConversationDao {
                         obik = product.obik,
                         name = product.name,
                         stock = product.stock,
+                        centralStock = product.centralStock,
                         grossPrice = product.grossPrice?.toPlainString(),
                         productUrl = product.productUrl,
                         imageUrl = product.primaryImageUrl,

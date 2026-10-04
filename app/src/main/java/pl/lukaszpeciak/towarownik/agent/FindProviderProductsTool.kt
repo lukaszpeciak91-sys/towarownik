@@ -58,7 +58,7 @@ internal class FindProviderProductsTool(
         }.getOrElse {
             return AdvisorToolExecutionResult.Failure
         }
-        val branchId = runCatching {
+        var branchId = runCatching {
             BranchId(arguments.branchId)
         }.getOrElse {
             return AdvisorToolExecutionResult.UnsupportedStore
@@ -67,6 +67,23 @@ internal class FindProviderProductsTool(
             providers.resolve(providerId)
         }.getOrElse {
             return AdvisorToolExecutionResult.Failure
+        }
+
+        arguments.requestedBranch?.let { requested ->
+            branchId = when (val branches = provider.branches()) {
+                is pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult.Available -> {
+                    val normalized = requested.normalizedBranchName()
+                    val matches = branches.branches.filter {
+                        it.name.normalizedBranchName() == normalized
+                    }
+                    if (matches.size != 1) {
+                        return AdvisorToolExecutionResult.UnsupportedStore
+                    }
+                    matches.single().branchId
+                }
+                is pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult.Unavailable ->
+                    return AdvisorToolExecutionResult.Failure
+            }
         }
 
         val lookup = when (val scope = provider.openLookupScope(branchId)) {
@@ -200,6 +217,7 @@ internal class FindProviderProductsTool(
             AdvisorTechnicalFact(it.label, it.value)
         },
         stock = stock,
+        centralStock = centralStock,
         price = grossPrice,
         priceScope = when (priceScope) {
             ProviderPriceScope.BRANCH -> "branch"
@@ -217,6 +235,7 @@ internal class FindProviderProductsTool(
         articleNumber = articleNumber,
         name = name,
         stock = stock,
+        centralStock = centralStock,
         grossPrice = grossPrice,
         productUrl = productUrl,
         primaryImageUrl = primaryImageUrl,
@@ -231,4 +250,10 @@ internal class FindProviderProductsTool(
             status = AdvisorQueryResultStatus.UNAVAILABLE,
             products = emptyList(),
         )
+
+    private fun String.normalizedBranchName(): String =
+        java.text.Normalizer.normalize(trim(), java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .lowercase()
+            .replace(Regex("\\s+"), " ")
 }

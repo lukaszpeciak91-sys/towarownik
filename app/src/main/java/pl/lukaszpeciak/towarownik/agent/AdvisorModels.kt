@@ -27,6 +27,7 @@ internal data class AdvisorToolArguments(
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val queries: List<AdvisorToolQuery>,
     val providerId: String = OBI_PROVIDER_ID.value,
+    val requestedBranch: String? = null,
 ) {
     val branchId: String
         get() = storeNumber
@@ -86,6 +87,7 @@ internal data class AdvisorVerifiedProduct(
     val obik: String,
     val name: String,
     val stock: Int?,
+    val centralStock: Int? = null,
     val price: BigDecimal?,
     val brand: String? = null,
     val productId: String = obik,

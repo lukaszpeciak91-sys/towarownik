@@ -13,6 +13,7 @@ internal data class VerifiedProductSnapshot(
     val obik: String,
     val name: String,
     val stock: Int?,
+    val centralStock: Int? = null,
     val grossPrice: BigDecimal?,
     val productUrl: String,
     val verifiedAt: Long,

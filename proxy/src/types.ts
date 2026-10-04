@@ -24,6 +24,7 @@ export interface ToolArguments {
 export interface ProviderToolArguments {
   providerId: string;
   branchId: string;
+  requestedBranch?: string | null;
   queries: ToolQuery[];
 }
 
@@ -55,6 +56,7 @@ export interface ProviderVerifiedProduct {
   shortDescription: string | null;
   technicalFacts: TechnicalFact[];
   stock: number | null;
+  centralStock: number | null;
   price: number | null;
   priceScope: "branch" | "online" | null;
 }

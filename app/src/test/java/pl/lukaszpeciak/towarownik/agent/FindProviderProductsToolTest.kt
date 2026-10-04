@@ -91,6 +91,49 @@ class FindProviderProductsToolTest {
         assertTrue(provider.lookupBranches.isEmpty())
     }
 
+    @Test
+    fun `explicit other KWANT branch resolves uniquely for one-off lookup`() = runBlocking {
+        val provider = FakeKwantProvider()
+        val result = FindProviderProductsTool(
+            providers = ProductProviderRegistry(listOf(provider)),
+            ioDispatcher = Dispatchers.Unconfined,
+        ).execute(
+            AdvisorToolArguments(
+                providerId = "kwant-pl",
+                storeNumber = "205",
+                requestedBranch = "Tarnów",
+                queries = listOf(AdvisorToolQuery("MBN116E", 1)),
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals("310", result.result.branchId)
+        assertEquals(listOf("310"), provider.lookupBranches)
+    }
+
+    @Test
+    fun `ambiguous or unknown other branch is never guessed`() = runBlocking {
+        val provider = FakeKwantProvider()
+        val tool = FindProviderProductsTool(
+            providers = ProductProviderRegistry(listOf(provider)),
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        listOf("Tarnów Centrum", "Nieznany").forEach { requested ->
+            assertEquals(
+                AdvisorToolExecutionResult.UnsupportedStore,
+                tool.execute(
+                    AdvisorToolArguments(
+                        providerId = "kwant-pl",
+                        storeNumber = "205",
+                        requestedBranch = requested,
+                        queries = listOf(AdvisorToolQuery("MBN116E", 1)),
+                    ),
+                ),
+            )
+        }
+        assertEquals(0, provider.searchCalls)
+    }
+
     private class FakeKwantProvider : ProductProvider {
         override val providerId: ProviderId = KWANT_PROVIDER_ID
         var searchCalls: Int = 0
@@ -103,6 +146,18 @@ class FindProviderProductsToolTest {
                         branchId = BranchId("205"),
                         name = "Nowy Sącz",
                         address = "33-300 Tarnowska 149",
+                    ),
+                    ProviderBranch(
+                        branchId = BranchId("310"),
+                        name = "Tarnów",
+                    ),
+                    ProviderBranch(
+                        branchId = BranchId("311"),
+                        name = "Tarnów Centrum",
+                    ),
+                    ProviderBranch(
+                        branchId = BranchId("312"),
+                        name = "Tarnów Centrum",
                     ),
                 ),
             )

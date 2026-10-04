@@ -191,3 +191,13 @@ The currently planned AI capability stage is complete after this selective web-s
 - Preserved the OBI fixtures and OBIK baseline; KWANT direct-product variants use article-number search text, provider-owned references, branch `205`, and online-price fixtures rather than OBIK semantics.
 - The manual behavioral workflow runs both paths by default and can select either path for focused audits.
 - No OBI or provider-v3 production advisor instruction change was needed; deterministic parity coverage exercises clarification, proactive lookup, availability distinctions, advice-first jobs and technical questions, bounded assortment wording, and restrained complements.
+
+## 2026-10-04 — KWANT logistics visibility
+
+- KWANT parsing now exposes selected-branch and central stock separately; a
+  missing central value remains null.
+- KWANT cards label selected-branch stock, optional central stock, and the
+  indicative online price. Existing OBI presentation remains unchanged.
+- Explicit other-location requests can perform one uniquely resolved KWANT
+  branch lookup while the conversation WorkingProfile remains unchanged.
+- Room v9 persists nullable central stock; migration 8→9 only adds that column.

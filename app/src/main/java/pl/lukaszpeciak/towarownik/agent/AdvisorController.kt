@@ -104,7 +104,12 @@ internal class AdvisorController(
                         .isAuthorized(arguments.storeNumber)
             } else {
                 arguments.providerId == conversationProviderId &&
-                    arguments.storeNumber == conversationStoreNumber
+                    arguments.storeNumber == conversationStoreNumber &&
+                    arguments.requestedBranch?.let { requested ->
+                        normalizedInput.normalizedBranchText().contains(
+                            requested.normalizedBranchText(),
+                        )
+                    } != false
             }
 
         if (!isConfigured()) {
@@ -461,3 +466,8 @@ private val ADVISOR_CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
 
 private fun String.normalizeWhitespace(): String =
     replace(ADVISOR_CONTROL_OR_WHITESPACE, " ").trim()
+
+private fun String.normalizedBranchText(): String =
+    java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "")
+        .lowercase()

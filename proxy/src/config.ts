@@ -208,16 +208,17 @@ export const PROVIDER_V3_INSTRUCTIONS =
   "If local_tool_limit_reached is returned, do not request find_products again in the same USER turn; finish from already verified products plus relevant general guidance. " +
   "Preserve strict availability semantics: stock 0 means confirmed unavailable in the selected branch; null stock means unknown; not_found means no verified match was found for that query; unavailable means retrieval could not establish the fact; null price means current price is unknown. " +
   "Current stock and price must be freshly verified when relevant; historical conversation values are not current authority. " +
-  "The selected provider and branch are fixed by the conversation context. Never switch provider or branch, never substitute another branch, and never fall back to OBI. " +
+  "The selected provider and branch remain the conversation default. Never switch provider or mutate that default, and never fall back to another provider. " +
   "Use richer verified product-page facts selectively for the user's question instead of dumping all technicalFacts. " +
   "Only reference products verified by find_products during the current USER turn. Structured productRefs must use providerId, branchId, and productId from those verified products. " +
   "Web search is selective, not default, and never replaces find_products for current provider stock, availability, price, or locally verified product selection. For missing SKU-specific technical facts, prefer official manufacturer product pages, manuals, datasheets, and technical documentation. " +
   "Reply naturally in the user's language, avoid unnecessary disclaimers, and keep answers concise and practical.";
 
 export const KWANT_V3_APPENDIX =
-  " KWANT-specific rules: selected providerId and branchId are fixed by the conversation WorkingProfile. " +
-  "Do not invent, infer, or switch provider or branch. find_products is authoritative for current KWANT product and branch-stock facts. " +
-  "KWANT stock is branch-specific. If a verified product has priceScope=online, describe that value only as the public online price, never as a branch, counter, negotiated, or customer-specific price. " +
+  " KWANT-specific rules: selected providerId and branchId are fixed by the conversation WorkingProfile and remain the default. " +
+  "Only when the USER explicitly names another KWANT location, pass that literal location name as requestedBranch for a one-off lookup; otherwise requestedBranch must be null. Never infer an ambiguous location or use this for another provider. Android resolves the real branch directory and may reject unknown or ambiguous names. " +
+  "find_products is authoritative for current KWANT product and stock facts. Keep branch stock and centralStock distinct and never add them. If centralStock is null, say it is unknown rather than zero. " +
+  "If a verified product has priceScope=online, describe that value only as the public indicative online price, never as a branch, counter, negotiated, or customer-specific price. " +
   "Treat article numbers, EANs, product names, manufacturer text, and other user-supplied identifiers as search text so Android can search and exact-verify candidates. Never invent or infer an internal productId to bypass search. " +
   "Use returned productId and articleNumber exactly as verified; do not describe a KWANT identifier as OBIK.";
 
@@ -351,6 +352,12 @@ export const PROVIDER_TOOL = {
         description:
           "Branch id from the current conversation context. Do not invent or switch it.",
       },
+      requestedBranch: {
+        type: ["string", "null"],
+        maxLength: 100,
+        description:
+          "Literal KWANT location explicitly named by the user for a one-off lookup, otherwise null.",
+      },
       queries: {
         type: "array",
         minItems: 1,
@@ -376,7 +383,7 @@ export const PROVIDER_TOOL = {
         },
       },
     },
-    required: ["providerId", "branchId", "queries"],
+    required: ["providerId", "branchId", "requestedBranch", "queries"],
     additionalProperties: false,
   },
 } as const;
