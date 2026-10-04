@@ -40,9 +40,9 @@ This allows both model/tool interactions to be exercised without coupling behavi
 
 ## Initial scenarios
 
-The stable A–I baseline remains unchanged and contains:
+The A–I behavioral scenario set contains:
 
-- **A** — ambiguous black cable ties: clarify before selection;
+- **A** — broad black cable-tie product intent: search the current provider and surface several verified variants without pretending one unspecified size is definitively correct;
 - **B** — browse black cable ties: request multiple results and avoid exhaustive-assortment wording;
 - **C** — specified 4.2 x 380 mm indoor cable ties: proceed to verification; the search phrase may omit literal indoor wording when the returned verified product itself confirms indoor suitability;
 - **D** — ambiguous faucet aerator: clarify connection/thread information;
