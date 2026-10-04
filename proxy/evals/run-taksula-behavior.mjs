@@ -1,5 +1,5 @@
 import {
-  BEHAVIOR_SCENARIOS,
+  BEHAVIOR_REGRESSION_SCENARIOS,
   DEFAULT_BEHAVIOR_TRIALS,
   MAX_BEHAVIOR_TRIALS,
   createOpenAISemanticJudge,
@@ -19,6 +19,7 @@ function parseArgs(argv) {
   let trials = DEFAULT_BEHAVIOR_TRIALS;
   let scenarioIds = undefined;
   let output = ".eval-results/taksula-behavior.json";
+  let provider = "both";
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -46,6 +47,12 @@ function parseArgs(argv) {
       index += 1;
       continue;
     }
+    if (arg === "--provider") {
+      if (!value) throw new Error("--provider requires a value");
+      provider = value;
+      index += 1;
+      continue;
+    }
     throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -60,7 +67,7 @@ function parseArgs(argv) {
   }
 
   const valid = new Set(
-    BEHAVIOR_SCENARIOS.map((scenario) => scenario.id),
+    BEHAVIOR_REGRESSION_SCENARIOS.map((scenario) => scenario.id),
   );
   for (const id of scenarioIds ?? []) {
     if (!valid.has(id)) {
@@ -68,7 +75,11 @@ function parseArgs(argv) {
     }
   }
 
-  return { trials, scenarioIds, output };
+  if (!["obi-v2", "kwant-v3", "both"].includes(provider)) {
+    throw new Error("--provider must be obi-v2, kwant-v3, or both");
+  }
+
+  return { trials, scenarioIds, output, provider };
 }
 
 async function main() {
@@ -81,21 +92,29 @@ async function main() {
 
   const args = parseArgs(process.argv.slice(2));
   const upstreamFetch = globalThis.fetch.bind(globalThis);
-  const driver = createProductionAdvisorDriver(
-    apiKey,
-    upstreamFetch,
-  );
   const semanticJudge = createOpenAISemanticJudge(
     apiKey,
     upstreamFetch,
   );
 
-  const results = await runBehaviorSuite({
-    trials: args.trials,
-    scenarioIds: args.scenarioIds,
-    driverFactory: () => driver,
-    semanticJudge,
-  });
+  const providers = args.provider === "both"
+    ? ["obi-v2", "kwant-v3"]
+    : [args.provider];
+  const results = [];
+  for (const provider of providers) {
+    const driver = createProductionAdvisorDriver(
+      apiKey,
+      upstreamFetch,
+      provider,
+    );
+    results.push(...await runBehaviorSuite({
+      provider,
+      trials: args.trials,
+      scenarioIds: args.scenarioIds,
+      driverFactory: () => driver,
+      semanticJudge,
+    }));
+  }
 
   console.log(formatBehaviorSummary(results));
 
@@ -107,9 +126,10 @@ async function main() {
       {
         generatedAt: new Date().toISOString(),
         trials: args.trials,
+        providers,
         scenarioIds:
           args.scenarioIds ??
-          BEHAVIOR_SCENARIOS.map((scenario) => scenario.id),
+          BEHAVIOR_REGRESSION_SCENARIOS.map((scenario) => scenario.id),
         results,
       },
       null,

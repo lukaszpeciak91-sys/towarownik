@@ -183,3 +183,11 @@ The currently planned AI capability stage is complete after this selective web-s
 - Exact seven-digit OBIK tool queries bypass OBI text search and use the existing exact store lookup directly.
 - KWANT advisor input exposes no model-controlled direct product-ID path; article number, EAN, product name, manufacturer text, and other user-supplied identifiers remain search-then-exact-verification inputs.
 - KWANT branch metadata is resolved once per provider-tool execution and reused for all verified candidates without adding a broad cache.
+
+
+## 2026-10-04 — provider-aware behavioral parity harness
+
+- Extended the existing A–I behavioral evaluation families to run unchanged in semantic intent against OBI protocol v2 and KWANT protocol v3.
+- Preserved the OBI fixtures and OBIK baseline; KWANT direct-product variants use article-number search text, provider-owned references, branch `205`, and online-price fixtures rather than OBIK semantics.
+- The manual behavioral workflow runs both paths by default and can select either path for focused audits.
+- No OBI or provider-v3 production advisor instruction change was needed; deterministic parity coverage exercises clarification, proactive lookup, availability distinctions, advice-first jobs and technical questions, bounded assortment wording, and restrained complements.
