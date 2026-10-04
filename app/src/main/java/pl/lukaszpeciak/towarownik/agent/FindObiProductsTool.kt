@@ -64,8 +64,8 @@ internal class FindObiProductsTool(
         val searchActions = mutableListOf<AdvisorSearchAction>()
 
         arguments.queries.forEach { requested ->
-            val classified = classifyProductSearchInput(requested.query)
-            if (classified is ProductSearchInput.Obik) {
+            val classified = classifyExactToolObik(requested.query)
+            if (classified != null) {
                 groupedResults += verifyExactObik(
                     query = requested.query,
                     obik = classified.value,
@@ -185,6 +185,24 @@ internal class FindObiProductsTool(
         )
     }
 
+    private fun classifyExactToolObik(
+        rawQuery: String,
+    ): ProductSearchInput.Obik? {
+        val classified = classifyProductSearchInput(rawQuery)
+        if (classified is ProductSearchInput.Obik) {
+            return classified
+        }
+
+        val normalized =
+            pl.lukaszpeciak.towarownik.product
+                .normalizeProductSearchInput(rawQuery)
+        val labeled = EXACT_OBIK_TOOL_QUERY.matchEntire(normalized)
+            ?: return null
+        return classifyProductSearchInput(
+            labeled.groupValues[1],
+        ) as? ProductSearchInput.Obik
+    }
+
     private fun verifyExactObik(
         query: String,
         obik: String,
@@ -239,6 +257,11 @@ internal class FindObiProductsTool(
             status = AdvisorQueryResultStatus.NOT_FOUND,
             products = emptyList(),
         )
+
+    private companion object {
+        val EXACT_OBIK_TOOL_QUERY =
+            Regex("""(?i)^OBIK\s*:?\s*(\d{7})$""")
+    }
 
     private fun unavailable(query: String): AdvisorVerifiedQueryResult =
         AdvisorVerifiedQueryResult(
