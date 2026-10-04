@@ -164,3 +164,14 @@ The currently planned AI capability stage is complete after this selective web-s
 - Manual search now routes through the provider selected by the global working profile and keeps provider-owned ProductRef identity.
 - Provider-specific manual product labels distinguish OBIK from KWANT article numbers.
 - Existing advisor tooling remains OBI-only and does not automatically switch providers.
+
+
+## 2026-10-04 — provider-aware advisor / KWANT
+
+- Added advisor protocol v3 using provider + branch identity and neutral `find_products`.
+- Added Android local advisor tool execution through `ProductProviderRegistry`.
+- KWANT conversations now enter the advisor using their saved WorkingProfile (e.g. `kwant-pl / 205`) instead of returning unsupported-provider.
+- Kept existing OBI advisor transport on protocol v2 for rollout compatibility.
+- Added provider-owned advisor product persistence and legacy OBI migration inside the unreleased Room v6→v7 migration.
+- Added provider isolation: a KWANT conversation cannot execute an OBI tool request and vice versa.
+- Added Worker and Android coverage for protocol v3, KWANT 205, no branch fallback, provider-owned product refs, and KWANT online price scope.
