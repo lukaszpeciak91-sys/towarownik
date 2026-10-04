@@ -406,6 +406,13 @@ class ConversationMigrationTest {
                     "(id,conversationId,role,text,createdAt) " +
                     "VALUES (1,1,'USER','history survives',1)",
             )
+            db.execSQL(
+                "INSERT INTO message_products " +
+                    "(messageId,position,obik,name,stock,grossPrice," +
+                    "productUrl,verifiedAt,storeNumber,imageUrl) " +
+                    "VALUES (1,0,'3496072','Legacy product',4,'12.99'," +
+                    "'https://www.obi.pl/p/3496072/test',1,'074',NULL)",
+            )
 
             MIGRATION_6_7.migrate(db)
 
@@ -428,6 +435,30 @@ class ConversationMigrationTest {
                 queryText(
                     db,
                     "SELECT text FROM messages WHERE id=1",
+                ),
+            )
+            assertEquals(
+                "obi-pl",
+                queryText(
+                    db,
+                    "SELECT providerId FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+            assertEquals(
+                "3496072",
+                queryText(
+                    db,
+                    "SELECT productId FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+            assertEquals(
+                "074",
+                queryText(
+                    db,
+                    "SELECT branchId FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
                 ),
             )
         } finally {
