@@ -36,8 +36,10 @@ export const MAX_WEB_CITATION_TITLE_CHARS = 200;
 export const MAX_WEB_CITATION_URL_CHARS = 2048;
 
 export const LEGACY_ADVISOR_PROTOCOL_VERSION = 1 as const;
-export const CURRENT_ADVISOR_PROTOCOL_VERSION = 2 as const;
+export const OBI_GROUPED_ADVISOR_PROTOCOL_VERSION = 2 as const;
+export const CURRENT_ADVISOR_PROTOCOL_VERSION = 3 as const;
 export const LOCAL_TOOL_NAME = "find_obi_products";
+export const PROVIDER_LOCAL_TOOL_NAME = "find_products";
 export const MAX_TOOL_PRODUCTS = 5;
 export const MAX_TOOL_QUERIES = 5;
 export const MAX_TOOL_QUERY_CHARS = 200;
@@ -185,6 +187,43 @@ export function agentInstructionsForStore(
     legacyCompatibility;
 }
 
+export function agentInstructionsForProfile(
+  providerId: string,
+  branchId: string,
+  protocolVersion: number = CURRENT_ADVISOR_PROTOCOL_VERSION,
+): string {
+  if (protocolVersion !== CURRENT_ADVISOR_PROTOCOL_VERSION) {
+    return agentInstructionsForStore(branchId, protocolVersion);
+  }
+
+  const providerLabel =
+    providerId === "obi-pl"
+      ? "OBI"
+      : providerId === "kwant-pl"
+        ? "KWANT"
+        : providerId;
+
+  const neutral = AGENT_INSTRUCTIONS
+    .replaceAll("find_obi_products", PROVIDER_LOCAL_TOOL_NAME)
+    .replaceAll("OBIK", "provider product identifier")
+    .replaceAll("OBI market", "provider branch")
+    .replaceAll("OBI store", "provider branch")
+    .replaceAll("OBI product", "provider product")
+    .replaceAll("OBI facts", "provider facts")
+    .replaceAll("OBI", "the selected provider");
+
+  return neutral +
+    " Protocol v3 provider context: the selected provider is " +
+    providerLabel +
+    " (" +
+    providerId +
+    "), branch " +
+    branchId +
+    ". find_products must use exactly this providerId and branchId unless a future explicit branch-switch contract says otherwise. " +
+    "For KWANT, verified stock is branch-specific. A price whose priceScope is online is a public online price and must not be described as a branch, counter, negotiated, or customer-specific price. " +
+    "In structured final productRefs, reference only products verified by find_products in the current USER turn using providerId, branchId, and productId.";
+}
+
 export const WEB_SEARCH_TOOL = {
   type: "web_search",
 } as const;
@@ -273,6 +312,67 @@ export const OBI_TOOL = {
   },
 } as const;
 
+export const PROVIDER_TOOL = {
+  type: "function",
+  name: PROVIDER_LOCAL_TOOL_NAME,
+  description:
+    "Ask the Android app to find grouped verified products for the current provider and branch. Use one well-planned multi-query batch where practical.",
+  strict: true,
+  parameters: {
+    type: "object",
+    properties: {
+      providerId: {
+        type: "string",
+        pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        description:
+          "Provider id from the current conversation context. Do not invent or switch it.",
+      },
+      branchId: {
+        type: "string",
+        pattern: "^[A-Za-z0-9._-]{1,64}$",
+        description:
+          "Branch id from the current conversation context. Do not invent or switch it.",
+      },
+      queries: {
+        type: "array",
+        minItems: 1,
+        maxItems: MAX_TOOL_QUERIES,
+        description:
+          "One to five product-category searches. The sum of all limits must be at most 5.",
+        items: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              minLength: 1,
+              maxLength: MAX_TOOL_QUERY_CHARS,
+            },
+            limit: {
+              type: "integer",
+              minimum: 1,
+              maximum: MAX_TOOL_PRODUCTS,
+            },
+          },
+          required: ["query", "limit"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["providerId", "branchId", "queries"],
+    additionalProperties: false,
+  },
+} as const;
+
+export function localToolForProtocol(protocolVersion: number) {
+  if (protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION) {
+    return LEGACY_OBI_TOOL;
+  }
+  if (protocolVersion === OBI_GROUPED_ADVISOR_PROTOCOL_VERSION) {
+    return OBI_TOOL;
+  }
+  return PROVIDER_TOOL;
+}
+
 export function obiToolForProtocol(protocolVersion: number) {
   return protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION
     ? LEGACY_OBI_TOOL
@@ -317,3 +417,53 @@ export const FINAL_ANSWER_FORMAT = {
     additionalProperties: false,
   },
 } as const;
+
+
+export const PROVIDER_FINAL_ANSWER_FORMAT = {
+  type: "json_schema",
+  name: "advisor_final_answer",
+  description:
+    "Concise advisor text plus provider-owned references for locally verified product cards.",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      text: {
+        type: "string",
+        minLength: 1,
+        maxLength: MAX_ANSWER_CHARS,
+      },
+      productRefs: {
+        type: "array",
+        maxItems: MAX_SELECTED_PRODUCT_REFS,
+        items: {
+          type: "object",
+          properties: {
+            providerId: {
+              type: "string",
+              pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            },
+            branchId: {
+              type: "string",
+              pattern: "^[A-Za-z0-9._-]{1,64}$",
+            },
+            productId: {
+              type: "string",
+              pattern: "^[A-Za-z0-9._-]{1,128}$",
+            },
+          },
+          required: ["providerId", "branchId", "productId"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["text", "productRefs"],
+    additionalProperties: false,
+  },
+} as const;
+
+export function finalAnswerFormatForProtocol(protocolVersion: number) {
+  return protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION
+    ? PROVIDER_FINAL_ANSWER_FORMAT
+    : FINAL_ANSWER_FORMAT;
+}
