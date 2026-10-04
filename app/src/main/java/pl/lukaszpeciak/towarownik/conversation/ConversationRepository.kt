@@ -354,6 +354,10 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 primaryImageUrl = product.imageUrl,
                                 verifiedAt = product.verifiedAt,
                                 storeNumber = product.storeNumber,
+                                providerId = product.providerId,
+                                productId = product.productId,
+                                branchId = product.branchId,
+                                articleNumber = product.articleNumber,
                             )
                         },
                     sources = item.sources
