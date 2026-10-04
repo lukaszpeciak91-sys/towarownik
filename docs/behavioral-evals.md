@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The behavioral eval harness checks observable advisor behavior against regression scenarios using the real production advisor configuration. It is intended to answer questions such as:
+The behavioral eval harness checks observable advisor behavior against regression scenarios using the real production advisor configuration. The same A–I families run against both the preserved OBI protocol-v2 path and the provider-aware KWANT protocol-v3 path. It is intended to answer questions such as:
 
 - did Taksula clarify a materially ambiguous product request before selecting a concrete SKU;
 - did browse intent request and surface multiple useful verified variants;
@@ -21,7 +21,7 @@ Behavioral evals execute the production advisor path against the real configured
 - model;
 - reasoning effort;
 - server-controlled advisor instructions;
-- `find_obi_products` tool schema;
+- the selected path's production `find_obi_products` (OBI v2) or `find_products` (KWANT v3) tool schema;
 - built-in web-search declaration;
 - structured final-answer schema;
 - normal Responses continuation flow.
@@ -30,13 +30,13 @@ There is no copied eval-only advisor prompt.
 
 The only eval-specific model prompt is the small semantic **grader** used when deterministic assertions cannot decide the behavior reliably. It sees only observable trace data and an explicit scenario rubric. It is instructed not to require or expose hidden reasoning.
 
-## OBI isolation
+## Provider isolation and fixtures
 
-Behavioral evals never call live `obi.pl`.
+Behavioral evals never call live `obi.pl` or `kwant.net.pl`.
 
-Every local `find_obi_products` request is answered from deterministic in-repository mock fixtures. Fixtures are query-sensitive: only a query whose observable meaning matches the scenario receives the intended verified/unavailable fixture; unrelated queries deterministically receive `not_found`. This prevents a poor tool query from being rewarded with the product the scenario expected.
+Every local product request is answered from deterministic in-repository provider-shaped mock fixtures. OBI scenarios retain their OBIK inputs and v2 result shape. KWANT direct-product scenarios instead use article-number search text and v3 results with `providerId`, `branchId`, `productId`, `articleNumber`, and online price scope; they never pretend that KWANT supports OBIK or model-controlled exact product IDs. Fixtures are query-sensitive: only a query whose observable meaning matches the scenario receives the intended verified/unavailable fixture; unrelated queries deterministically receive `not_found`. This prevents a poor tool query from being rewarded with the product the scenario expected.
 
-This allows the model/tool interaction to be exercised without coupling behavioral results to OBI website availability or parser changes.
+This allows both model/tool interactions to be exercised without coupling behavioral results to either provider website or parser changes.
 
 ## Initial scenarios
 
@@ -47,12 +47,12 @@ The suite currently contains:
 - **C** — specified 4.2 x 380 mm indoor cable ties: proceed to verification; the search phrase may omit literal indoor wording when the returned verified product itself confirms indoor suitability;
 - **D** — ambiguous faucet aerator: clarify connection/thread information;
 - **E** — three fitting verified variants: surface alternatives or justify one selection;
-- **F** — direct current stock + price for one OBIK;
+- **F** — direct current stock + price for one provider-specific identifier (OBIK on OBI, article number on KWANT);
 - **G_ZERO** — confirmed stock zero;
 - **G_NULL** — unknown/null stock;
 - **G_NOT_FOUND** — no verified matching result;
 - **G_UNAVAILABLE** — retrieval could not establish the fact;
-- **H** — understood silicone washbasin-to-wall sealing job: give small practical essentials-first advice, distinguish essentials from optional convenience items, and use zero automatic `find_obi_products` calls / zero `productRefs` unless explicit store intent exists;
+- **H** — understood silicone washbasin-to-wall sealing job: give small practical essentials-first advice, distinguish essentials from optional convenience items, and use zero automatic local product calls / zero `productRefs` unless explicit provider-product intent exists;
 - **H_AMBIGUOUS** — original underspecified washbasin-sealing request: clarify wall/countertop joint versus drain/siphon-type work before any concrete OBI lookup;
 - **I** — general SDS+ versus SDS Max explanation without unnecessary tools.
 
@@ -121,7 +121,14 @@ npm ci
 npm run eval:behavior
 ```
 
-Default execution is deliberately small: one trial for every scenario.
+Default execution is deliberately small: one trial for every scenario on both provider paths.
+
+Run only one provider path:
+
+```bash
+npm run eval:behavior -- --provider obi-v2
+npm run eval:behavior -- --provider kwant-v3
+```
 
 Run repeated trials:
 
@@ -149,7 +156,7 @@ Trials are capped at 10 per scenario to make accidental cost multiplication hard
 The command prints a compact summary:
 
 ```text
-scenario  trial  result  local_calls  web_searches  reason
+provider  scenario  trial  result  local_calls  web_searches  reason
 ...
 passed: N / M
 failed scenarios: ...
@@ -166,6 +173,7 @@ Inputs:
 
 - `trials` — default 1, allowed 1–10;
 - `scenarios` — `all` or comma-separated scenario IDs.
+- `provider` — `both` (default), `obi-v2`, or `kwant-v3`.
 
 The workflow requires repository secret `OPENAI_API_KEY`. It does not require OBI credentials and never calls live OBI. The JSON trace is uploaded as the `taksula-behavioral-eval` artifact when produced.
 
@@ -181,7 +189,7 @@ A real trial can involve multiple Responses API calls:
 
 If the advisor chooses built-in web search, the normal production web-search fee also applies. Increasing `--trials` multiplies these costs. Start with one trial and raise the count only when measuring consistency.
 
-No real-model result should be fabricated when credentials are unavailable. Deterministic CI passing means the harness works; it is not evidence that the live model passed the behavioral scenarios.
+No real-model result should be fabricated when credentials are unavailable. Deterministic CI passing means the harness works for both provider shapes; it is not evidence that the live model passed the behavioral scenarios.
 
 ## Adding a regression scenario
 

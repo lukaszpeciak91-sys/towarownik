@@ -52,12 +52,54 @@ function verifiedRefs(result) {
   if (!result || !("results" in result)) return [];
   return result.results.flatMap((group) =>
     group.status === "verified"
-      ? group.products.map((product) => ({
-          storeNumber: result.storeNumber,
-          obik: product.obik,
-        }))
+      ? group.products.map((product) =>
+          "providerId" in result
+            ? {
+                providerId: result.providerId,
+                branchId: result.branchId,
+                productId: product.productId,
+              }
+            : {
+                storeNumber: result.storeNumber,
+                obik: product.obik,
+              },
+        )
       : [],
   );
+}
+
+function kwantScriptedDriver(scenario) {
+  const base = scriptedDriver(scenario);
+  return {
+    async start(...args) {
+      const result = await base.start(...args);
+      if (result.type !== "tool_request") return result;
+      const identifiers = {
+        F: "MBN116E/HAG",
+        G_ZERO: "EVAL-KW-0002",
+        G_NULL: "EVAL-KW-0003",
+        G_NOT_FOUND: "EVAL-KW-0004",
+        G_UNAVAILABLE: "EVAL-KW-0005",
+      };
+      const identifier = identifiers[scenario.id];
+      return {
+        ...result,
+        tool: {
+          ...result.tool,
+          name: "find_products",
+          arguments: {
+            providerId: "kwant-pl",
+            branchId: "205",
+            queries: result.tool.arguments.queries.map((query) => ({
+              ...query,
+              query: identifier ?? query.query,
+            })),
+          },
+        },
+      };
+    },
+    continueTurn: base.continueTurn,
+  };
 }
 
 function scriptedDriver(scenario) {
@@ -190,7 +232,7 @@ test("deterministic harness passes all initial scenarios with scripted observabl
   assert.equal(browse.localToolCallCount, 1);
   assert.equal(browse.trace.modelOutputs.length, 2);
   assert.equal(
-    browse.trace.findObiProductsCalls[0].arguments.queries[0]
+    browse.trace.localProductCalls[0].arguments.queries[0]
       .limit,
     3,
   );
@@ -206,6 +248,29 @@ test("deterministic harness passes all initial scenarios with scripted observabl
     ),
     false,
   );
+});
+
+test("the same behavior families pass through provider v3 KWANT mocks", async () => {
+  const results = await runBehaviorSuite({
+    provider: "kwant-v3",
+    trials: 1,
+    driverFactory: (scenario) => kwantScriptedDriver(scenario),
+    semanticJudge: passingSemanticJudge,
+  });
+
+  assert.equal(results.length, BEHAVIOR_SCENARIOS.length);
+  assert.equal(results.every((result) => result.status === "PASS"), true);
+  const direct = results.find((result) => result.scenario === "F");
+  assert.equal(direct.trace.provider, "kwant-v3");
+  assert.deepEqual(
+    direct.trace.localProductCalls[0].arguments,
+    {
+      providerId: "kwant-pl",
+      branchId: "205",
+      queries: [{ query: "MBN116E/HAG", limit: 1 }],
+    },
+  );
+  assert.equal(direct.trace.finalProductRefs[0].providerId, "kwant-pl");
 });
 
 test("repeated trials stay configurable and summary reports pass totals", async () => {
@@ -263,7 +328,7 @@ test("clarification-first scenarios fail on any local OBI lookup before clarific
     assert.equal(result.status, "FAIL");
     assert.match(
       result.reason,
-      /local OBI lookup occurred before clarification/i,
+      /local provider lookup occurred before clarification/i,
     );
   }
 });
@@ -348,7 +413,7 @@ test("scenario A rejects even a successful broad same-category lookup before cla
   assert.equal(result.status, "FAIL");
   assert.match(
     result.reason,
-    /local OBI lookup occurred before clarification/i,
+    /local provider lookup occurred before clarification/i,
   );
   assert.equal(result.trace.finalProductRefs.length, 0);
   assert.equal(semanticCalls, 0);
@@ -586,7 +651,7 @@ test("scenario H fails if advice is automatically converted into a verified shop
   assert.equal(result.status, "FAIL");
   assert.match(
     result.reason,
-    /automatic local OBI lookup without explicit store intent/i,
+    /automatic local provider lookup without explicit provider intent/i,
   );
   assert.equal(result.localToolCallCount, 1);
   assert.equal(result.trace.finalProductRefs.length, 3);
@@ -889,7 +954,7 @@ test("scenario E accepts a relevant black-cable-tie query without repeating the 
   assert.equal(result.localToolCallCount, 1);
   assert.equal(
     /wewn|środ|srod/i.test(
-      result.trace.findObiProductsCalls[0].arguments.queries[0]
+      result.trace.localProductCalls[0].arguments.queries[0]
         .query,
     ),
     false,
@@ -946,7 +1011,7 @@ test("explicit browse and direct current-store fact scenarios still require loca
     assert.match(
       result.reason,
       id === "B"
-        ? /browse request did not use local OBI/i
+        ? /browse request did not use the local provider/i
         : /direct stock\/price request should use one local lookup/i,
     );
   }
@@ -1165,6 +1230,33 @@ test("production eval driver reuses production advisor request configuration", a
     captures[1].input[0].type,
     "function_call_output",
   );
+});
+
+test("production eval driver selects protocol v3 for KWANT", async () => {
+  let capture;
+  const fakeFetch = async (_input, init) => {
+    capture = JSON.parse(init.body);
+    const output = JSON.stringify({ text: "OK", productRefs: [] });
+    return new Response(JSON.stringify({
+      id: "resp_kwant_eval",
+      output_text: output,
+      output: [{
+        type: "message",
+        content: [{ type: "output_text", text: output }],
+      }],
+    }), { status: 200 });
+  };
+
+  const driver = createProductionAdvisorDriver(
+    "test-key",
+    fakeFetch,
+    "kwant-v3",
+  );
+  await driver.start("Test", "205");
+
+  assert.match(capture.instructions, /providerId=kwant-pl/);
+  assert.match(capture.instructions, /branchId=205/);
+  assert.equal(capture.tools[0].name, "find_products");
 });
 
 test("semantic grader uses the normal eval output budget and accepts a valid grade", async () => {
@@ -1426,7 +1518,7 @@ test("behavior summary separates FAIL from ERROR", () => {
     userMessage: scenario.userMessage,
     modelOutputs: [],
     clarificationOrFinalAnswer: null,
-    findObiProductsCalls: [],
+    localProductCalls: [],
     webSearchCount: 0,
     mockedToolResults: [],
     finalProductRefs: [],
@@ -1477,7 +1569,7 @@ test("behavior CLI exit-code contract is non-zero for FAIL and ERROR", () => {
       userMessage: scenario.userMessage,
       modelOutputs: [],
       clarificationOrFinalAnswer: null,
-      findObiProductsCalls: [],
+      localProductCalls: [],
       webSearchCount: 0,
       mockedToolResults: [],
       finalProductRefs: [],

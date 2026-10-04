@@ -13,6 +13,15 @@ on:
         required: true
         default: "all"
         type: string
+      provider:
+        description: "Provider path: both, obi-v2, or kwant-v3"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - obi-v2
+          - kwant-v3
 
 permissions:
   contents: read
@@ -42,6 +51,7 @@ jobs:
           npm run eval:behavior --
           --trials "${{ inputs.trials }}"
           --scenarios "${{ inputs.scenarios }}"
+          --provider "${{ inputs.provider }}"
           --output ".eval-results/taksula-behavior.json"
 
       - name: Upload behavioral eval trace

@@ -1,5 +1,6 @@
 import {
   OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
+  CURRENT_ADVISOR_PROTOCOL_VERSION,
   LOCAL_TOOL_NAME,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
@@ -11,6 +12,9 @@ import type {
   AgentResult,
   ProductRef,
   ToolArguments,
+  ProviderToolArguments,
+  ProviderVerifiedProduct,
+  ProviderVerifiedQueryResult,
   ToolContinuationResult,
   UpstreamFetch,
   VerifiedProduct,
@@ -21,6 +25,8 @@ import type {
 export const DEFAULT_BEHAVIOR_TRIALS = 1;
 export const MAX_BEHAVIOR_TRIALS = 10;
 export const DEFAULT_EVAL_STORE_NUMBER = "075";
+export const DEFAULT_EVAL_KWANT_BRANCH_ID = "205";
+export type BehaviorProvider = "obi-v2" | "kwant-v3";
 const PRODUCTION_LOCAL_TOOL_LIMIT = 3;
 const MAX_MODEL_STEPS = 8;
 
@@ -49,6 +55,14 @@ export interface BehaviorScenario {
   semanticRubric: string[];
 }
 
+interface BehaviorProviderContext {
+  provider: BehaviorProvider;
+  providerId: "obi-pl" | "kwant-pl";
+  branchId: string;
+}
+
+type EvalToolArguments = ToolArguments | ProviderToolArguments;
+
 export interface ModelOutputTrace {
   order: number;
   stage: "START" | "CONTINUE";
@@ -57,14 +71,14 @@ export interface ModelOutputTrace {
   webSearchCalls: number;
   text: string | null;
   productRefs: ProductRef[];
-  toolArguments: ToolArguments | null;
+  toolArguments: EvalToolArguments | null;
 }
 
 export interface LocalToolCallTrace {
   order: number;
-  arguments: ToolArguments;
+  arguments: EvalToolArguments;
   mockedResult: ToolContinuationResult;
-  executedMockObi: boolean;
+  executedMockProvider: boolean;
 }
 
 export interface TerminalAnswerTrace {
@@ -74,12 +88,13 @@ export interface TerminalAnswerTrace {
 }
 
 export interface BehaviorTrace {
+  provider: BehaviorProvider;
   scenario: BehaviorScenarioId;
   trial: number;
   userMessage: string;
   modelOutputs: ModelOutputTrace[];
   clarificationOrFinalAnswer: TerminalAnswerTrace | null;
-  findObiProductsCalls: LocalToolCallTrace[];
+  localProductCalls: LocalToolCallTrace[];
   webSearchCount: number;
   mockedToolResults: ToolContinuationResult[];
   finalProductRefs: ProductRef[];
@@ -100,11 +115,11 @@ export interface SemanticJudge {
 }
 
 export interface AdvisorDriver {
-  start(message: string, storeNumber: string): Promise<AgentResult>;
+  start(message: string, branchId: string): Promise<AgentResult>;
   continueTurn(
     responseId: string,
     callId: string,
-    storeNumber: string,
+    branchId: string,
     result: ToolContinuationResult,
   ): Promise<AgentResult>;
 }
@@ -121,6 +136,7 @@ export interface BehaviorTrialResult {
 }
 
 export interface BehaviorSuiteOptions {
+  provider?: BehaviorProvider;
   trials?: number;
   scenarioIds?: BehaviorScenarioId[];
   driverFactory: (
@@ -395,31 +411,109 @@ export function behaviorScenario(
   return scenario;
 }
 
+export function behaviorScenarios(
+  provider: BehaviorProvider,
+): BehaviorScenario[] {
+  return BEHAVIOR_SCENARIOS.map((scenario) =>
+    behaviorScenarioForProvider(scenario.id, provider),
+  );
+}
+
+export function behaviorScenarioForProvider(
+  id: BehaviorScenarioId,
+  provider: BehaviorProvider,
+): BehaviorScenario {
+  const scenario = behaviorScenario(id);
+  if (provider === "obi-v2") return scenario;
+
+  const articleNumber = kwantArticleNumber(id);
+  if (!articleNumber) return { ...scenario };
+  return {
+    ...scenario,
+    name: scenario.name.replace("OBIK", "KWANT article number"),
+    userMessage: scenario.userMessage.replace(
+      /OBIK\s+700000[1-5]/,
+      `numeru artykułu ${articleNumber}`,
+    ),
+    semanticRubric: [
+      ...scenario.semanticRubric.map((item) =>
+        item.replaceAll("OBI", "KWANT"),
+      ),
+      ...(id === "F"
+        ? [
+            "The mocked KWANT price has online scope, so the answer describes it as an online price and does not claim it is a branch, counter, negotiated, or customer-specific price.",
+          ]
+        : []),
+    ],
+  };
+}
+
+function providerContext(
+  provider: BehaviorProvider,
+): BehaviorProviderContext {
+  return provider === "obi-v2"
+    ? {
+        provider,
+        providerId: "obi-pl",
+        branchId: DEFAULT_EVAL_STORE_NUMBER,
+      }
+    : {
+        provider,
+        providerId: "kwant-pl",
+        branchId: DEFAULT_EVAL_KWANT_BRANCH_ID,
+      };
+}
+
+function kwantArticleNumber(
+  id: BehaviorScenarioId,
+): string | null {
+  switch (id) {
+    case "F":
+      return "MBN116E/HAG";
+    case "G_ZERO":
+      return "EVAL-KW-0002";
+    case "G_NULL":
+      return "EVAL-KW-0003";
+    case "G_NOT_FOUND":
+      return "EVAL-KW-0004";
+    case "G_UNAVAILABLE":
+      return "EVAL-KW-0005";
+    default:
+      return null;
+  }
+}
+
 export function createProductionAdvisorDriver(
   apiKey: string,
   upstreamFetch: UpstreamFetch,
+  provider: BehaviorProvider = "obi-v2",
 ): AdvisorDriver {
+  const context = providerContext(provider);
   return {
-    start(message, storeNumber) {
+    start(message, branchId) {
       return startAgent(
         message,
-        "obi-pl",
-        storeNumber,
+        context.providerId,
+        branchId,
         apiKey,
         upstreamFetch,
-        OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
+        provider === "obi-v2"
+          ? OBI_GROUPED_ADVISOR_PROTOCOL_VERSION
+          : CURRENT_ADVISOR_PROTOCOL_VERSION,
       );
     },
-    continueTurn(responseId, callId, storeNumber, result) {
+    continueTurn(responseId, callId, branchId, result) {
       return continueAgent(
         responseId,
         callId,
-        "obi-pl",
-        storeNumber,
+        context.providerId,
+        branchId,
         result,
         apiKey,
         upstreamFetch,
-        OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
+        provider === "obi-v2"
+          ? OBI_GROUPED_ADVISOR_PROTOCOL_VERSION
+          : CURRENT_ADVISOR_PROTOCOL_VERSION,
       );
     },
   };
@@ -442,7 +536,7 @@ export function createOpenAISemanticJudge(
           answer:
             input.trace.clarificationOrFinalAnswer?.text ?? null,
           productRefs: input.trace.finalProductRefs,
-          localToolCalls: input.trace.findObiProductsCalls.map(
+          localToolCalls: input.trace.localProductCalls.map(
             (call) => ({
               arguments: call.arguments,
               mockedResult: call.mockedResult,
@@ -540,9 +634,13 @@ export async function runBehaviorSuite(
     );
   }
 
+  const provider = options.provider ?? "obi-v2";
+  const scenarios = behaviorScenarios(provider);
   const selected = options.scenarioIds?.length
-    ? options.scenarioIds.map(behaviorScenario)
-    : [...BEHAVIOR_SCENARIOS];
+    ? options.scenarioIds.map((id) =>
+        behaviorScenarioForProvider(id, provider),
+      )
+    : scenarios;
 
   const results: BehaviorTrialResult[] = [];
   for (const scenario of selected) {
@@ -553,6 +651,7 @@ export async function runBehaviorSuite(
           trial,
           options.driverFactory(scenario, trial),
           options.semanticJudge,
+          provider,
         ),
       );
     }
@@ -565,14 +664,17 @@ export async function runBehaviorTrial(
   trial: number,
   driver: AdvisorDriver,
   semanticJudge: SemanticJudge,
+  provider: BehaviorProvider = "obi-v2",
 ): Promise<BehaviorTrialResult> {
+  const context = providerContext(provider);
   const trace: BehaviorTrace = {
+    provider,
     scenario: scenario.id,
     trial,
     userMessage: scenario.userMessage,
     modelOutputs: [],
     clarificationOrFinalAnswer: null,
-    findObiProductsCalls: [],
+    localProductCalls: [],
     webSearchCount: 0,
     mockedToolResults: [],
     finalProductRefs: [],
@@ -582,7 +684,7 @@ export async function runBehaviorTrial(
   try {
     result = await driver.start(
       scenario.userMessage,
-      DEFAULT_EVAL_STORE_NUMBER,
+      context.branchId,
     );
   } catch (error) {
     return failedInfrastructureResult(
@@ -603,7 +705,7 @@ export async function runBehaviorTrial(
           scenario.id === "A" ||
           ((scenario.id === "D" ||
             scenario.id === "H_AMBIGUOUS") &&
-            trace.findObiProductsCalls.length === 0)
+            trace.localProductCalls.length === 0)
             ? "clarification_candidate"
             : "final_answer",
         text: result.text,
@@ -618,22 +720,27 @@ export async function runBehaviorTrial(
     }
 
     const args = currentToolArguments(result);
-    const callOrder = trace.findObiProductsCalls.length + 1;
-    const executedMockObi =
+    const callOrder = trace.localProductCalls.length + 1;
+    const executedMockProvider =
       callOrder <= PRODUCTION_LOCAL_TOOL_LIMIT;
-    const mockedResult = executedMockObi
-      ? mockToolResultForScenario(scenario, args, callOrder)
+    const mockedResult = executedMockProvider
+      ? mockToolResultForScenario(scenario, args, callOrder, context)
       : {
-          storeNumber: args.storeNumber,
+          ...(provider === "obi-v2"
+            ? { storeNumber: context.branchId }
+            : {
+                providerId: context.providerId,
+                branchId: context.branchId,
+              }),
           queries: args.queries,
           rejection: "local_tool_limit_reached" as const,
         };
 
-    trace.findObiProductsCalls.push({
+    trace.localProductCalls.push({
       order: callOrder,
       arguments: args,
       mockedResult,
-      executedMockObi,
+      executedMockProvider,
     });
     trace.mockedToolResults.push(mockedResult);
 
@@ -641,7 +748,7 @@ export async function runBehaviorTrial(
       result = await driver.continueTurn(
         result.responseId,
         result.tool.callId,
-        args.storeNumber,
+        context.branchId,
         mockedResult,
       );
     } catch (error) {
@@ -666,11 +773,12 @@ export function formatBehaviorSummary(
   results: readonly BehaviorTrialResult[],
 ): string {
   const lines = [
-    "scenario\ttrial\tresult\tlocal_calls\tweb_searches\treason",
+    "provider\tscenario\ttrial\tresult\tlocal_calls\tweb_searches\treason",
   ];
   for (const result of results) {
     lines.push(
       [
+        result.trace.provider,
         result.scenario,
         result.trial,
         result.status,
@@ -739,21 +847,28 @@ function recordModelOutput(
 
 function currentToolArguments(
   result: Extract<AgentResult, { type: "tool_request" }>,
-): ToolArguments {
+): EvalToolArguments {
   const args = result.tool.arguments;
   if (
     !("queries" in args) ||
     !Array.isArray(args.queries) ||
-    !("storeNumber" in args)
+    (!("storeNumber" in args) &&
+      !("providerId" in args && "branchId" in args))
   ) {
     throw new Error(
-      "Behavior eval requires the current grouped v2 advisor tool contract",
+      "Behavior eval requires the grouped v2 or provider v3 advisor tool contract",
     );
   }
-  return {
-    storeNumber: args.storeNumber,
-    queries: args.queries.map((query) => ({ ...query })),
-  };
+  return "storeNumber" in args
+    ? {
+        storeNumber: args.storeNumber,
+        queries: args.queries.map((query) => ({ ...query })),
+      }
+    : {
+        providerId: args.providerId,
+        branchId: args.branchId,
+        queries: args.queries.map((query) => ({ ...query })),
+      };
 }
 
 async function gradeCompletedTrial(
@@ -769,7 +884,7 @@ async function gradeCompletedTrial(
       scenarioName: scenario.name,
       trial,
       status: "FAIL",
-      localToolCallCount: trace.findObiProductsCalls.length,
+      localToolCallCount: trace.localProductCalls.length,
       webSearchCount: trace.webSearchCount,
       reason: failures.slice(0, 2).join("; "),
       trace,
@@ -786,7 +901,7 @@ async function gradeCompletedTrial(
         scenarioName: scenario.name,
         trial,
         status: "ERROR",
-        localToolCallCount: trace.findObiProductsCalls.length,
+        localToolCallCount: trace.localProductCalls.length,
         webSearchCount: trace.webSearchCount,
         reason: `semantic grader infrastructure failed: ${errorMessage(error)}`,
         trace,
@@ -799,7 +914,7 @@ async function gradeCompletedTrial(
         scenarioName: scenario.name,
         trial,
         status: "FAIL",
-        localToolCallCount: trace.findObiProductsCalls.length,
+        localToolCallCount: trace.localProductCalls.length,
         webSearchCount: trace.webSearchCount,
         reason: compactReason(semantic.reason),
         trace,
@@ -811,7 +926,7 @@ async function gradeCompletedTrial(
       scenarioName: scenario.name,
       trial,
       status: "PASS",
-      localToolCallCount: trace.findObiProductsCalls.length,
+      localToolCallCount: trace.localProductCalls.length,
       webSearchCount: trace.webSearchCount,
       reason: compactReason(semantic.reason),
       trace,
@@ -823,7 +938,7 @@ async function gradeCompletedTrial(
     scenarioName: scenario.name,
     trial,
     status: "PASS",
-    localToolCallCount: trace.findObiProductsCalls.length,
+    localToolCallCount: trace.localProductCalls.length,
     webSearchCount: trace.webSearchCount,
     reason: "deterministic checks passed",
     trace,
@@ -871,13 +986,13 @@ function deterministicFailures(
   }
 
   const duplicate = duplicateNormalizedQuery(
-    trace.findObiProductsCalls,
+    trace.localProductCalls,
   );
   if (duplicate) {
     failures.push(`redundant repeated query: ${duplicate}`);
   }
 
-  const calls = trace.findObiProductsCalls;
+  const calls = trace.localProductCalls;
   const firstCall = calls[0];
   const firstQueries = firstCall?.arguments.queries ?? [];
 
@@ -887,7 +1002,7 @@ function deterministicFailures(
     case "H_AMBIGUOUS":
       if (calls.length !== 0) {
         failures.push(
-          "local OBI lookup occurred before clarification",
+          "local provider lookup occurred before clarification",
         );
       }
       if (trace.finalProductRefs.length !== 0) {
@@ -899,7 +1014,7 @@ function deterministicFailures(
 
     case "B":
       if (calls.length === 0) {
-        failures.push("browse request did not use local OBI");
+        failures.push("browse request did not use the local provider");
       }
       if (!firstQueries.some((query) => query.limit > 1)) {
         failures.push(
@@ -930,10 +1045,7 @@ function deterministicFailures(
       }
       if (
         !verifiedRefs.has(
-          refKey({
-            storeNumber: DEFAULT_EVAL_STORE_NUMBER,
-            obik: "6100002",
-          }),
+          expectedRefKey(trace.provider, "6100002"),
         )
       ) {
         failures.push(
@@ -945,7 +1057,7 @@ function deterministicFailures(
     case "E":
       if (calls.length === 0) {
         failures.push(
-          "variant comparison did not use verified OBI data",
+          "variant comparison did not use verified provider data",
         );
       }
       if (verifiedRefs.size < 3) {
@@ -963,31 +1075,35 @@ function deterministicFailures(
       }
       if (
         flattenQueries(calls).length !== 1 ||
-        !hasExactObik(flattenQueries(calls)[0] ?? "", "7000001")
+        !hasExpectedIdentifier(
+          flattenQueries(calls)[0] ?? "",
+          trace.provider,
+          "F",
+        )
       ) {
         failures.push(
-          "direct OBIK lookup was broadened into unrelated searches",
+          "direct identifier lookup was broadened into unrelated searches",
         );
       }
       break;
 
     case "G_ZERO":
-      requireObikVerification(calls, "7000002", failures);
+      requireIdentifierVerification(calls, trace.provider, "G_ZERO", failures);
       break;
     case "G_NULL":
-      requireObikVerification(calls, "7000003", failures);
+      requireIdentifierVerification(calls, trace.provider, "G_NULL", failures);
       break;
     case "G_NOT_FOUND":
-      requireObikVerification(calls, "7000004", failures);
+      requireIdentifierVerification(calls, trace.provider, "G_NOT_FOUND", failures);
       break;
     case "G_UNAVAILABLE":
-      requireObikVerification(calls, "7000005", failures);
+      requireIdentifierVerification(calls, trace.provider, "G_UNAVAILABLE", failures);
       break;
 
     case "H":
       if (calls.length !== 0) {
         failures.push(
-          "understood job advice used automatic local OBI lookup without explicit store intent",
+          "understood job advice used automatic local provider lookup without explicit provider intent",
         );
       }
       if (trace.finalProductRefs.length !== 0) {
@@ -1000,7 +1116,7 @@ function deterministicFailures(
     case "I":
       if (calls.length !== 0) {
         failures.push(
-          "general SDS question used unnecessary local OBI lookup",
+          "general SDS question used unnecessary local provider lookup",
         );
       }
       if (trace.finalProductRefs.length !== 0) {
@@ -1014,39 +1130,79 @@ function deterministicFailures(
   return failures;
 }
 
-function requireObikVerification(
+function requireIdentifierVerification(
   calls: readonly LocalToolCallTrace[],
-  obik: string,
+  provider: BehaviorProvider,
+  scenarioId: BehaviorScenarioId,
   failures: string[],
 ): void {
   const queries = flattenQueries(calls);
   if (calls.length === 0) {
-    failures.push("availability check did not use local OBI");
+    failures.push("availability check did not use the local provider");
     return;
   }
-  if (!queries.some((query) => hasExactObik(query, obik))) {
+  if (!queries.some((query) =>
+    hasExpectedIdentifier(query, provider, scenarioId),
+  )) {
+    const identifier = provider === "obi-v2"
+      ? obiIdentifier(scenarioId)
+      : kwantArticleNumber(scenarioId);
     failures.push(
-      `availability lookup did not preserve OBIK ${obik}`,
+      `availability lookup did not preserve identifier ${identifier}`,
     );
   }
 }
 
+function hasExpectedIdentifier(
+  query: string,
+  provider: BehaviorProvider,
+  scenarioId: BehaviorScenarioId,
+): boolean {
+  const identifier = provider === "obi-v2"
+    ? obiIdentifier(scenarioId)
+    : kwantArticleNumber(scenarioId);
+  return identifier !== null && normalizeQuery(query).includes(
+    normalizeQuery(identifier),
+  );
+}
+
+function obiIdentifier(id: BehaviorScenarioId): string | null {
+  const suffix: Partial<Record<BehaviorScenarioId, string>> = {
+    F: "7000001",
+    G_ZERO: "7000002",
+    G_NULL: "7000003",
+    G_NOT_FOUND: "7000004",
+    G_UNAVAILABLE: "7000005",
+  };
+  return suffix[id] ?? null;
+}
+
 function mockToolResultForScenario(
   scenario: BehaviorScenario,
-  args: ToolArguments,
+  args: EvalToolArguments,
   callOrder: number,
-): VerifiedToolResult {
-  return {
-    storeNumber: args.storeNumber,
-    results: args.queries.map((query, queryIndex) =>
+  context: BehaviorProviderContext,
+): VerifiedToolResult | import("../types.js").ProviderVerifiedToolResult {
+  const results = args.queries.map((query, queryIndex) =>
       mockQueryResult(
         scenario.id,
         query.query,
         query.limit,
         callOrder,
         queryIndex,
+        context.provider,
       ),
-    ),
+    );
+  if (context.provider === "obi-v2") {
+    return {
+      storeNumber: context.branchId,
+      results: results as VerifiedQueryResult[],
+    };
+  }
+  return {
+    providerId: context.providerId,
+    branchId: context.branchId,
+    results: results as ProviderVerifiedQueryResult[],
   };
 }
 
@@ -1056,6 +1212,18 @@ function mockQueryResult(
   limit: number,
   _callOrder: number,
   _queryIndex: number,
+  provider: BehaviorProvider,
+): VerifiedQueryResult | ProviderVerifiedQueryResult {
+  const obiResult = mockObiQueryResult(scenarioId, query, limit);
+  return provider === "obi-v2"
+    ? obiResult
+    : providerQueryResult(obiResult);
+}
+
+function mockObiQueryResult(
+  scenarioId: BehaviorScenarioId,
+  query: string,
+  limit: number,
 ): VerifiedQueryResult {
   switch (scenarioId) {
     case "A":
@@ -1094,7 +1262,8 @@ function mockQueryResult(
         : notFoundQuery(query);
 
     case "F":
-      return hasExactObik(query, "7000001")
+      return hasExpectedIdentifier(query, "obi-v2", "F") ||
+        hasExpectedIdentifier(query, "kwant-v3", "F")
         ? verifiedQuery(
             query,
             [DIRECT_PRODUCT].slice(0, limit),
@@ -1102,7 +1271,8 @@ function mockQueryResult(
         : notFoundQuery(query);
 
     case "G_ZERO":
-      return hasExactObik(query, "7000002")
+      return hasExpectedIdentifier(query, "obi-v2", "G_ZERO") ||
+        hasExpectedIdentifier(query, "kwant-v3", "G_ZERO")
         ? verifiedQuery(
             query,
             [ZERO_STOCK_PRODUCT].slice(0, limit),
@@ -1110,7 +1280,8 @@ function mockQueryResult(
         : notFoundQuery(query);
 
     case "G_NULL":
-      return hasExactObik(query, "7000003")
+      return hasExpectedIdentifier(query, "obi-v2", "G_NULL") ||
+        hasExpectedIdentifier(query, "kwant-v3", "G_NULL")
         ? verifiedQuery(
             query,
             [UNKNOWN_STOCK_PRODUCT].slice(0, limit),
@@ -1121,7 +1292,8 @@ function mockQueryResult(
       return notFoundQuery(query);
 
     case "G_UNAVAILABLE":
-      return hasExactObik(query, "7000005")
+      return hasExpectedIdentifier(query, "obi-v2", "G_UNAVAILABLE") ||
+        hasExpectedIdentifier(query, "kwant-v3", "G_UNAVAILABLE")
         ? {
             query,
             status: "unavailable",
@@ -1164,6 +1336,45 @@ function notFoundQuery(query: string): VerifiedQueryResult {
     query,
     status: "not_found",
     products: [],
+  };
+}
+
+function providerQueryResult(
+  result: VerifiedQueryResult,
+): ProviderVerifiedQueryResult {
+  return {
+    ...result,
+    products: result.products.map(providerProduct),
+  };
+}
+
+function providerProduct(
+  value: VerifiedProduct,
+): ProviderVerifiedProduct {
+  const articleById: Record<string, string> = {
+    "7000001": "MBN116E/HAG",
+    "7000002": "EVAL-KW-0002",
+    "7000003": "EVAL-KW-0003",
+  };
+  const directProduct = value.obik === "7000001";
+  return {
+    productId: `kw-${value.obik}`,
+    articleNumber: articleById[value.obik] ?? `KW-${value.obik}`,
+    name: directProduct
+      ? "Wyłącznik nadprądowy B16 A 1P 6kA MBN116E Hager"
+      : value.name.replace("Mock", "KWANT mock"),
+    brand: directProduct ? "Hager" : value.brand,
+    shortDescription: value.shortDescription,
+    technicalFacts: directProduct
+      ? [
+          { label: "Charakterystyka", value: "B" },
+          { label: "Prąd znamionowy", value: "16 A" },
+          { label: "Liczba biegunów", value: "1" },
+        ]
+      : value.technicalFacts,
+    stock: value.stock,
+    price: value.price,
+    priceScope: "online",
   };
 }
 
@@ -1270,24 +1481,45 @@ function collectVerifiedRefs(
 ): Set<string> {
   const refs = new Set<string>();
   for (const result of results) {
-    if (
-      !("results" in result) ||
-      !("storeNumber" in result)
-    ) continue;
+    if (!("results" in result)) continue;
     for (const queryResult of result.results) {
       if (queryResult.status !== "verified") continue;
       for (const productValue of queryResult.products) {
-        if (!("obik" in productValue)) continue;
-        refs.add(
-          refKey({
+        if ("storeNumber" in result && "obik" in productValue) {
+          refs.add(refKey({
             storeNumber: result.storeNumber,
             obik: productValue.obik,
-          }),
-        );
+          }));
+        } else if (
+          "providerId" in result &&
+          "productId" in productValue
+        ) {
+          refs.add(refKey({
+            providerId: result.providerId,
+            branchId: result.branchId,
+            productId: productValue.productId,
+          }));
+        }
       }
     }
   }
   return refs;
+}
+
+function expectedRefKey(
+  provider: BehaviorProvider,
+  fixtureId: string,
+): string {
+  return provider === "obi-v2"
+    ? refKey({
+        storeNumber: DEFAULT_EVAL_STORE_NUMBER,
+        obik: fixtureId,
+      })
+    : refKey({
+        providerId: "kwant-pl",
+        branchId: DEFAULT_EVAL_KWANT_BRANCH_ID,
+        productId: `kw-${fixtureId}`,
+      });
 }
 
 function refKey(ref: ProductRef): string {
@@ -1338,7 +1570,7 @@ function failedInfrastructureResult(
     scenarioName: scenario.name,
     trial,
     status: "ERROR",
-    localToolCallCount: trace.findObiProductsCalls.length,
+    localToolCallCount: trace.localProductCalls.length,
     webSearchCount: trace.webSearchCount,
     reason: compactReason(reason),
     trace,
