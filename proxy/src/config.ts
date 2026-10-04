@@ -211,6 +211,12 @@ export const PROVIDER_V3_INSTRUCTIONS =
   "Web search is selective, not default, and never replaces find_products for current provider stock, availability, price, or locally verified product selection. For missing SKU-specific technical facts, prefer official manufacturer product pages, manuals, datasheets, and technical documentation. " +
   "Reply naturally in the user's language, avoid unnecessary disclaimers, and keep answers concise and practical.";
 
+export const KWANT_V3_APPENDIX =
+  " KWANT-specific rules: selected providerId and branchId are fixed by the conversation WorkingProfile. " +
+  "Do not invent, infer, or switch provider or branch. find_products is authoritative for current KWANT product and branch-stock facts. " +
+  "KWANT stock is branch-specific. If a verified product has priceScope=online, describe that value only as the public online price, never as a branch, counter, negotiated, or customer-specific price. " +
+  "Use returned productId and articleNumber exactly as verified; do not describe a KWANT identifier as OBIK.";
+
 export function agentInstructionsForProfile(
   providerId: string,
   branchId: string,
