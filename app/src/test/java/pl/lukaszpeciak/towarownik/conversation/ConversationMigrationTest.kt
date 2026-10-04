@@ -519,6 +519,111 @@ class ConversationMigrationTest {
                     "SELECT text FROM messages WHERE id=1",
                 ),
             )
+            db.query(
+                "SELECT articleNumber FROM message_products " +
+                    "WHERE messageId=1 AND position=0",
+            ).use {
+                check(it.moveToFirst())
+                assertEquals(null, it.getString(0))
+            }
+            assertEquals(
+                "3496072",
+                queryText(
+                    db,
+                    "SELECT obik FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+            assertEquals(
+                "074",
+                queryText(
+                    db,
+                    "SELECT storeNumber FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(DB_V7_NAME)
+        }
+    }
+
+    @Test
+    fun `migration 7 to 8 adds provider product identity without losing history`() {
+        val context =
+            ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase(DB_V7_NAME)
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(DB_V7_NAME)
+                .callback(
+                    object : SupportSQLiteOpenHelper.Callback(7) {
+                        override fun onCreate(db: SupportSQLiteDatabase) {
+                            createV2Schema(db)
+                            MIGRATION_2_3.migrate(db)
+                            MIGRATION_3_4.migrate(db)
+                            MIGRATION_4_5.migrate(db)
+                            MIGRATION_5_6.migrate(db)
+                            MIGRATION_6_7.migrate(db)
+                        }
+
+                        override fun onUpgrade(
+                            db: SupportSQLiteDatabase,
+                            oldVersion: Int,
+                            newVersion: Int,
+                        ) = Unit
+                    },
+                )
+                .build(),
+        )
+
+        try {
+            val db = helper.writableDatabase
+            db.execSQL(
+                "INSERT INTO conversations " +
+                    "(id,title,createdAt,updatedAt,lastResponseId,draft," +
+                    "storeNumber,providerId,branchId) " +
+                    "VALUES (1,'v7 conversation',1,2,'resp_1',''," +
+                    "'074','obi-pl','074')",
+            )
+            db.execSQL(
+                "INSERT INTO messages " +
+                    "(id,conversationId,role,text,createdAt) " +
+                    "VALUES (1,1,'ASSISTANT','legacy answer',2)",
+            )
+            db.execSQL(
+                "INSERT INTO message_products " +
+                    "(messageId,position,obik,name,stock,grossPrice," +
+                    "productUrl,verifiedAt,storeNumber,imageUrl) " +
+                    "VALUES (1,0,'3496072','Legacy OBI product',7,'12.99'," +
+                    "'https://www.obi.pl/p/3496072/test',2,'074',NULL)",
+            )
+
+            MIGRATION_7_8.migrate(db)
+
+            assertEquals(
+                "v7 conversation",
+                queryText(
+                    db,
+                    "SELECT title FROM conversations WHERE id=1",
+                ),
+            )
+            assertEquals(
+                "legacy answer",
+                queryText(
+                    db,
+                    "SELECT text FROM messages WHERE id=1",
+                ),
+            )
+            assertEquals(
+                "Legacy OBI product",
+                queryText(
+                    db,
+                    "SELECT name FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
             assertEquals(
                 "obi-pl",
                 queryText(
@@ -550,22 +655,6 @@ class ConversationMigrationTest {
                 check(it.moveToFirst())
                 assertEquals(null, it.getString(0))
             }
-            assertEquals(
-                "3496072",
-                queryText(
-                    db,
-                    "SELECT obik FROM message_products " +
-                        "WHERE messageId=1 AND position=0",
-                ),
-            )
-            assertEquals(
-                "074",
-                queryText(
-                    db,
-                    "SELECT storeNumber FROM message_products " +
-                        "WHERE messageId=1 AND position=0",
-                ),
-            )
         } finally {
             helper.close()
             context.deleteDatabase(DB_V7_NAME)
@@ -611,6 +700,7 @@ class ConversationMigrationTest {
         const val DB_V4_NAME = "conversation-migration-v4-v5-test.db"
         const val DB_V5_NAME = "conversation-migration-v5-v6-test.db"
         const val DB_V6_NAME = "conversation-migration-v6-v7-test.db"
+        const val DB_V7_NAME = "conversation-migration-v7-v8-test.db"
         const val DB_V7_NAME = "conversation-migration-v7-v8-test.db"
     }
 }
