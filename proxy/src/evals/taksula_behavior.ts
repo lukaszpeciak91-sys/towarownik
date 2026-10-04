@@ -373,7 +373,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     semanticRubric: [
       "The answer gives useful practical advice for sealing the specified washbasin-to-wall gap with silicone.",
       "Natural useful guidance may include sanitary silicone, suitable color guidance, a cartridge gun, cleaning or degreasing, masking, or finishing technique; no exact item list, labels, or answer structure is required.",
-      "Judge the answer as advisor-first guidance rather than a shopping-format response; current OBI assortment facts or product cards are not required for this understood job.",
+      "Judge the answer as advisor-first guidance rather than a shopping-format response; current provider assortment facts or product cards are not required for this understood job.",
     ],
   },
   {
@@ -384,7 +384,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     semanticRubric: [
       "The answer must acknowledge the material ambiguity instead of silently assuming one sealing problem. It may either ask a concise clarification about what is leaking/being sealed, or give a clearly conditional answer for one interpretation while explicitly noting that a drain/siphon leak is a different problem.",
       "Equivalent conversational strategies are acceptable as long as the materially different interpretations remain explicit and no interpretation is presented as certain without support.",
-      "It does not select or present a concrete OBI kit while the ambiguity remains unresolved.",
+      "It does not select or present a concrete provider kit while the ambiguity remains unresolved.",
     ],
   },
   {
@@ -394,7 +394,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     webPolicy: "forbidden",
     semanticRubric: [
       "The answer gives a useful general technical distinction between SDS+ and SDS Max.",
-      "It does not require current OBI assortment facts to answer the general technical question.",
+      "It does not require current provider assortment facts to answer the general technical question.",
     ],
   },
 ];
@@ -402,7 +402,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
 export function behaviorScenario(
   id: BehaviorScenarioId,
 ): BehaviorScenario {
-  const scenario = BEHAVIOR_SCENARIOS.find(
+  const scenario = BEHAVIOR_REGRESSION_SCENARIOS.find(
     (candidate) => candidate.id === id,
   );
   if (!scenario) {
@@ -414,7 +414,7 @@ export function behaviorScenario(
 export function behaviorScenarios(
   provider: BehaviorProvider,
 ): BehaviorScenario[] {
-  return BEHAVIOR_SCENARIOS.map((scenario) =>
+  return BEHAVIOR_REGRESSION_SCENARIOS.map((scenario) =>
     behaviorScenarioForProvider(scenario.id, provider),
   );
 }
@@ -436,9 +436,7 @@ export function behaviorScenarioForProvider(
       `numeru artykułu ${articleNumber}`,
     ),
     semanticRubric: [
-      ...scenario.semanticRubric.map((item) =>
-        item.replaceAll("OBI", "KWANT"),
-      ),
+      ...scenario.semanticRubric,
       ...(id === "F"
         ? [
             "The mocked KWANT price has online scope, so the answer describes it as an online price and does not claim it is a branch, counter, negotiated, or customer-specific price.",
@@ -1054,6 +1052,23 @@ function deterministicFailures(
       }
       break;
 
+    case "PRODUCT_INTENT":
+      if (calls.length === 0) {
+        failures.push(
+          "concrete product recommendation did not use the current provider",
+        );
+      }
+      if (
+        !verifiedRefs.has(
+          expectedRefKey(trace.provider, "7000001"),
+        )
+      ) {
+        failures.push(
+          "concrete product recommendation did not yield the intended verified product",
+        );
+      }
+      break;
+
     case "E":
       if (calls.length === 0) {
         failures.push(
@@ -1261,6 +1276,14 @@ function mockObiQueryResult(
           )
         : notFoundQuery(query);
 
+    case "PRODUCT_INTENT":
+      return isConcreteBreakerRecommendationQuery(query)
+        ? verifiedQuery(
+            query,
+            [DIRECT_PRODUCT].slice(0, limit),
+          )
+        : notFoundQuery(query);
+
     case "F":
       return hasExpectedIdentifier(query, "obi-v2", "F") ||
         hasExpectedIdentifier(query, "kwant-v3", "F")
@@ -1376,6 +1399,20 @@ function providerProduct(
     price: value.price,
     priceScope: "online",
   };
+}
+
+function isConcreteBreakerRecommendationQuery(
+  query: string,
+): boolean {
+  const normalized = normalizeQuery(query);
+  return (
+    /\\b(wyłącznik|wylacznik|nadprądow|nadpradow|eska)\\w*/.test(
+      normalized,
+    ) &&
+    /\\bb\\s*16\\b/.test(normalized) &&
+    /\\b1\\s*p\\b/.test(normalized) &&
+    /\\b6\\s*ka\\b/.test(normalized)
+  );
 }
 
 function isBlackCableTieQuery(query: string): boolean {
