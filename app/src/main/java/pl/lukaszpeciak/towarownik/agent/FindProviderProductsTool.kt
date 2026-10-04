@@ -150,6 +150,7 @@ internal class FindProviderProductsTool(
                                         obik = product.ref.productId,
                                         productId = product.ref.productId,
                                         articleNumber = product.articleNumber,
+                                        priceScope = product.priceScope,
                                         name = product.name,
                                         brand = product.brand,
                                         shortDescription =
