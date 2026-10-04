@@ -1,5 +1,5 @@
 import {
-  BEHAVIOR_SCENARIOS,
+  BEHAVIOR_REGRESSION_SCENARIOS,
   DEFAULT_BEHAVIOR_TRIALS,
   MAX_BEHAVIOR_TRIALS,
   createOpenAISemanticJudge,
@@ -67,7 +67,7 @@ function parseArgs(argv) {
   }
 
   const valid = new Set(
-    BEHAVIOR_SCENARIOS.map((scenario) => scenario.id),
+    BEHAVIOR_REGRESSION_SCENARIOS.map((scenario) => scenario.id),
   );
   for (const id of scenarioIds ?? []) {
     if (!valid.has(id)) {
@@ -129,7 +129,7 @@ async function main() {
         providers,
         scenarioIds:
           args.scenarioIds ??
-          BEHAVIOR_SCENARIOS.map((scenario) => scenario.id),
+          BEHAVIOR_REGRESSION_SCENARIOS.map((scenario) => scenario.id),
         results,
       },
       null,
