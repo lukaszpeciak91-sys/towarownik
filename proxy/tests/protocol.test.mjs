@@ -391,9 +391,9 @@ test("protocol v3 KWANT request receives provider-aware product tool", async () 
     fake.captures[0].body.instructions,
     /Current conversation store for this USER turn is OBI/,
   );
-  assert.doesNotMatch(
+  assert.match(
     fake.captures[0].body.instructions,
-    /OBIK/,
+    /do not describe a KWANT identifier as OBIK/,
   );
 });
 
