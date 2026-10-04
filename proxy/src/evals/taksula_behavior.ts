@@ -43,7 +43,8 @@ export type BehaviorScenarioId =
   | "G_UNAVAILABLE"
   | "H"
   | "H_AMBIGUOUS"
-  | "I";
+  | "I"
+  | "PRODUCT_INTENT";
 
 export type WebPolicy = "forbidden" | "allowed" | "required";
 
@@ -397,6 +398,24 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
       "It does not require current provider assortment facts to answer the general technical question.",
     ],
   },
+];
+
+export const PRODUCT_INTENT_SCENARIO: BehaviorScenario = {
+  id: "PRODUCT_INTENT",
+  name: "Concrete product recommendation uses current provider",
+  userMessage:
+    "Potrzebuję konkretnego wyłącznika nadprądowego B16, 1P, 6 kA. Co polecasz?",
+  webPolicy: "forbidden",
+  semanticRubric: [
+    "The answer treats the sufficiently specified request as concrete product/recommendation intent and uses the current provider without requiring an extra request to check the market or branch.",
+    "The final recommendation is grounded in a fitting product verified by the local provider tool.",
+    "No unnecessary clarification is required because the decision-critical product parameters are already specified.",
+  ],
+};
+
+export const BEHAVIOR_REGRESSION_SCENARIOS: readonly BehaviorScenario[] = [
+  ...BEHAVIOR_SCENARIOS,
+  PRODUCT_INTENT_SCENARIO,
 ];
 
 export function behaviorScenario(
@@ -1406,12 +1425,12 @@ function isConcreteBreakerRecommendationQuery(
 ): boolean {
   const normalized = normalizeQuery(query);
   return (
-    /\\b(wyłącznik|wylacznik|nadprądow|nadpradow|eska)\\w*/.test(
+    /\b(wyłącznik|wylacznik|nadprądow|nadpradow|eska)\w*/.test(
       normalized,
     ) &&
-    /\\bb\\s*16\\b/.test(normalized) &&
-    /\\b1\\s*p\\b/.test(normalized) &&
-    /\\b6\\s*ka\\b/.test(normalized)
+    /\bb\s*16\b/.test(normalized) &&
+    /\b1\s*p\b/.test(normalized) &&
+    /\b6\s*ka\b/.test(normalized)
   );
 }
 
