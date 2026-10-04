@@ -78,7 +78,6 @@ internal data class MessageProductEntity(
     val productId: String = obik,
     val branchId: String = storeNumber,
     val articleNumber: String? = null,
-    val priceScope: String? = null,
 )
 
 @Entity(
