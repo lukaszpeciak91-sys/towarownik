@@ -21,6 +21,8 @@ internal data class ConversationEntity(
     val lastResponseId: String?,
     val draft: String,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
+    val providerId: String = "obi-pl",
+    val branchId: String = storeNumber,
 )
 
 @Entity(

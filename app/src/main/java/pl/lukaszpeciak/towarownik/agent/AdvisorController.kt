@@ -14,6 +14,7 @@ internal enum class AdvisorError {
     PROTOCOL,
     OBI,
     INPUT,
+    UNSUPPORTED_PROVIDER,
 }
 
 internal sealed interface AdvisorUiState {

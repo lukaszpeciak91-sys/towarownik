@@ -153,3 +153,14 @@ The currently planned AI capability stage is complete after this selective web-s
 - Added explicit neutral price scope so KWANT public prices are `ONLINE` while current OBI prices remain `BRANCH`.
 - Production provider registry now resolves both OBI and KWANT; UI/advisor/persistence remain unchanged.
 - Fresh KWANT lookup route is live-proven: `/produkt/580` -> HTTP 308 -> canonical `...-580` product URL -> HTTP 200, with final public product ID `580`; the reusable live probe records only safe status/path/URL/product-ID evidence.
+
+
+## 2026-10-03 — persistent WorkingProfile
+
+- Added persistent global provider/branch selection with default `obi-pl / 075`.
+- Added neutral branch discovery to ProductProvider; OBI uses its existing supported-store allowlist and KWANT uses the public branch directory with `department_stock_id` identity.
+- Added Room schema v7 conversation ownership of provider + branch; v6 historical conversations migrate to OBI with their existing store number preserved as branch.
+- New conversations capture the current global working profile and saved conversations retain it.
+- Manual search now routes through the provider selected by the global working profile and keeps provider-owned ProductRef identity.
+- Provider-specific manual product labels distinguish OBIK from KWANT article numbers.
+- Existing advisor tooling remains OBI-only and does not automatically switch providers.

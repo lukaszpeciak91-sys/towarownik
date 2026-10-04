@@ -365,6 +365,77 @@ class ConversationMigrationTest {
         }
     }
 
+    @Test
+    fun `migration 6 to 7 assigns OBI provider and preserves existing store as branch`() {
+        val context =
+            ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase(DB_V6_NAME)
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(DB_V6_NAME)
+                .callback(
+                    object : SupportSQLiteOpenHelper.Callback(6) {
+                        override fun onCreate(db: SupportSQLiteDatabase) {
+                            createV2Schema(db)
+                            MIGRATION_2_3.migrate(db)
+                            MIGRATION_3_4.migrate(db)
+                            MIGRATION_4_5.migrate(db)
+                            MIGRATION_5_6.migrate(db)
+                        }
+
+                        override fun onUpgrade(
+                            db: SupportSQLiteDatabase,
+                            oldVersion: Int,
+                            newVersion: Int,
+                        ) = Unit
+                    },
+                )
+                .build(),
+        )
+
+        try {
+            val db = helper.writableDatabase
+            db.execSQL(
+                "INSERT INTO conversations " +
+                    "(id,title,createdAt,updatedAt,lastResponseId,draft,storeNumber) " +
+                    "VALUES (1,'legacy',1,1,NULL,'','074')",
+            )
+            db.execSQL(
+                "INSERT INTO messages " +
+                    "(id,conversationId,role,text,createdAt) " +
+                    "VALUES (1,1,'USER','history survives',1)",
+            )
+
+            MIGRATION_6_7.migrate(db)
+
+            assertEquals(
+                "obi-pl",
+                queryText(
+                    db,
+                    "SELECT providerId FROM conversations WHERE id=1",
+                ),
+            )
+            assertEquals(
+                "074",
+                queryText(
+                    db,
+                    "SELECT branchId FROM conversations WHERE id=1",
+                ),
+            )
+            assertEquals(
+                "history survives",
+                queryText(
+                    db,
+                    "SELECT text FROM messages WHERE id=1",
+                ),
+            )
+        } finally {
+            helper.close()
+            context.deleteDatabase(DB_V6_NAME)
+        }
+    }
+
     private fun createV2Schema(db: SupportSQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE conversations (" +
@@ -403,5 +474,6 @@ class ConversationMigrationTest {
         const val DB_V3_NAME = "conversation-migration-v3-v4-test.db"
         const val DB_V4_NAME = "conversation-migration-v4-v5-test.db"
         const val DB_V5_NAME = "conversation-migration-v5-v6-test.db"
+        const val DB_V6_NAME = "conversation-migration-v6-v7-test.db"
     }
 }

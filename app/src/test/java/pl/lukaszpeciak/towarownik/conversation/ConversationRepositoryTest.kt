@@ -16,6 +16,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -852,7 +856,69 @@ class ConversationRepositoryTest {
     }
 
     @Test
-    fun `changing selected store does not rewrite historical product store`() = runBlocking {
+    fun `new conversation captures selected working profile and survives recreation`() = runBlocking {
+        val kwant = WorkingProfile(
+            providerId = KWANT_PROVIDER_ID,
+            branchId = BranchId("205"),
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "KWANT case",
+            createdAt = 210L,
+            workingProfile = kwant,
+        )
+
+        assertEquals(
+            kwant,
+            requireNotNull(repository.load(started.conversationId))
+                .workingProfile,
+        )
+
+        database.close()
+        openDatabase()
+
+        assertEquals(
+            kwant,
+            requireNotNull(repository.load(started.conversationId))
+                .workingProfile,
+        )
+    }
+
+    @Test
+    fun `existing conversation rejects a different global working profile`() = runBlocking {
+        val obi = WorkingProfile(
+            providerId = OBI_PROVIDER_ID,
+            branchId = BranchId("075"),
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "OBI case",
+            createdAt = 220L,
+            workingProfile = obi,
+        )
+
+        val error = runCatching {
+            repository.beginUserTurn(
+                conversationId = started.conversationId,
+                text = "Must stay OBI",
+                createdAt = 230L,
+                workingProfile = WorkingProfile(
+                    providerId = KWANT_PROVIDER_ID,
+                    branchId = BranchId("205"),
+                ),
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+        assertEquals(
+            obi,
+            requireNotNull(repository.load(started.conversationId))
+                .workingProfile,
+        )
+    }
+
+    @Test
+    fun `conversation profile and historical product store stay stable`() = runBlocking {
         val started = repository.beginUserTurn(
             conversationId = null,
             text = "Historical",
@@ -877,16 +943,10 @@ class ConversationRepositoryTest {
             ),
         )
 
-        assertTrue(
-            repository.updateStoreNumber(
-                started.conversationId,
-                "075",
-            ),
-        )
         val restored = requireNotNull(
             repository.load(started.conversationId),
         )
-        assertEquals("075", restored.storeNumber)
+        assertEquals("074", restored.storeNumber)
         assertEquals(
             "074",
             restored.messages.last().products.single().storeNumber,

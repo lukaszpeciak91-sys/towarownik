@@ -30,11 +30,11 @@ class LocalizationResourcesTest {
         assertEquals("Doradca", polish.getValue("advisor_title"))
         assertEquals("Advisor", english.getValue("advisor_title"))
         assertEquals(
-            "Wyszukiwarka OBI",
+            "Wyszukiwarka",
             polish.getValue("manual_search_title"),
         )
         assertEquals(
-            "OBI search",
+            "Product search",
             english.getValue("manual_search_title"),
         )
         assertEquals("Zgłoś", polish.getValue("report_action"))

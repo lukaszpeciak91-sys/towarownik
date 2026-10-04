@@ -38,7 +38,25 @@ internal data class ProductRef(
 internal data class ProviderProductCandidate(
     val ref: ProductRef,
     val name: String?,
+    val articleNumber: String? = null,
 )
+
+internal data class ProviderBranch(
+    val branchId: BranchId,
+    val name: String,
+    val address: String? = null,
+)
+
+internal sealed interface ProviderBranchResult {
+    data class Available(
+        val branches: List<ProviderBranch>,
+    ) : ProviderBranchResult
+
+    data class Unavailable(
+        val failure: ProductProviderFailure,
+        internal val reason: String,
+    ) : ProviderBranchResult
+}
 
 internal enum class ProductProviderFailure {
     NETWORK,
@@ -106,6 +124,8 @@ internal sealed interface ProviderLookupResult {
 
 internal interface ProductProvider {
     val providerId: ProviderId
+
+    fun branches(): ProviderBranchResult
 
     fun search(
         query: String,

@@ -85,8 +85,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import pl.lukaszpeciak.towarownik.agent.AdvisorController
 import pl.lukaszpeciak.towarownik.agent.AdvisorError
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
@@ -103,8 +105,16 @@ import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
-import pl.lukaszpeciak.towarownik.product.SUPPORTED_OBI_STORE_NUMBERS
-import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.DEFAULT_WORKING_PROFILE
+import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
+import pl.lukaszpeciak.towarownik.product.provider.ProviderId
+import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
+import pl.lukaszpeciak.towarownik.product.provider.WorkingProfileRepository
 import pl.lukaszpeciak.towarownik.ui.theme.TowarownikTheme
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
@@ -188,7 +198,13 @@ private fun TowarownikApp() {
     val uiContext = LocalContext.current
     val context = uiContext.applicationContext
     val advisorController = remember { AdvisorController.production() }
-    val manualSearchController = remember { ManualSearchController() }
+    val providerRegistry = remember { ProductProviderRegistry.production() }
+    val manualSearchController = remember {
+        ManualSearchController(providers = providerRegistry)
+    }
+    val workingProfileRepository = remember {
+        WorkingProfileRepository.production(context)
+    }
     val conversationRepository = remember {
         ConversationRepository(
             ConversationDatabase.get(context).conversationDao(),
@@ -231,8 +247,17 @@ private fun TowarownikApp() {
     var activeConversationId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
-    var selectedStoreNumber by rememberSaveable {
-        mutableStateOf(DEFAULT_OBI_STORE_NUMBER)
+    var globalWorkingProfile by remember {
+        mutableStateOf(workingProfileRepository.load())
+    }
+    var selectedWorkingProfile by remember {
+        mutableStateOf(globalWorkingProfile)
+    }
+    var profileBranches by remember {
+        mutableStateOf<List<ProviderBranch>>(emptyList())
+    }
+    var profileBranchesLoading by remember {
+        mutableStateOf(false)
     }
     var freshCaseSelected by rememberSaveable {
         mutableStateOf(false)
@@ -253,12 +278,14 @@ private fun TowarownikApp() {
         mutableStateOf(false)
     }
     var draftPersistJob by remember { mutableStateOf<Job?>(null) }
-    var storePersistJob by remember { mutableStateOf<Job?>(null) }
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
 
     var manualQuery by rememberSaveable { mutableStateOf("") }
-    var manualStoreNumber by rememberSaveable {
-        mutableStateOf(selectedStoreNumber)
+    var manualWorkingProfile by remember {
+        mutableStateOf(globalWorkingProfile)
+    }
+    var manualBranchLabel by remember {
+        mutableStateOf<String?>(null)
     }
     var manualState by rememberSaveable(
         stateSaver = ManualSearchUiStateSaver,
@@ -276,7 +303,7 @@ private fun TowarownikApp() {
         initial = emptyList(),
     )
 
-    fun clearManualStoreContext() {
+    fun clearManualProfileContext() {
         manualRequestGuard.invalidate()
         manualJob?.cancel()
         manualJob = null
@@ -287,24 +314,23 @@ private fun TowarownikApp() {
         conversation: PersistedConversation?,
     ) {
         val nextConversationId = conversation?.id
-        val nextStoreNumber =
-            conversation?.storeNumber ?: DEFAULT_OBI_STORE_NUMBER
+        val nextProfile = conversation?.workingProfile ?: globalWorkingProfile
         if (
             activeConversationId != nextConversationId ||
-            selectedStoreNumber != nextStoreNumber
+            selectedWorkingProfile != nextProfile
         ) {
-            clearManualStoreContext()
+            clearManualProfileContext()
         }
 
         if (conversation == null) {
             activeConversationId = null
-            selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
+            selectedWorkingProfile = globalWorkingProfile
             advisorCase = AdvisorCaseUiState()
             return
         }
 
         activeConversationId = conversation.id
-        selectedStoreNumber = conversation.storeNumber
+        selectedWorkingProfile = conversation.workingProfile
         advisorCase = conversation.toAdvisorCaseUiState()
     }
 
@@ -316,8 +342,6 @@ private fun TowarownikApp() {
         advisorJob = null
         draftPersistJob?.cancelAndJoin()
         draftPersistJob = null
-        storePersistJob?.join()
-        storePersistJob = null
 
         if (recoverInterrupted) {
             activeConversationId?.let { conversationId ->
@@ -329,11 +353,11 @@ private fun TowarownikApp() {
     fun newAdvisorCase() {
         scope.launch {
             cancelAndRecoverActiveTurn()
-            clearManualStoreContext()
+            clearManualProfileContext()
             freshCaseSelected = true
             emptyPromptIndex = (emptyPromptIndex + 1) % EMPTY_ADVISOR_PROMPTS.size
             activeConversationId = null
-            selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
+            selectedWorkingProfile = globalWorkingProfile
             advisorState = AdvisorUiState.Idle
             advisorCase = AdvisorCaseUiState()
         }
@@ -342,7 +366,7 @@ private fun TowarownikApp() {
     fun openConversation(conversationId: Long) {
         scope.launch {
             cancelAndRecoverActiveTurn()
-            clearManualStoreContext()
+            clearManualProfileContext()
             val loaded = conversationRepository
                 .loadRecoveringInterrupted(conversationId)
             if (loaded != null) {
@@ -369,10 +393,10 @@ private fun TowarownikApp() {
             conversationRepository.deleteConversation(conversationId)
 
             if (freshCase != null) {
-                clearManualStoreContext()
+                clearManualProfileContext()
                 activeConversationId = null
-                selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER
-                freshCaseSelected = true
+                selectedWorkingProfile = globalWorkingProfile
+                    freshCaseSelected = true
                 emptyPromptIndex = (emptyPromptIndex + 1) % EMPTY_ADVISOR_PROMPTS.size
                 advisorState = AdvisorUiState.Idle
                 advisorCase = freshCase
@@ -381,25 +405,68 @@ private fun TowarownikApp() {
         }
     }
 
-    fun selectConversationStore(storeNumber: String) {
+    fun applyGlobalWorkingProfile(
+        profile: WorkingProfile,
+        branches: List<ProviderBranch>,
+    ) {
+        if (activeConversationId != null || advisorJob?.isActive == true) {
+            return
+        }
+        workingProfileRepository.save(profile)
+        globalWorkingProfile = profile
+        selectedWorkingProfile = profile
+        profileBranches = branches
+        clearManualProfileContext()
+    }
+
+    fun selectProvider(providerId: ProviderId) {
         if (
+            activeConversationId != null ||
             advisorJob?.isActive == true ||
-            !isSupportedObiStoreNumber(storeNumber) ||
-            storeNumber == selectedStoreNumber
+            providerId == selectedWorkingProfile.providerId
         ) {
             return
         }
-
-        clearManualStoreContext()
-        selectedStoreNumber = storeNumber
-        val conversationId = activeConversationId ?: return
-        storePersistJob?.cancel()
-        storePersistJob = scope.launch {
-            conversationRepository.updateStoreNumber(
-                conversationId = conversationId,
-                storeNumber = storeNumber,
+        scope.launch {
+            profileBranchesLoading = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    providerRegistry.resolve(providerId).branches()
+                }.getOrNull()
+            }
+            profileBranchesLoading = false
+            val available = result as? ProviderBranchResult.Available
+                ?: return@launch
+            val branches = available.branches
+            val branch = when (providerId) {
+                OBI_PROVIDER_ID ->
+                    branches.firstOrNull {
+                        it.branchId == DEFAULT_WORKING_PROFILE.branchId
+                    }
+                else -> branches.sortedBy { it.name }.firstOrNull()
+            } ?: return@launch
+            applyGlobalWorkingProfile(
+                WorkingProfile(providerId, branch.branchId),
+                branches,
             )
         }
+    }
+
+    fun selectBranch(branch: ProviderBranch) {
+        if (
+            activeConversationId != null ||
+            advisorJob?.isActive == true ||
+            branch !in profileBranches
+        ) {
+            return
+        }
+        applyGlobalWorkingProfile(
+            WorkingProfile(
+                providerId = selectedWorkingProfile.providerId,
+                branchId = branch.branchId,
+            ),
+            profileBranches,
+        )
     }
 
     fun updateAdvisorDraft(value: String) {
@@ -419,19 +486,17 @@ private fun TowarownikApp() {
 
         val submitted = advisorCase.draft.trim()
         if (submitted.isBlank()) return
-        val turnStoreNumber = selectedStoreNumber
+        val turnProfile = selectedWorkingProfile
 
         val generation = advisorRequestGuard.token()
         advisorJob = scope.launch {
             draftPersistJob?.cancelAndJoin()
             draftPersistJob = null
-            storePersistJob?.join()
-            storePersistJob = null
 
             val turn = conversationRepository.beginUserTurn(
                 conversationId = activeConversationId,
                 text = submitted,
-                storeNumber = turnStoreNumber,
+                workingProfile = turnProfile,
             )
 
             if (!advisorRequestGuard.isTokenCurrent(generation)) {
@@ -446,16 +511,21 @@ private fun TowarownikApp() {
             conversationRepository.load(turn.conversationId)
                 ?.let(::applyConversation)
 
-            runCatching {
-                aiUsageRepository.recordTurnStarted()
-            }
             var toolAssistedRecorded = false
 
-            val finalState = advisorController.runTurn(
-                input = submitted,
-                previousResponseId = turn.previousResponseId,
-                conversationStoreNumber = turn.storeNumber,
-                onOpenAiResponse = { usage, webSearchCalls ->
+            val finalState = runAdvisorForWorkingProfile(
+                workingProfile = turn.workingProfile,
+                onAdvisorStarted = {
+                    runCatching {
+                        aiUsageRepository.recordTurnStarted()
+                    }
+                },
+            ) { obiStoreNumber ->
+                advisorController.runTurn(
+                    input = submitted,
+                    previousResponseId = turn.previousResponseId,
+                    conversationStoreNumber = obiStoreNumber,
+                    onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(
                             usage = usage,
@@ -463,16 +533,30 @@ private fun TowarownikApp() {
                         )
                     }
                 },
-                onToolRequestObserved = {
-                    if (!toolAssistedRecorded) {
-                        toolAssistedRecorded = true
-                        runCatching {
-                            aiUsageRepository.recordToolAssistedTurn()
+                    onToolRequestObserved = {
+                        if (!toolAssistedRecorded) {
+                            toolAssistedRecorded = true
+                            runCatching {
+                                aiUsageRepository.recordToolAssistedTurn()
+                            }
                         }
+                    },
+                ) { state ->
+                    if (
+                        advisorRequestGuard.isCurrent(
+                            token = generation,
+                            expectedConversationId = turn.conversationId,
+                            activeConversationId = activeConversationId,
+                        )
+                    ) {
+                        advisorState = state
                     }
-                },
-            ) { state ->
+                }
+            }.also { state ->
                 if (
+                    state == AdvisorUiState.Error(
+                        AdvisorError.UNSUPPORTED_PROVIDER,
+                    ) &&
                     advisorRequestGuard.isCurrent(
                         token = generation,
                         expectedConversationId = turn.conversationId,
@@ -559,7 +643,8 @@ private fun TowarownikApp() {
     }
 
     fun submitManualSearch() {
-        val storeNumber = manualStoreNumber
+        val profile = manualWorkingProfile
+        val branchLabel = manualBranchLabel
         val submission = prepareSearchSubmission(manualQuery)
         manualRequestGuard.invalidate()
         val generation = manualRequestGuard.token()
@@ -568,11 +653,12 @@ private fun TowarownikApp() {
         manualJob = scope.launch {
             manualSearchController.submit(
                 input = submission.submittedQuery,
-                storeNumber = storeNumber,
+                workingProfile = profile,
+                branchLabel = branchLabel,
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    manualStoreNumber == storeNumber
+                    manualWorkingProfile == profile
                 ) {
                     manualState = state
                 }
@@ -581,18 +667,18 @@ private fun TowarownikApp() {
     }
 
     fun selectManualResult(item: ManualSearchResultItem) {
-        val storeNumber = manualStoreNumber
+        val profile = manualWorkingProfile
         manualRequestGuard.invalidate()
         val generation = manualRequestGuard.token()
         manualJob?.cancel()
         manualJob = scope.launch {
             manualSearchController.select(
                 item = item,
-                storeNumber = storeNumber,
+                workingProfile = profile,
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    manualStoreNumber == storeNumber
+                    manualWorkingProfile == profile
                 ) {
                     manualState = state
                 }
@@ -604,18 +690,18 @@ private fun TowarownikApp() {
         val current = manualState as?
             ManualSearchUiState.SearchResults ?: return
         if (!current.canShowMore) return
-        val storeNumber = manualStoreNumber
+        val profile = manualWorkingProfile
         manualRequestGuard.invalidate()
         val generation = manualRequestGuard.token()
         manualJob?.cancel()
         manualJob = scope.launch {
             manualSearchController.showMore(
                 current = current,
-                storeNumber = storeNumber,
+                workingProfile = profile,
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    manualStoreNumber == storeNumber
+                    manualWorkingProfile == profile
                 ) {
                     manualState = state
                 }
@@ -624,13 +710,13 @@ private fun TowarownikApp() {
     }
 
     fun openManualSearch() {
-        if (manualStoreNumber != selectedStoreNumber) {
-            manualRequestGuard.invalidate()
-            manualJob?.cancel()
-            manualJob = null
-            manualState = ManualSearchUiState.Idle
+        if (manualWorkingProfile != globalWorkingProfile) {
+            clearManualProfileContext()
         }
-        manualStoreNumber = selectedStoreNumber
+        manualWorkingProfile = globalWorkingProfile
+        manualBranchLabel = profileBranches
+            .firstOrNull { it.branchId == globalWorkingProfile.branchId }
+            ?.name
         surfaceName = AppSurface.MANUAL_SEARCH.name
     }
 
@@ -642,17 +728,23 @@ private fun TowarownikApp() {
         val generation = manualRequestGuard.token()
         manualJob?.cancel()
         manualQuery = request.query
-        manualStoreNumber = request.storeNumber
+        manualWorkingProfile = WorkingProfile(
+            providerId = OBI_PROVIDER_ID,
+            branchId = BranchId(request.storeNumber),
+        )
+        manualBranchLabel = null
         manualState = ManualSearchUiState.Idle
         surfaceName = AppSurface.MANUAL_SEARCH.name
         manualJob = scope.launch {
             manualSearchController.submit(
                 input = request.query,
-                storeNumber = request.storeNumber,
+                workingProfile = manualWorkingProfile,
+                branchLabel = manualBranchLabel,
             ) { state ->
                 if (
                     manualRequestGuard.isTokenCurrent(generation) &&
-                    manualStoreNumber == request.storeNumber
+                    manualWorkingProfile.providerId == OBI_PROVIDER_ID &&
+                    manualWorkingProfile.branchId.value == request.storeNumber
                 ) {
                     manualState = state
                 }
@@ -701,6 +793,20 @@ private fun TowarownikApp() {
     }
 
     LaunchedEffect(Unit) {
+        profileBranchesLoading = true
+        profileBranches = withContext(Dispatchers.IO) {
+            when (
+                val result = runCatching {
+                    providerRegistry.resolve(
+                        globalWorkingProfile.providerId,
+                    ).branches()
+                }.getOrNull()
+            ) {
+                is ProviderBranchResult.Available -> result.branches
+                else -> emptyList()
+            }
+        }
+        profileBranchesLoading = false
         conversationRepository.cleanupExpiredConversations()
         if (
             runCatching {
@@ -766,10 +872,22 @@ private fun TowarownikApp() {
                     },
                     onNewCase = ::newAdvisorCase,
                     onOpenSearch = ::openManualSearch,
-                    selectedStoreNumber = selectedStoreNumber,
-                    storeSelectorEnabled =
-                        advisorJob?.isActive != true,
-                    onStoreSelected = ::selectConversationStore,
+                    workingProfile = selectedWorkingProfile,
+                    profileBranches =
+                        if (
+                            selectedWorkingProfile.providerId ==
+                                globalWorkingProfile.providerId
+                        ) {
+                            profileBranches
+                        } else {
+                            emptyList()
+                        },
+                    profileSelectorEnabled =
+                        activeConversationId == null &&
+                            advisorJob?.isActive != true,
+                    profileBranchesLoading = profileBranchesLoading,
+                    onProviderSelected = ::selectProvider,
+                    onBranchSelected = ::selectBranch,
                     onReportAssistantMessage = ::openAssistantReport,
                     onOpenSearchAction = ::openAdvisorSearchAction,
                     emptyPromptIndex = emptyPromptIndex,
@@ -783,7 +901,7 @@ private fun TowarownikApp() {
                     navigateBackFrom(AppSurface.MANUAL_SEARCH)
                 },
             )
-            ManualObiSearchScreen(
+            ManualSearchScreen(
                 query = manualQuery,
                 state = manualState,
                 onQueryChange = { value ->
@@ -801,7 +919,8 @@ private fun TowarownikApp() {
                 },
                 onSelectResult = ::selectManualResult,
                 onShowMore = ::showMoreManualResults,
-                storeNumber = manualStoreNumber,
+                workingProfile = manualWorkingProfile,
+                branchLabel = manualBranchLabel,
                 onBack = {
                     navigateBackFrom(AppSurface.MANUAL_SEARCH)
                 },
@@ -1259,9 +1378,12 @@ private fun AdvisorChatScreen(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
-    selectedStoreNumber: String,
-    storeSelectorEnabled: Boolean,
-    onStoreSelected: (String) -> Unit,
+    workingProfile: WorkingProfile,
+    profileBranches: List<ProviderBranch>,
+    profileSelectorEnabled: Boolean,
+    profileBranchesLoading: Boolean,
+    onProviderSelected: (ProviderId) -> Unit,
+    onBranchSelected: (ProviderBranch) -> Unit,
     onReportAssistantMessage: (Long) -> Unit,
     onOpenSearchAction: (PersistedSearchAction) -> Unit,
     emptyPromptIndex: Int,
@@ -1277,9 +1399,12 @@ private fun AdvisorChatScreen(
                 onOpenDrawer = onOpenDrawer,
                 onNewCase = onNewCase,
                 onOpenSearch = onOpenSearch,
-                selectedStoreNumber = selectedStoreNumber,
-                storeSelectorEnabled = storeSelectorEnabled,
-                onStoreSelected = onStoreSelected,
+                workingProfile = workingProfile,
+                profileBranches = profileBranches,
+                profileSelectorEnabled = profileSelectorEnabled,
+                profileBranchesLoading = profileBranchesLoading,
+                onProviderSelected = onProviderSelected,
+                onBranchSelected = onBranchSelected,
             )
         },
         bottomBar = {
@@ -1379,9 +1504,12 @@ private fun AdvisorTopBar(
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
-    selectedStoreNumber: String,
-    storeSelectorEnabled: Boolean,
-    onStoreSelected: (String) -> Unit,
+    workingProfile: WorkingProfile,
+    profileBranches: List<ProviderBranch>,
+    profileSelectorEnabled: Boolean,
+    profileBranchesLoading: Boolean,
+    onProviderSelected: (ProviderId) -> Unit,
+    onBranchSelected: (ProviderBranch) -> Unit,
 ) {
     Surface(
         modifier = Modifier.topBarSafeArea(),
@@ -1415,10 +1543,13 @@ private fun AdvisorTopBar(
                         text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.titleMedium,
                     )
-                    ObiStoreSelector(
-                        selectedStoreNumber = selectedStoreNumber,
-                        enabled = storeSelectorEnabled,
-                        onStoreSelected = onStoreSelected,
+                    WorkingProfileSelector(
+                        workingProfile = workingProfile,
+                        branches = profileBranches,
+                        enabled = profileSelectorEnabled,
+                        loading = profileBranchesLoading,
+                        onProviderSelected = onProviderSelected,
+                        onBranchSelected = onBranchSelected,
                     )
                 }
 
@@ -1457,42 +1588,112 @@ private fun AdvisorTopBar(
 }
 
 @Composable
-private fun ObiStoreSelector(
-    selectedStoreNumber: String,
+private fun WorkingProfileSelector(
+    workingProfile: WorkingProfile,
+    branches: List<ProviderBranch>,
     enabled: Boolean,
-    onStoreSelected: (String) -> Unit,
+    loading: Boolean,
+    onProviderSelected: (ProviderId) -> Unit,
+    onBranchSelected: (ProviderBranch) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var providerExpanded by remember { mutableStateOf(false) }
+    var branchExpanded by remember { mutableStateOf(false) }
+    val providerLabel = if (workingProfile.providerId == KWANT_PROVIDER_ID) {
+        stringResource(R.string.provider_kwant)
+    } else {
+        stringResource(R.string.provider_obi)
+    }
+    val branch = branches.firstOrNull {
+        it.branchId == workingProfile.branchId
+    }
+    val branchLabel = branch?.name ?: workingProfile.branchId.value
 
-    Box {
-        TextButton(
-            onClick = { expanded = true },
-            enabled = enabled,
-            contentPadding = PaddingValues(
-                horizontal = 8.dp,
-                vertical = 0.dp,
-            ),
-        ) {
-            Text(
-                text = stringResource(
-                    R.string.obi_store_selector,
-                    selectedStoreNumber,
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            TextButton(
+                onClick = { providerExpanded = true },
+                enabled = enabled && !loading,
+                contentPadding = PaddingValues(
+                    horizontal = 6.dp,
+                    vertical = 0.dp,
                 ),
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            SUPPORTED_OBI_STORE_NUMBERS.forEach { storeNumber ->
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.obi_store_item, storeNumber)) },
-                    onClick = {
-                        expanded = false
-                        onStoreSelected(storeNumber)
-                    },
+            ) {
+                Text(
+                    text = providerLabel,
+                    style = MaterialTheme.typography.labelMedium,
                 )
+            }
+            DropdownMenu(
+                expanded = providerExpanded,
+                onDismissRequest = { providerExpanded = false },
+            ) {
+                listOf(
+                    OBI_PROVIDER_ID to R.string.provider_obi,
+                    KWANT_PROVIDER_ID to R.string.provider_kwant,
+                ).forEach { (providerId, labelRes) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(labelRes)) },
+                        onClick = {
+                            providerExpanded = false
+                            onProviderSelected(providerId)
+                        },
+                    )
+                }
+            }
+        }
+
+        Text(
+            text = "•",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Box {
+            TextButton(
+                onClick = { branchExpanded = true },
+                enabled = enabled && !loading && branches.isNotEmpty(),
+                contentPadding = PaddingValues(
+                    horizontal = 6.dp,
+                    vertical = 0.dp,
+                ),
+            ) {
+                Text(
+                    text = if (loading) {
+                        stringResource(R.string.profile_loading_branches)
+                    } else {
+                        branchLabel
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
+            DropdownMenu(
+                expanded = branchExpanded,
+                onDismissRequest = { branchExpanded = false },
+            ) {
+                branches.forEach { option ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(option.name)
+                                option.address?.let { address ->
+                                    Text(
+                                        text = address,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        },
+                        onClick = {
+                            branchExpanded = false
+                            onBranchSelected(option)
+                        },
+                    )
+                }
             }
         }
     }
@@ -2020,7 +2221,7 @@ private fun AdvisorErrorBubble(
 }
 
 @Composable
-private fun ManualObiSearchScreen(
+private fun ManualSearchScreen(
     query: String,
     state: ManualSearchUiState,
     onQueryChange: (String) -> Unit,
@@ -2028,7 +2229,8 @@ private fun ManualObiSearchScreen(
     onClear: () -> Unit,
     onSelectResult: (ManualSearchResultItem) -> Unit,
     onShowMore: () -> Unit,
-    storeNumber: String,
+    workingProfile: WorkingProfile,
+    branchLabel: String?,
     onBack: () -> Unit,
 ) {
     val isLoading = state is ManualSearchUiState.Loading
@@ -2059,8 +2261,13 @@ private fun ManualObiSearchScreen(
             ) {
                 Text(
                     text = stringResource(
-                        R.string.manual_search_store,
-                        storeNumber,
+                        R.string.manual_search_profile,
+                        if (workingProfile.providerId == KWANT_PROVIDER_ID) {
+                            stringResource(R.string.provider_kwant)
+                        } else {
+                            stringResource(R.string.provider_obi)
+                        },
+                        branchLabel ?: workingProfile.branchId.value,
                     ),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
@@ -2249,14 +2456,16 @@ private fun ManualSearchResults(
             ),
             style = MaterialTheme.typography.titleMedium,
         )
-        Text(
-            text = stringResource(
-                R.string.manual_search_reported_total,
-                state.reportedTotalCount,
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        state.reportedTotalCount?.let { total ->
+            Text(
+                text = stringResource(
+                    R.string.manual_search_reported_total,
+                    total,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         state.visibleItems.forEach { item ->
             Surface(
@@ -2303,20 +2512,14 @@ private fun ManualSearchResults(
                                         )
                                     }
                                     Text(
-                                        text = stringResource(
-                                            R.string.product_obik,
-                                            item.obik,
-                                        ),
+                                        text = manualResultIdentifierText(item),
                                         style =
                                             MaterialTheme.typography.bodyMedium,
                                         color =
                                             MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        text = stringResource(
-                                            R.string.product_store,
-                                            item.storeNumber,
-                                        ),
+                                        text = manualResultBranchText(item),
                                         style =
                                             MaterialTheme.typography.labelMedium,
                                         color =
@@ -2339,20 +2542,14 @@ private fun ManualSearchResults(
                                     )
                                 }
                                 Text(
-                                    text = stringResource(
-                                        R.string.product_obik,
-                                        item.obik,
-                                    ),
+                                    text = manualResultIdentifierText(item),
                                     style =
                                         MaterialTheme.typography.bodyMedium,
                                     color =
                                         MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Text(
-                                    text = stringResource(
-                                        R.string.product_store,
-                                        item.storeNumber,
-                                    ),
+                                    text = manualResultBranchText(item),
                                     style =
                                         MaterialTheme.typography.labelMedium,
                                     color =
@@ -2447,6 +2644,32 @@ private fun ManualSearchResults(
 }
 
 @Composable
+private fun manualResultIdentifierText(
+    item: ManualSearchResultItem,
+): String =
+    if (item.ref.providerId == KWANT_PROVIDER_ID) {
+        stringResource(
+            R.string.product_article_number,
+            item.articleNumber ?: item.ref.productId,
+        )
+    } else {
+        stringResource(R.string.product_obik, item.ref.productId)
+    }
+
+@Composable
+private fun manualResultBranchText(
+    item: ManualSearchResultItem,
+): String =
+    if (item.ref.providerId == KWANT_PROVIDER_ID) {
+        stringResource(
+            R.string.product_branch_kwant_named,
+            item.branchLabel ?: item.branchId.value,
+        )
+    } else {
+        stringResource(R.string.product_store, item.branchId.value)
+    }
+
+@Composable
 private fun ManualVerifiedProductLink(
     product: VerifiedProductUiModel,
 ) {
@@ -2467,7 +2690,15 @@ private fun ManualVerifiedProductLink(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
     ) {
-        Text(stringResource(R.string.open_in_obi))
+        Text(
+            stringResource(
+                if (product.providerId == KWANT_PROVIDER_ID.value) {
+                    R.string.open_in_kwant
+                } else {
+                    R.string.open_in_obi
+                },
+            ),
+        )
         Spacer(modifier = Modifier.width(6.dp))
         Icon(
             painter = painterResource(R.drawable.ic_open_in_new_24),
@@ -2507,6 +2738,18 @@ private fun formatLocalTime(createdAt: Long): String =
         .atZone(ZoneId.systemDefault())
         .format(CHAT_TIME_FORMATTER)
 
+internal suspend fun runAdvisorForWorkingProfile(
+    workingProfile: WorkingProfile,
+    onAdvisorStarted: suspend () -> Unit = {},
+    runObiAdvisor: suspend (String) -> AdvisorUiState,
+): AdvisorUiState =
+    if (workingProfile.providerId == OBI_PROVIDER_ID) {
+        onAdvisorStarted()
+        runObiAdvisor(workingProfile.branchId.value)
+    } else {
+        AdvisorUiState.Error(AdvisorError.UNSUPPORTED_PROVIDER)
+    }
+
 @Composable
 private fun advisorErrorText(error: AdvisorError): String =
     stringResource(
@@ -2518,6 +2761,8 @@ private fun advisorErrorText(error: AdvisorError): String =
             AdvisorError.PROTOCOL -> R.string.advisor_error_protocol
             AdvisorError.OBI -> R.string.advisor_error_obi
             AdvisorError.INPUT -> R.string.advisor_error_input
+            AdvisorError.UNSUPPORTED_PROVIDER ->
+                R.string.advisor_error_unsupported_provider
         },
     )
 
@@ -2567,9 +2812,12 @@ private fun AdvisorChatPreview() {
             onOpenDrawer = {},
             onNewCase = {},
             onOpenSearch = {},
-            selectedStoreNumber = DEFAULT_OBI_STORE_NUMBER,
-            storeSelectorEnabled = true,
-            onStoreSelected = {},
+            workingProfile = DEFAULT_WORKING_PROFILE,
+            profileBranches = emptyList(),
+            profileSelectorEnabled = true,
+            profileBranchesLoading = false,
+            onProviderSelected = {},
+            onBranchSelected = {},
             onReportAssistantMessage = {},
             onOpenSearchAction = {},
             emptyPromptIndex = 0,

@@ -25,6 +25,20 @@ class KwantProductProviderTest {
     }
 
     @Test
+    fun `public provider branches include selectable Nowy Sacz 205 with address`() {
+        val provider = KwantProductProvider(frontend = FakeFrontend())
+
+        val result = provider.branches()
+            as ProviderBranchResult.Available
+        val branch = result.branches.single {
+            it.branchId == BranchId("205")
+        }
+
+        assertEquals("Nowy Sącz", branch.name)
+        assertEquals("33-300 Tarnowska 149", branch.address)
+    }
+
+    @Test
     fun `article EAN and text searches preserve stable KWANT product ref`() {
         val frontend = FakeFrontend()
         val provider = KwantProductProvider(frontend = frontend)

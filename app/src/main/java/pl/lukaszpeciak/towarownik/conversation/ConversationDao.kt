@@ -122,20 +122,6 @@ internal abstract class ConversationDao {
     @Query(
         """
         UPDATE conversations
-        SET storeNumber = :storeNumber,
-            updatedAt = :updatedAt
-        WHERE id = :conversationId
-        """,
-    )
-    abstract suspend fun updateStoreNumber(
-        conversationId: Long,
-        storeNumber: String,
-        updatedAt: Long,
-    ): Int
-
-    @Query(
-        """
-        UPDATE conversations
         SET draft = '',
             updatedAt = :updatedAt
         WHERE id = :conversationId
@@ -166,7 +152,8 @@ internal abstract class ConversationDao {
         title: String,
         text: String,
         createdAt: Long,
-        storeNumber: String,
+        providerId: String,
+        branchId: String,
     ): Pair<Long, String?> {
         val conversationId = insertConversation(
             ConversationEntity(
@@ -175,7 +162,9 @@ internal abstract class ConversationDao {
                 updatedAt = createdAt,
                 lastResponseId = null,
                 draft = "",
-                storeNumber = storeNumber,
+                storeNumber = branchId,
+                providerId = providerId,
+                branchId = branchId,
             ),
         )
         insertMessage(
@@ -194,10 +183,12 @@ internal abstract class ConversationDao {
         conversationId: Long,
         text: String,
         createdAt: Long,
-        expectedStoreNumber: String,
+        expectedProviderId: String,
+        expectedBranchId: String,
     ): String? {
         val conversation = checkNotNull(getConversation(conversationId))
-        require(conversation.storeNumber == expectedStoreNumber)
+        require(conversation.providerId == expectedProviderId)
+        require(conversation.branchId == expectedBranchId)
         insertMessage(
             MessageEntity(
                 conversationId = conversationId,

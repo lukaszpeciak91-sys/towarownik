@@ -8,6 +8,7 @@ import pl.lukaszpeciak.towarownik.product.ProductLookupRepository
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchRepository
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
+import pl.lukaszpeciak.towarownik.product.SUPPORTED_OBI_STORE_NUMBERS
 
 internal val OBI_PROVIDER_ID = ProviderId("obi-pl")
 
@@ -30,6 +31,16 @@ internal class ObiProductProvider(
         },
 ) : ProductProvider {
     override val providerId: ProviderId = OBI_PROVIDER_ID
+
+    override fun branches(): ProviderBranchResult =
+        ProviderBranchResult.Available(
+            branches = SUPPORTED_OBI_STORE_NUMBERS.map { storeNumber ->
+                ProviderBranch(
+                    branchId = BranchId(storeNumber),
+                    name = storeNumber,
+                )
+            },
+        )
 
     override fun search(
         query: String,
@@ -84,6 +95,7 @@ private fun ProductSearchResult.toProviderResult(
                                 productId = candidate.obik,
                             ),
                             name = candidate.name,
+                            articleNumber = null,
                         )
                     },
                 reportedTotalCount = reportedTotalCount,

@@ -195,6 +195,43 @@ internal class KwantProductProvider(
 
     private val productUrls = ConcurrentHashMap<String, String>()
 
+    override fun branches(): ProviderBranchResult =
+        when (val response = frontend.fetchBranchDirectory()) {
+            is KwantFrontendResult.Success -> {
+                val branches = parser.parseBranches(response.html)
+                    .map { branch ->
+                        ProviderBranch(
+                            branchId = branch.branchId,
+                            name = branch.departmentStockName,
+                            address = listOf(
+                                branch.departmentStockPostcode,
+                                branch.departmentStockStreet,
+                            ).joinToString(" "),
+                        )
+                    }
+                if (branches.isEmpty()) {
+                    ProviderBranchResult.Unavailable(
+                        failure = ProductProviderFailure.DATA,
+                        reason = "KWANT branch directory could not be parsed",
+                    )
+                } else {
+                    ProviderBranchResult.Available(branches)
+                }
+            }
+
+            KwantFrontendResult.NotFound ->
+                ProviderBranchResult.Unavailable(
+                    failure = ProductProviderFailure.NOT_FOUND,
+                    reason = "KWANT branch directory not found",
+                )
+
+            is KwantFrontendResult.Failure ->
+                ProviderBranchResult.Unavailable(
+                    failure = ProductProviderFailure.NETWORK,
+                    reason = response.reason,
+                )
+        }
+
     override fun search(
         query: String,
         maxResults: Int,
@@ -222,6 +259,7 @@ internal class KwantProductProvider(
                                         productId = candidate.productId,
                                     ),
                                     name = candidate.name,
+                                    articleNumber = candidate.code,
                                 )
                             },
                         reportedTotalCount = null,

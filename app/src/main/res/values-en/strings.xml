@@ -12,6 +12,9 @@
     <string name="cancel">Cancel</string>
 
     <string name="advisor_title">Advisor</string>
+    <string name="provider_obi">OBI</string>
+    <string name="provider_kwant">KWANT</string>
+    <string name="profile_loading_branches">Loading…</string>
     <string name="obi_store_selector">OBI • %1$s</string>
     <string name="obi_store_item">OBI %1$s</string>
     <string name="advisor_empty_body">Describe what the customer needs.</string>
@@ -37,27 +40,32 @@
     <string name="advisor_error_protocol">The advisor returned an invalid response.</string>
     <string name="advisor_error_obi">Could not read data from OBI.</string>
     <string name="advisor_error_input">Describe what the customer needs.</string>
+    <string name="advisor_error_unsupported_provider">The advisor is not yet available for the selected provider.</string>
 
-    <string name="manual_search_title">OBI search</string>
-    <string name="manual_search_input_label">OBIK / EAN / product name</string>
+    <string name="manual_search_title">Product search</string>
+    <string name="manual_search_input_label">Product no. / EAN / product name</string>
     <string name="search">Search</string>
     <string name="manual_search_progress">Searching for product…</string>
     <string name="manual_search_store">OBI store: %1$s</string>
+    <string name="manual_search_profile">%1$s • %2$s</string>
     <string name="manual_search_enriching">Loading stock and price…</string>
     <string name="manual_search_enrichment_failed">Could not load stock and price</string>
     <string name="manual_search_retry_exact">Try again</string>
     <string name="manual_search_results_range">Results 1–%1$d</string>
-    <string name="manual_search_reported_total">OBI result count: %1$d</string>
+    <string name="manual_search_reported_total">Result count: %1$d</string>
     <string name="show_more">Show more</string>
-    <string name="search_error_invalid_input">Enter a 7-digit OBIK, EAN, or product name.</string>
-    <string name="search_error_network">Could not connect to OBI. Check your internet connection and try again.</string>
+    <string name="search_error_invalid_input">Enter a product number, EAN, or product name.</string>
+    <string name="search_error_network">Could not connect to the provider. Check your internet connection and try again.</string>
     <string name="search_error_not_found">Product not found.</string>
-    <string name="search_error_product_data">Could not read product data from OBI.</string>
-    <string name="search_error_search_data">Could not read OBI search results.</string>
+    <string name="search_error_product_data">Could not read product data.</string>
+    <string name="search_error_search_data">Could not read search results.</string>
     <string name="search_error_lookup">Could not search for the product.</string>
 
     <string name="product_store">OBI %1$s</string>
     <string name="product_obik">OBIK: %1$s</string>
+    <string name="product_article_number">Article no.: %1$s</string>
+    <string name="product_branch_kwant">KWANT %1$s</string>
+    <string name="product_branch_kwant_named">KWANT • %1$s</string>
     <string name="product_price">Price: %1$s zł</string>
     <string name="product_price_unknown">Price: no data</string>
     <string name="product_stock_count">Stock: %1$d</string>
@@ -65,6 +73,7 @@
     <string name="product_stock_unknown">Stock: no data</string>
     <string name="product_verified_at">Checked %1$s</string>
     <string name="open_in_obi">Open in OBI</string>
+    <string name="open_in_kwant">Open in KWANT</string>
 
     <string name="diagnostics_title">OBI diagnostics</string>
     <string name="diagnostics_mode_on">Diagnostic mode: ON</string>
