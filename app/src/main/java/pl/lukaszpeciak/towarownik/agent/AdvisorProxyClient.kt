@@ -438,24 +438,50 @@ internal class AdvisorProxyClient(
                     ?.map { element ->
                         val reference = element as? JsonObject
                             ?: error("Invalid product reference")
-                        requireExactKeys(
-                            reference,
-                            setOf("storeNumber", "obik"),
-                        )
-                        val storeNumber = reference["storeNumber"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            ?.takeIf(STORE_NUMBER_PATTERN::matches)
-                            ?: error("Invalid selected store")
-                        val obik = reference["obik"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            ?.takeIf(OBIK_PATTERN::matches)
-                            ?: error("Invalid selected OBIK")
-                        AdvisorProductRef(
-                            storeNumber = storeNumber,
-                            obik = obik,
-                        )
+                        when {
+                            reference.keys ==
+                                setOf("providerId", "branchId", "productId") -> {
+                                val providerId = reference["providerId"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(PROVIDER_ID_PATTERN::matches)
+                                    ?: error("Invalid selected provider")
+                                val branchId = reference["branchId"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(BRANCH_ID_PATTERN::matches)
+                                    ?: error("Invalid selected branch")
+                                val productId = reference["productId"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(PRODUCT_ID_PATTERN::matches)
+                                    ?: error("Invalid selected product id")
+                                AdvisorProductRef(
+                                    storeNumber = branchId,
+                                    obik = productId,
+                                    providerId = providerId,
+                                )
+                            }
+
+                            reference.keys == setOf("storeNumber", "obik") -> {
+                                val storeNumber = reference["storeNumber"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(STORE_NUMBER_PATTERN::matches)
+                                    ?: error("Invalid selected store")
+                                val obik = reference["obik"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(OBIK_PATTERN::matches)
+                                    ?: error("Invalid selected OBIK")
+                                AdvisorProductRef(
+                                    storeNumber = storeNumber,
+                                    obik = obik,
+                                )
+                            }
+
+                            else -> error("Invalid product reference")
+                        }
                     }
                     ?.takeIf { it.size <= MAX_TOOL_PRODUCTS }
                     ?: error("Invalid selected products")
@@ -490,21 +516,49 @@ internal class AdvisorProxyClient(
                     tool,
                     setOf("name", "callId", "arguments"),
                 )
+                val toolName =
+                    tool["name"]?.jsonPrimitive?.contentOrNull
+                        ?: error("Missing tool name")
                 require(
-                    tool["name"]?.jsonPrimitive?.contentOrNull ==
-                        FIND_OBI_PRODUCTS,
+                    toolName == FIND_OBI_PRODUCTS ||
+                        toolName == FIND_PRODUCTS,
                 )
                 val callId = tool["callId"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf { it.isNotBlank() && it.length <= MAX_ID_CHARS }
                     ?: error("Invalid call id")
                 val arguments = tool["arguments"] as? JsonObject
                     ?: error("Missing tool arguments")
-                requireExactKeys(arguments, setOf("storeNumber", "queries"))
-                val storeNumber = arguments["storeNumber"]
-                    ?.jsonPrimitive
-                    ?.contentOrNull
-                    ?.takeIf(STORE_NUMBER_PATTERN::matches)
-                    ?: error("Invalid tool store")
+
+                val providerId: String
+                val branchId: String
+                if (toolName == FIND_PRODUCTS) {
+                    requireExactKeys(
+                        arguments,
+                        setOf("providerId", "branchId", "queries"),
+                    )
+                    providerId = arguments["providerId"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.takeIf(PROVIDER_ID_PATTERN::matches)
+                        ?: error("Invalid tool provider")
+                    branchId = arguments["branchId"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.takeIf(BRANCH_ID_PATTERN::matches)
+                        ?: error("Invalid tool branch")
+                } else {
+                    requireExactKeys(
+                        arguments,
+                        setOf("storeNumber", "queries"),
+                    )
+                    providerId = OBI_PROVIDER_ID.value
+                    branchId = arguments["storeNumber"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.takeIf(STORE_NUMBER_PATTERN::matches)
+                        ?: error("Invalid tool store")
+                }
+
                 val queries = arguments["queries"]
                     ?.jsonArray
                     ?.map { element ->
@@ -542,8 +596,9 @@ internal class AdvisorProxyClient(
                     responseId = responseId,
                     callId = callId,
                     arguments = AdvisorToolArguments(
-                        storeNumber = storeNumber,
+                        storeNumber = branchId,
                         queries = queries,
+                        providerId = providerId,
                     ),
                     webSearchCalls = root.requireWebSearchCallCount(),
                     usage = parseUsageOrNull(root["usage"]),
@@ -681,6 +736,77 @@ internal class AdvisorProxyClient(
                     },
                 )
             }
+        }
+
+    private fun AdvisorVerifiedToolResult.toJsonV3(): JsonObject =
+        buildJsonObject {
+            put("providerId", providerId)
+            put("branchId", storeNumber)
+            put(
+                "results",
+                buildJsonArray {
+                    results.forEach { group ->
+                        add(
+                            buildJsonObject {
+                                put("query", group.query)
+                                put(
+                                    "status",
+                                    when (group.status) {
+                                        AdvisorQueryResultStatus.VERIFIED ->
+                                            "verified"
+                                        AdvisorQueryResultStatus.NOT_FOUND ->
+                                            "not_found"
+                                        AdvisorQueryResultStatus.UNAVAILABLE ->
+                                            "unavailable"
+                                    },
+                                )
+                                put(
+                                    "products",
+                                    buildJsonArray {
+                                        group.products.forEach { product ->
+                                            add(product.toJsonV3())
+                                        }
+                                    },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+        }
+
+    private fun AdvisorVerifiedProduct.toJsonV3(): JsonObject =
+        buildJsonObject {
+            put("productId", productId)
+            put(
+                "articleNumber",
+                articleNumber?.let(::JsonPrimitive) ?: JsonNull,
+            )
+            put("name", name)
+            put("brand", brand?.let(::JsonPrimitive) ?: JsonNull)
+            put(
+                "shortDescription",
+                shortDescription?.let(::JsonPrimitive) ?: JsonNull,
+            )
+            put(
+                "technicalFacts",
+                buildJsonArray {
+                    technicalFacts.forEach { fact ->
+                        add(
+                            buildJsonObject {
+                                put("label", fact.label)
+                                put("value", fact.value)
+                            },
+                        )
+                    }
+                },
+            )
+            put("stock", stock?.let(::JsonPrimitive) ?: JsonNull)
+            put("price", price?.let(::JsonPrimitive) ?: JsonNull)
+            put(
+                "priceScope",
+                priceScope?.let(::JsonPrimitive) ?: JsonNull,
+            )
         }
 
     private fun AdvisorVerifiedToolResult.toJson(): JsonObject =
