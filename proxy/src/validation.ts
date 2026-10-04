@@ -2,6 +2,7 @@ import {
   CONTINUE_BODY_MAX_BYTES,
   CURRENT_ADVISOR_PROTOCOL_VERSION,
   LEGACY_ADVISOR_PROTOCOL_VERSION,
+  OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
   MAX_CALL_ID_CHARS,
   MESSAGE_BODY_MAX_BYTES,
   MAX_PRODUCT_NAME_CHARS,
@@ -23,6 +24,12 @@ import type {
   LegacyToolArguments,
   LegacyVerifiedToolResult,
   LocalToolLimitResult,
+  ProviderLocalToolLimitResult,
+  ProviderRejectedToolResult,
+  ProviderToolArguments,
+  ProviderVerifiedProduct,
+  ProviderVerifiedQueryResult,
+  ProviderVerifiedToolResult,
   RejectedToolResult,
   ToolArguments,
   ToolContinuationResult,
@@ -56,6 +63,8 @@ export class RequestTooLargeError extends Error {}
 export interface StartRequest {
   protocolVersion: AdvisorProtocolVersion;
   message: string;
+  providerId: string;
+  branchId: string;
   storeNumber: string;
 }
 
@@ -67,8 +76,10 @@ export interface ContinueRequest {
   protocolVersion: AdvisorProtocolVersion;
   responseId: string;
   callId: string;
+  providerId: string;
+  branchId: string;
   storeNumber: string;
-  tool: "find_obi_products";
+  tool: "find_obi_products" | "find_products";
   result: ToolContinuationResult;
 }
 
@@ -104,16 +115,35 @@ export async function parseStartRequest(
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
   return withProtocolContext(protocolVersion, () => {
+    if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+      const object = exactObjectShape(
+        value,
+        ["message", "providerId", "branchId"],
+        ["protocolVersion"],
+      );
+      const providerId = validateProviderId(object.providerId);
+      const branchId = validateBranchId(object.branchId);
+      return {
+        protocolVersion,
+        message: validatedMessage(object.message),
+        providerId,
+        branchId,
+        storeNumber: branchId,
+      };
+    }
+
     const object = exactObjectShape(
       value,
       ["message", "storeNumber"],
       ["protocolVersion"],
     );
-
+    const storeNumber = validateStoreNumber(object.storeNumber);
     return {
       protocolVersion,
       message: validatedMessage(object.message),
-      storeNumber: validateStoreNumber(object.storeNumber),
+      providerId: "obi-pl",
+      branchId: storeNumber,
+      storeNumber,
     };
   });
 }
@@ -126,12 +156,33 @@ export async function parseMessageRequest(
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
   return withProtocolContext(protocolVersion, () => {
+    if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+      const object = exactObjectShape(
+        value,
+        ["previousResponseId", "message", "providerId", "branchId"],
+        ["protocolVersion"],
+      );
+      const providerId = validateProviderId(object.providerId);
+      const branchId = validateBranchId(object.branchId);
+      return {
+        protocolVersion,
+        previousResponseId: boundedString(
+          object.previousResponseId,
+          MAX_RESPONSE_ID_CHARS,
+        ),
+        message: validatedMessage(object.message),
+        providerId,
+        branchId,
+        storeNumber: branchId,
+      };
+    }
+
     const object = exactObjectShape(
       value,
       ["previousResponseId", "message", "storeNumber"],
       ["protocolVersion"],
     );
-
+    const storeNumber = validateStoreNumber(object.storeNumber);
     return {
       protocolVersion,
       previousResponseId: boundedString(
@@ -139,7 +190,9 @@ export async function parseMessageRequest(
         MAX_RESPONSE_ID_CHARS,
       ),
       message: validatedMessage(object.message),
-      storeNumber: validateStoreNumber(object.storeNumber),
+      providerId: "obi-pl",
+      branchId: storeNumber,
+      storeNumber,
     };
   });
 }
@@ -152,30 +205,66 @@ export async function parseContinueRequest(
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
   return withProtocolContext(protocolVersion, () => {
+    if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+      const object = exactObjectShape(
+        value,
+        [
+          "responseId",
+          "callId",
+          "providerId",
+          "branchId",
+          "tool",
+          "result",
+        ],
+        ["protocolVersion"],
+      );
+      if (object.tool !== "find_products") {
+        throw new InvalidRequestError(protocolVersion);
+      }
+      const providerId = validateProviderId(object.providerId);
+      const branchId = validateBranchId(object.branchId);
+      return {
+        protocolVersion,
+        responseId: boundedString(
+          object.responseId,
+          MAX_RESPONSE_ID_CHARS,
+        ),
+        callId: boundedString(
+          object.callId,
+          MAX_CALL_ID_CHARS,
+        ),
+        providerId,
+        branchId,
+        storeNumber: branchId,
+        tool: "find_products",
+        result: validateToolContinuationResult(
+          object.result,
+          protocolVersion,
+        ),
+      };
+    }
+
     const object = exactObjectShape(
       value,
       ["responseId", "callId", "storeNumber", "tool", "result"],
       ["protocolVersion"],
     );
-
-    const responseId = boundedString(
-      object.responseId,
-      MAX_RESPONSE_ID_CHARS,
-    );
-    const callId = boundedString(
-      object.callId,
-      MAX_CALL_ID_CHARS,
-    );
-    const storeNumber = validateStoreNumber(object.storeNumber);
-
     if (object.tool !== "find_obi_products") {
       throw new InvalidRequestError(protocolVersion);
     }
-
+    const storeNumber = validateStoreNumber(object.storeNumber);
     return {
       protocolVersion,
-      responseId,
-      callId,
+      responseId: boundedString(
+        object.responseId,
+        MAX_RESPONSE_ID_CHARS,
+      ),
+      callId: boundedString(
+        object.callId,
+        MAX_CALL_ID_CHARS,
+      ),
+      providerId: "obi-pl",
+      branchId: storeNumber,
       storeNumber,
       tool: "find_obi_products",
       result: validateToolContinuationResult(
@@ -202,7 +291,10 @@ export function parseToolArguments(
     if (protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION) {
       return validateLegacyToolArguments(value);
     }
-    return validateGroupedToolArguments(value);
+    if (protocolVersion === OBI_GROUPED_ADVISOR_PROTOCOL_VERSION) {
+      return validateGroupedToolArguments(value);
+    }
+    return validateProviderToolArguments(value);
   });
 }
 
@@ -242,6 +334,20 @@ function validateGroupedToolArguments(
 
   return {
     storeNumber: validateStoreNumber(object.storeNumber),
+    queries: validateToolQueries(object.queries),
+  };
+}
+
+function validateProviderToolArguments(
+  value: unknown,
+): ProviderToolArguments {
+  const object = exactObject(
+    value,
+    ["providerId", "branchId", "queries"],
+  );
+  return {
+    providerId: validateProviderId(object.providerId),
+    branchId: validateBranchId(object.branchId),
     queries: validateToolQueries(object.queries),
   };
 }
@@ -296,6 +402,16 @@ function validateToolContinuationResult(
     }
     if ("rejection" in value) {
       return validateLegacyRejectedToolResult(value);
+    }
+    throw new InvalidRequestError(protocolVersion);
+  }
+
+  if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+    if ("results" in value) {
+      return validateProviderVerifiedToolResult(value);
+    }
+    if ("rejection" in value) {
+      return validateProviderRejectedToolResult(value);
     }
     throw new InvalidRequestError(protocolVersion);
   }
@@ -467,6 +583,7 @@ function validateProtocolVersion(
   }
   if (
     value === LEGACY_ADVISOR_PROTOCOL_VERSION ||
+    value === OBI_GROUPED_ADVISOR_PROTOCOL_VERSION ||
     value === CURRENT_ADVISOR_PROTOCOL_VERSION
   ) {
     return value;
@@ -548,11 +665,100 @@ function normalizedToolQuery(value: unknown): string {
   return query;
 }
 
+function validateProviderId(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.length > 64 ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)
+  ) {
+    throw new InvalidRequestError();
+  }
+  return value;
+}
+
+function validateBranchId(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^[A-Za-z0-9._-]{1,64}$/.test(value)
+  ) {
+    throw new InvalidRequestError();
+  }
+  return value;
+}
+
+function validateProductId(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^[A-Za-z0-9._-]{1,128}$/.test(value)
+  ) {
+    throw new InvalidRequestError();
+  }
+  return value;
+}
+
 function validateStoreNumber(value: unknown): string {
   if (typeof value !== "string" || !/^\d{3}$/.test(value)) {
     throw new InvalidRequestError();
   }
   return value;
+}
+
+function validateProviderProduct(
+  value: unknown,
+): ProviderVerifiedProduct {
+  const object = exactObject(
+    value,
+    [
+      "productId",
+      "articleNumber",
+      "name",
+      "brand",
+      "shortDescription",
+      "technicalFacts",
+      "stock",
+      "price",
+      "priceScope",
+    ],
+  );
+  const productId = validateProductId(object.productId);
+  const articleNumber =
+    object.articleNumber === null
+      ? null
+      : boundedString(object.articleNumber, MAX_PRODUCT_NAME_CHARS);
+  const name = boundedString(object.name, MAX_PRODUCT_NAME_CHARS);
+  const brand =
+    object.brand === null
+      ? null
+      : boundedString(object.brand, MAX_PRODUCT_BRAND_CHARS);
+  const shortDescription =
+    object.shortDescription === null
+      ? null
+      : boundedString(
+          object.shortDescription,
+          MAX_PRODUCT_DESCRIPTION_CHARS,
+        );
+  const technicalFacts = validateTechnicalFacts(object.technicalFacts);
+  const stock = validateNullableStock(object.stock);
+  const price = validateNullablePrice(object.price);
+  const priceScope =
+    object.priceScope === null ||
+    object.priceScope === "branch" ||
+    object.priceScope === "online"
+      ? object.priceScope
+      : (() => {
+          throw new InvalidRequestError();
+        })();
+  return {
+    productId,
+    articleNumber,
+    name,
+    brand,
+    shortDescription,
+    technicalFacts,
+    stock,
+    price,
+    priceScope,
+  };
 }
 
 function validateProduct(value: unknown): VerifiedProduct {
