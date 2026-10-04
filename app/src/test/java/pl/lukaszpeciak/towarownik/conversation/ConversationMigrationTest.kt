@@ -527,6 +527,14 @@ class ConversationMigrationTest {
                 assertEquals(null, it.getString(0))
             }
             assertEquals(
+                "branch",
+                queryText(
+                    db,
+                    "SELECT priceScope FROM message_products " +
+                        "WHERE messageId=1 AND position=0",
+                ),
+            )
+            assertEquals(
                 "3496072",
                 queryText(
                     db,
