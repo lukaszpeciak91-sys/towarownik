@@ -609,6 +609,108 @@ internal class AdvisorProxyClient(
         }
     }
 
+    private fun buildBudgetedVerifiedContinueBodyV3(
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        result: AdvisorVerifiedToolResult,
+    ): JsonObject? {
+        var grouped = result.results
+
+        fun currentBody(): JsonObject =
+            buildContinueBodyV3(
+                responseId = responseId,
+                callId = callId,
+                providerId = providerId,
+                branchId = branchId,
+                result = result.copy(results = grouped).toJsonV3(),
+            )
+
+        fun updateProduct(
+            groupIndex: Int,
+            productIndex: Int,
+            transform: (AdvisorVerifiedProduct) -> AdvisorVerifiedProduct,
+        ) {
+            grouped = grouped.toMutableList().also { groups ->
+                val group = groups[groupIndex]
+                val products = group.products.toMutableList()
+                products[productIndex] = transform(products[productIndex])
+                groups[groupIndex] = group.copy(products = products)
+            }
+        }
+
+        var body = currentBody()
+        if (fitsContinueByteBudget(body)) return body
+
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                while (
+                    grouped[groupIndex]
+                        .products[productIndex]
+                        .technicalFacts
+                        .isNotEmpty()
+                ) {
+                    updateProduct(groupIndex, productIndex) { product ->
+                        product.copy(
+                            technicalFacts =
+                                product.technicalFacts.dropLast(1),
+                        )
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) return body
+                }
+            }
+        }
+
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                if (
+                    grouped[groupIndex]
+                        .products[productIndex]
+                        .shortDescription != null
+                ) {
+                    updateProduct(groupIndex, productIndex) {
+                        it.copy(shortDescription = null)
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) return body
+                }
+            }
+        }
+
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                if (grouped[groupIndex].products[productIndex].brand != null) {
+                    updateProduct(groupIndex, productIndex) {
+                        it.copy(brand = null)
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) return body
+                }
+            }
+        }
+
+        return body.takeIf(::fitsContinueByteBudget)
+    }
+
+    private fun buildContinueBodyV3(
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        result: JsonObject,
+    ): JsonObject =
+        buildJsonObject {
+            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("responseId", responseId)
+            put("callId", callId)
+            put("providerId", providerId)
+            put("branchId", branchId)
+            put("tool", FIND_PRODUCTS)
+            put("result", result)
+        }
+
     private fun buildBudgetedVerifiedContinueBody(
         responseId: String,
         callId: String,
