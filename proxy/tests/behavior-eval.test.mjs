@@ -348,7 +348,7 @@ test("concrete product recommendation triggers provider lookup on OBI v2 and KWA
     },
   );
 
-  assert.equal(obi.trace.finalProductRefs[0].obik, "7000001");
+  assert.equal(obi.trace.finalProductRefs[0].obik, "7300001");
   assert.equal(
     kwant.trace.finalProductRefs[0].providerId,
     "kwant-pl",
@@ -359,7 +359,7 @@ test("concrete product recommendation triggers provider lookup on OBI v2 and KWA
   );
   assert.equal(
     kwant.trace.finalProductRefs[0].productId,
-    "kw-7000001",
+    "kw-7300001",
   );
 });
 
