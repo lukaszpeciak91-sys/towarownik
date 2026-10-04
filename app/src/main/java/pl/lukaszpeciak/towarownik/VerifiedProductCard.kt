@@ -80,7 +80,7 @@ internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
         productId = productId,
         branchId = branchId,
         articleNumber = articleNumber,
-        priceScope = grossPrice?.let {
+        priceScope = priceScope ?: grossPrice?.let {
             if (providerId == KWANT_PROVIDER_ID.value) {
                 ProviderPriceScope.ONLINE
             } else {
