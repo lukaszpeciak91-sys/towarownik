@@ -120,6 +120,7 @@ test("unversioned grouped Android client remains v2-compatible during rolling de
   assert.equal(response.status, 200);
   const body = await responseJson(response);
   assert.equal(body.type, "tool_request");
+  assert.equal(body.tool.name, LOCAL_TOOL_NAME);
   assert.deepEqual(body.tool.arguments, {
     storeNumber: "075",
     queries: [
@@ -380,7 +381,19 @@ test("protocol v3 KWANT request receives provider-aware product tool", async () 
   );
   assert.match(
     fake.captures[0].body.instructions,
-    /KWANT.*kwant-pl.*branch 205/i,
+    /providerId=kwant-pl.*branchId=205/i,
+  );
+  assert.match(
+    fake.captures[0].body.instructions,
+    /priceScope=online/,
+  );
+  assert.doesNotMatch(
+    fake.captures[0].body.instructions,
+    /Current conversation store for this USER turn is OBI/,
+  );
+  assert.doesNotMatch(
+    fake.captures[0].body.instructions,
+    /OBIK/,
   );
 });
 
