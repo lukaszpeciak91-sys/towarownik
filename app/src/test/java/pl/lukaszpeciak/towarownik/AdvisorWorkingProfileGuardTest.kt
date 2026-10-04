@@ -14,8 +14,9 @@ import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 class AdvisorWorkingProfileGuardTest {
     @Test
-    fun `OBI 075 reaches existing advisor with unchanged store number`() = runBlocking {
+    fun `OBI 075 reaches existing advisor and records one started turn`() = runBlocking {
         var advisorCalls = 0
+        var startedTurns = 0
         var seenStore: String? = null
 
         val result = runAdvisorForWorkingProfile(
@@ -23,6 +24,9 @@ class AdvisorWorkingProfileGuardTest {
                 providerId = OBI_PROVIDER_ID,
                 branchId = BranchId("075"),
             ),
+            onAdvisorStarted = {
+                startedTurns += 1
+            },
         ) { storeNumber ->
             advisorCalls += 1
             seenStore = storeNumber
@@ -33,12 +37,14 @@ class AdvisorWorkingProfileGuardTest {
         }
 
         assertEquals(1, advisorCalls)
+        assertEquals(1, startedTurns)
         assertEquals("075", seenStore)
         assertTrue(result is AdvisorUiState.Success)
     }
 
     @Test
-    fun `KWANT 205 never enters OBI advisor boundary and returns dedicated error`() = runBlocking {
+    fun `KWANT 205 records no started turn and never enters OBI advisor boundary`() = runBlocking {
+        var startedTurns = 0
         var advisorBoundaryEntered = false
         var authorizationEntered = false
         var proxyCalled = false
@@ -49,6 +55,9 @@ class AdvisorWorkingProfileGuardTest {
                 providerId = KWANT_PROVIDER_ID,
                 branchId = BranchId("205"),
             ),
+            onAdvisorStarted = {
+                startedTurns += 1
+            },
         ) {
             advisorBoundaryEntered = true
             authorizationEntered = true
@@ -57,6 +66,7 @@ class AdvisorWorkingProfileGuardTest {
             error("KWANT must not enter OBI advisor")
         }
 
+        assertEquals(0, startedTurns)
         assertFalse(advisorBoundaryEntered)
         assertFalse(authorizationEntered)
         assertFalse(proxyCalled)
