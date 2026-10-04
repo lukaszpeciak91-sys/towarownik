@@ -4,11 +4,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import pl.lukaszpeciak.towarownik.product.ProductLookupFailure
 import pl.lukaszpeciak.towarownik.product.ProductLookupRepository
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
+import pl.lukaszpeciak.towarownik.product.ProductSearchInput
 import pl.lukaszpeciak.towarownik.product.ProductSearchRepository
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.classifyProductSearchInput
 import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
 import pl.lukaszpeciak.towarownik.product.toVerifiedProductSnapshot
 
@@ -61,6 +64,16 @@ internal class FindObiProductsTool(
         val searchActions = mutableListOf<AdvisorSearchAction>()
 
         arguments.queries.forEach { requested ->
+            val classified = classifyProductSearchInput(requested.query)
+            if (classified is ProductSearchInput.Obik) {
+                groupedResults += verifyExactObik(
+                    query = requested.query,
+                    obik = classified.value,
+                    storeNumber = arguments.storeNumber,
+                    snapshots = snapshots,
+                )
+                return@forEach
+            }
             val search = try {
                 searchProducts(requested.query)
             } catch (exception: CancellationException) {
@@ -171,6 +184,54 @@ internal class FindObiProductsTool(
             searchActions = searchActions,
         )
     }
+
+    private fun verifyExactObik(
+        query: String,
+        obik: String,
+        storeNumber: String,
+        snapshots: MutableList<VerifiedProductSnapshot>,
+    ): AdvisorVerifiedQueryResult {
+        val lookup = try {
+            lookupObik(obik, storeNumber)
+        } catch (exception: CancellationException) {
+            throw exception
+        } catch (_: Exception) {
+            return unavailable(query)
+        }
+        return when (lookup) {
+            is ProductLookupResult.Found -> {
+                val product = lookup.product
+                snapshots += product.toVerifiedProductSnapshot(now())
+                AdvisorVerifiedQueryResult(
+                    query = query,
+                    status = AdvisorQueryResultStatus.VERIFIED,
+                    products = listOf(product.toAdvisorVerifiedProduct()),
+                )
+            }
+            is ProductLookupResult.InvalidStore -> unavailable(query)
+            is ProductLookupResult.InvalidObik -> notFound(query)
+            is ProductLookupResult.Unavailable ->
+                when (lookup.failure) {
+                    ProductLookupFailure.NOT_FOUND -> notFound(query)
+                    ProductLookupFailure.NETWORK,
+                    ProductLookupFailure.DATA -> unavailable(query)
+                }
+        }
+    }
+
+    private fun pl.lukaszpeciak.towarownik.product.LocalProduct
+        .toAdvisorVerifiedProduct(): AdvisorVerifiedProduct =
+        AdvisorVerifiedProduct(
+            obik = obik,
+            name = name,
+            brand = brand,
+            shortDescription = shortDescription,
+            technicalFacts = technicalFacts.map {
+                AdvisorTechnicalFact(it.label, it.value)
+            },
+            stock = stock,
+            price = grossPrice,
+        )
 
     private fun notFound(query: String): AdvisorVerifiedQueryResult =
         AdvisorVerifiedQueryResult(

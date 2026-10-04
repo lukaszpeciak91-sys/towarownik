@@ -418,3 +418,11 @@ These decisions describe the broader intended product behavior. The currently im
 - Persist provider-owned product identity for advisor cards so reopening a conversation does not reinterpret KWANT products as OBI.
 - Do not alter shipped Room migration 6→7. Provider-owned message-product identity belongs to schema v8 and explicit migration 7→8; historical rows map to `obi-pl + obik + storeNumber`.
 - Keep OBI authorization and prompt/tool contract on their proven v2 path. Protocol v3 has explicit provider-aware instructions and must not be synthesized by string-replacing OBI instructions.
+
+## Advisor product intent and exact identifier routing
+
+- Concrete-product intent is sufficient permission to use the conversation's current provider: a clear request for a product, recommendation, assortment option, current stock/price, or concrete identifier must not require a second “check in the market” turn.
+- Preserve advice-first behavior for general technical questions and one concise clarification when a genuinely decision-critical parameter would change selection, compatibility, or safety.
+- In the OBI v2 path, an exact seven-digit OBIK bypasses text search and goes directly to the existing exact store lookup. Other OBI text/identifier inputs keep search followed by exact verification.
+- In the KWANT advisor path, article/catalog number, EAN, product name, manufacturer text, and other user-facing identifiers always continue through search followed by exact product verification. The advisor contract does not expose KWANT's internal exact `productId` capability, so the model cannot invent an ID and bypass discovery.
+- Resolve and validate KWANT branch metadata once per local tool execution and reuse its department cookie for all exact candidate verification in that batch. This execution-scoped lookup context is not a cross-turn or broad metadata cache.

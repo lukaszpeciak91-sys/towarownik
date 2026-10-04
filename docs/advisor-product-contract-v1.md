@@ -7,7 +7,7 @@ Scope: defines intended user-facing behavior. It does not itself change producti
 
 Taksula is primarily a practical technical and sales advisor for home-improvement retail staff.
 
-Its OBI integration is a trusted capability available to the advisor, not the product's primary identity. The advisor should first understand the customer's need and give useful technical guidance. It should use OBI when the user needs real current store facts or wants the advice translated into concrete products from the selected market.
+Its current-provider integration is a trusted capability available to the advisor, not the product's primary identity. The advisor should first understand the customer's need and give useful technical guidance. It should use the current provider when the user needs current store facts or clearly wants the advice translated into concrete products or recommendations.
 
 The target experience is:
 
@@ -25,9 +25,9 @@ Before using `find_obi_products`, decide whether the current user turn is asking
 2. clarification-dependent product selection;
 3. explicit assortment/browse information;
 4. direct current OBI facts such as price, stock, availability, or a specific OBIK;
-5. concrete products from the selected market for an already-understood need.
+5. concrete products or recommendations for an already-understood need.
 
-Use OBI immediately for cases 3, 4, and 5.
+Use the current conversation provider immediately for cases 3, 4, and 5. Clear concrete-product intent is sufficient; the user does not need a second “check in the market” message.
 
 For cases 1 and 2, do not search merely because OBI access exists.
 
@@ -43,9 +43,9 @@ Taksula should explain the appropriate product type, important substrate or comp
 
 It should not automatically search OBI just because a product category can be inferred.
 
-After useful advice, Taksula may offer to check matching products in the selected market.
+After useful advice, Taksula may offer to check matching products in the selected market only when the user did not already ask for a concrete product or recommendation.
 
-Future preferred UX: a compact action such as **"Sprawdź w markecie"** instead of requiring the user to type another message.
+General advice alone still does not trigger lookup merely because it mentions a product category.
 
 ## 4. Ambiguous product selection
 
@@ -115,7 +115,7 @@ Once the job is sufficiently understood, explain the practical categories/items 
 
 Do not automatically turn every job question into a full OBI shopping-list lookup.
 
-If the user explicitly asks for concrete products from the selected market, or accepts a later "check in store" action, Taksula may then search and batch the relevant categories efficiently.
+If the user clearly asks for concrete products or recommendations, explicitly requests a verified kit, or accepts a later "check in store" action after advice-only guidance, Taksula should search and may batch the relevant categories efficiently.
 
 An explicit request such as:
 
@@ -143,7 +143,7 @@ The default is restrained, practical sales assistance rather than maximum basket
 The intended future advisor flow is:
 
 1. Taksula gives or completes the technical recommendation.
-2. If concrete OBI verification has not yet been requested, the UI can offer **"Sprawdź w markecie"**.
+2. If the user requested advice only and concrete provider verification has not already been triggered, the UI can offer **"Sprawdź w markecie"**.
 3. Activating that action should continue the same customer case using the already established technical requirements.
 4. Taksula then performs fresh OBI verification and returns fitting current-store products/cards.
 
@@ -174,7 +174,7 @@ Web search remains supplemental and selective. It does not replace local OBI ver
 | --- | --- | --- | --- |
 | General technical advice | Only if needed to answer safely/usefully | No by default | Technical guidance; optionally offer store check |
 | Ambiguous product selection | Yes | No | One useful clarification |
-| Sufficiently specified product selection + request for store product | No | Yes | Verified fitting product(s) |
+| Sufficiently specified concrete product/recommendation intent | No | Yes | Verified fitting product(s) |
 | Explicit assortment/browse | No | Yes | Several verified relevant variants where useful |
 | Direct price/stock/OBIK | No | Yes | Direct verified current-store answer |
 | Ambiguous job/project | Yes when interpretations materially differ | No | Clarify the job |
@@ -256,7 +256,7 @@ User:
 
 > "Co potrzebuję do uszczelnienia silikonem szczeliny między umywalką a ścianą?"
 
-Correct: explain the small practical set of essentials. Search OBI only if the user asked for concrete market products or activates the later store-check action.
+Correct: explain the small practical set of essentials. Search the current provider only if the user clearly asks for concrete products/recommendations, a verified kit, or activates the later store-check action.
 
 ## 14. Implementation order after approval
 

@@ -15,6 +15,77 @@ import pl.lukaszpeciak.towarownik.product.TechnicalFact
 
 class FindObiProductsToolTest {
     @Test
+    fun `exact seven digit OBIK bypasses text search`() = runBlocking {
+        var searches = 0
+        val lookedUp = mutableListOf<String>()
+        val tool = tool(
+            search = {
+                searches += 1
+                error("exact OBIK must not use search")
+            },
+            lookup = { obik, _ ->
+                lookedUp += obik
+                ProductLookupResult.Found(product(obik = obik))
+            },
+        )
+
+        val result = tool.execute(
+            arguments(query = "1234567", limit = 1),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(0, searches)
+        assertEquals(listOf("1234567"), lookedUp)
+        assertEquals("1234567", result.result.products.single().obik)
+    }
+
+    @Test
+    fun `exact OBIK lookup not found stays not found`() = runBlocking {
+        val tool = tool(
+            search = { error("exact OBIK must not use search") },
+            lookup = { _, _ ->
+                ProductLookupResult.Unavailable(
+                    ProductLookupFailure.NOT_FOUND,
+                    "synthetic",
+                )
+            },
+        )
+
+        val result = tool.execute(
+            arguments(query = "1234567", limit = 1),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(
+            AdvisorQueryResultStatus.NOT_FOUND,
+            result.result.results.single().status,
+        )
+    }
+
+    @Test
+    fun `exact OBIK network and data failures stay unavailable`() = runBlocking {
+        listOf(
+            ProductLookupFailure.NETWORK,
+            ProductLookupFailure.DATA,
+        ).forEach { failure ->
+            val tool = tool(
+                search = { error("exact OBIK must not use search") },
+                lookup = { _, _ ->
+                    ProductLookupResult.Unavailable(failure, "synthetic")
+                },
+            )
+
+            val result = tool.execute(
+                arguments(query = "1234567", limit = 1),
+            ) as AdvisorToolExecutionResult.Success
+
+            assertEquals(
+                failure.name,
+                AdvisorQueryResultStatus.UNAVAILABLE,
+                result.result.results.single().status,
+            )
+        }
+    }
+
+    @Test
     fun `not found becomes verified empty products result`() = runBlocking {
         val tool = tool(
             search = { ProductSearchResult.NotFound },
