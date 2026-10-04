@@ -69,6 +69,7 @@ internal data class MessageProductEntity(
     val obik: String,
     val name: String,
     val stock: Int?,
+    val centralStock: Int? = null,
     val grossPrice: String?,
     val productUrl: String,
     val verifiedAt: Long,

@@ -200,6 +200,10 @@ private fun kotlinx.serialization.json.JsonObjectBuilder.putProduct(
                 product.stock?.let(::JsonPrimitive) ?: JsonNull,
             )
             put(
+                "centralStock",
+                product.centralStock?.let(::JsonPrimitive) ?: JsonNull,
+            )
+            put(
                 "verifiedAt",
                 product.verifiedAt?.let(::JsonPrimitive) ?: JsonNull,
             )
@@ -237,6 +241,10 @@ private fun JsonObject.product(key: String): VerifiedProductUiModel? {
         obik = value.string("obik") ?: productId,
         grossPrice = value.string("price")?.let(::BigDecimal),
         stock = value["stock"]
+            ?.takeUnless { it is JsonNull }
+            ?.jsonPrimitive
+            ?.intOrNull,
+        centralStock = value["centralStock"]
             ?.takeUnless { it is JsonNull }
             ?.jsonPrimitive
             ?.intOrNull,

@@ -88,6 +88,7 @@ internal data class ProviderProduct(
     val branchId: BranchId,
     val name: String,
     val stock: Int?,
+    val centralStock: Int? = null,
     val grossPrice: BigDecimal?,
     val priceScope: ProviderPriceScope?,
     val productUrl: String,

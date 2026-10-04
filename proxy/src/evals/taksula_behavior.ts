@@ -897,6 +897,9 @@ function currentToolArguments(
     : {
         providerId: args.providerId,
         branchId: args.branchId,
+        ...(args.requestedBranch !== undefined
+          ? { requestedBranch: args.requestedBranch }
+          : {}),
         queries: args.queries.map((query) => ({ ...query })),
       };
 }
@@ -1428,6 +1431,7 @@ function providerProduct(
         ]
       : value.technicalFacts,
     stock: value.stock,
+    centralStock: null,
     price: value.price,
     priceScope: "online",
   };

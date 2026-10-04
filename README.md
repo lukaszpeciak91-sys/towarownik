@@ -152,6 +152,13 @@ Never commit keystores, signing credentials, APKs, or AABs.
 
 ## Scope boundaries
 
+KWANT verified products keep selected-branch stock and nullable central stock as
+separate facts; the public price is labelled as an indicative online price.
+In a KWANT conversation, an explicitly named location can be resolved against
+the live KWANT branch directory for one lookup without changing the saved
+WorkingProfile. Unknown or non-unique names fail closed. OBI behavior is
+unchanged.
+
 The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-name search. Name/EAN discovery remains store-independent; every exact product verification uses the selected supported OBI store. New conversations default to `075`, while the explicit selector persists one store per conversation without creating an empty conversation row. Alternate stores requested by the advisor are temporary turn-local queries and never mutate the conversation default. The manual search surface may browse up to 25 recognized candidates from one OBI HTML response in five-item increments; the advisor/local tool remains independently capped at five. Advisor “Zobacz więcej (N)” reuses that existing manual surface and does not add OBI pagination or imply that all N reported results are loaded or available in-store. The app still has no location-based store inference, server-side OBI logic, streaming, analytics backend, or autonomous/general agent framework.
 
 ## Documentation

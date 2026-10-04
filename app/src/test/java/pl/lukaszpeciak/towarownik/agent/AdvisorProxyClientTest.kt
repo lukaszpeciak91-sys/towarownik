@@ -161,6 +161,7 @@ class AdvisorProxyClientTest {
                             "arguments":{
                               "providerId":"kwant-pl",
                               "branchId":"205",
+                              "requestedBranch":null,
                               "queries":[{"query":"MBN116E","limit":1}]
                             }
                           },
@@ -224,6 +225,7 @@ class AdvisorProxyClientTest {
                                         articleNumber = "MBN116E/HAG",
                                         name = "Wyłącznik",
                                         stock = 140,
+                                        centralStock = 5918,
                                         price = BigDecimal("14.55"),
                                         priceScope = "online",
                                     ),

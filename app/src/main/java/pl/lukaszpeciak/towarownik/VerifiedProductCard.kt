@@ -53,6 +53,7 @@ internal data class VerifiedProductUiModel(
     val obik: String,
     val grossPrice: BigDecimal?,
     val stock: Int?,
+    val centralStock: Int? = null,
     val productUrl: String,
     val verifiedAt: Long? = null,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
@@ -72,6 +73,7 @@ internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
         obik = obik,
         grossPrice = grossPrice,
         stock = stock,
+        centralStock = centralStock,
         productUrl = productUrl,
         primaryImageUrl = primaryImageUrl,
         verifiedAt = verifiedAt,
@@ -125,12 +127,28 @@ internal fun formatStoreStock(stock: Int?): String {
 }
 
 @Composable
+internal fun kwantBranchStock(stock: Int?): String = when {
+    stock == null -> stringResource(R.string.product_branch_stock_unknown)
+    stock == 0 -> stringResource(R.string.product_branch_stock_zero)
+    else -> stringResource(R.string.product_branch_stock_count, stock)
+}
+
+@Composable
 internal fun formatStorePrice(price: BigDecimal?): String {
     val resource = priceStringRes(price)
     return price?.let {
         stringResource(resource, it.toPlainString())
     } ?: stringResource(resource)
 }
+
+@Composable
+internal fun formatKwantOnlinePrice(price: BigDecimal?): String =
+    price?.let {
+        stringResource(
+            R.string.product_online_price,
+            it.toPlainString(),
+        )
+    } ?: stringResource(R.string.product_online_price_unknown)
 
 @Composable
 internal fun formatVerifiedProductTimestamp(
@@ -221,20 +239,43 @@ internal fun AdvisorVerifiedProductCard(
                                 .copy(alpha = 0.65f),
                         )
                         Text(
-                            text = formatStorePrice(
-                                product.grossPrice,
-                            ),
+                            text = if (
+                                product.providerId == KWANT_PROVIDER_ID.value
+                            ) {
+                                formatKwantOnlinePrice(product.grossPrice)
+                            } else {
+                                formatStorePrice(product.grossPrice)
+                            },
                             style =
                                 MaterialTheme.typography.titleMedium,
                             color =
                                 MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            text = formatStoreStock(product.stock),
+                            text = if (
+                                product.providerId == KWANT_PROVIDER_ID.value
+                            ) {
+                                kwantBranchStock(product.stock)
+                            } else {
+                                formatStoreStock(product.stock)
+                            },
                             style =
                                 MaterialTheme.typography.bodyLarge,
                             color = stockColor,
                         )
+                        if (
+                            product.providerId == KWANT_PROVIDER_ID.value &&
+                            product.centralStock != null
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.product_central_stock,
+                                    product.centralStock,
+                                ),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                         product.verifiedAt?.let { verifiedAt ->
                             Text(
                                 text =

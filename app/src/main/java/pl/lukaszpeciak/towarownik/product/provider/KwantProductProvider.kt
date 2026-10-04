@@ -530,6 +530,7 @@ internal class KwantFrontendParser(
             branchId = branch.branchId,
             name = name,
             stock = selectedBranchStock(html, branch.departmentStockName),
+            centralStock = labelledStock(html, "Centrala"),
             grossPrice = price,
             priceScope = price?.let { ProviderPriceScope.ONLINE },
             productUrl = finalUrl.substringBefore("?"),
@@ -546,13 +547,15 @@ internal class KwantFrontendParser(
         html: String,
         branchName: String,
     ): Int? {
-        val match = Regex(
-            Regex.escape(branchName) +
+        return labelledStock(html, branchName)
+    }
+
+    private fun labelledStock(html: String, label: String): Int? =
+        Regex(
+            Regex.escape(label) +
                 """\s*:\s*<span[^>]*>\s*([0-9]+)\s*""",
             RegexOption.IGNORE_CASE,
-        ).find(html) ?: return null
-        return match.groupValues[1].toIntOrNull()
-    }
+        ).find(html)?.groupValues?.get(1)?.toIntOrNull()
 
     private fun pageProps(html: String): JsonObject? {
         val match = NEXT_DATA.find(html) ?: return null

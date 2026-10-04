@@ -343,11 +343,15 @@ function validateProviderToolArguments(
 ): ProviderToolArguments {
   const object = exactObject(
     value,
-    ["providerId", "branchId", "queries"],
+    ["providerId", "branchId", "requestedBranch", "queries"],
   );
   return {
     providerId: validateProviderId(object.providerId),
     branchId: validateBranchId(object.branchId),
+    requestedBranch:
+      object.requestedBranch === null
+        ? null
+        : boundedString(object.requestedBranch, 100),
     queries: validateToolQueries(object.queries),
   };
 }
@@ -813,6 +817,7 @@ function validateProviderProduct(
       "shortDescription",
       "technicalFacts",
       "stock",
+      "centralStock",
       "price",
       "priceScope",
     ],
@@ -836,6 +841,7 @@ function validateProviderProduct(
         );
   const technicalFacts = validateTechnicalFacts(object.technicalFacts);
   const stock = validateNullableStock(object.stock);
+  const centralStock = validateNullableStock(object.centralStock);
   const price = validateNullablePrice(object.price);
   const priceScope =
     object.priceScope === null ||
@@ -853,6 +859,7 @@ function validateProviderProduct(
     shortDescription,
     technicalFacts,
     stock,
+    centralStock,
     price,
     priceScope,
   };

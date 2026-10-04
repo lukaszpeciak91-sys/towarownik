@@ -1,5 +1,15 @@
 # Decisions
 
+## 2026-10-04 — KWANT logistics visibility
+
+- Selected-branch stock and central stock are separate nullable quantities;
+  totals are never synthesized.
+- KWANT public gross price remains `ONLINE` and cards call it an indicative
+  online price. OBI card labels and protocol v2 remain unchanged.
+- Another KWANT branch is a one-off protocol-v3 request resolved by Android
+  from the provider directory. It never mutates the conversation
+  WorkingProfile and never authorizes cross-provider lookup.
+
 Historical note: entries before the branding rename intentionally use **Towarownik** as the working product name used at that time.
 
 The following decisions are approved for V0.1:

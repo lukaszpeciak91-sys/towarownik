@@ -340,6 +340,7 @@ test("protocol v3 KWANT request receives provider-aware product tool", async () 
       {
         providerId: "kwant-pl",
         branchId: "205",
+        requestedBranch: null,
         queries: [
           { query: "MBN116E", limit: 2 },
         ],
@@ -366,6 +367,7 @@ test("protocol v3 KWANT request receives provider-aware product tool", async () 
   assert.deepEqual(body.tool.arguments, {
     providerId: "kwant-pl",
     branchId: "205",
+    requestedBranch: null,
     queries: [
       { query: "MBN116E", limit: 2 },
     ],
@@ -377,7 +379,7 @@ test("protocol v3 KWANT request receives provider-aware product tool", async () 
     );
   assert.deepEqual(
     upstreamTool.parameters.required,
-    ["providerId", "branchId", "queries"],
+    ["providerId", "branchId", "requestedBranch", "queries"],
   );
   const providerQuerySchema = upstreamTool.parameters.properties
     .queries.items;
@@ -449,6 +451,7 @@ test("protocol v3 KWANT continue preserves provider product refs", async () => {
             shortDescription: null,
             technicalFacts: [],
             stock: 140,
+            centralStock: 5918,
             price: 14.55,
             priceScope: "online",
           },
