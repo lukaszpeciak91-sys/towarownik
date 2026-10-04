@@ -22,10 +22,16 @@ internal data class VerifiedProductSnapshot(
     val branchId: String = storeNumber,
     val articleNumber: String? = null,
 ) {
+    val effectiveBranchId: String
+        get() = if (providerId == "obi-pl") storeNumber else branchId
+
+    val effectiveProductId: String
+        get() = if (providerId == "obi-pl") obik else productId
+
     val key: VerifiedProductKey
         get() = VerifiedProductKey(
-            storeNumber = branchId,
-            obik = productId,
+            storeNumber = effectiveBranchId,
+            obik = effectiveProductId,
             providerId = providerId,
         )
 }
