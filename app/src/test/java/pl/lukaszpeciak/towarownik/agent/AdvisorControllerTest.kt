@@ -637,7 +637,7 @@ class AdvisorControllerTest {
 
         assertEquals(0, continueCalls)
         assertEquals(
-            AdvisorUiState.Error(AdvisorError.OBI),
+            AdvisorUiState.Error(AdvisorError.PRODUCT_PROVIDER),
             final,
         )
     }
@@ -1089,16 +1089,22 @@ class AdvisorControllerTest {
         onContinueStore: (String) -> Unit = {},
     ) = AdvisorController(
         isConfigured = { configured },
-        startAgent = { input, storeNumber ->
-            onStartStore(storeNumber)
+        startAgent = { input, _, branchId ->
+            onStartStore(branchId)
             start(input)
         },
-        messageAgent = { previousResponseId, input, storeNumber ->
-            onMessageStore(storeNumber)
+        messageAgent = { previousResponseId, input, _, branchId ->
+            onMessageStore(branchId)
             message(previousResponseId, input)
         },
-        continueAgent = { responseId, callId, storeNumber, continuation ->
-            onContinueStore(storeNumber)
+        continueAgent = {
+                responseId,
+                callId,
+                _,
+                branchId,
+                continuation,
+            ->
+            onContinueStore(branchId)
             when (continuation) {
                 is AdvisorToolContinuation.Verified ->
                     continueCall(
