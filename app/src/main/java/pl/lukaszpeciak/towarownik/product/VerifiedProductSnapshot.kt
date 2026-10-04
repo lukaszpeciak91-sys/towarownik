@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.product
 
 import java.math.BigDecimal
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 internal data class VerifiedProductKey(
     val storeNumber: String,
@@ -21,6 +22,7 @@ internal data class VerifiedProductSnapshot(
     val productId: String = obik,
     val branchId: String = storeNumber,
     val articleNumber: String? = null,
+    val priceScope: ProviderPriceScope? = null,
 ) {
     val effectiveBranchId: String
         get() = if (providerId == "obi-pl") storeNumber else branchId
