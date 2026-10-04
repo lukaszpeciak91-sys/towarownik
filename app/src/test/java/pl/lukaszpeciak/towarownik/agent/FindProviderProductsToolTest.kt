@@ -60,6 +60,7 @@ class FindProviderProductsToolTest {
         assertEquals("580", snapshot.productId)
         assertEquals("MBN116E/HAG", snapshot.articleNumber)
         assertEquals(140, snapshot.stock)
+        assertEquals(ProviderPriceScope.ONLINE, snapshot.priceScope)
         assertEquals(1234L, snapshot.verifiedAt)
         assertTrue(result.searchActions.isEmpty())
     }
