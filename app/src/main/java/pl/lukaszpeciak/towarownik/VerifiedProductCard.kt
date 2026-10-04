@@ -45,6 +45,7 @@ import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
 internal data class VerifiedProductUiModel(
@@ -61,6 +62,7 @@ internal data class VerifiedProductUiModel(
     val branchId: String = storeNumber,
     val articleNumber: String? = null,
     val branchLabel: String? = null,
+    val priceScope: ProviderPriceScope? = null,
 )
 
 internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
@@ -78,6 +80,13 @@ internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
         productId = productId,
         branchId = branchId,
         articleNumber = articleNumber,
+        priceScope = grossPrice?.let {
+            if (providerId == KWANT_PROVIDER_ID.value) {
+                ProviderPriceScope.ONLINE
+            } else {
+                ProviderPriceScope.BRANCH
+            }
+        },
     )
 
 internal fun verifiedProductOpenUrl(
