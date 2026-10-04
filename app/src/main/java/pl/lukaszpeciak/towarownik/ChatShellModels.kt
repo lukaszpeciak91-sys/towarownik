@@ -21,6 +21,7 @@ import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 internal enum class ChatMessageRole {
     USER,
@@ -258,6 +259,14 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                                         ?: JsonNull,
                                                 )
                                                 put(
+                                                    "priceScope",
+                                                    product.priceScope
+                                                        ?.name
+                                                        ?.lowercase()
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
+                                                put(
                                                     "verifiedAt",
                                                     product.verifiedAt
                                                         ?.let(::JsonPrimitive)
@@ -388,6 +397,18 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                                 ?.let { value ->
                                     if (value is JsonNull) null
                                     else value.jsonPrimitive.contentOrNull
+                                },
+                            priceScope = product["priceScope"]
+                                ?.let { value ->
+                                    if (value is JsonNull) {
+                                        null
+                                    } else {
+                                        when (value.jsonPrimitive.contentOrNull) {
+                                            "branch" -> ProviderPriceScope.BRANCH
+                                            "online" -> ProviderPriceScope.ONLINE
+                                            else -> null
+                                        }
+                                    }
                                 },
                         )
                     }
