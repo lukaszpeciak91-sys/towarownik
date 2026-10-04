@@ -62,6 +62,21 @@ internal abstract class ConversationDao {
     @Query("SELECT ma.localId FROM message_attachments ma JOIN messages m ON m.id = ma.messageId WHERE m.conversationId = :conversationId")
     abstract suspend fun getAttachmentIds(conversationId: Long): List<String>
 
+    @Query(
+        """
+        SELECT ma.localId
+        FROM messages m
+        LEFT JOIN message_attachments ma ON ma.messageId = m.id
+        WHERE m.conversationId = :conversationId
+        ORDER BY m.createdAt DESC, m.id DESC
+        LIMIT 1
+        """,
+    )
+    abstract suspend fun getLastMessageAttachmentId(
+        conversationId: Long,
+    ): String?
+
+
     @Query("SELECT ma.localId FROM message_attachments ma JOIN messages m ON m.id = ma.messageId JOIN conversations c ON c.id = m.conversationId WHERE c.updatedAt < :cutoffExclusive")
     abstract suspend fun getAttachmentIdsUpdatedBefore(cutoffExclusive: Long): List<String>
 
