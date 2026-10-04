@@ -168,6 +168,28 @@ test("protocol v2 Android request receives grouped queries tool request", async 
       { query: "pistolet", limit: 1 },
     ],
   });
+
+  const upstreamTool =
+    fake.captures[0].body.tools.find(
+      (tool) => tool.type === "function",
+    );
+  assert.equal(upstreamTool.name, LOCAL_TOOL_NAME);
+  assert.deepEqual(
+    upstreamTool.parameters.required,
+    ["storeNumber", "queries"],
+  );
+  assert.match(
+    fake.captures[0].body.instructions,
+    /Current conversation store for this USER turn is OBI 075/,
+  );
+  assert.match(
+    fake.captures[0].body.instructions,
+    /find_obi_products/,
+  );
+  assert.equal(
+    fake.captures[0].body.instructions.includes("find_products"),
+    false,
+  );
 });
 
 test("legacy CONTINUE shape is accepted and can produce a final answer", async () => {
