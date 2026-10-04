@@ -109,9 +109,9 @@ function scriptedDriver(scenario) {
     async start() {
       switch (scenario.id) {
         case "A":
-          return answer(
-            "Jakiej długości potrzebuje i do czego będą używane?",
-          );
+          return toolRequest([
+            { query: "czarne trytytki", limit: 3 },
+          ]);
         case "D":
           return answer(
             "Jaki gwint lub średnicę przyłącza ma mieć ta końcówka?",
@@ -185,6 +185,7 @@ function scriptedDriver(scenario) {
     ) {
       const refs = verifiedRefs(result);
       switch (scenario.id) {
+        case "A":
         case "B":
         case "E":
           return answer(
@@ -404,11 +405,8 @@ test("repeated trials stay configurable and summary reports pass totals", async 
   assert.match(summary, /failed scenarios: none/);
 });
 
-test("clarification-first scenarios fail on any local OBI lookup before clarification", async () => {
+test("decision-critical clarification scenarios fail on local lookup before clarification", async () => {
   const cases = [
-    ["A", "czarne trytytki"],
-    ["A", "czarne trytytki 4,2 x 380 mm"],
-    ["A", "młotki murarskie"],
     ["D", "końcówka do kranu"],
     ["H_AMBIGUOUS", "silikon do umywalki"],
   ];
@@ -437,59 +435,61 @@ test("clarification-first scenarios fail on any local OBI lookup before clarific
   }
 });
 
-test("scenario A accepts one natural clarification covering two tightly related decision-critical details", async () => {
+test("scenario A browses multiple black cable-tie variants without mandatory clarification", async () => {
   const scenario = behaviorScenario("A");
-  let observedRubric = [];
   const result = await runBehaviorTrial(
     scenario,
     1,
     scriptedDriver(scenario),
-    {
-      async grade({ scenario: gradedScenario, trace }) {
-        observedRubric = gradedScenario.semanticRubric;
-        const text =
-          trace.clarificationOrFinalAnswer?.text ?? "";
-        const usefulClarification =
-          /\?/.test(text) &&
-          /długoś|dlugos/i.test(text) &&
-          /do czego|używane|uzywane/i.test(text);
-        return {
-          pass: usefulClarification,
-          reason: usefulClarification
-            ? "one natural clarification covers related missing details"
-            : "missing useful clarification",
-        };
-      },
-    },
+    passingSemanticJudge,
   );
 
   assert.equal(result.status, "PASS");
-  assert.equal(result.localToolCallCount, 0);
-  assert.equal(result.trace.finalProductRefs.length, 0);
+  assert.equal(result.localToolCallCount, 1);
   assert.equal(
-    observedRubric.some((line) =>
-      /more than one tightly related decision-critical detail/i.test(line),
-    ),
-    true,
+    result.trace.localProductCalls[0].arguments.queries[0].limit,
+    3,
   );
-  assert.equal(
-    observedRubric.some((line) =>
-      /do not require one exact parameter/i.test(line),
-    ),
-    true,
+  const group = result.trace.mockedToolResults[0].results[0];
+  assert.equal(group.status, "verified");
+  assert.equal(group.products.length, 3);
+  assert.equal(result.trace.finalProductRefs.length, 3);
+});
+
+test("scenario A rejects a clarification-only response that hides useful variants", async () => {
+  const scenario = behaviorScenario("A");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return answer(
+          "Jakiej długości potrzebuje i do czego będą używane?",
+        );
+      },
+      async continueTurn() {
+        throw new Error("unexpected continuation");
+      },
+    },
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(
+    result.reason,
+    /broad concrete product request did not use the local provider/i,
   );
 });
 
-test("scenario A rejects even a successful broad same-category lookup before clarification", async () => {
+test("scenario A rejects arbitrary single-result narrowing", async () => {
   const scenario = behaviorScenario("A");
-  let semanticCalls = 0;
   const result = await runBehaviorTrial(
     scenario,
     1,
     {
       async start() {
         return toolRequest([
-          { query: "czarne trytytki", limit: 3 },
+          { query: "czarne trytytki", limit: 1 },
         ]);
       },
       async continueTurn(
@@ -498,78 +498,20 @@ test("scenario A rejects even a successful broad same-category lookup before cla
         _storeNumber,
         mockedResult,
       ) {
-        const group = mockedResult.results[0];
-        assert.equal(group.status, "verified");
-        assert.equal(group.products.length, 3);
         return answer(
-          "Jaki rozmiar i do jakiego zastosowania mają być te trytytki?",
+          "Znalazłam jeden wariant.",
+          verifiedRefs(mockedResult),
         );
       },
     },
-    {
-      async grade() {
-        semanticCalls += 1;
-        return { pass: true, reason: "should not run" };
-      },
-    },
+    passingSemanticJudge,
   );
 
   assert.equal(result.status, "FAIL");
   assert.match(
     result.reason,
-    /local provider lookup occurred before clarification/i,
+    /multiple variants|multiple relevant verified variants/i,
   );
-  assert.equal(result.trace.finalProductRefs.length, 0);
-  assert.equal(semanticCalls, 0);
-});
-
-test("scenario A rejects a concrete recommendation without clarification even without productRefs", async () => {
-  const scenario = behaviorScenario("A");
-  let semanticCalls = 0;
-  const result = await runBehaviorTrial(
-    scenario,
-    1,
-    {
-      async start() {
-        return answer(
-          "Polecam konkretny wariant za 12,99 zł, mamy 5 sztuk.",
-        );
-      },
-      async continueTurn() {
-        throw new Error("unexpected continuation");
-      },
-    },
-    {
-      async grade({ scenario: gradedScenario, trace }) {
-        semanticCalls += 1;
-        assert.equal(
-          gradedScenario.semanticRubric.some((line) =>
-            /does not select or recommend a concrete SKU/i.test(line),
-          ),
-          true,
-        );
-        const text =
-          trace.clarificationOrFinalAnswer?.text ?? "";
-        const prematureRecommendation =
-          /polecam|zł|sztuk/i.test(text);
-        return {
-          pass: !prematureRecommendation,
-          reason: prematureRecommendation
-            ? "concrete recommendation or candidate-specific price/stock appeared before clarification"
-            : "no premature recommendation",
-        };
-      },
-    },
-  );
-
-  assert.equal(result.status, "FAIL");
-  assert.match(
-    result.reason,
-    /before clarification/i,
-  );
-  assert.equal(result.localToolCallCount, 0);
-  assert.equal(result.trace.finalProductRefs.length, 0);
-  assert.equal(semanticCalls, 1);
 });
 
 test("browse exhaustive wording is rejected by the behavioral semantic rubric", async () => {

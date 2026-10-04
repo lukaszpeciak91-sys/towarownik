@@ -222,18 +222,21 @@ const DIRECT_PRODUCT = product(
   [["Parametr", "wartość testowa"]],
 );
 
-const RECOMMENDED_BREAKER = product(
-  "7300001",
-  "Mock wyłącznik nadprądowy B16 1P 6 kA",
-  12,
-  24.99,
-  [
-    ["Charakterystyka", "B"],
-    ["Prąd znamionowy", "16 A"],
-    ["Liczba biegunów", "1"],
-    ["Zdolność zwarciowa", "6 kA"],
+const RECOMMENDED_BREAKER: VerifiedProduct = {
+  obik: "7300001",
+  name: "Wyłącznik nadprądowy B16 1P 6 kA Hager",
+  brand: "Hager",
+  shortDescription:
+    "Wyłącznik nadprądowy 1P, charakterystyka B, 16 A, zdolność zwarciowa 6 kA.",
+  technicalFacts: [
+    { label: "Charakterystyka", value: "B" },
+    { label: "Prąd znamionowy", value: "16 A" },
+    { label: "Liczba biegunów", value: "1" },
+    { label: "Zdolność zwarciowa", value: "6 kA" },
   ],
-);
+  stock: 12,
+  price: 24.99,
+};
 
 const ZERO_STOCK_PRODUCT = product(
   "7000002",
@@ -278,13 +281,13 @@ const KIT_PRODUCTS = [
 export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
   {
     id: "A",
-    name: "Ambiguous black cable ties",
+    name: "Broad black cable-tie product intent",
     userMessage: "Klient potrzebuje czarnych trytytek.",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer asks a concise, useful clarification before selection about missing information that materially affects the choice. One natural question may ask about more than one tightly related decision-critical detail, such as size and intended use.",
-      "It does not select or recommend a concrete SKU, present candidate-specific price or stock, guess missing requirements, or act as though the ambiguity is already resolved.",
-      "Equivalent natural clarification wording is acceptable; do not require one exact parameter, label, or answer structure.",
+      "The answer treats this as broad concrete-product intent that can safely browse the current provider without requiring a clarification first.",
+      "It surfaces several relevant verified black cable-tie variants or otherwise makes the available variation visible, rather than pretending one unspecified size is definitively correct.",
+      "It does not imply that the bounded verified subset is the complete assortment; a brief follow-up question to narrow size or use is acceptable after or alongside the useful options.",
     ],
   },
   {
@@ -732,10 +735,9 @@ export async function runBehaviorTrial(
       trace.finalProductRefs = [...result.productRefs];
       trace.clarificationOrFinalAnswer = {
         kind:
-          scenario.id === "A" ||
-          ((scenario.id === "D" ||
+          (scenario.id === "D" ||
             scenario.id === "H_AMBIGUOUS") &&
-            trace.localProductCalls.length === 0)
+          trace.localProductCalls.length === 0
             ? "clarification_candidate"
             : "final_answer",
         text: result.text,
@@ -1031,6 +1033,23 @@ function deterministicFailures(
 
   switch (scenario.id) {
     case "A":
+      if (calls.length === 0) {
+        failures.push(
+          "broad concrete product request did not use the local provider",
+        );
+      }
+      if (!firstQueries.some((query) => query.limit > 1)) {
+        failures.push(
+          "broad concrete product lookup did not request multiple variants",
+        );
+      }
+      if (verifiedRefs.size < 2) {
+        failures.push(
+          "broad concrete product lookup did not yield multiple relevant verified variants",
+        );
+      }
+      break;
+
     case "D":
     case "H_AMBIGUOUS":
       if (calls.length !== 0) {
@@ -1411,6 +1430,7 @@ function providerProduct(
 ): ProviderVerifiedProduct {
   const articleById: Record<string, string> = {
     "7000001": "MBN116E/HAG",
+    "7300001": "MBN116E/HAG",
     "7000002": "EVAL-KW-0002",
     "7000003": "EVAL-KW-0003",
   };
