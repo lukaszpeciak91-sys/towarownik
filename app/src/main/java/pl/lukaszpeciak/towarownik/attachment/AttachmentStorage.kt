@@ -5,6 +5,9 @@ import java.io.File
 import java.io.InputStream
 import java.util.UUID
 
+internal const val ATTACHMENT_LOCAL_STORAGE_MAX_BYTES =
+    16L * 1024L * 1024L
+
 internal class AttachmentStorage private constructor(
     private val directory: File,
 ) {
@@ -20,6 +23,9 @@ internal class AttachmentStorage private constructor(
         createdAt: Long = System.currentTimeMillis(),
         source: () -> InputStream,
     ): AdvisorAttachment {
+        require(byteSize <= ATTACHMENT_LOCAL_STORAGE_MAX_BYTES) {
+            "Attachment exceeds local storage size limit"
+        }
         val localId = UUID.randomUUID().toString().replace("-", "")
         val metadata = requireNotNull(
             validatedAttachmentOrNull(
