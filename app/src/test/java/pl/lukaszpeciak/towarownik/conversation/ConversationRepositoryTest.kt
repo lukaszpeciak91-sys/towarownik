@@ -980,6 +980,8 @@ class ConversationRepositoryTest {
                     productUrl = "https://kwant.net.pl/produkt/test-580",
                     verifiedAt = 550L,
                     storeNumber = "205",
+                    primaryImageUrl =
+                        "https://kwant.net.pl/images/product-580.webp",
                     providerId = "kwant-pl",
                     productId = "580",
                     branchId = "205",
@@ -1002,6 +1004,15 @@ class ConversationRepositoryTest {
         assertEquals("MBN116E/HAG", restored.articleNumber)
         assertEquals(140, restored.stock)
         assertEquals(BigDecimal("14.55"), restored.grossPrice)
+        assertEquals(
+            "https://kwant.net.pl/produkt/test-580",
+            restored.productUrl,
+        )
+        assertEquals(
+            "https://kwant.net.pl/images/product-580.webp",
+            restored.primaryImageUrl,
+        )
+        assertEquals(550L, restored.verifiedAt)
         assertEquals(ProviderPriceScope.ONLINE, restored.priceScope)
     }
 
