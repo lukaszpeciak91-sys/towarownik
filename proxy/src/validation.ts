@@ -573,7 +573,7 @@ function validateProtocolVersion(
   value: unknown,
 ): AdvisorProtocolVersion {
   if (value === undefined) {
-    return CURRENT_ADVISOR_PROTOCOL_VERSION;
+    return OBI_GROUPED_ADVISOR_PROTOCOL_VERSION;
   }
   if (
     typeof value !== "number" ||
