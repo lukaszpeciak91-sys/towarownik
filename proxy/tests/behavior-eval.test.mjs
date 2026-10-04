@@ -12,8 +12,10 @@ import {
   obiToolForProtocol,
 } from "../.test-dist/config.js";
 import {
+  BEHAVIOR_REGRESSION_SCENARIOS,
   BEHAVIOR_SCENARIOS,
   behaviorScenario,
+  behaviorScenarioForProvider,
   behaviorSuiteExitCode,
   createOpenAISemanticJudge,
   createProductionAdvisorDriver,
@@ -137,6 +139,13 @@ function scriptedDriver(scenario) {
               limit: 1,
             },
           ]);
+        case "PRODUCT_INTENT":
+          return toolRequest([
+            {
+              query: "wyłącznik nadprądowy B16 1P 6 kA",
+              limit: 1,
+            },
+          ]);
         case "F":
           return toolRequest([
             { query: "OBIK 7000001", limit: 1 },
@@ -184,6 +193,11 @@ function scriptedDriver(scenario) {
           );
         case "C":
           return answer("Pasuje zweryfikowany wariant.", refs);
+        case "PRODUCT_INTENT":
+          return answer(
+            "Polecam ten zweryfikowany wyłącznik B16 1P 6 kA.",
+            refs,
+          );
         case "F":
           return answer("Stan 7 szt., cena 12,49 zł.", refs);
         case "G_ZERO":
@@ -215,6 +229,7 @@ const passingSemanticJudge = {
 test("deterministic harness passes all initial scenarios with scripted observable behavior", async () => {
   const results = await runBehaviorSuite({
     trials: 1,
+    scenarioIds: BEHAVIOR_SCENARIOS.map((scenario) => scenario.id),
     driverFactory: (scenario) => scriptedDriver(scenario),
     semanticJudge: passingSemanticJudge,
   });
@@ -254,6 +269,7 @@ test("the same behavior families pass through provider v3 KWANT mocks", async ()
   const results = await runBehaviorSuite({
     provider: "kwant-v3",
     trials: 1,
+    scenarioIds: BEHAVIOR_SCENARIOS.map((scenario) => scenario.id),
     driverFactory: (scenario) => kwantScriptedDriver(scenario),
     semanticJudge: passingSemanticJudge,
   });
@@ -271,6 +287,94 @@ test("the same behavior families pass through provider v3 KWANT mocks", async ()
     },
   );
   assert.equal(direct.trace.finalProductRefs[0].providerId, "kwant-pl");
+});
+
+test("concrete product recommendation triggers provider lookup on OBI v2 and KWANT v3 without market-check phrase", async () => {
+  const obiScenario = behaviorScenarioForProvider(
+    "PRODUCT_INTENT",
+    "obi-v2",
+  );
+  const kwantScenario = behaviorScenarioForProvider(
+    "PRODUCT_INTENT",
+    "kwant-v3",
+  );
+
+  assert.doesNotMatch(obiScenario.userMessage, /sprawdź|market|branch/i);
+  assert.equal(obiScenario.userMessage, kwantScenario.userMessage);
+
+  const obi = await runBehaviorTrial(
+    obiScenario,
+    1,
+    scriptedDriver(obiScenario),
+    passingSemanticJudge,
+    "obi-v2",
+  );
+  const kwant = await runBehaviorTrial(
+    kwantScenario,
+    1,
+    kwantScriptedDriver(kwantScenario),
+    passingSemanticJudge,
+    "kwant-v3",
+  );
+
+  assert.equal(obi.status, "PASS");
+  assert.equal(kwant.status, "PASS");
+  assert.equal(obi.localToolCallCount, 1);
+  assert.equal(kwant.localToolCallCount, 1);
+
+  assert.deepEqual(
+    obi.trace.localProductCalls[0].arguments,
+    {
+      storeNumber: "075",
+      queries: [
+        {
+          query: "wyłącznik nadprądowy B16 1P 6 kA",
+          limit: 1,
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    kwant.trace.localProductCalls[0].arguments,
+    {
+      providerId: "kwant-pl",
+      branchId: "205",
+      queries: [
+        {
+          query: "wyłącznik nadprądowy B16 1P 6 kA",
+          limit: 1,
+        },
+      ],
+    },
+  );
+
+  assert.equal(obi.trace.finalProductRefs[0].obik, "7000001");
+  assert.equal(
+    kwant.trace.finalProductRefs[0].providerId,
+    "kwant-pl",
+  );
+  assert.equal(
+    kwant.trace.finalProductRefs[0].branchId,
+    "205",
+  );
+  assert.equal(
+    kwant.trace.finalProductRefs[0].productId,
+    "kw-7000001",
+  );
+});
+
+test("KWANT provider-neutral rubrics contain no OBI-specific wording outside provider-shaped identifier scenarios", () => {
+  for (const id of ["H", "H_AMBIGUOUS", "I", "PRODUCT_INTENT"]) {
+    const scenario = behaviorScenarioForProvider(id, "kwant-v3");
+    assert.equal(
+      scenario.semanticRubric.some((line) => /\bOBI\b|OBIK/i.test(line)),
+      false,
+      `${id} rubric must stay provider-neutral`,
+    );
+  }
+
+  assert.equal(BEHAVIOR_SCENARIOS.length, 13);
+  assert.equal(BEHAVIOR_REGRESSION_SCENARIOS.length, 14);
 });
 
 test("repeated trials stay configurable and summary reports pass totals", async () => {
