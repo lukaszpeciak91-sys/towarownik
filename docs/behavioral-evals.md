@@ -40,7 +40,7 @@ This allows both model/tool interactions to be exercised without coupling behavi
 
 ## Initial scenarios
 
-The suite currently contains:
+The stable A–I baseline remains unchanged and contains:
 
 - **A** — ambiguous black cable ties: clarify before selection;
 - **B** — browse black cable ties: request multiple results and avoid exhaustive-assortment wording;
@@ -55,6 +55,10 @@ The suite currently contains:
 - **H** — understood silicone washbasin-to-wall sealing job: give small practical essentials-first advice, distinguish essentials from optional convenience items, and use zero automatic local product calls / zero `productRefs` unless explicit provider-product intent exists;
 - **H_AMBIGUOUS** — original underspecified washbasin-sealing request: clarify wall/countertop joint versus drain/siphon-type work before any concrete OBI lookup;
 - **I** — general SDS+ versus SDS Max explanation without unnecessary tools.
+
+One additional provider-neutral regression runs beside that baseline:
+
+- **PRODUCT_INTENT** — a sufficiently specified concrete product/recommendation request must use the current provider immediately, without requiring an extra “check the market/branch” phrase. The user intent is identical on OBI v2 and KWANT v3; only the mocked tool/result shape differs by provider.
 
 ## Trace and grading
 
@@ -121,7 +125,7 @@ npm ci
 npm run eval:behavior
 ```
 
-Default execution is deliberately small: one trial for every scenario on both provider paths.
+Default execution is deliberately small: one trial for every A–I baseline scenario plus the provider-neutral PRODUCT_INTENT regression on both provider paths.
 
 Run only one provider path:
 
