@@ -207,4 +207,5 @@ The currently planned AI capability stage is complete after this selective web-s
 - Added provider-neutral IMAGE/PDF metadata with exactly one attachment per USER message and no binary content in domain or Room models.
 - Added app-private attachment import/read/delete storage using opaque identifiers; no picker, composer, upload, Worker, or OpenAI request behavior changed.
 - Room v10 adds the normalized `message_attachments` relation. Historical messages migrate with zero attachments and metadata cascades with message/conversation deletion.
-- Explicit and 30-day retention deletion now perform best-effort cleanup of only the related private attachment files; missing files fail soft.
+- Explicit deletion, 30-day retention cleanup, and interrupted-turn recovery now perform best-effort cleanup of only the related private attachment files; recovery captures the trailing USER attachment id before Room deletion and preserves draft recovery even if filesystem deletion fails.
+- Attachment import now enforces a temporary 16 MiB per-file Android private-storage ceiling before copying while retaining exact copied-byte validation; no Worker/OpenAI transport limit is introduced.
