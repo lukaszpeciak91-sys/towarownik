@@ -5,6 +5,7 @@ import java.math.BigDecimal
 internal data class VerifiedProductKey(
     val storeNumber: String,
     val obik: String,
+    val providerId: String = "obi-pl",
 )
 
 internal data class VerifiedProductSnapshot(
@@ -16,11 +17,16 @@ internal data class VerifiedProductSnapshot(
     val verifiedAt: Long,
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val primaryImageUrl: String? = null,
+    val providerId: String = "obi-pl",
+    val productId: String = obik,
+    val branchId: String = storeNumber,
+    val articleNumber: String? = null,
 ) {
     val key: VerifiedProductKey
         get() = VerifiedProductKey(
-            storeNumber = storeNumber,
-            obik = obik,
+            storeNumber = branchId,
+            obik = productId,
+            providerId = providerId,
         )
 }
 
