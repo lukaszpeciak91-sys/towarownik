@@ -178,20 +178,14 @@ internal class ConversationRepository(
     suspend fun loadMostRecentRecoveringInterrupted():
         PersistedConversation? {
         val recent = dao.getMostRecentConversation() ?: return null
-        dao.recoverInterruptedTurn(
-            conversationId = recent.id,
-            recoveredAt = now(),
-        )
+        recoverInterruptedTurnAndCleanup(recent.id)
         return load(recent.id)
     }
 
     suspend fun loadRecoveringInterrupted(
         conversationId: Long,
     ): PersistedConversation? {
-        dao.recoverInterruptedTurn(
-            conversationId = conversationId,
-            recoveredAt = now(),
-        )
+        recoverInterruptedTurnAndCleanup(conversationId)
         return load(conversationId)
     }
 
@@ -282,11 +276,24 @@ internal class ConversationRepository(
     suspend fun recoverInterruptedTurn(
         conversationId: Long,
     ): PersistedConversation? {
-        dao.recoverInterruptedTurn(
+        recoverInterruptedTurnAndCleanup(conversationId)
+        return load(conversationId)
+    }
+
+    private suspend fun recoverInterruptedTurnAndCleanup(
+        conversationId: Long,
+    ) {
+        val attachmentId =
+            dao.getLastMessageAttachmentId(conversationId)
+        val recovered = dao.recoverInterruptedTurn(
             conversationId = conversationId,
             recoveredAt = now(),
         )
-        return load(conversationId)
+        if (recovered && attachmentId != null) {
+            runCatching {
+                attachmentStorage?.delete(attachmentId)
+            }
+        }
     }
 
     suspend fun updateDraft(
