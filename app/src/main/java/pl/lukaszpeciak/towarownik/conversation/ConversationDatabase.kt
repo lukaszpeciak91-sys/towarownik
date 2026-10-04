@@ -167,5 +167,24 @@ internal val MIGRATION_6_7 = object : Migration(6, 7) {
         db.execSQL(
             "UPDATE conversations SET branchId = storeNumber",
         )
+        db.execSQL(
+            "ALTER TABLE message_products " +
+                "ADD COLUMN providerId TEXT NOT NULL DEFAULT 'obi-pl'",
+        )
+        db.execSQL(
+            "ALTER TABLE message_products " +
+                "ADD COLUMN productId TEXT NOT NULL DEFAULT ''",
+        )
+        db.execSQL(
+            "ALTER TABLE message_products " +
+                "ADD COLUMN branchId TEXT NOT NULL DEFAULT '075'",
+        )
+        db.execSQL(
+            "ALTER TABLE message_products ADD COLUMN articleNumber TEXT",
+        )
+        db.execSQL(
+            "UPDATE message_products " +
+                "SET productId = obik, branchId = storeNumber",
+        )
     }
 }
