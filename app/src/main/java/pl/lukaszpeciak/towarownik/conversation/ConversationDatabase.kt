@@ -191,10 +191,15 @@ internal val MIGRATION_7_8 = object : Migration(7, 8) {
             "ALTER TABLE message_products ADD COLUMN articleNumber TEXT",
         )
         db.execSQL(
+            "ALTER TABLE message_products ADD COLUMN priceScope TEXT",
+        )
+        db.execSQL(
             "UPDATE message_products " +
                 "SET providerId = 'obi-pl', " +
                 "productId = obik, branchId = storeNumber, " +
-                "articleNumber = NULL",
+                "articleNumber = NULL, " +
+                "priceScope = CASE " +
+                "WHEN grossPrice IS NULL THEN NULL ELSE 'branch' END",
         )
     }
 }
