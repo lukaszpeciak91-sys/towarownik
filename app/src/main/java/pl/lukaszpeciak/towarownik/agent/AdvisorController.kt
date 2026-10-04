@@ -75,15 +75,34 @@ internal class AdvisorController(
             return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
         }
 
-        val authorization = runCatching {
-            AdvisorTurnStoreAuthorization.capture(
-                conversationStoreNumber = conversationStoreNumber,
-                currentUserMessage = normalizedInput,
-                conversationProviderId = conversationProviderId,
-            )
-        }.getOrElse {
-            return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
-        }
+        val obiAuthorization =
+            if (conversationProviderId == OBI_PROVIDER_ID.value) {
+                runCatching {
+                    AdvisorTurnStoreAuthorization.capture(
+                        conversationStoreNumber =
+                            conversationStoreNumber,
+                        currentUserMessage = normalizedInput,
+                    )
+                }.getOrElse {
+                    return AdvisorUiState.Error(
+                        AdvisorError.INPUT,
+                    ).also(onState)
+                }
+            } else {
+                null
+            }
+
+        fun isToolAuthorized(
+            arguments: AdvisorToolArguments,
+        ): Boolean =
+            if (conversationProviderId == OBI_PROVIDER_ID.value) {
+                arguments.providerId == OBI_PROVIDER_ID.value &&
+                    requireNotNull(obiAuthorization)
+                        .isAuthorized(arguments.storeNumber)
+            } else {
+                arguments.providerId == conversationProviderId &&
+                    arguments.storeNumber == conversationStoreNumber
+            }
 
         if (!isConfigured()) {
             return AdvisorUiState.Error(
@@ -201,11 +220,7 @@ internal class AdvisorController(
 
                     val arguments = toolRequest.arguments
                     val continuation =
-                        if (!authorization.isAuthorized(
-                                providerId = arguments.providerId,
-                                storeNumber = arguments.storeNumber,
-                            )
-                        ) {
+                        if (!isToolAuthorized(arguments)) {
                             AdvisorToolContinuation.RejectedStore(
                                 queries = arguments.queries,
                                 storeNumber = arguments.storeNumber,
@@ -244,6 +259,7 @@ internal class AdvisorController(
                                     AdvisorToolContinuation.RejectedStore(
                                         queries = arguments.queries,
                                         storeNumber = arguments.storeNumber,
+                                        providerId = arguments.providerId,
                                     )
 
                                 AdvisorToolExecutionResult.Failure ->
