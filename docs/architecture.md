@@ -273,3 +273,16 @@ Each newly created conversation captures the then-current working profile in Roo
 `ProductProvider` now also exposes provider-owned branch discovery. OBI returns the existing supported store allowlist. KWANT resolves its public branch directory and exposes `department_stock_id` as `BranchId`, with branch name and public address metadata.
 
 Manual product search resolves the provider from the current global working profile and performs search/exact enrichment through that provider. Product candidates and exact products keep provider-owned `ProductRef(providerId, productId)`. OBI presentation may label its identifier as OBIK; KWANT presentation uses article-number terminology. The advisor tool remains OBI-only in this iteration.
+
+
+## Provider-aware advisor
+
+Advisor execution is now owned by the conversation WorkingProfile.
+
+- OBI conversations keep the established advisor wire contract on protocol v2.
+- KWANT conversations use provider-aware protocol v3 with `providerId + branchId`.
+- Protocol v3 exposes the neutral local tool `find_products`; Android resolves the exact `ProductProvider` through `ProductProviderRegistry`.
+- The model may not choose or switch provider. The provider and branch are fixed by the saved conversation WorkingProfile.
+- Provider-owned product references use `providerId + branchId + productId`.
+- KWANT branch stock remains branch-specific. KWANT public price keeps `ONLINE` scope and must not be described as a branch/counter/customer-specific price.
+- Worker protocols v1/v2 remain accepted for existing OBI clients.
