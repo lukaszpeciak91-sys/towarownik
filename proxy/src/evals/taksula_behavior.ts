@@ -222,6 +222,19 @@ const DIRECT_PRODUCT = product(
   [["Parametr", "wartość testowa"]],
 );
 
+const RECOMMENDED_BREAKER = product(
+  "7300001",
+  "Mock wyłącznik nadprądowy B16 1P 6 kA",
+  12,
+  24.99,
+  [
+    ["Charakterystyka", "B"],
+    ["Prąd znamionowy", "16 A"],
+    ["Liczba biegunów", "1"],
+    ["Zdolność zwarciowa", "6 kA"],
+  ],
+);
+
 const ZERO_STOCK_PRODUCT = product(
   "7000002",
   "Mock produkt ze stanem zero",
@@ -1079,7 +1092,7 @@ function deterministicFailures(
       }
       if (
         !verifiedRefs.has(
-          expectedRefKey(trace.provider, "7000001"),
+          expectedRefKey(trace.provider, "7300001"),
         )
       ) {
         failures.push(
@@ -1299,7 +1312,7 @@ function mockObiQueryResult(
       return isConcreteBreakerRecommendationQuery(query)
         ? verifiedQuery(
             query,
-            [DIRECT_PRODUCT].slice(0, limit),
+            [RECOMMENDED_BREAKER].slice(0, limit),
           )
         : notFoundQuery(query);
 
