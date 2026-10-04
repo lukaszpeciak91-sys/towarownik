@@ -11,6 +11,7 @@ import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.DEFAULT_WORKING_PROFILE
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ProviderId
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 internal const val CONVERSATION_TITLE_MAX_CHARS = 50
@@ -358,6 +359,11 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 productId = product.productId,
                                 branchId = product.branchId,
                                 articleNumber = product.articleNumber,
+                                priceScope = when (product.priceScope) {
+                                    "branch" -> ProviderPriceScope.BRANCH
+                                    "online" -> ProviderPriceScope.ONLINE
+                                    else -> null
+                                },
                             )
                         },
                     sources = item.sources
