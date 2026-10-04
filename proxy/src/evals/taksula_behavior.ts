@@ -1,5 +1,5 @@
 import {
-  CURRENT_ADVISOR_PROTOCOL_VERSION,
+  OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
   LOCAL_TOOL_NAME,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
@@ -403,21 +403,23 @@ export function createProductionAdvisorDriver(
     start(message, storeNumber) {
       return startAgent(
         message,
+        "obi-pl",
         storeNumber,
         apiKey,
         upstreamFetch,
-        CURRENT_ADVISOR_PROTOCOL_VERSION,
+        OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
       );
     },
     continueTurn(responseId, callId, storeNumber, result) {
       return continueAgent(
         responseId,
         callId,
+        "obi-pl",
         storeNumber,
         result,
         apiKey,
         upstreamFetch,
-        CURRENT_ADVISOR_PROTOCOL_VERSION,
+        OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
       );
     },
   };
@@ -741,7 +743,8 @@ function currentToolArguments(
   const args = result.tool.arguments;
   if (
     !("queries" in args) ||
-    !Array.isArray(args.queries)
+    !Array.isArray(args.queries) ||
+    !("storeNumber" in args)
   ) {
     throw new Error(
       "Behavior eval requires the current grouped v2 advisor tool contract",
@@ -862,7 +865,7 @@ function deterministicFailures(
   for (const ref of trace.finalProductRefs) {
     if (!verifiedRefs.has(refKey(ref))) {
       failures.push(
-        `ungrounded productRef ${ref.storeNumber}:${ref.obik}`,
+        `ungrounded productRef ${refKey(ref)}`,
       );
     }
   }
@@ -1267,10 +1270,14 @@ function collectVerifiedRefs(
 ): Set<string> {
   const refs = new Set<string>();
   for (const result of results) {
-    if (!("results" in result)) continue;
+    if (
+      !("results" in result) ||
+      !("storeNumber" in result)
+    ) continue;
     for (const queryResult of result.results) {
       if (queryResult.status !== "verified") continue;
       for (const productValue of queryResult.products) {
+        if (!("obik" in productValue)) continue;
         refs.add(
           refKey({
             storeNumber: result.storeNumber,
@@ -1284,7 +1291,9 @@ function collectVerifiedRefs(
 }
 
 function refKey(ref: ProductRef): string {
-  return `${ref.storeNumber}:${ref.obik}`;
+  return "storeNumber" in ref
+    ? `${ref.storeNumber}:${ref.obik}`
+    : `${ref.providerId}:${ref.branchId}:${ref.productId}`;
 }
 
 function flattenQueries(

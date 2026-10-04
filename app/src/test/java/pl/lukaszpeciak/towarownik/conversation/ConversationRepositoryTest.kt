@@ -19,6 +19,7 @@ import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 @RunWith(RobolectricTestRunner::class)
@@ -951,6 +952,68 @@ class ConversationRepositoryTest {
             "074",
             restored.messages.last().products.single().storeNumber,
         )
+    }
+
+    @Test
+    fun `KWANT provider product identity stock and price persist across recreation`() = runBlocking {
+        val profile = WorkingProfile(
+            providerId = KWANT_PROVIDER_ID,
+            branchId = BranchId("205"),
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "KWANT product",
+            createdAt = 500L,
+            workingProfile = profile,
+        )
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Verified",
+            finalResponseId = "resp_kwant",
+            createdAt = 600L,
+            products = listOf(
+                VerifiedProductSnapshot(
+                    obik = "580",
+                    name = "Wyłącznik nadprądowy B16",
+                    stock = 140,
+                    grossPrice = BigDecimal("14.55"),
+                    productUrl = "https://kwant.net.pl/produkt/test-580",
+                    verifiedAt = 550L,
+                    storeNumber = "205",
+                    primaryImageUrl =
+                        "https://kwant.net.pl/images/product-580.webp",
+                    providerId = "kwant-pl",
+                    productId = "580",
+                    branchId = "205",
+                    articleNumber = "MBN116E/HAG",
+                    priceScope = ProviderPriceScope.ONLINE,
+                ),
+            ),
+        )
+
+        database.close()
+        openDatabase()
+
+        val restored = requireNotNull(
+            repository.load(started.conversationId),
+        ).messages.last().products.single()
+
+        assertEquals("kwant-pl", restored.providerId)
+        assertEquals("205", restored.branchId)
+        assertEquals("580", restored.productId)
+        assertEquals("MBN116E/HAG", restored.articleNumber)
+        assertEquals(140, restored.stock)
+        assertEquals(BigDecimal("14.55"), restored.grossPrice)
+        assertEquals(
+            "https://kwant.net.pl/produkt/test-580",
+            restored.productUrl,
+        )
+        assertEquals(
+            "https://kwant.net.pl/images/product-580.webp",
+            restored.primaryImageUrl,
+        )
+        assertEquals(550L, restored.verifiedAt)
+        assertEquals(ProviderPriceScope.ONLINE, restored.priceScope)
     }
 
     @Test

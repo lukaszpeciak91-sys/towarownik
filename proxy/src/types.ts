@@ -3,7 +3,7 @@ export interface Env {
   TOWAROWNIK_APP_TOKEN?: string;
 }
 
-export type AdvisorProtocolVersion = 1 | 2;
+export type AdvisorProtocolVersion = 1 | 2 | 3;
 
 export interface ToolQuery {
   query: string;
@@ -21,9 +21,16 @@ export interface ToolArguments {
   queries: ToolQuery[];
 }
 
+export interface ProviderToolArguments {
+  providerId: string;
+  branchId: string;
+  queries: ToolQuery[];
+}
+
 export type VersionedToolArguments =
   | LegacyToolArguments
-  | ToolArguments;
+  | ToolArguments
+  | ProviderToolArguments;
 
 export interface TechnicalFact {
   label: string;
@@ -38,6 +45,18 @@ export interface VerifiedProduct {
   technicalFacts: TechnicalFact[];
   stock: number | null;
   price: number | null;
+}
+
+export interface ProviderVerifiedProduct {
+  productId: string;
+  articleNumber: string | null;
+  name: string;
+  brand: string | null;
+  shortDescription: string | null;
+  technicalFacts: TechnicalFact[];
+  stock: number | null;
+  price: number | null;
+  priceScope: "branch" | "online" | null;
 }
 
 export interface LegacyVerifiedToolResult {
@@ -74,10 +93,36 @@ export interface RejectedToolResult {
   rejection: "store_not_authorized";
 }
 
+export interface ProviderRejectedToolResult {
+  providerId: string;
+  branchId: string;
+  queries: ToolQuery[];
+  rejection: "branch_not_authorized";
+}
+
 export interface LocalToolLimitResult {
   storeNumber: string;
   queries: ToolQuery[];
   rejection: "local_tool_limit_reached";
+}
+
+export interface ProviderLocalToolLimitResult {
+  providerId: string;
+  branchId: string;
+  queries: ToolQuery[];
+  rejection: "local_tool_limit_reached";
+}
+
+export interface ProviderVerifiedQueryResult {
+  query: string;
+  status: VerifiedQueryStatus;
+  products: ProviderVerifiedProduct[];
+}
+
+export interface ProviderVerifiedToolResult {
+  providerId: string;
+  branchId: string;
+  results: ProviderVerifiedQueryResult[];
 }
 
 export type ToolContinuationResult =
@@ -85,12 +130,23 @@ export type ToolContinuationResult =
   | LegacyRejectedToolResult
   | VerifiedToolResult
   | RejectedToolResult
-  | LocalToolLimitResult;
+  | LocalToolLimitResult
+  | ProviderVerifiedToolResult
+  | ProviderRejectedToolResult
+  | ProviderLocalToolLimitResult;
 
-export interface ProductRef {
+export interface LegacyProductRef {
   storeNumber: string;
   obik: string;
 }
+
+export interface ProviderProductRef {
+  providerId: string;
+  branchId: string;
+  productId: string;
+}
+
+export type ProductRef = LegacyProductRef | ProviderProductRef;
 
 export interface WebSource {
   title: string;
@@ -128,7 +184,7 @@ export type AgentResult =
       type: "tool_request";
       responseId: string;
       tool: {
-        name: "find_obi_products";
+        name: "find_obi_products" | "find_products";
         callId: string;
         arguments: VersionedToolArguments;
       };

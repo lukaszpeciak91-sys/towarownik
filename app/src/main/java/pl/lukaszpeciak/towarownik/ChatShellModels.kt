@@ -21,6 +21,7 @@ import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 internal enum class ChatMessageRole {
     USER,
@@ -248,6 +249,23 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                                         ?: JsonNull,
                                                 )
                                                 put("storeNumber", product.storeNumber)
+                                                put("providerId", product.providerId)
+                                                put("productId", product.productId)
+                                                put("branchId", product.branchId)
+                                                put(
+                                                    "articleNumber",
+                                                    product.articleNumber
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
+                                                put(
+                                                    "priceScope",
+                                                    product.priceScope
+                                                        ?.name
+                                                        ?.lowercase()
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
                                                 put(
                                                     "verifiedAt",
                                                     product.verifiedAt
@@ -358,6 +376,40 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                             verifiedAt = product["verifiedAt"]
                                 ?.jsonPrimitive
                                 ?.longOrNull,
+                            providerId = product["providerId"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: "obi-pl",
+                            productId = product["productId"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: obik,
+                            branchId = product["branchId"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: (
+                                    product["storeNumber"]
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                        ?: DEFAULT_OBI_STORE_NUMBER
+                                ),
+                            articleNumber = product["articleNumber"]
+                                ?.let { value ->
+                                    if (value is JsonNull) null
+                                    else value.jsonPrimitive.contentOrNull
+                                },
+                            priceScope = product["priceScope"]
+                                ?.let { value ->
+                                    if (value is JsonNull) {
+                                        null
+                                    } else {
+                                        when (value.jsonPrimitive.contentOrNull) {
+                                            "branch" -> ProviderPriceScope.BRANCH
+                                            "online" -> ProviderPriceScope.ONLINE
+                                            else -> null
+                                        }
+                                    }
+                                },
                         )
                     }
                     .orEmpty()

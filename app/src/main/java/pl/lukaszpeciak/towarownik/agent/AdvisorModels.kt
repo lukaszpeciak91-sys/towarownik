@@ -4,12 +4,15 @@ import java.math.BigDecimal
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductKey
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 
 internal const val ADVISOR_PROXY_BASE_URL =
     "https://towarownik-proxy.lukaszpeciak91.workers.dev"
 
-internal const val ADVISOR_PROTOCOL_VERSION = 2
+internal const val ADVISOR_PROTOCOL_VERSION = 3
+internal const val OBI_ADVISOR_PROTOCOL_VERSION = 2
 internal const val FIND_OBI_PRODUCTS = "find_obi_products"
+internal const val FIND_PRODUCTS = "find_products"
 internal const val MAX_LOCAL_TOOL_CALLS_PER_TURN = 3
 internal const val MAX_TOOL_PRODUCTS = 5
 internal const val MAX_TOOL_QUERIES = 5
@@ -23,7 +26,11 @@ internal data class AdvisorToolQuery(
 internal data class AdvisorToolArguments(
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val queries: List<AdvisorToolQuery>,
+    val providerId: String = OBI_PROVIDER_ID.value,
 ) {
+    val branchId: String
+        get() = storeNumber
+
     constructor(
         query: String,
         storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
@@ -54,11 +61,19 @@ internal data class AdvisorSearchAction(
 internal data class AdvisorProductRef(
     val storeNumber: String,
     val obik: String,
+    val providerId: String = OBI_PROVIDER_ID.value,
 ) {
+    val branchId: String
+        get() = storeNumber
+
+    val productId: String
+        get() = obik
+
     val key: VerifiedProductKey
         get() = VerifiedProductKey(
-            storeNumber = storeNumber,
-            obik = obik,
+            storeNumber = branchId,
+            obik = productId,
+            providerId = providerId,
         )
 }
 
@@ -73,6 +88,9 @@ internal data class AdvisorVerifiedProduct(
     val stock: Int?,
     val price: BigDecimal?,
     val brand: String? = null,
+    val productId: String = obik,
+    val articleNumber: String? = null,
+    val priceScope: String? = null,
     val shortDescription: String? = null,
     val technicalFacts: List<AdvisorTechnicalFact> = emptyList(),
 )
@@ -92,7 +110,11 @@ internal data class AdvisorVerifiedQueryResult(
 internal data class AdvisorVerifiedToolResult(
     val storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
     val results: List<AdvisorVerifiedQueryResult>,
+    val providerId: String = OBI_PROVIDER_ID.value,
 ) {
+    val branchId: String
+        get() = storeNumber
+
     constructor(
         query: String,
         storeNumber: String = DEFAULT_OBI_STORE_NUMBER,
@@ -153,6 +175,7 @@ internal sealed interface AdvisorToolContinuation {
     data class RejectedStore(
         val queries: List<AdvisorToolQuery>,
         val storeNumber: String,
+        val providerId: String = OBI_PROVIDER_ID.value,
     ) : AdvisorToolContinuation {
         constructor(
             query: String,
@@ -174,6 +197,7 @@ internal sealed interface AdvisorToolContinuation {
     data class LocalToolLimitReached(
         val queries: List<AdvisorToolQuery>,
         val storeNumber: String,
+        val providerId: String = OBI_PROVIDER_ID.value,
     ) : AdvisorToolContinuation {
         constructor(
             query: String,

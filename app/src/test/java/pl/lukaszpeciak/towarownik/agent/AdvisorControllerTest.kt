@@ -11,6 +11,7 @@ import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 class AdvisorControllerTest {
     @Test
@@ -637,8 +638,291 @@ class AdvisorControllerTest {
 
         assertEquals(0, continueCalls)
         assertEquals(
-            AdvisorUiState.Error(AdvisorError.OBI),
+            AdvisorUiState.Error(AdvisorError.PRODUCT_PROVIDER),
             final,
+        )
+    }
+
+    @Test
+    fun `KWANT conversation executes provider tool and selects current turn card`() = runBlocking {
+        var toolCalls = 0
+        val snapshot = snapshot(
+            obik = "580",
+            name = "Wyłącznik",
+            stock = 140,
+            price = BigDecimal("14.55"),
+            storeNumber = "205",
+        ).copy(
+            providerId = "kwant-pl",
+            productId = "580",
+            branchId = "205",
+            articleNumber = "MBN116E/HAG",
+        )
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.ToolRequest(
+                        responseId = "resp_kwant_tool",
+                        callId = "call_kwant",
+                        arguments = AdvisorToolArguments(
+                            providerId = "kwant-pl",
+                            storeNumber = "205",
+                            queries = listOf(
+                                AdvisorToolQuery("MBN116E", 1),
+                            ),
+                        ),
+                    ),
+                )
+            },
+            continueCall = { _, _, _ ->
+                successAnswerRefs(
+                    responseId = "resp_kwant_final",
+                    text = "Mam produkt.",
+                    productRefs = listOf(
+                        AdvisorProductRef(
+                            storeNumber = "205",
+                            obik = "580",
+                            providerId = "kwant-pl",
+                        ),
+                    ),
+                )
+            },
+            tool = { arguments ->
+                toolCalls += 1
+                assertEquals("kwant-pl", arguments.providerId)
+                assertEquals("205", arguments.branchId)
+                AdvisorToolExecutionResult.Success(
+                    result = AdvisorVerifiedToolResult(
+                        providerId = "kwant-pl",
+                        storeNumber = "205",
+                        results = listOf(
+                            AdvisorVerifiedQueryResult(
+                                query = "MBN116E",
+                                status =
+                                    AdvisorQueryResultStatus.VERIFIED,
+                                products = listOf(
+                                    AdvisorVerifiedProduct(
+                                        obik = "580",
+                                        productId = "580",
+                                        articleNumber = "MBN116E/HAG",
+                                        name = "Wyłącznik",
+                                        stock = 140,
+                                        price = BigDecimal("14.55"),
+                                        priceScope = "online",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                    snapshots = listOf(snapshot),
+                )
+            },
+        )
+
+        val result = controller.runTurn(
+            input = "Sprawdź MBN116E",
+            previousResponseId = null,
+            conversationStoreNumber = "205",
+            conversationProviderId = "kwant-pl",
+        ) { } as AdvisorUiState.Success
+
+        assertEquals(1, toolCalls)
+        assertEquals(listOf(snapshot), result.products)
+    }
+
+    @Test
+    fun `KWANT conversation rejects OBI provider tool request before local execution`() = runBlocking {
+        var toolCalls = 0
+        var rejectedProvider: String? = null
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.ToolRequest(
+                        responseId = "resp_wrong_provider",
+                        callId = "call_wrong_provider",
+                        arguments = AdvisorToolArguments(
+                            providerId = "obi-pl",
+                            storeNumber = "075",
+                            queries = listOf(
+                                AdvisorToolQuery("klej", 1),
+                            ),
+                        ),
+                    ),
+                )
+            },
+            rejectedContinueCall = { _, _, rejected ->
+                rejectedProvider = rejected.providerId
+                successAnswer(
+                    responseId = "resp_final",
+                    text = "Provider mismatch.",
+                )
+            },
+            tool = {
+                toolCalls += 1
+                error("OBI tool must not run for KWANT conversation")
+            },
+        )
+
+        controller.runTurn(
+            input = "Sprawdź produkt",
+            previousResponseId = null,
+            conversationStoreNumber = "205",
+            conversationProviderId = "kwant-pl",
+        ) { }
+
+        assertEquals(0, toolCalls)
+        assertEquals("obi-pl", rejectedProvider)
+    }
+
+    @Test
+    fun `OBI conversation executes only legacy OBI local tool path`() = runBlocking {
+        var obiCalls = 0
+        var providerCalls = 0
+        val controller = controller(
+            start = {
+                successTool(
+                    responseId = "resp_obi_tool",
+                    callId = "call_obi",
+                    query = "klej",
+                    storeNumber = "075",
+                )
+            },
+            continueCall = { _, _, _ ->
+                successAnswer(
+                    responseId = "resp_obi_final",
+                    text = "OBI done",
+                    productObiks = listOf("1234567"),
+                )
+            },
+            obiTool = { arguments ->
+                obiCalls += 1
+                verifiedResult(
+                    arguments.query,
+                    snapshot(
+                        obik = "1234567",
+                        name = "Legacy OBI verified",
+                        stock = 7,
+                        price = BigDecimal("12.99"),
+                        storeNumber = "075",
+                    ),
+                )
+            },
+            providerTool = {
+                providerCalls += 1
+                error("provider tool must not run for OBI")
+            },
+        )
+
+        val result = controller.runTurn(
+            input = "Sprawdź klej",
+            previousResponseId = null,
+            conversationStoreNumber = "075",
+            conversationProviderId = "obi-pl",
+        ) { } as AdvisorUiState.Success
+
+        assertEquals(1, obiCalls)
+        assertEquals(0, providerCalls)
+        assertEquals("1234567", result.products.single().obik)
+        assertEquals("075", result.products.single().storeNumber)
+    }
+
+    @Test
+    fun `KWANT conversation executes only provider local tool path`() = runBlocking {
+        var obiCalls = 0
+        var providerCalls = 0
+        val kwantSnapshot = VerifiedProductSnapshot(
+            obik = "580",
+            name = "Wyłącznik",
+            stock = 140,
+            grossPrice = BigDecimal("14.55"),
+            productUrl = "https://kwant.net.pl/produkt/test-580",
+            verifiedAt = 1234L,
+            storeNumber = "205",
+            providerId = "kwant-pl",
+            productId = "580",
+            branchId = "205",
+            articleNumber = "MBN116E/HAG",
+            priceScope = ProviderPriceScope.ONLINE,
+        )
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.ToolRequest(
+                        responseId = "resp_kwant_tool",
+                        callId = "call_kwant",
+                        arguments = AdvisorToolArguments(
+                            providerId = "kwant-pl",
+                            storeNumber = "205",
+                            queries = listOf(
+                                AdvisorToolQuery("MBN116E", 1),
+                            ),
+                        ),
+                    ),
+                )
+            },
+            continueCall = { _, _, _ ->
+                successAnswerRefs(
+                    responseId = "resp_kwant_final",
+                    text = "KWANT done",
+                    productRefs = listOf(
+                        AdvisorProductRef(
+                            storeNumber = "205",
+                            obik = "580",
+                            providerId = "kwant-pl",
+                        ),
+                    ),
+                )
+            },
+            obiTool = {
+                obiCalls += 1
+                error("OBI tool must not run for KWANT")
+            },
+            providerTool = { arguments ->
+                providerCalls += 1
+                assertEquals("kwant-pl", arguments.providerId)
+                assertEquals("205", arguments.storeNumber)
+                AdvisorToolExecutionResult.Success(
+                    result = AdvisorVerifiedToolResult(
+                        providerId = "kwant-pl",
+                        storeNumber = "205",
+                        results = listOf(
+                            AdvisorVerifiedQueryResult(
+                                query = "MBN116E",
+                                status = AdvisorQueryResultStatus.VERIFIED,
+                                products = listOf(
+                                    AdvisorVerifiedProduct(
+                                        obik = "580",
+                                        productId = "580",
+                                        articleNumber = "MBN116E/HAG",
+                                        name = "Wyłącznik",
+                                        stock = 140,
+                                        price = BigDecimal("14.55"),
+                                        priceScope = "online",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                    snapshots = listOf(kwantSnapshot),
+                )
+            },
+        )
+
+        val result = controller.runTurn(
+            input = "Sprawdź MBN116E",
+            previousResponseId = null,
+            conversationStoreNumber = "205",
+            conversationProviderId = "kwant-pl",
+        ) { } as AdvisorUiState.Success
+
+        assertEquals(0, obiCalls)
+        assertEquals(1, providerCalls)
+        assertEquals("kwant-pl", result.products.single().providerId)
+        assertEquals("205", result.products.single().branchId)
+        assertEquals("580", result.products.single().productId)
+        assertEquals(
+            ProviderPriceScope.ONLINE,
+            result.products.single().priceScope,
         )
     }
 
@@ -1084,21 +1368,31 @@ class AdvisorControllerTest {
         tool: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult = {
             error("tool not expected")
         },
+        obiTool: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult =
+            tool,
+        providerTool: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult =
+            tool,
         onStartStore: (String) -> Unit = {},
         onMessageStore: (String) -> Unit = {},
         onContinueStore: (String) -> Unit = {},
     ) = AdvisorController(
         isConfigured = { configured },
-        startAgent = { input, storeNumber ->
-            onStartStore(storeNumber)
+        startAgent = { input, _, branchId ->
+            onStartStore(branchId)
             start(input)
         },
-        messageAgent = { previousResponseId, input, storeNumber ->
-            onMessageStore(storeNumber)
+        messageAgent = { previousResponseId, input, _, branchId ->
+            onMessageStore(branchId)
             message(previousResponseId, input)
         },
-        continueAgent = { responseId, callId, storeNumber, continuation ->
-            onContinueStore(storeNumber)
+        continueAgent = {
+                responseId,
+                callId,
+                _,
+                branchId,
+                continuation,
+            ->
+            onContinueStore(branchId)
             when (continuation) {
                 is AdvisorToolContinuation.Verified ->
                     continueCall(
@@ -1120,7 +1414,8 @@ class AdvisorControllerTest {
                     )
             }
         },
-        executeTool = tool,
+        executeObiTool = obiTool,
+        executeProviderTool = providerTool,
     )
 
     private fun successAnswer(

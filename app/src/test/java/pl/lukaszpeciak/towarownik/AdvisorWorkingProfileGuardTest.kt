@@ -2,7 +2,6 @@ package pl.lukaszpeciak.towarownik
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.agent.AdvisorError
@@ -10,14 +9,16 @@ import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProviderId
 import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 class AdvisorWorkingProfileGuardTest {
     @Test
-    fun `OBI 075 reaches existing advisor and records one started turn`() = runBlocking {
+    fun `OBI 075 reaches advisor and records one started turn`() = runBlocking {
         var advisorCalls = 0
         var startedTurns = 0
-        var seenStore: String? = null
+        var seenProvider: String? = null
+        var seenBranch: String? = null
 
         val result = runAdvisorForWorkingProfile(
             workingProfile = WorkingProfile(
@@ -27,9 +28,10 @@ class AdvisorWorkingProfileGuardTest {
             onAdvisorStarted = {
                 startedTurns += 1
             },
-        ) { storeNumber ->
+        ) { providerId, branchId ->
             advisorCalls += 1
-            seenStore = storeNumber
+            seenProvider = providerId
+            seenBranch = branchId
             AdvisorUiState.Success(
                 text = "Synthetic",
                 responseId = "resp_1",
@@ -38,17 +40,17 @@ class AdvisorWorkingProfileGuardTest {
 
         assertEquals(1, advisorCalls)
         assertEquals(1, startedTurns)
-        assertEquals("075", seenStore)
+        assertEquals("obi-pl", seenProvider)
+        assertEquals("075", seenBranch)
         assertTrue(result is AdvisorUiState.Success)
     }
 
     @Test
-    fun `KWANT 205 records no started turn and never enters OBI advisor boundary`() = runBlocking {
+    fun `KWANT 205 reaches advisor with its own profile and records one started turn`() = runBlocking {
+        var advisorCalls = 0
         var startedTurns = 0
-        var advisorBoundaryEntered = false
-        var authorizationEntered = false
-        var proxyCalled = false
-        var obiToolCalled = false
+        var seenProvider: String? = null
+        var seenBranch: String? = null
 
         val result = runAdvisorForWorkingProfile(
             workingProfile = WorkingProfile(
@@ -58,40 +60,43 @@ class AdvisorWorkingProfileGuardTest {
             onAdvisorStarted = {
                 startedTurns += 1
             },
-        ) {
-            advisorBoundaryEntered = true
-            authorizationEntered = true
-            proxyCalled = true
-            obiToolCalled = true
-            error("KWANT must not enter OBI advisor")
+        ) { providerId, branchId ->
+            advisorCalls += 1
+            seenProvider = providerId
+            seenBranch = branchId
+            AdvisorUiState.Success(
+                text = "KWANT answer",
+                responseId = "resp_kwant",
+            )
         }
 
-        assertEquals(0, startedTurns)
-        assertFalse(advisorBoundaryEntered)
-        assertFalse(authorizationEntered)
-        assertFalse(proxyCalled)
-        assertFalse(obiToolCalled)
-        assertEquals(
-            AdvisorUiState.Error(AdvisorError.UNSUPPORTED_PROVIDER),
-            result,
-        )
+        assertEquals(1, advisorCalls)
+        assertEquals(1, startedTurns)
+        assertEquals("kwant-pl", seenProvider)
+        assertEquals("205", seenBranch)
+        assertTrue(result is AdvisorUiState.Success)
     }
 
     @Test
-    fun `KWANT guard never falls back to OBI 075`() = runBlocking {
-        val stores = mutableListOf<String>()
+    fun `unknown provider remains unsupported and records no AI turn`() = runBlocking {
+        var advisorCalls = 0
+        var startedTurns = 0
 
         val result = runAdvisorForWorkingProfile(
             workingProfile = WorkingProfile(
-                providerId = KWANT_PROVIDER_ID,
-                branchId = BranchId("205"),
+                providerId = ProviderId("unknown-provider"),
+                branchId = BranchId("x"),
             ),
-        ) { storeNumber ->
-            stores += storeNumber
+            onAdvisorStarted = {
+                startedTurns += 1
+            },
+        ) { _, _ ->
+            advisorCalls += 1
             AdvisorUiState.Idle
         }
 
-        assertTrue(stores.isEmpty())
+        assertEquals(0, advisorCalls)
+        assertEquals(0, startedTurns)
         assertEquals(
             AdvisorUiState.Error(AdvisorError.UNSUPPORTED_PROVIDER),
             result,

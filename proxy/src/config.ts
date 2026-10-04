@@ -36,8 +36,10 @@ export const MAX_WEB_CITATION_TITLE_CHARS = 200;
 export const MAX_WEB_CITATION_URL_CHARS = 2048;
 
 export const LEGACY_ADVISOR_PROTOCOL_VERSION = 1 as const;
-export const CURRENT_ADVISOR_PROTOCOL_VERSION = 2 as const;
+export const OBI_GROUPED_ADVISOR_PROTOCOL_VERSION = 2 as const;
+export const CURRENT_ADVISOR_PROTOCOL_VERSION = 3 as const;
 export const LOCAL_TOOL_NAME = "find_obi_products";
+export const PROVIDER_LOCAL_TOOL_NAME = "find_products";
 export const MAX_TOOL_PRODUCTS = 5;
 export const MAX_TOOL_QUERIES = 5;
 export const MAX_TOOL_QUERY_CHARS = 200;
@@ -185,6 +187,57 @@ export function agentInstructionsForStore(
     legacyCompatibility;
 }
 
+export const PROVIDER_V3_INSTRUCTIONS =
+  "You are Taksula, a concise practical product and technical advisor for retail staff in the home-improvement and building-materials domain. " +
+  "Help with product selection, materials, tools, electrical and lighting products, applications, installation guidance, compatibility, troubleshooting, alternatives, and customer questions. " +
+  "Answer the actual question first, give practical next steps, and ask at most one concise clarification only when genuinely required. " +
+  "Normal model knowledge is allowed for general technical explanations, installation principles, common compatibility rules, general selection, and troubleshooting. " +
+  "Verification becomes strict for a specific product, current assortment, concrete product selection, current stock, availability, or current price. find_products is authoritative for product identity, current branch stock, current provider price scope, and verified product-page facts. " +
+  "Never invent missing SKU-specific dimensions, materials, compatibility, certifications, applications, technical parameters, or limitations. Unknown means unknown, not false. " +
+  "Before calling find_products, identify whether the user wants general advice, product selection, a task/job or complete kit, explicit assortment/browse, or a direct current provider fact. " +
+  "For ordinary general technical or sales advice, do not call find_products merely because a product category can be inferred. " +
+  "For product selection, if one missing parameter materially changes the correct variant, compatibility, or safety, ask one concise targeted clarification and stop before product lookup. If enough decision-critical detail is already present, do not ask unnecessary clarification. " +
+  "For task/project or 'what do I need' intent, understand the job first. If materially different interpretations change required categories, compatibility, or safety, ask one concise clarification before concrete lookup or kit assembly. Once understood, give essentials-first advice and distinguish essentials from optional convenience items. " +
+  "Search concrete products for a task only when the user explicitly asks for provider products, a verified kit, current assortment, or current provider facts. For a sufficiently specified verified kit, batch related categories where practical and do not build an exhaustive shopping list. " +
+  "Use find_products immediately for explicit assortment/browse requests, current price, current stock, availability, direct specific-product verification, sufficiently specified product selection when the user asks what the selected branch has, and explicit sufficiently specified verified-kit requests. " +
+  "For browse intent, return several relevant verified variants when useful and do not imply bounded results are the whole assortment. " +
+  "For complements, be restrained. Mention or search extras only when they materially help correctness, compatibility, safety, avoiding an obvious failure, or when the user asks for them. " +
+  "If local_tool_limit_reached is returned, do not request find_products again in the same USER turn; finish from already verified products plus relevant general guidance. " +
+  "Preserve strict availability semantics: stock 0 means confirmed unavailable in the selected branch; null stock means unknown; not_found means no verified match was found for that query; unavailable means retrieval could not establish the fact; null price means current price is unknown. " +
+  "Current stock and price must be freshly verified when relevant; historical conversation values are not current authority. " +
+  "The selected provider and branch are fixed by the conversation context. Never switch provider or branch, never substitute another branch, and never fall back to OBI. " +
+  "Use richer verified product-page facts selectively for the user's question instead of dumping all technicalFacts. " +
+  "Only reference products verified by find_products during the current USER turn. Structured productRefs must use providerId, branchId, and productId from those verified products. " +
+  "Web search is selective, not default, and never replaces find_products for current provider stock, availability, price, or locally verified product selection. For missing SKU-specific technical facts, prefer official manufacturer product pages, manuals, datasheets, and technical documentation. " +
+  "Reply naturally in the user's language, avoid unnecessary disclaimers, and keep answers concise and practical.";
+
+export const KWANT_V3_APPENDIX =
+  " KWANT-specific rules: selected providerId and branchId are fixed by the conversation WorkingProfile. " +
+  "Do not invent, infer, or switch provider or branch. find_products is authoritative for current KWANT product and branch-stock facts. " +
+  "KWANT stock is branch-specific. If a verified product has priceScope=online, describe that value only as the public online price, never as a branch, counter, negotiated, or customer-specific price. " +
+  "Use returned productId and articleNumber exactly as verified; do not describe a KWANT identifier as OBIK.";
+
+export function agentInstructionsForProfile(
+  providerId: string,
+  branchId: string,
+  protocolVersion: number = CURRENT_ADVISOR_PROTOCOL_VERSION,
+): string {
+  if (protocolVersion !== CURRENT_ADVISOR_PROTOCOL_VERSION) {
+    return agentInstructionsForStore(branchId, protocolVersion);
+  }
+
+  const providerContext =
+    " Protocol v3 provider context: selected providerId=" +
+    providerId +
+    ", selected branchId=" +
+    branchId +
+    ". find_products must use exactly these values.";
+
+  return PROVIDER_V3_INSTRUCTIONS +
+    providerContext +
+    (providerId === "kwant-pl" ? KWANT_V3_APPENDIX : "");
+}
+
 export const WEB_SEARCH_TOOL = {
   type: "web_search",
 } as const;
@@ -273,6 +326,67 @@ export const OBI_TOOL = {
   },
 } as const;
 
+export const PROVIDER_TOOL = {
+  type: "function",
+  name: PROVIDER_LOCAL_TOOL_NAME,
+  description:
+    "Ask the Android app to find grouped verified products for the current provider and branch. Use one well-planned multi-query batch where practical.",
+  strict: true,
+  parameters: {
+    type: "object",
+    properties: {
+      providerId: {
+        type: "string",
+        pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        description:
+          "Provider id from the current conversation context. Do not invent or switch it.",
+      },
+      branchId: {
+        type: "string",
+        pattern: "^[A-Za-z0-9._-]{1,64}$",
+        description:
+          "Branch id from the current conversation context. Do not invent or switch it.",
+      },
+      queries: {
+        type: "array",
+        minItems: 1,
+        maxItems: MAX_TOOL_QUERIES,
+        description:
+          "One to five product-category searches. The sum of all limits must be at most 5.",
+        items: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              minLength: 1,
+              maxLength: MAX_TOOL_QUERY_CHARS,
+            },
+            limit: {
+              type: "integer",
+              minimum: 1,
+              maximum: MAX_TOOL_PRODUCTS,
+            },
+          },
+          required: ["query", "limit"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["providerId", "branchId", "queries"],
+    additionalProperties: false,
+  },
+} as const;
+
+export function localToolForProtocol(protocolVersion: number) {
+  if (protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION) {
+    return LEGACY_OBI_TOOL;
+  }
+  if (protocolVersion === OBI_GROUPED_ADVISOR_PROTOCOL_VERSION) {
+    return OBI_TOOL;
+  }
+  return PROVIDER_TOOL;
+}
+
 export function obiToolForProtocol(protocolVersion: number) {
   return protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION
     ? LEGACY_OBI_TOOL
@@ -317,3 +431,53 @@ export const FINAL_ANSWER_FORMAT = {
     additionalProperties: false,
   },
 } as const;
+
+
+export const PROVIDER_FINAL_ANSWER_FORMAT = {
+  type: "json_schema",
+  name: "advisor_final_answer",
+  description:
+    "Concise advisor text plus provider-owned references for locally verified product cards.",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      text: {
+        type: "string",
+        minLength: 1,
+        maxLength: MAX_ANSWER_CHARS,
+      },
+      productRefs: {
+        type: "array",
+        maxItems: MAX_SELECTED_PRODUCT_REFS,
+        items: {
+          type: "object",
+          properties: {
+            providerId: {
+              type: "string",
+              pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            },
+            branchId: {
+              type: "string",
+              pattern: "^[A-Za-z0-9._-]{1,64}$",
+            },
+            productId: {
+              type: "string",
+              pattern: "^[A-Za-z0-9._-]{1,128}$",
+            },
+          },
+          required: ["providerId", "branchId", "productId"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["text", "productRefs"],
+    additionalProperties: false,
+  },
+} as const;
+
+export function finalAnswerFormatForProtocol(protocolVersion: number) {
+  return protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION
+    ? PROVIDER_FINAL_ANSWER_FORMAT
+    : FINAL_ANSWER_FORMAT;
+}

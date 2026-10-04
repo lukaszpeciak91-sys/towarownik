@@ -40,7 +40,7 @@ class AdvisorProxyClientTest {
                 body.keys,
             )
             assertEquals(
-                ADVISOR_PROTOCOL_VERSION,
+                OBI_ADVISOR_PROTOCOL_VERSION,
                 body["protocolVersion"]?.jsonPrimitive?.intOrNull,
             )
             assertEquals(
@@ -84,7 +84,7 @@ class AdvisorProxyClientTest {
                 body.keys,
             )
             assertEquals(
-                ADVISOR_PROTOCOL_VERSION,
+                OBI_ADVISOR_PROTOCOL_VERSION,
                 body["protocolVersion"]?.jsonPrimitive?.intOrNull,
             )
             assertEquals(
@@ -100,6 +100,151 @@ class AdvisorProxyClientTest {
                 body["storeNumber"]?.jsonPrimitive?.content,
             )
             assertFalse(raw.contains(FAKE_TOKEN))
+        }
+    }
+
+    @Test
+    fun `provider start sends protocol v3 provider and branch`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(answerResponse())
+            val client = client(server, FAKE_TOKEN)
+
+            val result = client.start(
+                message = "sprawdź MBN116E",
+                providerId = "kwant-pl",
+                branchId = "205",
+            )
+
+            assertTrue(result is AdvisorProxyCallResult.Success)
+            val request = server.takeRequest()
+            val body = Json.parseToJsonElement(
+                request.body.readUtf8(),
+            ).jsonObject
+            assertEquals(
+                setOf(
+                    "protocolVersion",
+                    "message",
+                    "providerId",
+                    "branchId",
+                ),
+                body.keys,
+            )
+            assertEquals(
+                ADVISOR_PROTOCOL_VERSION,
+                body["protocolVersion"]?.jsonPrimitive?.intOrNull,
+            )
+            assertEquals(
+                "kwant-pl",
+                body["providerId"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                "205",
+                body["branchId"]?.jsonPrimitive?.content,
+            )
+        }
+    }
+
+    @Test
+    fun `provider response parses KWANT tool and product refs`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        """
+                        {
+                          "type":"tool_request",
+                          "responseId":"resp_tool",
+                          "tool":{
+                            "name":"find_products",
+                            "callId":"call_1",
+                            "arguments":{
+                              "providerId":"kwant-pl",
+                              "branchId":"205",
+                              "queries":[{"query":"MBN116E","limit":1}]
+                            }
+                          },
+                          "webSearchCalls":0
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+            val client = client(server, FAKE_TOKEN)
+
+            val tool = client.start(
+                message = "sprawdź MBN116E",
+                providerId = "kwant-pl",
+                branchId = "205",
+            ) as AdvisorProxyCallResult.Success
+
+            val request = tool.result as AdvisorProxyResult.ToolRequest
+            assertEquals("kwant-pl", request.arguments.providerId)
+            assertEquals("205", request.arguments.branchId)
+
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        """
+                        {
+                          "type":"answer",
+                          "responseId":"resp_final",
+                          "text":"Mam produkt.",
+                          "productRefs":[
+                            {
+                              "providerId":"kwant-pl",
+                              "branchId":"205",
+                              "productId":"580"
+                            }
+                          ],
+                          "webSearchCalls":0
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val result = client.continueTurn(
+                responseId = "resp_tool",
+                callId = "call_1",
+                providerId = "kwant-pl",
+                branchId = "205",
+                continuation = AdvisorToolContinuation.Verified(
+                    AdvisorVerifiedToolResult(
+                        providerId = "kwant-pl",
+                        storeNumber = "205",
+                        results = listOf(
+                            AdvisorVerifiedQueryResult(
+                                query = "MBN116E",
+                                status =
+                                    AdvisorQueryResultStatus.VERIFIED,
+                                products = listOf(
+                                    AdvisorVerifiedProduct(
+                                        obik = "580",
+                                        productId = "580",
+                                        articleNumber = "MBN116E/HAG",
+                                        name = "Wyłącznik",
+                                        stock = 140,
+                                        price = BigDecimal("14.55"),
+                                        priceScope = "online",
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ) as AdvisorProxyCallResult.Success
+
+            val answer = result.result as AdvisorProxyResult.Answer
+            assertEquals(
+                listOf(
+                    AdvisorProductRef(
+                        storeNumber = "205",
+                        obik = "580",
+                        providerId = "kwant-pl",
+                    ),
+                ),
+                answer.productRefs,
+            )
         }
     }
 
@@ -878,7 +1023,7 @@ class AdvisorProxyClientTest {
                 body.keys,
             )
             assertEquals(
-                ADVISOR_PROTOCOL_VERSION,
+                OBI_ADVISOR_PROTOCOL_VERSION,
                 body["protocolVersion"]?.jsonPrimitive?.intOrNull,
             )
             assertEquals("resp_previous", body["responseId"]?.jsonPrimitive?.content)

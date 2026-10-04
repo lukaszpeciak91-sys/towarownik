@@ -5,6 +5,7 @@ import pl.lukaszpeciak.towarownik.BuildConfig
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductKey
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 
 internal enum class AdvisorError {
     NOT_CONFIGURED,
@@ -15,6 +16,7 @@ internal enum class AdvisorError {
     OBI,
     INPUT,
     UNSUPPORTED_PROVIDER,
+    PRODUCT_PROVIDER,
 }
 
 internal sealed interface AdvisorUiState {
@@ -39,20 +41,26 @@ internal class AdvisorController(
     private val isConfigured: () -> Boolean,
     private val startAgent: suspend (
         message: String,
-        storeNumber: String,
+        providerId: String,
+        branchId: String,
     ) -> AdvisorProxyCallResult,
     private val messageAgent: suspend (
         previousResponseId: String,
         message: String,
-        storeNumber: String,
+        providerId: String,
+        branchId: String,
     ) -> AdvisorProxyCallResult,
     private val continueAgent: suspend (
         responseId: String,
         callId: String,
-        storeNumber: String,
+        providerId: String,
+        branchId: String,
         continuation: AdvisorToolContinuation,
     ) -> AdvisorProxyCallResult,
-    private val executeTool: suspend (
+    private val executeObiTool: suspend (
+        AdvisorToolArguments,
+    ) -> AdvisorToolExecutionResult,
+    private val executeProviderTool: suspend (
         AdvisorToolArguments,
     ) -> AdvisorToolExecutionResult,
 ) {
@@ -60,6 +68,7 @@ internal class AdvisorController(
         input: String,
         previousResponseId: String?,
         conversationStoreNumber: String = DEFAULT_OBI_STORE_NUMBER,
+        conversationProviderId: String = OBI_PROVIDER_ID.value,
         onOpenAiResponse: (AdvisorUsage?, Long) -> Unit = { _, _ -> },
         onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
@@ -69,14 +78,34 @@ internal class AdvisorController(
             return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
         }
 
-        val authorization = runCatching {
-            AdvisorTurnStoreAuthorization.capture(
-                conversationStoreNumber = conversationStoreNumber,
-                currentUserMessage = normalizedInput,
-            )
-        }.getOrElse {
-            return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
-        }
+        val obiAuthorization =
+            if (conversationProviderId == OBI_PROVIDER_ID.value) {
+                runCatching {
+                    AdvisorTurnStoreAuthorization.capture(
+                        conversationStoreNumber =
+                            conversationStoreNumber,
+                        currentUserMessage = normalizedInput,
+                    )
+                }.getOrElse {
+                    return AdvisorUiState.Error(
+                        AdvisorError.INPUT,
+                    ).also(onState)
+                }
+            } else {
+                null
+            }
+
+        fun isToolAuthorized(
+            arguments: AdvisorToolArguments,
+        ): Boolean =
+            if (conversationProviderId == OBI_PROVIDER_ID.value) {
+                arguments.providerId == OBI_PROVIDER_ID.value &&
+                    requireNotNull(obiAuthorization)
+                        .isAuthorized(arguments.storeNumber)
+            } else {
+                arguments.providerId == conversationProviderId &&
+                    arguments.storeNumber == conversationStoreNumber
+            }
 
         if (!isConfigured()) {
             return AdvisorUiState.Error(
@@ -90,12 +119,14 @@ internal class AdvisorController(
             if (previousResponseId == null) {
                 startAgent(
                     normalizedInput,
+                    conversationProviderId,
                     conversationStoreNumber,
                 )
             } else {
                 messageAgent(
                     previousResponseId,
                     normalizedInput,
+                    conversationProviderId,
                     conversationStoreNumber,
                 )
             }
@@ -160,11 +191,14 @@ internal class AdvisorController(
                                 continueAgent(
                                     toolRequest.responseId,
                                     toolRequest.callId,
+                                    conversationProviderId,
                                     conversationStoreNumber,
                                     AdvisorToolContinuation.LocalToolLimitReached(
                                         queries = toolRequest.arguments.queries,
                                         storeNumber =
                                             toolRequest.arguments.storeNumber,
+                                        providerId =
+                                            toolRequest.arguments.providerId,
                                     ),
                                 )
                             }
@@ -189,18 +223,19 @@ internal class AdvisorController(
 
                     val arguments = toolRequest.arguments
                     val continuation =
-                        if (!authorization.isAuthorized(
-                                arguments.storeNumber,
-                            )
-                        ) {
+                        if (!isToolAuthorized(arguments)) {
                             AdvisorToolContinuation.RejectedStore(
                                 queries = arguments.queries,
                                 storeNumber = arguments.storeNumber,
+                                providerId = arguments.providerId,
                             )
                         } else {
                             onState(AdvisorUiState.RunningLocalTool)
                             when (
-                                val localResult = safeExecuteTool(arguments)
+                                val localResult = safeExecuteTool(
+                                    conversationProviderId = conversationProviderId,
+                                    arguments = arguments,
+                                )
                             ) {
                                 is AdvisorToolExecutionResult.Success -> {
                                     localResult.snapshots.forEach {
@@ -230,11 +265,12 @@ internal class AdvisorController(
                                     AdvisorToolContinuation.RejectedStore(
                                         queries = arguments.queries,
                                         storeNumber = arguments.storeNumber,
+                                        providerId = arguments.providerId,
                                     )
 
                                 AdvisorToolExecutionResult.Failure ->
                                     return AdvisorUiState.Error(
-                                        AdvisorError.OBI,
+                                        AdvisorError.PRODUCT_PROVIDER,
                                     ).also(onState)
                             }
                         }
@@ -245,6 +281,7 @@ internal class AdvisorController(
                             continueAgent(
                                 toolRequest.responseId,
                                 toolRequest.callId,
+                                conversationProviderId,
                                 conversationStoreNumber,
                                 continuation,
                             )
@@ -286,10 +323,15 @@ internal class AdvisorController(
     }
 
     private suspend fun safeExecuteTool(
+        conversationProviderId: String,
         arguments: AdvisorToolArguments,
     ): AdvisorToolExecutionResult =
         try {
-            executeTool(arguments)
+            if (conversationProviderId == OBI_PROVIDER_ID.value) {
+                executeObiTool(arguments)
+            } else {
+                executeProviderTool(arguments)
+            }
         } catch (exception: CancellationException) {
             throw exception
         } catch (_: Exception) {
@@ -312,16 +354,74 @@ internal class AdvisorController(
     companion object {
         fun production(): AdvisorController {
             val proxyClient = AdvisorProxyClient()
-            val localTool = FindObiProductsTool()
+            val obiTool = FindObiProductsTool()
+            val providerTool = FindProviderProductsTool()
             return AdvisorController(
                 isConfigured = {
                     BuildConfig.TOWAROWNIK_APP_TOKEN.isNotBlank() &&
                         proxyClient.isConfigured()
                 },
-                startAgent = proxyClient::start,
-                messageAgent = proxyClient::message,
-                continueAgent = proxyClient::continueTurn,
-                executeTool = localTool::execute,
+                startAgent = { message, providerId, branchId ->
+                    if (providerId == OBI_PROVIDER_ID.value) {
+                        proxyClient.start(
+                            message = message,
+                            storeNumber = branchId,
+                        )
+                    } else {
+                        proxyClient.start(
+                            message = message,
+                            providerId = providerId,
+                            branchId = branchId,
+                        )
+                    }
+                },
+                messageAgent = {
+                        previousResponseId,
+                        message,
+                        providerId,
+                        branchId,
+                    ->
+                    if (providerId == OBI_PROVIDER_ID.value) {
+                        proxyClient.message(
+                            previousResponseId = previousResponseId,
+                            message = message,
+                            storeNumber = branchId,
+                        )
+                    } else {
+                        proxyClient.message(
+                            previousResponseId = previousResponseId,
+                            message = message,
+                            providerId = providerId,
+                            branchId = branchId,
+                        )
+                    }
+                },
+                continueAgent = {
+                        responseId,
+                        callId,
+                        providerId,
+                        branchId,
+                        continuation,
+                    ->
+                    if (providerId == OBI_PROVIDER_ID.value) {
+                        proxyClient.continueTurn(
+                            responseId = responseId,
+                            callId = callId,
+                            storeNumber = branchId,
+                            continuation = continuation,
+                        )
+                    } else {
+                        proxyClient.continueTurn(
+                            responseId = responseId,
+                            callId = callId,
+                            providerId = providerId,
+                            branchId = branchId,
+                            continuation = continuation,
+                        )
+                    }
+                },
+                executeObiTool = obiTool::execute,
+                executeProviderTool = providerTool::execute,
             )
         }
     }

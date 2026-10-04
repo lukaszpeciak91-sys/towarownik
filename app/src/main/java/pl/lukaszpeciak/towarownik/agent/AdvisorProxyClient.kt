@@ -29,6 +29,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import pl.lukaszpeciak.towarownik.BuildConfig
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 
 internal class AdvisorProxyClient(
     private val appToken: String = BuildConfig.TOWAROWNIK_APP_TOKEN,
@@ -62,7 +63,7 @@ internal class AdvisorProxyClient(
         }
 
         val body = buildJsonObject {
-            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("protocolVersion", OBI_ADVISOR_PROTOCOL_VERSION)
             put("message", message)
             put("storeNumber", storeNumber)
         }
@@ -70,6 +71,33 @@ internal class AdvisorProxyClient(
         return execute(
             endpoint = "v1/agent/start",
             body = body,
+        )
+    }
+
+    suspend fun start(
+        message: String,
+        providerId: String,
+        branchId: String,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.NOT_CONFIGURED,
+            )
+        }
+        if (!isValidProfile(providerId, branchId)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
+        return execute(
+            endpoint = "v1/agent/start",
+            body = buildJsonObject {
+                put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+                put("message", message)
+                put("providerId", providerId)
+                put("branchId", branchId)
+            },
         )
     }
 
@@ -91,7 +119,7 @@ internal class AdvisorProxyClient(
         }
 
         val body = buildJsonObject {
-            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("protocolVersion", OBI_ADVISOR_PROTOCOL_VERSION)
             put("previousResponseId", previousResponseId)
             put("message", message)
             put("storeNumber", storeNumber)
@@ -100,6 +128,35 @@ internal class AdvisorProxyClient(
         return execute(
             endpoint = "v1/agent/message",
             body = body,
+        )
+    }
+
+    suspend fun message(
+        previousResponseId: String,
+        message: String,
+        providerId: String,
+        branchId: String,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.NOT_CONFIGURED,
+            )
+        }
+        if (!isValidProfile(providerId, branchId)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
+        return execute(
+            endpoint = "v1/agent/message",
+            body = buildJsonObject {
+                put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+                put("previousResponseId", previousResponseId)
+                put("message", message)
+                put("providerId", providerId)
+                put("branchId", branchId)
+            },
         )
     }
 
@@ -150,6 +207,74 @@ internal class AdvisorProxyClient(
                     storeNumber = storeNumber,
                     result = buildJsonObject {
                         put("storeNumber", continuation.storeNumber)
+                        put("queries", continuation.queries.toJson())
+                        put(
+                            "rejection",
+                            "local_tool_limit_reached",
+                        )
+                    },
+                ).takeIf(::fitsContinueByteBudget)
+        } ?: return AdvisorProxyCallResult.Failure(
+            AdvisorProxyFailureKind.PROTOCOL,
+        )
+
+        return execute(
+            endpoint = "v1/agent/continue",
+            body = body,
+        )
+    }
+
+    suspend fun continueTurn(
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        continuation: AdvisorToolContinuation,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.NOT_CONFIGURED,
+            )
+        }
+        if (!isValidProfile(providerId, branchId)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+
+        val body = when (continuation) {
+            is AdvisorToolContinuation.Verified ->
+                buildBudgetedVerifiedContinueBodyV3(
+                    responseId = responseId,
+                    callId = callId,
+                    providerId = providerId,
+                    branchId = branchId,
+                    result = continuation.result,
+                )
+
+            is AdvisorToolContinuation.RejectedStore ->
+                buildContinueBodyV3(
+                    responseId = responseId,
+                    callId = callId,
+                    providerId = providerId,
+                    branchId = branchId,
+                    result = buildJsonObject {
+                        put("providerId", continuation.providerId)
+                        put("branchId", continuation.storeNumber)
+                        put("queries", continuation.queries.toJson())
+                        put("rejection", "branch_not_authorized")
+                    },
+                ).takeIf(::fitsContinueByteBudget)
+
+            is AdvisorToolContinuation.LocalToolLimitReached ->
+                buildContinueBodyV3(
+                    responseId = responseId,
+                    callId = callId,
+                    providerId = providerId,
+                    branchId = branchId,
+                    result = buildJsonObject {
+                        put("providerId", continuation.providerId)
+                        put("branchId", continuation.storeNumber)
                         put("queries", continuation.queries.toJson())
                         put(
                             "rejection",
@@ -313,24 +438,50 @@ internal class AdvisorProxyClient(
                     ?.map { element ->
                         val reference = element as? JsonObject
                             ?: error("Invalid product reference")
-                        requireExactKeys(
-                            reference,
-                            setOf("storeNumber", "obik"),
-                        )
-                        val storeNumber = reference["storeNumber"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            ?.takeIf(STORE_NUMBER_PATTERN::matches)
-                            ?: error("Invalid selected store")
-                        val obik = reference["obik"]
-                            ?.jsonPrimitive
-                            ?.contentOrNull
-                            ?.takeIf(OBIK_PATTERN::matches)
-                            ?: error("Invalid selected OBIK")
-                        AdvisorProductRef(
-                            storeNumber = storeNumber,
-                            obik = obik,
-                        )
+                        when {
+                            reference.keys ==
+                                setOf("providerId", "branchId", "productId") -> {
+                                val providerId = reference["providerId"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(PROVIDER_ID_PATTERN::matches)
+                                    ?: error("Invalid selected provider")
+                                val branchId = reference["branchId"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(BRANCH_ID_PATTERN::matches)
+                                    ?: error("Invalid selected branch")
+                                val productId = reference["productId"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(PRODUCT_ID_PATTERN::matches)
+                                    ?: error("Invalid selected product id")
+                                AdvisorProductRef(
+                                    storeNumber = branchId,
+                                    obik = productId,
+                                    providerId = providerId,
+                                )
+                            }
+
+                            reference.keys == setOf("storeNumber", "obik") -> {
+                                val storeNumber = reference["storeNumber"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(STORE_NUMBER_PATTERN::matches)
+                                    ?: error("Invalid selected store")
+                                val obik = reference["obik"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?.takeIf(OBIK_PATTERN::matches)
+                                    ?: error("Invalid selected OBIK")
+                                AdvisorProductRef(
+                                    storeNumber = storeNumber,
+                                    obik = obik,
+                                )
+                            }
+
+                            else -> error("Invalid product reference")
+                        }
                     }
                     ?.takeIf { it.size <= MAX_TOOL_PRODUCTS }
                     ?: error("Invalid selected products")
@@ -365,21 +516,49 @@ internal class AdvisorProxyClient(
                     tool,
                     setOf("name", "callId", "arguments"),
                 )
+                val toolName =
+                    tool["name"]?.jsonPrimitive?.contentOrNull
+                        ?: error("Missing tool name")
                 require(
-                    tool["name"]?.jsonPrimitive?.contentOrNull ==
-                        FIND_OBI_PRODUCTS,
+                    toolName == FIND_OBI_PRODUCTS ||
+                        toolName == FIND_PRODUCTS,
                 )
                 val callId = tool["callId"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf { it.isNotBlank() && it.length <= MAX_ID_CHARS }
                     ?: error("Invalid call id")
                 val arguments = tool["arguments"] as? JsonObject
                     ?: error("Missing tool arguments")
-                requireExactKeys(arguments, setOf("storeNumber", "queries"))
-                val storeNumber = arguments["storeNumber"]
-                    ?.jsonPrimitive
-                    ?.contentOrNull
-                    ?.takeIf(STORE_NUMBER_PATTERN::matches)
-                    ?: error("Invalid tool store")
+
+                val providerId: String
+                val branchId: String
+                if (toolName == FIND_PRODUCTS) {
+                    requireExactKeys(
+                        arguments,
+                        setOf("providerId", "branchId", "queries"),
+                    )
+                    providerId = arguments["providerId"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.takeIf(PROVIDER_ID_PATTERN::matches)
+                        ?: error("Invalid tool provider")
+                    branchId = arguments["branchId"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.takeIf(BRANCH_ID_PATTERN::matches)
+                        ?: error("Invalid tool branch")
+                } else {
+                    requireExactKeys(
+                        arguments,
+                        setOf("storeNumber", "queries"),
+                    )
+                    providerId = OBI_PROVIDER_ID.value
+                    branchId = arguments["storeNumber"]
+                        ?.jsonPrimitive
+                        ?.contentOrNull
+                        ?.takeIf(STORE_NUMBER_PATTERN::matches)
+                        ?: error("Invalid tool store")
+                }
+
                 val queries = arguments["queries"]
                     ?.jsonArray
                     ?.map { element ->
@@ -417,8 +596,9 @@ internal class AdvisorProxyClient(
                     responseId = responseId,
                     callId = callId,
                     arguments = AdvisorToolArguments(
-                        storeNumber = storeNumber,
+                        storeNumber = branchId,
                         queries = queries,
+                        providerId = providerId,
                     ),
                     webSearchCalls = root.requireWebSearchCallCount(),
                     usage = parseUsageOrNull(root["usage"]),
@@ -428,6 +608,108 @@ internal class AdvisorProxyClient(
             else -> error("Unknown response type")
         }
     }
+
+    private fun buildBudgetedVerifiedContinueBodyV3(
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        result: AdvisorVerifiedToolResult,
+    ): JsonObject? {
+        var grouped = result.results
+
+        fun currentBody(): JsonObject =
+            buildContinueBodyV3(
+                responseId = responseId,
+                callId = callId,
+                providerId = providerId,
+                branchId = branchId,
+                result = result.copy(results = grouped).toJsonV3(),
+            )
+
+        fun updateProduct(
+            groupIndex: Int,
+            productIndex: Int,
+            transform: (AdvisorVerifiedProduct) -> AdvisorVerifiedProduct,
+        ) {
+            grouped = grouped.toMutableList().also { groups ->
+                val group = groups[groupIndex]
+                val products = group.products.toMutableList()
+                products[productIndex] = transform(products[productIndex])
+                groups[groupIndex] = group.copy(products = products)
+            }
+        }
+
+        var body = currentBody()
+        if (fitsContinueByteBudget(body)) return body
+
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                while (
+                    grouped[groupIndex]
+                        .products[productIndex]
+                        .technicalFacts
+                        .isNotEmpty()
+                ) {
+                    updateProduct(groupIndex, productIndex) { product ->
+                        product.copy(
+                            technicalFacts =
+                                product.technicalFacts.dropLast(1),
+                        )
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) return body
+                }
+            }
+        }
+
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                if (
+                    grouped[groupIndex]
+                        .products[productIndex]
+                        .shortDescription != null
+                ) {
+                    updateProduct(groupIndex, productIndex) {
+                        it.copy(shortDescription = null)
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) return body
+                }
+            }
+        }
+
+        for (groupIndex in grouped.indices.reversed()) {
+            for (productIndex in grouped[groupIndex].products.indices.reversed()) {
+                if (grouped[groupIndex].products[productIndex].brand != null) {
+                    updateProduct(groupIndex, productIndex) {
+                        it.copy(brand = null)
+                    }
+                    body = currentBody()
+                    if (fitsContinueByteBudget(body)) return body
+                }
+            }
+        }
+
+        return body.takeIf(::fitsContinueByteBudget)
+    }
+
+    private fun buildContinueBodyV3(
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        result: JsonObject,
+    ): JsonObject =
+        buildJsonObject {
+            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("responseId", responseId)
+            put("callId", callId)
+            put("providerId", providerId)
+            put("branchId", branchId)
+            put("tool", FIND_PRODUCTS)
+            put("result", result)
+        }
 
     private fun buildBudgetedVerifiedContinueBody(
         responseId: String,
@@ -531,7 +813,7 @@ internal class AdvisorProxyClient(
         result: JsonObject,
     ): JsonObject =
         buildJsonObject {
-            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("protocolVersion", OBI_ADVISOR_PROTOCOL_VERSION)
             put("responseId", responseId)
             put("callId", callId)
             put("storeNumber", storeNumber)
@@ -556,6 +838,77 @@ internal class AdvisorProxyClient(
                     },
                 )
             }
+        }
+
+    private fun AdvisorVerifiedToolResult.toJsonV3(): JsonObject =
+        buildJsonObject {
+            put("providerId", providerId)
+            put("branchId", storeNumber)
+            put(
+                "results",
+                buildJsonArray {
+                    results.forEach { group ->
+                        add(
+                            buildJsonObject {
+                                put("query", group.query)
+                                put(
+                                    "status",
+                                    when (group.status) {
+                                        AdvisorQueryResultStatus.VERIFIED ->
+                                            "verified"
+                                        AdvisorQueryResultStatus.NOT_FOUND ->
+                                            "not_found"
+                                        AdvisorQueryResultStatus.UNAVAILABLE ->
+                                            "unavailable"
+                                    },
+                                )
+                                put(
+                                    "products",
+                                    buildJsonArray {
+                                        group.products.forEach { product ->
+                                            add(product.toJsonV3())
+                                        }
+                                    },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+        }
+
+    private fun AdvisorVerifiedProduct.toJsonV3(): JsonObject =
+        buildJsonObject {
+            put("productId", productId)
+            put(
+                "articleNumber",
+                articleNumber?.let(::JsonPrimitive) ?: JsonNull,
+            )
+            put("name", name)
+            put("brand", brand?.let(::JsonPrimitive) ?: JsonNull)
+            put(
+                "shortDescription",
+                shortDescription?.let(::JsonPrimitive) ?: JsonNull,
+            )
+            put(
+                "technicalFacts",
+                buildJsonArray {
+                    technicalFacts.forEach { fact ->
+                        add(
+                            buildJsonObject {
+                                put("label", fact.label)
+                                put("value", fact.value)
+                            },
+                        )
+                    }
+                },
+            )
+            put("stock", stock?.let(::JsonPrimitive) ?: JsonNull)
+            put("price", price?.let(::JsonPrimitive) ?: JsonNull)
+            put(
+                "priceScope",
+                priceScope?.let(::JsonPrimitive) ?: JsonNull,
+            )
         }
 
     private fun AdvisorVerifiedToolResult.toJson(): JsonObject =
@@ -834,11 +1187,22 @@ internal class AdvisorProxyClient(
     private fun String.normalizeWhitespace(): String =
         replace(CONTROL_OR_WHITESPACE, " ").trim()
 
+    private fun isValidProfile(
+        providerId: String,
+        branchId: String,
+    ): Boolean =
+        PROVIDER_ID_PATTERN.matches(providerId) &&
+            BRANCH_ID_PATTERN.matches(branchId)
+
     private companion object {
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
         val CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
         val OBIK_PATTERN = Regex("""\d{7}""")
         val STORE_NUMBER_PATTERN = Regex("""\d{3}""")
+        val PROVIDER_ID_PATTERN =
+            Regex("""[a-z0-9]+(?:-[a-z0-9]+)*""")
+        val BRANCH_ID_PATTERN = Regex("""[A-Za-z0-9._-]{1,64}""")
+        val PRODUCT_ID_PATTERN = Regex("""[A-Za-z0-9._-]{1,128}""")
         val MODEL_PATTERN = Regex("""[A-Za-z0-9._-]+""")
         val SAFE_PROXY_ERROR_CODES = setOf(
             "unauthorized",

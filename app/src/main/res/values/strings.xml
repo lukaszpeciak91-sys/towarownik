@@ -41,6 +41,7 @@
     <string name="advisor_error_obi">Nie udało się odczytać danych z OBI.</string>
     <string name="advisor_error_input">Opisz czego potrzebuje klient.</string>
     <string name="advisor_error_unsupported_provider">Doradca nie jest jeszcze dostępny dla wybranego dostawcy.</string>
+    <string name="advisor_error_product_provider">Nie udało się odczytać danych produktowych wybranego dostawcy.</string>
 
     <string name="manual_search_title">Wyszukiwarka</string>
     <string name="manual_search_input_label">Nr produktu / EAN / nazwa</string>
