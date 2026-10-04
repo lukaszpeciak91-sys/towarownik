@@ -248,6 +248,15 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                                         ?: JsonNull,
                                                 )
                                                 put("storeNumber", product.storeNumber)
+                                                put("providerId", product.providerId)
+                                                put("productId", product.productId)
+                                                put("branchId", product.branchId)
+                                                put(
+                                                    "articleNumber",
+                                                    product.articleNumber
+                                                        ?.let(::JsonPrimitive)
+                                                        ?: JsonNull,
+                                                )
                                                 put(
                                                     "verifiedAt",
                                                     product.verifiedAt
@@ -358,6 +367,28 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                             verifiedAt = product["verifiedAt"]
                                 ?.jsonPrimitive
                                 ?.longOrNull,
+                            providerId = product["providerId"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: "obi-pl",
+                            productId = product["productId"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: obik,
+                            branchId = product["branchId"]
+                                ?.jsonPrimitive
+                                ?.contentOrNull
+                                ?: (
+                                    product["storeNumber"]
+                                        ?.jsonPrimitive
+                                        ?.contentOrNull
+                                        ?: DEFAULT_OBI_STORE_NUMBER
+                                ),
+                            articleNumber = product["articleNumber"]
+                                ?.let { value ->
+                                    if (value is JsonNull) null
+                                    else value.jsonPrimitive.contentOrNull
+                                },
                         )
                     }
                     .orEmpty()
