@@ -379,6 +379,16 @@ test("protocol v3 KWANT request receives provider-aware product tool", async () 
     upstreamTool.parameters.required,
     ["providerId", "branchId", "queries"],
   );
+  const providerQuerySchema = upstreamTool.parameters.properties
+    .queries.items;
+  assert.deepEqual(
+    providerQuerySchema.required,
+    ["query", "limit"],
+  );
+  assert.equal(
+    Object.hasOwn(providerQuerySchema.properties, "productId"),
+    false,
+  );
   assert.match(
     fake.captures[0].body.instructions,
     /providerId=kwant-pl.*branchId=205/i,

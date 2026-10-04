@@ -109,6 +109,19 @@ class KwantProductProviderTest {
     }
 
     @Test
+    fun `lookup scope resolves branch directory once for a candidate batch`() {
+        val frontend = FakeFrontend(productHtml = productHtml("140"))
+        val provider = KwantProductProvider(frontend = frontend)
+        val scope = provider.openLookupScope(BranchId("205"))
+            as ProviderLookupScopeResult.Available
+
+        scope.lookup(ProductRef(KWANT_PROVIDER_ID, "580"))
+        scope.lookup(ProductRef(KWANT_PROVIDER_ID, "581"))
+
+        assertEquals(1, frontend.branchDirectoryCalls)
+    }
+
+    @Test
     fun `zero selected branch stock remains zero`() {
         val product = KwantFrontendParser().parseProduct(
             html = productHtml("0"),
@@ -232,12 +245,15 @@ class KwantProductProviderTest {
         var lastProductId: String? = null
         var lastProductUrl: String? = null
         var lastDepartmentCookie: String? = null
+        var branchDirectoryCalls: Int = 0
 
-        override fun fetchBranchDirectory(): KwantFrontendResult =
-            KwantFrontendResult.Success(
+        override fun fetchBranchDirectory(): KwantFrontendResult {
+            branchDirectoryCalls += 1
+            return KwantFrontendResult.Success(
                 html = BRANCH_HTML,
                 finalUrl = "https://kwant.net.pl/lista-hurtowni-elektrycznych",
             )
+        }
 
         override fun fetchSearch(query: String): KwantFrontendResult {
             check(query != "580") {

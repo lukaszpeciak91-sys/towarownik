@@ -299,6 +299,35 @@ internal class KwantProductProvider(
                 )
         }
 
+        return lookupWithBranch(ref, branchId, branch)
+    }
+
+    override fun openLookupScope(branchId: BranchId): ProviderLookupScopeResult =
+        when (val resolved = resolveBranch(branchId)) {
+            is BranchResolution.Found ->
+                ProviderLookupScopeResult.Available { ref ->
+                    lookupWithBranch(ref, branchId, resolved.metadata)
+                }
+            BranchResolution.Invalid -> ProviderLookupScopeResult.InvalidBranch
+            is BranchResolution.Failure ->
+                ProviderLookupScopeResult.Unavailable(
+                    ProductProviderFailure.NETWORK,
+                    resolved.reason,
+                )
+        }
+
+    private fun lookupWithBranch(
+        ref: ProductRef,
+        branchId: BranchId,
+        branch: KwantBranchMetadata,
+    ): ProviderLookupResult {
+        if (ref.providerId != providerId) {
+            return ProviderLookupResult.WrongProvider(ref)
+        }
+        if (!PRODUCT_ID.matches(ref.productId)) {
+            return ProviderLookupResult.InvalidProductId(ref)
+        }
+
         val cachedUrl = productUrls[ref.productId]
         val response = if (cachedUrl != null) {
             frontend.fetchProductByUrl(

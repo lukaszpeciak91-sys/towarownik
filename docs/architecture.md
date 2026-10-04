@@ -287,3 +287,7 @@ Advisor execution is now owned by the conversation WorkingProfile.
 - Room schema v8 adds provider-owned identity fields to persisted message products. The shipped v6→v7 migration remains unchanged; v7→v8 maps historical OBI rows from legacy `obik + storeNumber`. Price scope is not a new Room column; restored cards derive it from the persisted provider identity.
 - KWANT branch stock remains branch-specific. KWANT public price keeps `ONLINE` scope and must not be described as a branch/counter/customer-specific price.
 - Worker protocols v1/v2 remain accepted for existing OBI clients.
+
+Concrete product intent now invokes the existing provider tool without waiting for a separate market-check phrase, while general technical questions remain advice-first and material selection ambiguity still triggers one focused clarification. OBI protocol v2 recognizes an exact seven-digit OBIK locally and routes it straight to `ProductLookupRepository`; search remains the discovery path for other input.
+
+Protocol v3 query groups expose search text only. For KWANT, article number, EAN, name, manufacturer text, and other user-supplied identifiers remain search terms and every candidate is exact-verified; the provider's internal exact `productId` lookup is deliberately not model-controlled. The Android provider tool opens one execution-scoped branch lookup context before processing the group batch. KWANT resolves the selected branch directory entry once, then reuses that metadata/cookie for candidate lookups; no cross-execution cache or fallback branch is introduced.
