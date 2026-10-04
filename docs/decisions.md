@@ -416,3 +416,5 @@ These decisions describe the broader intended product behavior. The currently im
 - Android validates the requested provider/branch against the conversation WorkingProfile before executing the local tool.
 - Do not automatically switch providers or branches from model output.
 - Persist provider-owned product identity for advisor cards so reopening a conversation does not reinterpret KWANT products as OBI.
+- Do not alter shipped Room migration 6→7. Provider-owned message-product identity belongs to schema v8 and explicit migration 7→8; historical rows map to `obi-pl + obik + storeNumber`.
+- Keep OBI authorization and prompt/tool contract on their proven v2 path. Protocol v3 has explicit provider-aware instructions and must not be synthesized by string-replacing OBI instructions.
