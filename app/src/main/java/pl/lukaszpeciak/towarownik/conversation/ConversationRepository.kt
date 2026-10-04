@@ -359,11 +359,10 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 productId = product.productId,
                                 branchId = product.branchId,
                                 articleNumber = product.articleNumber,
-                                priceScope = when {
-                                    product.grossPrice == null -> null
-                                    product.providerId == "kwant-pl" ->
-                                        ProviderPriceScope.ONLINE
-                                    else -> ProviderPriceScope.BRANCH
+                                priceScope = when (product.priceScope) {
+                                    "branch" -> ProviderPriceScope.BRANCH
+                                    "online" -> ProviderPriceScope.ONLINE
+                                    else -> null
                                 },
                             )
                         },
