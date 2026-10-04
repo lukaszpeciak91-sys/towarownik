@@ -406,3 +406,13 @@ These decisions describe the broader intended product behavior. The currently im
 - Manual search follows the global working profile and resolves the exact `ProductProvider`; unknown providers or branches fail explicitly and never fall back to another provider/branch.
 - KWANT branch choices come from its public directory and use public `department_stock_id`; no single-branch hardcode or natural-language resolver is introduced.
 - Keep the existing advisor integration OBI-specific for this PR. The model does not choose or switch providers automatically.
+
+
+## Provider-aware advisor contract
+
+- Keep OBI advisor transport on protocol v2 until a separate migration is justified.
+- Introduce protocol v3 only for provider-aware conversations that need it.
+- Protocol v3 uses `find_products(providerId, branchId, queries)`; do not add a parallel provider-specific tool such as `find_kwant_products`.
+- Android validates the requested provider/branch against the conversation WorkingProfile before executing the local tool.
+- Do not automatically switch providers or branches from model output.
+- Persist provider-owned product identity for advisor cards so reopening a conversation does not reinterpret KWANT products as OBI.
