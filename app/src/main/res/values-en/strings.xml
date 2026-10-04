@@ -41,6 +41,7 @@
     <string name="advisor_error_obi">Could not read data from OBI.</string>
     <string name="advisor_error_input">Describe what the customer needs.</string>
     <string name="advisor_error_unsupported_provider">The advisor is not yet available for the selected provider.</string>
+    <string name="advisor_error_product_provider">Could not read product data from the selected provider.</string>
 
     <string name="manual_search_title">Product search</string>
     <string name="manual_search_input_label">Product no. / EAN / product name</string>
