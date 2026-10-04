@@ -540,6 +540,103 @@ function validateVerifiedQueryResult(
   throw new InvalidRequestError();
 }
 
+function validateProviderVerifiedToolResult(
+  value: unknown,
+): ProviderVerifiedToolResult {
+  const object = exactObject(
+    value,
+    ["providerId", "branchId", "results"],
+  );
+  const providerId = validateProviderId(object.providerId);
+  const branchId = validateBranchId(object.branchId);
+
+  if (
+    !Array.isArray(object.results) ||
+    object.results.length < 1 ||
+    object.results.length > MAX_TOOL_QUERIES
+  ) {
+    throw new InvalidRequestError();
+  }
+
+  const results = object.results.map(
+    validateProviderVerifiedQueryResult,
+  );
+  const productCount = results.reduce(
+    (sum, result) => sum + result.products.length,
+    0,
+  );
+  if (productCount > MAX_TOOL_PRODUCTS) {
+    throw new InvalidRequestError();
+  }
+
+  return { providerId, branchId, results };
+}
+
+function validateProviderVerifiedQueryResult(
+  value: unknown,
+): ProviderVerifiedQueryResult {
+  const object = exactObject(
+    value,
+    ["query", "status", "products"],
+  );
+  const query = normalizedToolQuery(object.query);
+  if (!Array.isArray(object.products)) {
+    throw new InvalidRequestError();
+  }
+  const products = object.products.map(validateProviderProduct);
+
+  if (object.status === "verified") {
+    if (products.length < 1) {
+      throw new InvalidRequestError();
+    }
+    return { query, status: "verified", products };
+  }
+
+  if (
+    object.status === "not_found" ||
+    object.status === "unavailable"
+  ) {
+    if (products.length !== 0) {
+      throw new InvalidRequestError();
+    }
+    return { query, status: object.status, products: [] };
+  }
+
+  throw new InvalidRequestError();
+}
+
+function validateProviderRejectedToolResult(
+  value: unknown,
+): ProviderRejectedToolResult | ProviderLocalToolLimitResult {
+  const object = exactObject(
+    value,
+    ["providerId", "branchId", "queries", "rejection"],
+  );
+  const providerId = validateProviderId(object.providerId);
+  const branchId = validateBranchId(object.branchId);
+  const queries = validateToolQueries(object.queries);
+
+  if (object.rejection === "branch_not_authorized") {
+    return {
+      providerId,
+      branchId,
+      queries,
+      rejection: "branch_not_authorized",
+    };
+  }
+
+  if (object.rejection === "local_tool_limit_reached") {
+    return {
+      providerId,
+      branchId,
+      queries,
+      rejection: "local_tool_limit_reached",
+    };
+  }
+
+  throw new InvalidRequestError();
+}
+
 function validateRejectedToolResult(
   value: unknown,
 ): RejectedToolResult | LocalToolLimitResult {
