@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.attachment.ATTACHMENT_LOCAL_STORAGE_MAX_BYTES
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
@@ -128,6 +129,94 @@ class ConversationRepositoryTest {
             "INSERT INTO message_attachments (messageId,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES ($messageId,'ARCHIVE','bad.zip','application/zip','00000000000000000000000000000000',1,NULL,NULL,1)",
         )
         assertNull(repository.load(malformed.conversationId)?.messages?.single()?.attachment)
+    }
+
+    @Test
+    fun `interrupted turn recovery removes attachment metadata and only its private file`() = runBlocking {
+        val interruptedAttachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "interrupted.pdf",
+            "application/pdf",
+            3,
+            createdAt = 10,
+            source = {
+                ByteArrayInputStream(byteArrayOf(1, 2, 3))
+            },
+        )
+        val unrelatedAttachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "unrelated.pdf",
+            "application/pdf",
+            1,
+            createdAt = 11,
+            source = {
+                ByteArrayInputStream(byteArrayOf(9))
+            },
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Recover this draft",
+            createdAt = 20,
+            attachment = interruptedAttachment,
+        )
+
+        assertEquals(1, messageAttachmentCount(started.conversationId))
+        assertTrue(attachmentStorage.exists(interruptedAttachment.localId))
+        assertTrue(attachmentStorage.exists(unrelatedAttachment.localId))
+
+        val recovered = repository.recoverInterruptedTurn(
+            started.conversationId,
+        )
+
+        requireNotNull(recovered)
+        assertEquals("Recover this draft", recovered.draft)
+        assertEquals(0, messageAttachmentCount(started.conversationId))
+        assertFalse(attachmentStorage.exists(interruptedAttachment.localId))
+        assertTrue(attachmentStorage.exists(unrelatedAttachment.localId))
+    }
+
+    @Test
+    fun `attachment local storage accepts the v1 byte limit`() {
+        val payload = ByteArray(
+            ATTACHMENT_LOCAL_STORAGE_MAX_BYTES.toInt(),
+        ) { 7 }
+
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "boundary.pdf",
+            "application/pdf",
+            ATTACHMENT_LOCAL_STORAGE_MAX_BYTES,
+            createdAt = 30,
+            source = { ByteArrayInputStream(payload) },
+        )
+
+        assertEquals(
+            ATTACHMENT_LOCAL_STORAGE_MAX_BYTES,
+            attachment.byteSize,
+        )
+        assertTrue(attachmentStorage.exists(attachment.localId))
+    }
+
+    @Test
+    fun `attachment local storage rejects oversized metadata before opening source`() {
+        var sourceOpened = false
+
+        val failure = runCatching {
+            attachmentStorage.importValidated(
+                AttachmentType.PDF,
+                "too-large.pdf",
+                "application/pdf",
+                ATTACHMENT_LOCAL_STORAGE_MAX_BYTES + 1,
+                createdAt = 31,
+                source = {
+                    sourceOpened = true
+                    ByteArrayInputStream(byteArrayOf(1))
+                },
+            )
+        }
+
+        assertTrue(failure.isFailure)
+        assertFalse(sourceOpened)
     }
 
     @Test
@@ -1273,6 +1362,24 @@ class ConversationRepositoryTest {
         val cursor = database.openHelper.readableDatabase.query(
             """
             SELECT COUNT(*) FROM message_sources
+            WHERE messageId IN (
+                SELECT id FROM messages WHERE conversationId = ?
+            )
+            """.trimIndent(),
+            arrayOf(conversationId),
+        )
+        return cursor.use {
+            check(it.moveToFirst())
+            it.getInt(0)
+        }
+    }
+
+    private fun messageAttachmentCount(
+        conversationId: Long,
+    ): Int {
+        val cursor = database.openHelper.readableDatabase.query(
+            """
+            SELECT COUNT(*) FROM message_attachments
             WHERE messageId IN (
                 SELECT id FROM messages WHERE conversationId = ?
             )
