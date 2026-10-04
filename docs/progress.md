@@ -187,10 +187,12 @@ The currently planned AI capability stage is complete after this selective web-s
 
 ## 2026-10-04 — provider-aware behavioral parity harness
 
-- Extended the existing A–I behavioral evaluation families to run unchanged in semantic intent against OBI protocol v2 and KWANT protocol v3.
+- Extended the existing A–I behavioral evaluation families across OBI protocol v2 and KWANT protocol v3, with provider-shaped direct-product fixtures and the same provider-neutral quality bar.
 - Preserved the OBI fixtures and OBIK baseline; KWANT direct-product variants use article-number search text, provider-owned references, branch `205`, and online-price fixtures rather than OBIK semantics.
 - The manual behavioral workflow runs both paths by default and can select either path for focused audits.
-- No OBI or provider-v3 production advisor instruction change was needed; deterministic parity coverage exercises clarification, proactive lookup, availability distinctions, advice-first jobs and technical questions, bounded assortment wording, and restrained complements.
+- No OBI or provider-v3 production advisor instruction change was needed; deterministic parity coverage exercises decision-critical clarification, proactive lookup, availability distinctions, advice-first jobs and technical questions, bounded assortment wording, and restrained complements.
+- After the first real-model parity run, scenario A was calibrated so a broad low-risk commodity request such as black cable ties may browse several verified variants immediately; decision-critical compatibility or safety ambiguity still clarifies first.
+- The concrete-product recommendation fixture no longer exposes `mock` or eval-only wording to the model.
 
 ## 2026-10-04 — KWANT logistics visibility
 
