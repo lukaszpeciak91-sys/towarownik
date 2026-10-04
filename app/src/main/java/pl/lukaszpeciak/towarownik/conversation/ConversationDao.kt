@@ -266,6 +266,10 @@ internal abstract class ConversationDao {
                         imageUrl = product.primaryImageUrl,
                         verifiedAt = product.verifiedAt,
                         storeNumber = product.storeNumber,
+                        providerId = product.providerId,
+                        productId = product.productId,
+                        branchId = product.branchId,
+                        articleNumber = product.articleNumber,
                     )
                 },
             )
