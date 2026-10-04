@@ -436,3 +436,12 @@ These decisions describe the broader intended product behavior. The currently im
 - In the OBI v2 path, an exact seven-digit OBIK bypasses text search and goes directly to the existing exact store lookup. Other OBI text/identifier inputs keep search followed by exact verification.
 - In the KWANT advisor path, article/catalog number, EAN, product name, manufacturer text, and other user-facing identifiers always continue through search followed by exact product verification. The advisor contract does not expose KWANT's internal exact `productId` capability, so the model cannot invent an ID and bypass discovery.
 - Resolve and validate KWANT branch metadata once per local tool execution and reuse its department cookie for all exact candidate verification in that batch. This execution-scoped lookup context is not a cross-turn or broad metadata cache.
+
+## Advisor attachment foundation v1
+
+- A USER message may eventually contain text, one attachment, or both, but the current text-only send validation and transport remain unchanged in this foundation.
+- Support exactly one provider-neutral `IMAGE` or `PDF` attachment per USER message. The Room v10 `message_attachments.messageId` primary key enforces the one-per-message cardinality; unsupported or malformed metadata is rejected rather than reinterpreted.
+- Persist only bounded metadata in Room and keep bytes in a dedicated app-private files subdirectory under an opaque identifier. Domain and Room models contain no BLOB, Base64, provider/OpenAI fields, or user-facing absolute path.
+- Attachment-file lifetime follows explicit conversation deletion, retention cleanup, and interrupted-turn recovery. Interrupted recovery captures only the trailing USER message's attachment identifier before Room removes the message, then best-effort deletes exactly that file after the transaction succeeds; filesystem failure cannot block or corrupt draft recovery and cleanup never scans unrelated storage.
+- `AttachmentStorage` has a temporary v1 local private-storage ceiling of 16 MiB per attachment. Oversized declared metadata is rejected before opening/copying the source; copied-byte equality remains mandatory. This is an Android storage guard, not a Worker/OpenAI API or transport limit.
+- Camera, photo/file picker UI, compression, EXIF processing, PDF preprocessing, upload, Worker/OpenAI protocol changes, and attachment-only sending remain follow-up work.

@@ -4,6 +4,9 @@ import java.math.BigDecimal
 import java.net.URI
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
+import pl.lukaszpeciak.towarownik.attachment.validatedAttachmentOrNull
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
@@ -119,6 +122,7 @@ internal data class PersistedMessage(
     val products: List<VerifiedProductSnapshot>,
     val sources: List<PersistedWebSource> = emptyList(),
     val searchActions: List<PersistedSearchAction> = emptyList(),
+    val attachment: AdvisorAttachment? = null,
 )
 
 internal data class UserTurnStart(
@@ -133,6 +137,7 @@ internal data class UserTurnStart(
 internal class ConversationRepository(
     private val dao: ConversationDao,
     private val now: () -> Long = System::currentTimeMillis,
+    private val attachmentStorage: AttachmentStorage? = null,
 ) {
     fun observeConversations(
         phrase: String,
@@ -153,46 +158,48 @@ internal class ConversationRepository(
 
     suspend fun cleanupExpiredConversations(
         nowMillis: Long = now(),
-    ): Int =
-        dao.deleteConversationsUpdatedBefore(
-            cutoffExclusive = nowMillis - CONVERSATION_RETENTION_MILLIS,
-        )
+    ): Int {
+        val cutoff = nowMillis - CONVERSATION_RETENTION_MILLIS
+        val attachmentIds = dao.getAttachmentIdsUpdatedBefore(cutoff)
+        val deleted = dao.deleteConversationsUpdatedBefore(cutoff)
+        runCatching { attachmentStorage?.deleteAll(attachmentIds) }
+        return deleted
+    }
 
     suspend fun deleteConversation(
         conversationId: Long,
-    ): Boolean =
-        dao.deleteConversation(conversationId) > 0
+    ): Boolean {
+        val attachmentIds = dao.getAttachmentIds(conversationId)
+        val deleted = dao.deleteConversation(conversationId) > 0
+        if (deleted) runCatching { attachmentStorage?.deleteAll(attachmentIds) }
+        return deleted
+    }
 
     suspend fun loadMostRecentRecoveringInterrupted():
         PersistedConversation? {
         val recent = dao.getMostRecentConversation() ?: return null
-        dao.recoverInterruptedTurn(
-            conversationId = recent.id,
-            recoveredAt = now(),
-        )
+        recoverInterruptedTurnAndCleanup(recent.id)
         return load(recent.id)
     }
 
     suspend fun loadRecoveringInterrupted(
         conversationId: Long,
     ): PersistedConversation? {
-        dao.recoverInterruptedTurn(
-            conversationId = conversationId,
-            recoveredAt = now(),
-        )
+        recoverInterruptedTurnAndCleanup(conversationId)
         return load(conversationId)
     }
 
     suspend fun load(
         conversationId: Long,
     ): PersistedConversation? =
-        dao.getConversationWithMessages(conversationId)?.toPersisted()
+        dao.getConversationWithMessages(conversationId)?.toPersisted(attachmentStorage)
 
     suspend fun beginUserTurn(
         conversationId: Long?,
         text: String,
         createdAt: Long = now(),
         workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
+        attachment: AdvisorAttachment? = null,
     ): UserTurnStart {
         val normalized = normalizeConversationText(text)
         require(normalized.isNotBlank())
@@ -205,6 +212,7 @@ internal class ConversationRepository(
                     createdAt = createdAt,
                     providerId = workingProfile.providerId.value,
                     branchId = workingProfile.branchId.value,
+                    attachment = attachment,
                 )
             UserTurnStart(
                 conversationId = newId,
@@ -220,6 +228,7 @@ internal class ConversationRepository(
                     createdAt = createdAt,
                     expectedProviderId = workingProfile.providerId.value,
                     expectedBranchId = workingProfile.branchId.value,
+                    attachment = attachment,
                 ),
                 workingProfile = workingProfile,
             )
@@ -267,11 +276,24 @@ internal class ConversationRepository(
     suspend fun recoverInterruptedTurn(
         conversationId: Long,
     ): PersistedConversation? {
-        dao.recoverInterruptedTurn(
+        recoverInterruptedTurnAndCleanup(conversationId)
+        return load(conversationId)
+    }
+
+    private suspend fun recoverInterruptedTurnAndCleanup(
+        conversationId: Long,
+    ) {
+        val attachmentId =
+            dao.getLastMessageAttachmentId(conversationId)
+        val recovered = dao.recoverInterruptedTurn(
             conversationId = conversationId,
             recoveredAt = now(),
         )
-        return load(conversationId)
+        if (recovered && attachmentId != null) {
+            runCatching {
+                attachmentStorage?.delete(attachmentId)
+            }
+        }
     }
 
     suspend fun updateDraft(
@@ -319,7 +341,9 @@ private fun ConversationEntity.toSummary(): ConversationSummary =
         updatedAt = updatedAt,
     )
 
-private fun ConversationWithMessages.toPersisted(): PersistedConversation =
+private fun ConversationWithMessages.toPersisted(
+    attachmentStorage: AttachmentStorage?,
+): PersistedConversation =
     PersistedConversation(
         id = conversation.id,
         title = conversation.title,
@@ -392,6 +416,20 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 reportedTotalCount = action.reportedTotalCount,
                             )
                         },
+                    attachment = item.attachments.singleOrNull()?.let { value ->
+                        validatedAttachmentOrNull(
+                            type = value.type,
+                            displayName = value.displayName,
+                            mimeType = value.mimeType,
+                            localId = value.localId,
+                            byteSize = value.byteSize,
+                            width = value.width,
+                            height = value.height,
+                            createdAt = value.createdAt,
+                        )?.takeIf { attachment ->
+                            attachmentStorage?.exists(attachment.localId) != false
+                        }
+                    },
                 )
             },
     )

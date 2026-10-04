@@ -6,6 +6,8 @@ import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.validatedAttachmentOrNull
 
 @Dao
 internal abstract class ConversationDao {
@@ -57,6 +59,27 @@ internal abstract class ConversationDao {
         cutoffExclusive: Long,
     ): Int
 
+    @Query("SELECT ma.localId FROM message_attachments ma JOIN messages m ON m.id = ma.messageId WHERE m.conversationId = :conversationId")
+    abstract suspend fun getAttachmentIds(conversationId: Long): List<String>
+
+    @Query(
+        """
+        SELECT ma.localId
+        FROM messages m
+        LEFT JOIN message_attachments ma ON ma.messageId = m.id
+        WHERE m.conversationId = :conversationId
+        ORDER BY m.createdAt DESC, m.id DESC
+        LIMIT 1
+        """,
+    )
+    abstract suspend fun getLastMessageAttachmentId(
+        conversationId: Long,
+    ): String?
+
+
+    @Query("SELECT ma.localId FROM message_attachments ma JOIN messages m ON m.id = ma.messageId JOIN conversations c ON c.id = m.conversationId WHERE c.updatedAt < :cutoffExclusive")
+    abstract suspend fun getAttachmentIdsUpdatedBefore(cutoffExclusive: Long): List<String>
+
     @Transaction
     @Query("SELECT * FROM conversations WHERE id = :conversationId")
     abstract suspend fun getConversationWithMessages(
@@ -99,6 +122,9 @@ internal abstract class ConversationDao {
     protected abstract suspend fun insertMessageSearchActions(
         actions: List<MessageSearchActionEntity>,
     )
+
+    @Insert
+    protected abstract suspend fun insertMessageAttachment(attachment: MessageAttachmentEntity)
 
     @Query("DELETE FROM messages WHERE id = :messageId")
     protected abstract suspend fun deleteMessage(
@@ -154,6 +180,7 @@ internal abstract class ConversationDao {
         createdAt: Long,
         providerId: String,
         branchId: String,
+        attachment: AdvisorAttachment? = null,
     ): Pair<Long, String?> {
         val conversationId = insertConversation(
             ConversationEntity(
@@ -167,7 +194,7 @@ internal abstract class ConversationDao {
                 branchId = branchId,
             ),
         )
-        insertMessage(
+        val messageId = insertMessage(
             MessageEntity(
                 conversationId = conversationId,
                 role = MESSAGE_ROLE_USER,
@@ -175,6 +202,7 @@ internal abstract class ConversationDao {
                 createdAt = createdAt,
             ),
         )
+        attachment?.let { insertMessageAttachment(it.toEntity(messageId)) }
         return conversationId to null
     }
 
@@ -185,11 +213,12 @@ internal abstract class ConversationDao {
         createdAt: Long,
         expectedProviderId: String,
         expectedBranchId: String,
+        attachment: AdvisorAttachment? = null,
     ): String? {
         val conversation = checkNotNull(getConversation(conversationId))
         require(conversation.providerId == expectedProviderId)
         require(conversation.branchId == expectedBranchId)
-        insertMessage(
+        val messageId = insertMessage(
             MessageEntity(
                 conversationId = conversationId,
                 role = MESSAGE_ROLE_USER,
@@ -197,6 +226,7 @@ internal abstract class ConversationDao {
                 createdAt = createdAt,
             ),
         )
+        attachment?.let { insertMessageAttachment(it.toEntity(messageId)) }
         markUserTurnStarted(
             conversationId = conversationId,
             updatedAt = createdAt,
@@ -325,4 +355,24 @@ internal abstract class ConversationDao {
         )
         return true
     }
+}
+
+private fun AdvisorAttachment.toEntity(messageId: Long): MessageAttachmentEntity {
+    require(
+        validatedAttachmentOrNull(
+            type.name, displayName, mimeType, localId, byteSize,
+            width, height, createdAt,
+        ) == this,
+    )
+    return MessageAttachmentEntity(
+        messageId = messageId,
+        type = type.name,
+        displayName = displayName,
+        mimeType = mimeType,
+        localId = localId,
+        byteSize = byteSize,
+        width = width,
+        height = height,
+        createdAt = createdAt,
+    )
 }

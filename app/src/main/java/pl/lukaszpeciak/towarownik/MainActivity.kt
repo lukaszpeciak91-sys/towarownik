@@ -2,6 +2,7 @@ package pl.lukaszpeciak.towarownik
 
 import android.os.Build
 import android.os.Bundle
+import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -208,6 +209,7 @@ private fun TowarownikApp() {
     val conversationRepository = remember {
         ConversationRepository(
             ConversationDatabase.get(context).conversationDao(),
+            attachmentStorage = AttachmentStorage(context),
         )
     }
     val aiUsageRepository = remember {
