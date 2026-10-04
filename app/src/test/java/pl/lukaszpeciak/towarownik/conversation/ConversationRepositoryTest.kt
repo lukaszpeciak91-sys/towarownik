@@ -19,6 +19,7 @@ import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 @RunWith(RobolectricTestRunner::class)
@@ -983,6 +984,7 @@ class ConversationRepositoryTest {
                     productId = "580",
                     branchId = "205",
                     articleNumber = "MBN116E/HAG",
+                    priceScope = ProviderPriceScope.ONLINE,
                 ),
             ),
         )
@@ -1000,6 +1002,7 @@ class ConversationRepositoryTest {
         assertEquals("MBN116E/HAG", restored.articleNumber)
         assertEquals(140, restored.stock)
         assertEquals(BigDecimal("14.55"), restored.grossPrice)
+        assertEquals(ProviderPriceScope.ONLINE, restored.priceScope)
     }
 
     @Test
