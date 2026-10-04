@@ -128,6 +128,31 @@ internal data class MessageSearchActionEntity(
     val reportedTotalCount: Int,
 )
 
+@Entity(
+    tableName = "message_attachments",
+    foreignKeys = [
+        ForeignKey(
+            entity = MessageEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["messageId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("messageId"), Index(value = ["localId"], unique = true)],
+)
+internal data class MessageAttachmentEntity(
+    @PrimaryKey
+    val messageId: Long,
+    val type: String,
+    val displayName: String,
+    val mimeType: String,
+    val localId: String,
+    val byteSize: Long,
+    val width: Int?,
+    val height: Int?,
+    val createdAt: Long,
+)
+
 internal data class MessageWithProducts(
     @Embedded
     val message: MessageEntity,
@@ -146,6 +171,8 @@ internal data class MessageWithProducts(
         entityColumn = "messageId",
     )
     val searchActions: List<MessageSearchActionEntity> = emptyList(),
+    @Relation(parentColumn = "id", entityColumn = "messageId")
+    val attachments: List<MessageAttachmentEntity> = emptyList(),
 )
 
 internal data class ConversationWithMessages(

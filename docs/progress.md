@@ -201,3 +201,10 @@ The currently planned AI capability stage is complete after this selective web-s
 - Explicit other-location requests can perform one uniquely resolved KWANT
   branch lookup while the conversation WorkingProfile remains unchanged.
 - Room v9 persists nullable central stock; migration 8→9 only adds that column.
+
+## 2026-10-04 — advisor attachment foundation
+
+- Added provider-neutral IMAGE/PDF metadata with exactly one attachment per USER message and no binary content in domain or Room models.
+- Added app-private attachment import/read/delete storage using opaque identifiers; no picker, composer, upload, Worker, or OpenAI request behavior changed.
+- Room v10 adds the normalized `message_attachments` relation. Historical messages migrate with zero attachments and metadata cascades with message/conversation deletion.
+- Explicit and 30-day retention deletion now perform best-effort cleanup of only the related private attachment files; missing files fail soft.

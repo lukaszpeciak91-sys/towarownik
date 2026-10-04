@@ -15,6 +15,36 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class ConversationMigrationTest {
     @Test
+    fun `migration 9 to 10 gives history zero attachments and cascades metadata`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        context.deleteDatabase(DB_V9_NAME)
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(DB_V9_NAME)
+                .callback(object : SupportSQLiteOpenHelper.Callback(9) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createV2Schema(db)
+                    }
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+                }).build(),
+        )
+        try {
+            val db = helper.writableDatabase
+            db.execSQL("PRAGMA foreign_keys=ON")
+            db.execSQL("INSERT INTO conversations (id,title,createdAt,updatedAt,lastResponseId,draft) VALUES (1,'old',1,1,NULL,'')")
+            db.execSQL("INSERT INTO messages (id,conversationId,role,text,createdAt) VALUES (1,1,'USER','old',1)")
+            MIGRATION_9_10.migrate(db)
+            assertEquals("0", queryText(db, "SELECT COUNT(*) FROM message_attachments"))
+            db.execSQL("INSERT INTO message_attachments (messageId,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES (1,'PDF','doc.pdf','application/pdf','00000000000000000000000000000000',1,NULL,NULL,1)")
+            db.execSQL("DELETE FROM messages WHERE id=1")
+            assertEquals("0", queryText(db, "SELECT COUNT(*) FROM message_attachments"))
+        } finally {
+            helper.close()
+            context.deleteDatabase(DB_V9_NAME)
+        }
+    }
+
+    @Test
     fun `migration 2 to 3 defaults existing conversation and products to 075`() {
         val context =
             ApplicationProvider.getApplicationContext<Context>()
@@ -611,5 +641,6 @@ class ConversationMigrationTest {
         const val DB_V5_NAME = "conversation-migration-v5-v6-test.db"
         const val DB_V6_NAME = "conversation-migration-v6-v7-test.db"
         const val DB_V7_NAME = "conversation-migration-v7-v8-test.db"
+        const val DB_V9_NAME = "conversation-migration-v9-v10-test.db"
     }
 }

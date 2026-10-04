@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.conversation
 
 import android.content.Context
+import java.io.ByteArrayInputStream
 import java.math.BigDecimal
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -8,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -16,6 +18,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
+import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
@@ -28,11 +32,13 @@ class ConversationRepositoryTest {
     private lateinit var context: Context
     private lateinit var database: ConversationDatabase
     private lateinit var repository: ConversationRepository
+    private lateinit var attachmentStorage: AttachmentStorage
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         context.deleteDatabase(DB_NAME)
+        context.filesDir.resolve("advisor_attachments").deleteRecursively()
         openDatabase()
     }
 
@@ -40,6 +46,88 @@ class ConversationRepositoryTest {
     fun tearDown() {
         database.close()
         context.deleteDatabase(DB_NAME)
+        context.filesDir.resolve("advisor_attachments").deleteRecursively()
+    }
+
+    @Test
+    fun `image and PDF attachment metadata round trip while historical message remains empty`() = runBlocking {
+        val image = attachmentStorage.importValidated(
+            type = AttachmentType.IMAGE,
+            displayName = "label.jpg",
+            mimeType = "image/jpeg",
+            byteSize = 3,
+            width = 40,
+            height = 20,
+            createdAt = 90,
+            source = { ByteArrayInputStream(byteArrayOf(1, 2, 3)) },
+        )
+        val first = repository.beginUserTurn(null, "image", 100, attachment = image)
+        val pdf = attachmentStorage.importValidated(
+            type = AttachmentType.PDF,
+            displayName = "manual.pdf",
+            mimeType = "application/pdf",
+            byteSize = 2,
+            createdAt = 110,
+            source = { ByteArrayInputStream(byteArrayOf(4, 5)) },
+        )
+        val second = repository.beginUserTurn(null, "pdf", 120, attachment = pdf)
+        val historical = repository.beginUserTurn(null, "text only", 130)
+
+        assertEquals(image, repository.load(first.conversationId)?.messages?.single()?.attachment)
+        assertEquals(pdf, repository.load(second.conversationId)?.messages?.single()?.attachment)
+        assertNull(repository.load(historical.conversationId)?.messages?.single()?.attachment)
+    }
+
+    @Test
+    fun `one attachment per message is structurally enforced and cascades with message`() = runBlocking {
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF, "one.pdf", "application/pdf", 1, createdAt = 1,
+            source = { ByteArrayInputStream(byteArrayOf(1)) },
+        )
+        val started = repository.beginUserTurn(null, "one", 2, attachment = attachment)
+        val db = database.openHelper.writableDatabase
+        val messageId = repository.load(started.conversationId)!!.messages.single().id
+        val failed = runCatching {
+            db.execSQL("INSERT INTO message_attachments (messageId,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES ($messageId,'PDF','two.pdf','application/pdf','00000000000000000000000000000000',1,NULL,NULL,1)")
+        }.isFailure
+        assertTrue(failed)
+        repository.deleteConversation(started.conversationId)
+        assertEquals("0", database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM message_attachments").use { it.moveToFirst(); it.getString(0) })
+    }
+
+    @Test
+    fun `explicit and expiry deletion remove private files`() = runBlocking {
+        fun attachment(name: String, time: Long) = attachmentStorage.importValidated(
+            AttachmentType.PDF, name, "application/pdf", 1, createdAt = time,
+            source = { ByteArrayInputStream(byteArrayOf(1)) },
+        )
+        val manualAttachment = attachment("manual.pdf", 1)
+        val manual = repository.beginUserTurn(null, "manual", 1, attachment = manualAttachment)
+        assertTrue(repository.deleteConversation(manual.conversationId))
+        assertFalse(attachmentStorage.exists(manualAttachment.localId))
+
+        val expiredAttachment = attachment("expired.pdf", 2)
+        repository.beginUserTurn(null, "expired", 2, attachment = expiredAttachment)
+        repository.cleanupExpiredConversations(CONVERSATION_RETENTION_MILLIS + 3)
+        assertFalse(attachmentStorage.exists(expiredAttachment.localId))
+    }
+
+    @Test
+    fun `missing file and malformed unsupported metadata fail soft while loading`() = runBlocking {
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF, "gone.pdf", "application/pdf", 1, createdAt = 1,
+            source = { ByteArrayInputStream(byteArrayOf(1)) },
+        )
+        val missing = repository.beginUserTurn(null, "missing", 2, attachment = attachment)
+        attachmentStorage.delete(attachment.localId)
+        assertNull(repository.load(missing.conversationId)?.messages?.single()?.attachment)
+
+        val malformed = repository.beginUserTurn(null, "malformed", 3)
+        val messageId = repository.load(malformed.conversationId)!!.messages.single().id
+        database.openHelper.writableDatabase.execSQL(
+            "INSERT INTO message_attachments (messageId,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES ($messageId,'ARCHIVE','bad.zip','application/zip','00000000000000000000000000000000',1,NULL,NULL,1)",
+        )
+        assertNull(repository.load(malformed.conversationId)?.messages?.single()?.attachment)
     }
 
     @Test
@@ -1234,9 +1322,11 @@ class ConversationRepositoryTest {
             ConversationDatabase::class.java,
             DB_NAME,
         ).build()
+        attachmentStorage = AttachmentStorage(context)
         repository = ConversationRepository(
             dao = database.conversationDao(),
             now = { 10_000L },
+            attachmentStorage = attachmentStorage,
         )
     }
 
