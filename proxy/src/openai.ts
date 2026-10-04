@@ -1,8 +1,9 @@
 import {
-  agentInstructionsForStore,
+  agentInstructionsForProfile,
   CURRENT_MODEL_PRICING,
-  FINAL_ANSWER_FORMAT,
+  finalAnswerFormatForProtocol,
   LOCAL_TOOL_NAME,
+  PROVIDER_LOCAL_TOOL_NAME,
   MAX_ANSWER_CHARS,
   MAX_MODEL_NAME_CHARS,
   MAX_SELECTED_PRODUCT_REFS,
@@ -16,7 +17,7 @@ import {
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
   CURRENT_ADVISOR_PROTOCOL_VERSION,
-  obiToolForProtocol,
+  localToolForProtocol,
   WEB_SEARCH_TOOL,
 } from "./config.js";
 import { InvalidRequestError, parseToolArguments } from "./validation.js";
@@ -35,7 +36,8 @@ export class UpstreamFailureError extends Error {}
 
 export async function startAgent(
   message: string,
-  storeNumber: string,
+  providerId: string,
+  branchId: string,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
   protocolVersion: AdvisorProtocolVersion =
@@ -44,7 +46,11 @@ export async function startAgent(
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: agentInstructionsForStore(storeNumber, protocolVersion),
+      instructions: agentInstructionsForProfile(
+        providerId,
+        branchId,
+        protocolVersion,
+      ),
       input: message,
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
@@ -55,9 +61,9 @@ export async function startAgent(
       max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
-        format: FINAL_ANSWER_FORMAT,
+        format: finalAnswerFormatForProtocol(protocolVersion),
       },
-      tools: [obiToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
+      tools: [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
@@ -70,7 +76,8 @@ export async function startAgent(
 export async function messageAgent(
   previousResponseId: string,
   message: string,
-  storeNumber: string,
+  providerId: string,
+  branchId: string,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
   protocolVersion: AdvisorProtocolVersion =
@@ -79,7 +86,11 @@ export async function messageAgent(
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: agentInstructionsForStore(storeNumber, protocolVersion),
+      instructions: agentInstructionsForProfile(
+        providerId,
+        branchId,
+        protocolVersion,
+      ),
       previous_response_id: previousResponseId,
       input: message,
       reasoning: {
@@ -91,9 +102,9 @@ export async function messageAgent(
       max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
-        format: FINAL_ANSWER_FORMAT,
+        format: finalAnswerFormatForProtocol(protocolVersion),
       },
-      tools: [obiToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
+      tools: [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
@@ -106,7 +117,8 @@ export async function messageAgent(
 export async function continueAgent(
   responseId: string,
   callId: string,
-  storeNumber: string,
+  providerId: string,
+  branchId: string,
   result: ToolContinuationResult,
   apiKey: string,
   upstreamFetch: UpstreamFetch,
@@ -120,7 +132,11 @@ export async function continueAgent(
   return requestOpenAI(
     {
       model: OPENAI_MODEL,
-      instructions: agentInstructionsForStore(storeNumber, protocolVersion),
+      instructions: agentInstructionsForProfile(
+        providerId,
+        branchId,
+        protocolVersion,
+      ),
       previous_response_id: responseId,
       input: [
         {
@@ -138,10 +154,10 @@ export async function continueAgent(
       max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
       store: true,
       text: {
-        format: FINAL_ANSWER_FORMAT,
+        format: finalAnswerFormatForProtocol(protocolVersion),
       },
       tools: localToolAvailable
-        ? [obiToolForProtocol(protocolVersion), WEB_SEARCH_TOOL]
+        ? [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL]
         : [WEB_SEARCH_TOOL],
     },
     apiKey,
@@ -225,8 +241,12 @@ export function normalizeOpenAIResponse(
       throw new UpstreamFailureError();
     }
     const call = functionCalls[0];
+    const expectedToolName =
+      protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION
+        ? PROVIDER_LOCAL_TOOL_NAME
+        : LOCAL_TOOL_NAME;
     if (
-      call.name !== LOCAL_TOOL_NAME ||
+      call.name !== expectedToolName ||
       typeof call.call_id !== "string" ||
       !call.call_id ||
       call.call_id.length > 256 ||
@@ -252,7 +272,7 @@ export function normalizeOpenAIResponse(
       type: "tool_request",
       responseId,
       tool: {
-        name: LOCAL_TOOL_NAME,
+        name: expectedToolName,
         callId: call.call_id,
         arguments: argumentsValue,
       },
@@ -262,7 +282,10 @@ export function normalizeOpenAIResponse(
   }
 
   const rawAnswerText = extractAnswerText(payload);
-  const answer = parseStructuredAnswer(rawAnswerText);
+  const answer = parseStructuredAnswer(
+    rawAnswerText,
+    protocolVersion,
+  );
   const sources = extractWebSources(
     payload.output,
     rawAnswerText,
@@ -435,6 +458,8 @@ function boundedModelName(value: unknown): string {
 
 function parseStructuredAnswer(
   raw: string | null,
+  protocolVersion: AdvisorProtocolVersion =
+    CURRENT_ADVISOR_PROTOCOL_VERSION,
 ): {
   text: string;
   productRefs: ProductRef[];
@@ -490,25 +515,53 @@ function parseStructuredAnswer(
     if (!isRecord(value)) {
       throw new UpstreamFailureError();
     }
-    const refKeys = Object.keys(value);
-    if (
-      refKeys.length !== 2 ||
-      !refKeys.includes("storeNumber") ||
-      !refKeys.includes("obik") ||
-      typeof value.storeNumber !== "string" ||
-      !/^\d{3}$/.test(value.storeNumber) ||
-      typeof value.obik !== "string" ||
-      !/^\d{7}$/.test(value.obik)
-    ) {
-      throw new UpstreamFailureError();
-    }
-    const key = value.storeNumber + ":" + value.obik;
-    if (!seen.has(key)) {
-      seen.add(key);
-      deduplicated.push({
-        storeNumber: value.storeNumber,
-        obik: value.obik,
-      });
+    if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+      const refKeys = Object.keys(value);
+      if (
+        refKeys.length !== 3 ||
+        !refKeys.includes("providerId") ||
+        !refKeys.includes("branchId") ||
+        !refKeys.includes("productId") ||
+        typeof value.providerId !== "string" ||
+        !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.providerId) ||
+        typeof value.branchId !== "string" ||
+        !/^[A-Za-z0-9._-]{1,64}$/.test(value.branchId) ||
+        typeof value.productId !== "string" ||
+        !/^[A-Za-z0-9._-]{1,128}$/.test(value.productId)
+      ) {
+        throw new UpstreamFailureError();
+      }
+      const key =
+        value.providerId + ":" + value.branchId + ":" + value.productId;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push({
+          providerId: value.providerId,
+          branchId: value.branchId,
+          productId: value.productId,
+        });
+      }
+    } else {
+      const refKeys = Object.keys(value);
+      if (
+        refKeys.length !== 2 ||
+        !refKeys.includes("storeNumber") ||
+        !refKeys.includes("obik") ||
+        typeof value.storeNumber !== "string" ||
+        !/^\d{3}$/.test(value.storeNumber) ||
+        typeof value.obik !== "string" ||
+        !/^\d{7}$/.test(value.obik)
+      ) {
+        throw new UpstreamFailureError();
+      }
+      const key = value.storeNumber + ":" + value.obik;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push({
+          storeNumber: value.storeNumber,
+          obik: value.obik,
+        });
+      }
     }
   }
 
