@@ -74,9 +74,10 @@ internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
         primaryImageUrl = primaryImageUrl,
         verifiedAt = verifiedAt,
         storeNumber = storeNumber,
-        providerId = OBI_PROVIDER_ID.value,
-        productId = obik,
-        branchId = storeNumber,
+        providerId = providerId,
+        productId = productId,
+        branchId = branchId,
+        articleNumber = articleNumber,
     )
 
 internal fun verifiedProductOpenUrl(
