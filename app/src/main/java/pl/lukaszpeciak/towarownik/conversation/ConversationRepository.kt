@@ -9,6 +9,7 @@ import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.DEFAULT_WORKING_PROFILE
+import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ProviderId
 import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
@@ -359,11 +360,16 @@ private fun ConversationWithMessages.toPersisted(): PersistedConversation =
                                 productId = product.productId,
                                 branchId = product.branchId,
                                 articleNumber = product.articleNumber,
-                                priceScope = when (product.priceScope) {
-                                    "branch" -> ProviderPriceScope.BRANCH
-                                    "online" -> ProviderPriceScope.ONLINE
-                                    else -> null
-                                },
+                                priceScope =
+                                    if (
+                                        product.grossPrice != null &&
+                                        product.providerId ==
+                                        KWANT_PROVIDER_ID.value
+                                    ) {
+                                        ProviderPriceScope.ONLINE
+                                    } else {
+                                        null
+                                    },
                             )
                         },
                     sources = item.sources
