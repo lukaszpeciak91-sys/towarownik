@@ -34,6 +34,7 @@ internal sealed interface AttachmentImportResult {
 internal class AttachmentImporter(
     private val resolver: ContentResolver,
     private val storage: AttachmentStorage,
+    private val beforePublish: (AdvisorAttachment) -> Boolean = { true },
 ) {
     fun import(uri: Uri, suggestedName: String? = null): AttachmentImportResult {
         val metadata = queryMetadata(uri)
@@ -63,6 +64,7 @@ internal class AttachmentImporter(
                 mimeType = "application/pdf",
                 byteSize = bytes.size.toLong(),
                 source = { ByteArrayInputStream(bytes) },
+                beforePublish = beforePublish,
             )
         }.fold(
             onSuccess = { AttachmentImportResult.Success(it) },
@@ -89,6 +91,7 @@ internal class AttachmentImporter(
                 width = normalized.width,
                 height = normalized.height,
                 source = { ByteArrayInputStream(normalized.bytes) },
+                beforePublish = beforePublish,
             )
         }.fold(
             onSuccess = { AttachmentImportResult.Success(it) },
