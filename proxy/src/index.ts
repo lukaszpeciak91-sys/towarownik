@@ -130,6 +130,7 @@ async function handleProtectedAgentRequest(
         apiKey,
         upstreamFetch,
         input.protocolVersion,
+        input.attachment,
       );
     } else if (endpoint === "message") {
       const input = await parseMessageRequest(request);
@@ -142,6 +143,7 @@ async function handleProtectedAgentRequest(
         apiKey,
         upstreamFetch,
         input.protocolVersion,
+        input.attachment,
       );
     } else {
       const input = await parseContinueRequest(request);

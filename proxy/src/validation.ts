@@ -1,6 +1,7 @@
 import {
   CONTINUE_BODY_MAX_BYTES,
   CURRENT_ADVISOR_PROTOCOL_VERSION,
+  PROVIDER_ADVISOR_PROTOCOL_VERSION,
   LEGACY_ADVISOR_PROTOCOL_VERSION,
   OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
   MAX_CALL_ID_CHARS,
@@ -17,9 +18,12 @@ import {
   MAX_TOOL_QUERY_CHARS,
   START_BODY_MAX_BYTES,
   START_MESSAGE_MAX_CHARS,
+  ATTACHMENT_MAX_BYTES,
+  MULTIPART_BODY_MAX_BYTES,
 } from "./config.js";
 import type {
   AdvisorProtocolVersion,
+  AdvisorAttachment,
   LegacyRejectedToolResult,
   LegacyToolArguments,
   LegacyVerifiedToolResult,
@@ -66,6 +70,7 @@ export interface StartRequest {
   providerId: string;
   branchId: string;
   storeNumber: string;
+  attachment?: AdvisorAttachment;
 }
 
 export interface MessageRequest extends StartRequest {
@@ -110,12 +115,15 @@ export async function readJsonBody(
 export async function parseStartRequest(
   request: Request,
 ): Promise<StartRequest> {
+  if (isMultipartContentType(request.headers.get("Content-Type"))) {
+    return parseMultipartRequest(request, false);
+  }
   const value = await readJsonBody(request, START_BODY_MAX_BYTES);
   const record = requireRecord(value);
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
   return withProtocolContext(protocolVersion, () => {
-    if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+    if (protocolVersion >= PROVIDER_ADVISOR_PROTOCOL_VERSION) {
       const object = exactObjectShape(
         value,
         ["message", "providerId", "branchId"],
@@ -151,12 +159,15 @@ export async function parseStartRequest(
 export async function parseMessageRequest(
   request: Request,
 ): Promise<MessageRequest> {
+  if (isMultipartContentType(request.headers.get("Content-Type"))) {
+    return parseMultipartRequest(request, true) as Promise<MessageRequest>;
+  }
   const value = await readJsonBody(request, MESSAGE_BODY_MAX_BYTES);
   const record = requireRecord(value);
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
   return withProtocolContext(protocolVersion, () => {
-    if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+    if (protocolVersion >= PROVIDER_ADVISOR_PROTOCOL_VERSION) {
       const object = exactObjectShape(
         value,
         ["previousResponseId", "message", "providerId", "branchId"],
@@ -205,7 +216,7 @@ export async function parseContinueRequest(
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
 
   return withProtocolContext(protocolVersion, () => {
-    if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+    if (protocolVersion >= PROVIDER_ADVISOR_PROTOCOL_VERSION) {
       const object = exactObjectShape(
         value,
         [
@@ -410,7 +421,7 @@ function validateToolContinuationResult(
     throw new InvalidRequestError(protocolVersion);
   }
 
-  if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+  if (protocolVersion >= PROVIDER_ADVISOR_PROTOCOL_VERSION) {
     if ("results" in value) {
       return validateProviderVerifiedToolResult(value);
     }
@@ -685,11 +696,72 @@ function validateProtocolVersion(
   if (
     value === LEGACY_ADVISOR_PROTOCOL_VERSION ||
     value === OBI_GROUPED_ADVISOR_PROTOCOL_VERSION ||
+    value === PROVIDER_ADVISOR_PROTOCOL_VERSION ||
     value === CURRENT_ADVISOR_PROTOCOL_VERSION
   ) {
     return value;
   }
   throw new UnsupportedProtocolVersionError(value);
+}
+
+async function parseMultipartRequest(
+  request: Request,
+  isMessage: boolean,
+): Promise<StartRequest | MessageRequest> {
+  const declaredLength = parseContentLength(request.headers.get("Content-Length"));
+  if (declaredLength !== null && declaredLength > MULTIPART_BODY_MAX_BYTES) {
+    throw new RequestTooLargeError();
+  }
+  const form = await request.formData().catch(() => { throw new InvalidRequestError(); });
+  const keys: string[] = [];
+  form.forEach((_value, key) => keys.push(key));
+  if (keys.length !== 2 || !keys.includes("payload") || !keys.includes("attachment")) {
+    throw new InvalidRequestError();
+  }
+  const payload = form.get("payload");
+  const file = form.get("attachment");
+  if (typeof payload !== "string" || !(file instanceof File)) throw new InvalidRequestError();
+  if (file.size < 1) throw new InvalidRequestError();
+  if (file.size > ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
+  let value: unknown;
+  try { value = JSON.parse(payload); } catch { throw new InvalidRequestError(); }
+  const record = requireRecord(value);
+  const protocolVersion = validateProtocolVersion(record.protocolVersion);
+  if (protocolVersion !== CURRENT_ADVISOR_PROTOCOL_VERSION) throw new InvalidRequestError(protocolVersion);
+  const required = isMessage
+    ? ["previousResponseId", "message", "providerId", "branchId"]
+    : ["message", "providerId", "branchId"];
+  const object = exactObjectShape(value, required, ["protocolVersion"]);
+  const message = validatedAttachmentMessage(object.message);
+  const providerId = validateProviderId(object.providerId);
+  const branchId = validateBranchId(object.branchId);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  validateAttachmentSignature(file.type, bytes, protocolVersion);
+  const base = { protocolVersion, message, providerId, branchId, storeNumber: branchId,
+    attachment: { mimeType: file.type as AdvisorAttachment["mimeType"], bytes } };
+  return isMessage
+    ? { ...base, previousResponseId: boundedString(object.previousResponseId, MAX_RESPONSE_ID_CHARS) }
+    : base;
+}
+
+function validatedAttachmentMessage(value: unknown): string {
+  if (typeof value !== "string") throw new InvalidRequestError();
+  const normalized = value.trim();
+  if (normalized.length > START_MESSAGE_MAX_CHARS) throw new InvalidRequestError();
+  return normalized;
+}
+
+function validateAttachmentSignature(mime: string, bytes: Uint8Array, protocol: AdvisorProtocolVersion): void {
+  const starts = (...signature: number[]) => signature.every((value, index) => bytes[index] === value);
+  const valid = mime === "image/jpeg" ? starts(0xff, 0xd8, 0xff)
+    : mime === "image/png" ? starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+    : mime === "application/pdf" ? starts(0x25, 0x50, 0x44, 0x46, 0x2d)
+    : false;
+  if (!valid) throw new InvalidRequestError(protocol);
+}
+
+function isMultipartContentType(value: string | null): boolean {
+  return value?.toLowerCase().startsWith("multipart/form-data;") === true;
 }
 
 function requireRecord(

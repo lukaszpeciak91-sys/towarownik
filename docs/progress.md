@@ -217,3 +217,9 @@ The currently planned AI capability stage is complete after this selective web-s
 - Added the approved in-composer attachment menu, private image/PDF acquisition, compact private-file preview/removal, and existing WorkingProfile selector hook.
 - Added Android Photo Picker, system camera temporary capture, constrained system document selection, bounded EXIF-aware image normalization, localized acquisition errors, and single-pending-file lifecycle cleanup. A one-localId ownership marker now closes the cold-start orphan gap while preserving restored pending state and persisted message attachments.
 - Preserved text-only advisor behavior and explicitly gated every attachment send until multimodal protocol/Worker transport arrives in PR #3.
+
+## 2026-10-05 — multimodal transport / protocol v4
+
+- Enabled one persisted JPEG, PNG, or PDF to stream from Android private storage through Worker multipart validation to GPT-6 Luna.
+- Added image `input_image`/high-detail and PDF `input_file` data-URL request shaping while preserving response chaining and the local-tool continuation loop.
+- Kept protocol v2/v3 and text-only paths compatible, with attachment bytes restricted to the initial `/start` or `/message` request.

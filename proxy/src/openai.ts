@@ -23,6 +23,7 @@ import {
 import { InvalidRequestError, parseToolArguments } from "./validation.js";
 import type {
   AdvisorProtocolVersion,
+  AdvisorAttachment,
   AgentRequestType,
   AgentResult,
   AgentUsage,
@@ -42,6 +43,7 @@ export async function startAgent(
   upstreamFetch: UpstreamFetch,
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
+  attachment?: AdvisorAttachment,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
@@ -51,7 +53,7 @@ export async function startAgent(
         branchId,
         protocolVersion,
       ),
-      input: message,
+      input: modelInput(message, attachment),
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
       },
@@ -82,6 +84,7 @@ export async function messageAgent(
   upstreamFetch: UpstreamFetch,
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
+  attachment?: AdvisorAttachment,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
@@ -92,7 +95,7 @@ export async function messageAgent(
         protocolVersion,
       ),
       previous_response_id: previousResponseId,
-      input: message,
+      input: modelInput(message, attachment),
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
       },
@@ -112,6 +115,26 @@ export async function messageAgent(
     true,
     protocolVersion,
   );
+}
+
+function modelInput(message: string, attachment?: AdvisorAttachment): unknown {
+  if (!attachment) return message;
+  const dataUrl = `data:${attachment.mimeType};base64,${bytesToBase64(attachment.bytes)}`;
+  const content: Record<string, unknown>[] = [];
+  if (message) content.push({ type: "input_text", text: message });
+  content.push(attachment.mimeType === "application/pdf"
+    ? { type: "input_file", file_data: dataUrl }
+    : { type: "input_image", image_url: dataUrl, detail: "high" });
+  return [{ role: "user", content }];
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
+  }
+  return btoa(binary);
 }
 
 export async function continueAgent(
@@ -242,7 +265,7 @@ export function normalizeOpenAIResponse(
     }
     const call = functionCalls[0];
     const expectedToolName =
-      protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION
+      protocolVersion >= 3
         ? PROVIDER_LOCAL_TOOL_NAME
         : LOCAL_TOOL_NAME;
     if (
@@ -515,7 +538,7 @@ function parseStructuredAnswer(
     if (!isRecord(value)) {
       throw new UpstreamFailureError();
     }
-    if (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION) {
+    if (protocolVersion >= 3) {
       const refKeys = Object.keys(value);
       if (
         refKeys.length !== 3 ||

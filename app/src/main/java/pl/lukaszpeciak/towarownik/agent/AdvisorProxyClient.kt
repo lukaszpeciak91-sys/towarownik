@@ -23,11 +23,16 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import pl.lukaszpeciak.towarownik.BuildConfig
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
+import okio.BufferedSink
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 
@@ -35,6 +40,7 @@ internal class AdvisorProxyClient(
     private val appToken: String = BuildConfig.TOWAROWNIK_APP_TOKEN,
     private val baseUrl: HttpUrl = ADVISOR_PROXY_BASE_URL.toHttpUrl(),
     client: OkHttpClient? = null,
+    private val attachmentStorage: AttachmentStorage? = null,
 ) {
     private val client = client ?: OkHttpClient.Builder()
         .retryOnConnectionFailure(false)
@@ -78,6 +84,7 @@ internal class AdvisorProxyClient(
         message: String,
         providerId: String,
         branchId: String,
+        attachment: AdvisorAttachment? = null,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
@@ -90,15 +97,16 @@ internal class AdvisorProxyClient(
             )
         }
 
-        return execute(
+        val body = buildJsonObject {
+            put("protocolVersion", if (attachment == null) ADVISOR_PROTOCOL_VERSION else MULTIMODAL_PROTOCOL_VERSION)
+            put("message", message)
+            put("providerId", providerId)
+            put("branchId", branchId)
+        }
+        return if (attachment == null) execute(
             endpoint = "v1/agent/start",
-            body = buildJsonObject {
-                put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
-                put("message", message)
-                put("providerId", providerId)
-                put("branchId", branchId)
-            },
-        )
+            body = body,
+        ) else executeMultipart("v1/agent/start", body, attachment)
     }
 
     suspend fun message(
@@ -136,6 +144,7 @@ internal class AdvisorProxyClient(
         message: String,
         providerId: String,
         branchId: String,
+        attachment: AdvisorAttachment? = null,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
@@ -148,16 +157,17 @@ internal class AdvisorProxyClient(
             )
         }
 
-        return execute(
+        val body = buildJsonObject {
+            put("protocolVersion", if (attachment == null) ADVISOR_PROTOCOL_VERSION else MULTIMODAL_PROTOCOL_VERSION)
+            put("previousResponseId", previousResponseId)
+            put("message", message)
+            put("providerId", providerId)
+            put("branchId", branchId)
+        }
+        return if (attachment == null) execute(
             endpoint = "v1/agent/message",
-            body = buildJsonObject {
-                put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
-                put("previousResponseId", previousResponseId)
-                put("message", message)
-                put("providerId", providerId)
-                put("branchId", branchId)
-            },
-        )
+            body = body,
+        ) else executeMultipart("v1/agent/message", body, attachment)
     }
 
     suspend fun continueTurn(
@@ -338,6 +348,57 @@ internal class AdvisorProxyClient(
             )
         }
     }
+
+    private suspend fun executeMultipart(
+        endpoint: String,
+        payload: JsonObject,
+        attachment: AdvisorAttachment,
+    ): AdvisorProxyCallResult {
+        val storage = attachmentStorage ?: return AdvisorProxyCallResult.Failure(
+            AdvisorProxyFailureKind.PROTOCOL,
+        )
+        if (!storage.exists(attachment.localId)) {
+            return AdvisorProxyCallResult.Failure(
+                AdvisorProxyFailureKind.PROTOCOL,
+            )
+        }
+        val fileBody = object : RequestBody() {
+            override fun contentType() = attachment.mimeType.toMediaType()
+            override fun contentLength() = attachment.byteSize
+            override fun writeTo(sink: BufferedSink) {
+                val input = storage.open(attachment.localId)
+                    ?: error("Attachment unavailable")
+                input.use { source ->
+                    source.copyTo(sink.outputStream())
+                }
+            }
+        }
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("payload", payload.toString())
+            .addFormDataPart("attachment", attachment.displayName, fileBody)
+            .build()
+        val request = Request.Builder()
+            .url(baseUrl.newBuilder().addPathSegments(endpoint).build())
+            .post(multipart)
+            .header("Authorization", "Bearer $appToken")
+            .build()
+        return executeRequest(request, endpoint)
+    }
+
+    private suspend fun executeRequest(request: Request, endpoint: String): AdvisorProxyCallResult =
+        suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, exception: java.io.IOException) {
+                    if (continuation.isActive) continuation.resume(AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.NETWORK))
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    val result = response.use { mapResponse(it, endpoint.substringAfterLast('/')) }
+                    if (continuation.isActive) continuation.resume(result)
+                }
+            })
+        }
 
     private fun mapResponse(
         response: Response,
@@ -1247,6 +1308,7 @@ internal class AdvisorProxyClient(
         const val MAX_USAGE_TOKENS = 10_000_000_000L
         const val MAX_WEB_SEARCH_CALLS = 1L
         const val MAX_WEB_SOURCES = 6
+        const val MULTIMODAL_PROTOCOL_VERSION = 4
         const val MAX_WEB_SOURCE_TITLE_CHARS = 200
         const val MAX_WEB_SOURCE_URL_CHARS = 2048
     }

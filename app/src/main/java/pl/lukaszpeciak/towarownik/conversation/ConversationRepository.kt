@@ -202,12 +202,14 @@ internal class ConversationRepository(
         attachment: AdvisorAttachment? = null,
     ): UserTurnStart {
         val normalized = normalizeConversationText(text)
-        require(normalized.isNotBlank())
+        require(normalized.isNotBlank() || attachment != null)
 
         return if (conversationId == null) {
             val (newId, previousResponseId) =
                 dao.createWithFirstUserMessage(
-                    title = deriveConversationTitle(normalized),
+                    title = deriveConversationTitle(
+                        normalized.ifBlank { attachment?.displayName.orEmpty() },
+                    ),
                     text = normalized,
                     createdAt = createdAt,
                     providerId = workingProfile.providerId.value,

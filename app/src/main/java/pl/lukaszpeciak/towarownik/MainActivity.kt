@@ -216,7 +216,7 @@ internal fun freshAdvisorCaseAfterDelete(
 private fun TowarownikApp() {
     val uiContext = LocalContext.current
     val context = uiContext.applicationContext
-    val advisorController = remember { AdvisorController.production() }
+    val advisorController = remember { AdvisorController.production(context) }
     val providerRegistry = remember { ProductProviderRegistry.production() }
     val manualSearchController = remember {
         ManualSearchController(providers = providerRegistry)
@@ -598,11 +598,9 @@ private fun TowarownikApp() {
     fun submitAdvisorTurn() {
         if (advisorJob?.isActive == true) return
 
-        // PR #3 owns multimodal transport. Never degrade a pending attachment to text-only.
-        if (pendingAttachment != null) return
-
         val submitted = advisorCase.draft.trim()
-        if (submitted.isBlank()) return
+        val submittedAttachment = pendingAttachment
+        if (submitted.isBlank() && submittedAttachment == null) return
         val turnProfile = selectedWorkingProfile
 
         val generation = advisorRequestGuard.token()
@@ -614,7 +612,12 @@ private fun TowarownikApp() {
                 conversationId = activeConversationId,
                 text = submitted,
                 workingProfile = turnProfile,
+                attachment = submittedAttachment,
             )
+            pendingAttachment = null
+            submittedAttachment?.let {
+                pendingAttachmentOwnership.clearIfOwned(it.localId)
+            }
 
             if (!advisorRequestGuard.isTokenCurrent(generation)) {
                 conversationRepository.recoverInterruptedTurn(
@@ -643,6 +646,7 @@ private fun TowarownikApp() {
                     previousResponseId = turn.previousResponseId,
                     conversationStoreNumber = branchId,
                     conversationProviderId = providerId,
+                    attachment = submittedAttachment,
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(

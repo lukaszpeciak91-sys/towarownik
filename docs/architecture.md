@@ -315,4 +315,12 @@ The advisor composer owns at most one unsent `AdvisorAttachment`. Its compact in
 
 Selected content crosses an Android-local `AttachmentImporter` boundary before becoming pending state. PDFs are signature/MIME checked and copied with the existing 16 MiB ceiling. Images are bounds-inspected, EXIF-oriented, proportionally reduced only above a centralized 4096 px maximum dimension, and re-encoded as metadata-free PNG when alpha matters or quality-92 JPEG otherwise. Preview reads the resulting app-private attachment, never the external URI. Replacing, removing, starting a new conversation, or switching conversations best-effort deletes the unsent private file. A single private pending-owner marker preserves that ownership across activity recreation/process state restore; on a true cold start, if no usable pending attachment is restored, Android checks only that marked localId against Room and best-effort deletes it when it is not owned by message_attachments. No directory scan is performed.
 
-The composer uses multiline IME behavior: Enter inserts a newline and only the dedicated button submits. Text-only transport is unchanged. While protocol/Worker multimodal transport remains absent, a pending attachment makes submit ineligible and the submission boundary independently refuses to call the text-only controller.
+The composer uses multiline IME behavior: Enter inserts a newline and only the dedicated button submits. Text-only transport is unchanged. A pending attachment enables the dedicated submit path and can be sent with or without accompanying text through protocol v4.
+
+## Multimodal advisor transport (protocol v4)
+
+- Protocol v4 is provider-aware v3 plus one optional attachment; v2/v3 JSON compatibility remains intact.
+- Android streams the persisted private file through OkHttp multipart on the initial `/start` or `/message` request. `/continue` is always JSON and never contains attachment bytes.
+- The Worker accepts only one `image/jpeg`, `image/png`, or `application/pdf` part, verifies its magic signature and a 16 MiB limit, and holds no file state.
+- Images become Responses `input_image` data URLs with `detail=high`; PDFs become `input_file.file_data` data URLs. The Files API and Cloudflare R2/KV/D1 are not involved.
+- Attachment content is untrusted user input. It may ground identity, codes, and specifications, but current provider stock, price, and availability retain the existing local verification boundary.

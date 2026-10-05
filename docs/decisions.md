@@ -453,3 +453,9 @@ These decisions describe the broader intended product behavior. The currently im
 - Chose one pending private attachment and a 4096 px image dimension bound. Images are orientation-normalized and re-encoded at OCR-friendly JPEG quality 92 (or PNG for meaningful alpha); PDFs are not transformed. The existing 16 MiB local ceiling remains authoritative.
 - Enter is newline-only and the external send button remains the sole submit action.
 - Attachment submission is deliberately disabled and guarded from the current text-only controller until PR #3 supplies end-to-end multimodal transport.
+
+## 2026-10-05 — protocol v4 multimodal transport
+
+- Use multipart only when one private IMAGE/PDF attachment accompanies `/start` or `/message`; preserve JSON for text-only traffic and `/continue`.
+- Carry attachment bytes inline to Responses as a validated data URL rather than introducing Files API or persistent proxy storage.
+- Treat attachment-derived text as user content and retain local provider verification for current commercial facts; generic technical photos do not independently trigger provider search.

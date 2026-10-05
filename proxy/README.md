@@ -208,3 +208,7 @@ Worker name: towarownik-proxy
 ## Current OBI-fact freshness rule
 
 Conversation history may mention older stock or price values. The server-controlled advisor instructions require a new `find_obi_products` call whenever the current user question depends on current store-`075` availability, stock, price, or choosing currently available products. Historical facts are not current authority. Stock `0` means unavailable; null stock or null price means unknown.
+
+## Protocol v4 attachments
+
+Protocol v4 accepts `multipart/form-data` on `/start` and `/message` only, with a JSON `payload` part and exactly one `attachment` part. Supported MIME/signature pairs are JPEG, PNG, and PDF, bounded to 16 MiB. `/continue` and all v2/v3 traffic remain JSON-only.
