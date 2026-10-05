@@ -174,7 +174,7 @@ class ProblemReportSharingTest {
     }
 
     @Test
-    fun `FileProvider exposes only dedicated report cache path`() {
+    fun `FileProvider exposes only dedicated report and attachment paths`() {
         val manifest = parseXml(
             File(projectRoot(), "app/src/main/AndroidManifest.xml"),
         )
@@ -204,17 +204,34 @@ class ProblemReportSharingTest {
         val paths = parseXml(
             File(resourceDirectory(), "xml/report_file_paths.xml"),
         )
-        val cachePaths = paths.getElementsByTagName("cache-path")
-        assertEquals(1, cachePaths.length)
-        val cachePath = cachePaths.item(0) as Element
-        assertEquals("problem_reports", cachePath.getAttribute("name"))
-        assertEquals("reports/", cachePath.getAttribute("path"))
-        assertEquals(1, paths.documentElement.childNodes
+        val elements = paths.documentElement.childNodes
             .let { nodes ->
-                (0 until nodes.length).count {
-                    nodes.item(it) is Element
-                }
-            })
+                (0 until nodes.length)
+                    .mapNotNull { nodes.item(it) as? Element }
+            }
+        assertEquals(3, elements.size)
+        assertEquals(
+            setOf(
+                Triple("cache-path", "problem_reports", "reports/"),
+                Triple(
+                    "cache-path",
+                    "advisor_camera_capture",
+                    "advisor_camera_capture/",
+                ),
+                Triple(
+                    "files-path",
+                    "advisor_attachments",
+                    "advisor_attachments/",
+                ),
+            ),
+            elements.map {
+                Triple(
+                    it.tagName,
+                    it.getAttribute("name"),
+                    it.getAttribute("path"),
+                )
+            }.toSet(),
+        )
     }
 
     @Test
