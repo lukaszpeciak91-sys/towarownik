@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -26,6 +27,7 @@ class AttachmentAcquisitionTest {
         storage = AttachmentStorage(context)
         context.filesDir.resolve("advisor_attachments").deleteRecursively()
         context.cacheDir.resolve("advisor_camera_capture").deleteRecursively()
+        pendingPreferences().edit().clear().commit()
     }
 
     @Test fun `replacement deletes previous pending private file`() {
@@ -53,6 +55,76 @@ class AttachmentAcquisitionTest {
         val pending = PendingAttachmentState(storage, attachment)
         assertEquals(attachment, pending.attachment)
         assertTrue(storage.exists(attachment.localId))
+    }
+
+    @Test
+    fun `cold start deletes exactly orphaned owned pending file`() = runBlocking {
+        val attachment = storedPdf("orphan.pdf")
+        val firstOwner = PendingAttachmentOwnership(
+            storage,
+            pendingPreferences(),
+        )
+        firstOwner.markPending(attachment)
+
+        val coldStartOwner = PendingAttachmentOwnership(
+            storage,
+            pendingPreferences(),
+        )
+        val restored = coldStartOwner.reconcileAfterStartup(
+            restored = null,
+            isPersisted = { false },
+        )
+
+        assertNull(restored)
+        assertFalse(storage.exists(attachment.localId))
+        assertNull(coldStartOwner.ownedLocalId())
+    }
+
+    @Test
+    fun `pending startup cleanup never removes persisted attachment file`() = runBlocking {
+        val attachment = storedPdf("sent.pdf")
+        val owner = PendingAttachmentOwnership(
+            storage,
+            pendingPreferences(),
+        )
+        owner.markPending(attachment)
+
+        val restored = owner.reconcileAfterStartup(
+            restored = null,
+            isPersisted = { localId ->
+                localId == attachment.localId
+            },
+        )
+
+        assertNull(restored)
+        assertTrue(storage.exists(attachment.localId))
+        assertNull(owner.ownedLocalId())
+    }
+
+    @Test
+    fun `normal restored pending attachment remains usable`() = runBlocking {
+        val attachment = storedPdf("restored.pdf")
+        val firstOwner = PendingAttachmentOwnership(
+            storage,
+            pendingPreferences(),
+        )
+        firstOwner.markPending(attachment)
+
+        val recreatedOwner = PendingAttachmentOwnership(
+            storage,
+            pendingPreferences(),
+        )
+        val restored = recreatedOwner.reconcileAfterStartup(
+            restored = attachment,
+            isPersisted = { false },
+        )
+
+        assertEquals(attachment, restored)
+        assertTrue(storage.exists(attachment.localId))
+        assertEquals(
+            attachment.localId,
+            recreatedOwner.ownedLocalId(),
+        )
     }
 
     @Test fun `unsupported file is rejected`() {
@@ -104,6 +176,12 @@ class AttachmentAcquisitionTest {
         assertFalse(canSubmitAdvisorComposer("", attachment))
         assertFalse(advisorSubmissionUsesTextTransport(attachment))
     }
+
+    private fun pendingPreferences() =
+        context.getSharedPreferences(
+            "attachment-pending-test",
+            Context.MODE_PRIVATE,
+        )
 
     private fun storedPdf(name: String): AdvisorAttachment {
         val bytes = "%PDF-".toByteArray()
