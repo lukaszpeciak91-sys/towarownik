@@ -1,5 +1,7 @@
 package pl.lukaszpeciak.towarownik.attachment
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.Saver
@@ -19,6 +21,72 @@ internal class PendingAttachmentState(
     }
 
     fun remove() = replace(null)
+}
+
+internal class PendingAttachmentOwnership(
+    private val storage: AttachmentStorage,
+    private val preferences: SharedPreferences,
+) {
+    constructor(
+        context: Context,
+        storage: AttachmentStorage,
+    ) : this(
+        storage = storage,
+        preferences = context.getSharedPreferences(
+            PREFERENCES_NAME,
+            Context.MODE_PRIVATE,
+        ),
+    )
+
+    fun markPending(attachment: AdvisorAttachment) {
+        preferences.edit()
+            .putString(KEY_LOCAL_ID, attachment.localId)
+            .apply()
+    }
+
+    fun clearIfOwned(localId: String) {
+        if (ownedLocalId() == localId) {
+            preferences.edit().remove(KEY_LOCAL_ID).apply()
+        }
+    }
+
+    fun ownedLocalId(): String? =
+        preferences.getString(KEY_LOCAL_ID, null)
+
+    suspend fun reconcileAfterStartup(
+        restored: AdvisorAttachment?,
+        isPersisted: suspend (String) -> Boolean,
+    ): AdvisorAttachment? {
+        val owned = ownedLocalId()
+        val usableRestored = restored?.takeIf {
+            storage.exists(it.localId)
+        }
+
+        if (usableRestored != null) {
+            if (
+                owned != null &&
+                owned != usableRestored.localId &&
+                !isPersisted(owned)
+            ) {
+                runCatching { storage.delete(owned) }
+            }
+            markPending(usableRestored)
+            return usableRestored
+        }
+
+        if (owned != null) {
+            if (!isPersisted(owned)) {
+                runCatching { storage.delete(owned) }
+            }
+            preferences.edit().remove(KEY_LOCAL_ID).apply()
+        }
+        return null
+    }
+
+    private companion object {
+        const val PREFERENCES_NAME = "advisor_pending_attachment"
+        const val KEY_LOCAL_ID = "local_id"
+    }
 }
 
 internal fun canSubmitAdvisorComposer(text: String, attachment: AdvisorAttachment?): Boolean =
