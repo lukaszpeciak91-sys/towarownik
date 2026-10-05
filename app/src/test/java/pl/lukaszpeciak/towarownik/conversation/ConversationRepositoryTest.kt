@@ -138,10 +138,7 @@ class ConversationRepositoryTest {
         )
         assertEquals("history-manual.pdf", restoredPdf.displayName)
         assertEquals(pdfBytes.size.toLong(), restoredPdf.byteSize)
-        assertEquals(
-            formatAttachmentByteSize(pdfBytes.size.toLong()),
-            formatAttachmentByteSize(restoredPdf.byteSize),
-        )
+        assertEquals("8 B", formatAttachmentByteSize(restoredPdf.byteSize))
     }
 
     @Test
