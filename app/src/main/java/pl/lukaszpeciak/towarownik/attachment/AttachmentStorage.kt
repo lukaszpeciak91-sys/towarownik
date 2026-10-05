@@ -10,6 +10,12 @@ import java.util.UUID
 internal const val ATTACHMENT_LOCAL_STORAGE_MAX_BYTES =
     16L * 1024L * 1024L
 
+internal enum class AttachmentRenderKind {
+    IMAGE,
+    PDF,
+    UNAVAILABLE,
+}
+
 internal class AttachmentStorage private constructor(
     private val directory: File,
 ) {
@@ -76,6 +82,16 @@ internal class AttachmentStorage private constructor(
         val target = file(attachment.localId) ?: return false
         return target.isFile && target.length() == attachment.byteSize
     }
+
+    fun renderKind(attachment: AdvisorAttachment): AttachmentRenderKind =
+        if (!isReadable(attachment)) {
+            AttachmentRenderKind.UNAVAILABLE
+        } else {
+            when (attachment.type) {
+                AttachmentType.IMAGE -> AttachmentRenderKind.IMAGE
+                AttachmentType.PDF -> AttachmentRenderKind.PDF
+            }
+        }
 
     fun delete(localId: String): Boolean {
         val target = file(localId) ?: return false
