@@ -123,7 +123,11 @@ function modelInput(message: string, attachment?: AdvisorAttachment): unknown {
   const content: Record<string, unknown>[] = [];
   if (message) content.push({ type: "input_text", text: message });
   content.push(attachment.mimeType === "application/pdf"
-    ? { type: "input_file", file_data: dataUrl }
+    ? {
+        type: "input_file",
+        filename: attachment.filename,
+        file_data: dataUrl,
+      }
     : { type: "input_image", image_url: dataUrl, detail: "high" });
   return [{ role: "user", content }];
 }
