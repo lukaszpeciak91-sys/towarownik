@@ -708,11 +708,10 @@ async function parseMultipartRequest(
   request: Request,
   isMessage: boolean,
 ): Promise<StartRequest | MessageRequest> {
-  const declaredLength = parseContentLength(request.headers.get("Content-Length"));
-  if (declaredLength !== null && declaredLength > MULTIPART_BODY_MAX_BYTES) {
-    throw new RequestTooLargeError();
-  }
-  const form = await request.formData().catch(() => { throw new InvalidRequestError(); });
+  requireMultipartContentLength(request.headers.get("Content-Length"));
+  const form = await request.formData().catch(() => {
+    throw new InvalidRequestError();
+  });
   const keys: string[] = [];
   form.forEach((_value, key) => keys.push(key));
   if (keys.length !== 2 || !keys.includes("payload") || !keys.includes("attachment")) {
@@ -737,11 +736,45 @@ async function parseMultipartRequest(
   const branchId = validateBranchId(object.branchId);
   const bytes = new Uint8Array(await file.arrayBuffer());
   validateAttachmentSignature(file.type, bytes, protocolVersion);
-  const base = { protocolVersion, message, providerId, branchId, storeNumber: branchId,
-    attachment: { mimeType: file.type as AdvisorAttachment["mimeType"], bytes } };
+  const base = {
+    protocolVersion,
+    message,
+    providerId,
+    branchId,
+    storeNumber: branchId,
+    attachment: {
+      mimeType: file.type as AdvisorAttachment["mimeType"],
+      bytes,
+      filename: sanitizeAttachmentFilename(file.name),
+    },
+  };
   return isMessage
     ? { ...base, previousResponseId: boundedString(object.previousResponseId, MAX_RESPONSE_ID_CHARS) }
     : base;
+}
+
+function requireMultipartContentLength(value: string | null): number {
+  if (value === null) {
+    throw new InvalidRequestError();
+  }
+  const normalized = value.trim();
+  if (!/^[1-9]\d*$/.test(normalized)) {
+    throw new InvalidRequestError();
+  }
+  const parsed = Number(normalized);
+  if (!Number.isSafeInteger(parsed) || parsed > MULTIPART_BODY_MAX_BYTES) {
+    throw new RequestTooLargeError();
+  }
+  return parsed;
+}
+
+function sanitizeAttachmentFilename(value: string): string {
+  const sanitized = value
+    .replace(/[\\/]/g, "_")
+    .replace(/[\u0000-\u001f\u007f]+/g, "")
+    .trim()
+    .slice(0, 128);
+  return sanitized || "attachment";
 }
 
 function validatedAttachmentMessage(value: unknown): string {
