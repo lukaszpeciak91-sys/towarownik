@@ -1,6 +1,8 @@
 package pl.lukaszpeciak.towarownik.attachment
 
 import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
 import java.io.File
 import java.io.InputStream
 import java.util.UUID
@@ -22,6 +24,7 @@ internal class AttachmentStorage private constructor(
         height: Int? = null,
         createdAt: Long = System.currentTimeMillis(),
         source: () -> InputStream,
+        beforePublish: (AdvisorAttachment) -> Boolean = { true },
     ): AdvisorAttachment {
         require(byteSize <= ATTACHMENT_LOCAL_STORAGE_MAX_BYTES) {
             "Attachment exceeds local storage size limit"
@@ -47,6 +50,9 @@ internal class AttachmentStorage private constructor(
                 temporary.outputStream().use { output -> input.copyTo(output) }
             }
             require(copied == byteSize) { "Attachment size differs from validated metadata" }
+            check(beforePublish(metadata)) {
+                "Could not persist pending attachment ownership"
+            }
             check(temporary.renameTo(destination)) { "Could not persist attachment" }
         } catch (failure: Throwable) {
             temporary.delete()
@@ -58,6 +64,11 @@ internal class AttachmentStorage private constructor(
 
     fun open(localId: String): InputStream? =
         file(localId)?.takeIf(File::isFile)?.inputStream()
+
+    fun contentUri(context: Context, localId: String): Uri? =
+        file(localId)?.takeIf(File::isFile)?.let {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", it)
+        }
 
     fun exists(localId: String): Boolean = file(localId)?.isFile == true
 

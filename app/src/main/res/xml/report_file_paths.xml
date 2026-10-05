@@ -3,4 +3,10 @@
     <cache-path
         name="problem_reports"
         path="reports/" />
+    <cache-path
+        name="advisor_camera_capture"
+        path="advisor_camera_capture/" />
+    <files-path
+        name="advisor_attachments"
+        path="advisor_attachments/" />
 </paths>

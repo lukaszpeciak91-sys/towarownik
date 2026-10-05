@@ -132,6 +132,36 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `persisted attachment ownership is reported by local id`() = runBlocking {
+        val persisted = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "persisted.pdf",
+            "application/pdf",
+            1,
+            createdAt = 8,
+            source = { ByteArrayInputStream(byteArrayOf(1)) },
+        )
+        val unsent = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "unsent.pdf",
+            "application/pdf",
+            1,
+            createdAt = 9,
+            source = { ByteArrayInputStream(byteArrayOf(2)) },
+        )
+
+        repository.beginUserTurn(
+            conversationId = null,
+            text = "Persist attachment",
+            createdAt = 10,
+            attachment = persisted,
+        )
+
+        assertTrue(repository.isAttachmentPersisted(persisted.localId))
+        assertFalse(repository.isAttachmentPersisted(unsent.localId))
+    }
+
+    @Test
     fun `interrupted turn recovery removes attachment metadata and only its private file`() = runBlocking {
         val interruptedAttachment = attachmentStorage.importValidated(
             AttachmentType.PDF,

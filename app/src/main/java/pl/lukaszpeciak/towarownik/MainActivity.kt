@@ -2,10 +2,24 @@ package pl.lukaszpeciak.towarownik
 
 import android.os.Build
 import android.os.Bundle
+import android.net.Uri
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.AttachmentImportError
+import pl.lukaszpeciak.towarownik.attachment.AttachmentImportResult
+import pl.lukaszpeciak.towarownik.attachment.AttachmentImporter
+import pl.lukaszpeciak.towarownik.attachment.AttachmentType
+import pl.lukaszpeciak.towarownik.attachment.CameraCapture
+import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentOwnership
+import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentSaver
+import pl.lukaszpeciak.towarownik.attachment.canSubmitAdvisorComposer
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -20,6 +34,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -60,6 +75,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,6 +89,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
@@ -82,6 +99,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -206,10 +224,14 @@ private fun TowarownikApp() {
     val workingProfileRepository = remember {
         WorkingProfileRepository.production(context)
     }
+    val attachmentStorage = remember { AttachmentStorage(context) }
+    val pendingAttachmentOwnership = remember {
+        PendingAttachmentOwnership(context, attachmentStorage)
+    }
     val conversationRepository = remember {
         ConversationRepository(
             ConversationDatabase.get(context).conversationDao(),
-            attachmentStorage = AttachmentStorage(context),
+            attachmentStorage = attachmentStorage,
         )
     }
     val aiUsageRepository = remember {
@@ -275,12 +297,89 @@ private fun TowarownikApp() {
     var advisorState by remember {
         mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
     }
+    var pendingAttachment by rememberSaveable(saver = PendingAttachmentSaver) {
+        mutableStateOf<AdvisorAttachment?>(null)
+    }
+    var attachmentError by remember { mutableStateOf<AttachmentImportError?>(null) }
+    var profileMenuRequest by remember { mutableStateOf(0) }
+    val attachmentImporter = remember {
+        AttachmentImporter(
+            resolver = context.contentResolver,
+            storage = attachmentStorage,
+            beforePublish = pendingAttachmentOwnership::stageImportedCandidate,
+        )
+    }
+    val cameraCapture = remember { CameraCapture(context) }
     var advisorJob by remember { mutableStateOf<Job?>(null) }
     var showAiBudgetWarning by rememberSaveable {
         mutableStateOf(false)
     }
     var draftPersistJob by remember { mutableStateOf<Job?>(null) }
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
+
+    LaunchedEffect(Unit) {
+        pendingAttachment = pendingAttachmentOwnership.reconcileAfterStartup(
+            restored = pendingAttachment,
+            isPersisted = conversationRepository::isAttachmentPersisted,
+        )
+    }
+
+    fun acceptImportResult(result: AttachmentImportResult) {
+        when (result) {
+            is AttachmentImportResult.Success -> {
+                val previous = pendingAttachment
+                if (
+                    pendingAttachmentOwnership.activateImportedCandidate(
+                        attachment = result.attachment,
+                        previous = previous,
+                    )
+                ) {
+                    pendingAttachment = result.attachment
+                    attachmentError = null
+                } else {
+                    attachmentError = AttachmentImportError.CANNOT_OPEN
+                }
+            }
+            is AttachmentImportResult.Failure -> attachmentError = result.error
+        }
+    }
+
+    fun importAttachment(uri: Uri, suggestedName: String? = null, afterImport: () -> Unit = {}) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                attachmentImporter.import(uri, suggestedName)
+            }
+            acceptImportResult(result)
+            afterImport()
+        }
+    }
+
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> uri?.let { importAttachment(it) } }
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { importAttachment(it) } }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { captured ->
+        val captureFile = cameraCapture.file
+        if (captured && captureFile != null) {
+            importAttachment(
+                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", captureFile),
+                "photo.jpg",
+                cameraCapture::cleanup,
+            )
+        } else if (!captured) {
+            cameraCapture.cleanup()
+        } else {
+            attachmentError = AttachmentImportError.CAMERA_FAILED
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { cameraCapture.cleanup() }
+    }
 
     var manualQuery by rememberSaveable { mutableStateOf("") }
     var manualWorkingProfile by remember {
@@ -310,6 +409,16 @@ private fun TowarownikApp() {
         manualJob?.cancel()
         manualJob = null
         manualState = ManualSearchUiState.Idle
+    }
+
+    fun clearPendingAttachment() {
+        val previous = pendingAttachment
+        pendingAttachment = null
+        previous?.let {
+            pendingAttachmentOwnership.clearIfOwned(it.localId)
+            attachmentStorage.delete(it.localId)
+        }
+        attachmentError = null
     }
 
     fun applyConversation(
@@ -354,6 +463,7 @@ private fun TowarownikApp() {
 
     fun newAdvisorCase() {
         scope.launch {
+            clearPendingAttachment()
             cancelAndRecoverActiveTurn()
             clearManualProfileContext()
             freshCaseSelected = true
@@ -367,6 +477,7 @@ private fun TowarownikApp() {
 
     fun openConversation(conversationId: Long) {
         scope.launch {
+            clearPendingAttachment()
             cancelAndRecoverActiveTurn()
             clearManualProfileContext()
             val loaded = conversationRepository
@@ -387,6 +498,7 @@ private fun TowarownikApp() {
                 activeConversationId = activeConversationId,
             )
             if (freshCase != null) {
+                clearPendingAttachment()
                 cancelAndRecoverActiveTurn(
                     recoverInterrupted = false,
                 )
@@ -485,6 +597,9 @@ private fun TowarownikApp() {
 
     fun submitAdvisorTurn() {
         if (advisorJob?.isActive == true) return
+
+        // PR #3 owns multimodal transport. Never degrade a pending attachment to text-only.
+        if (pendingAttachment != null) return
 
         val submitted = advisorCase.draft.trim()
         if (submitted.isBlank()) return
@@ -870,6 +985,24 @@ private fun TowarownikApp() {
                     state = advisorState,
                     onDraftChange = ::updateAdvisorDraft,
                     onSubmit = ::submitAdvisorTurn,
+                    pendingAttachment = pendingAttachment,
+                    attachmentError = attachmentError,
+                    attachmentStorage = attachmentStorage,
+                    onRemoveAttachment = ::clearPendingAttachment,
+                    onOpenCamera = {
+                        runCatching { cameraCapture.createUri() }
+                            .onSuccess(cameraLauncher::launch)
+                            .onFailure { attachmentError = AttachmentImportError.CAMERA_FAILED }
+                    },
+                    onOpenPhotos = {
+                        photoPicker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                        )
+                    },
+                    onOpenFile = {
+                        filePicker.launch(arrayOf("application/pdf", "image/*"))
+                    },
+                    onOpenProfileSelector = { profileMenuRequest++ },
                     onOpenDrawer = {
                         scope.launch { drawerState.open() }
                     },
@@ -889,6 +1022,7 @@ private fun TowarownikApp() {
                         activeConversationId == null &&
                             advisorJob?.isActive != true,
                     profileBranchesLoading = profileBranchesLoading,
+                    profileMenuRequest = profileMenuRequest,
                     onProviderSelected = ::selectProvider,
                     onBranchSelected = ::selectBranch,
                     onReportAssistantMessage = ::openAssistantReport,
@@ -1378,6 +1512,14 @@ private fun AdvisorChatScreen(
     state: AdvisorUiState,
     onDraftChange: (String) -> Unit,
     onSubmit: () -> Unit,
+    pendingAttachment: AdvisorAttachment?,
+    attachmentError: AttachmentImportError?,
+    attachmentStorage: AttachmentStorage,
+    onRemoveAttachment: () -> Unit,
+    onOpenCamera: () -> Unit,
+    onOpenPhotos: () -> Unit,
+    onOpenFile: () -> Unit,
+    onOpenProfileSelector: () -> Unit,
     onOpenDrawer: () -> Unit,
     onNewCase: () -> Unit,
     onOpenSearch: () -> Unit,
@@ -1385,6 +1527,7 @@ private fun AdvisorChatScreen(
     profileBranches: List<ProviderBranch>,
     profileSelectorEnabled: Boolean,
     profileBranchesLoading: Boolean,
+    profileMenuRequest: Int,
     onProviderSelected: (ProviderId) -> Unit,
     onBranchSelected: (ProviderBranch) -> Unit,
     onReportAssistantMessage: (Long) -> Unit,
@@ -1406,6 +1549,7 @@ private fun AdvisorChatScreen(
                 profileBranches = profileBranches,
                 profileSelectorEnabled = profileSelectorEnabled,
                 profileBranchesLoading = profileBranchesLoading,
+                profileMenuRequest = profileMenuRequest,
                 onProviderSelected = onProviderSelected,
                 onBranchSelected = onBranchSelected,
             )
@@ -1414,8 +1558,21 @@ private fun AdvisorChatScreen(
             AdvisorComposer(
                 value = advisorCase.draft,
                 enabled = composerEnabled,
+                attachment = pendingAttachment,
+                attachmentError = attachmentError,
+                attachmentStorage = attachmentStorage,
+                workingProfile = workingProfile,
+                branchLabel = profileBranches.firstOrNull {
+                    it.branchId == workingProfile.branchId
+                }?.name ?: workingProfile.branchId.value,
+                profileSwitchEnabled = profileSelectorEnabled,
                 onValueChange = onDraftChange,
                 onSend = onSubmit,
+                onRemoveAttachment = onRemoveAttachment,
+                onOpenCamera = onOpenCamera,
+                onOpenPhotos = onOpenPhotos,
+                onOpenFile = onOpenFile,
+                onOpenProfileSelector = onOpenProfileSelector,
             )
         },
     ) { innerPadding ->
@@ -1511,6 +1668,7 @@ private fun AdvisorTopBar(
     profileBranches: List<ProviderBranch>,
     profileSelectorEnabled: Boolean,
     profileBranchesLoading: Boolean,
+    profileMenuRequest: Int,
     onProviderSelected: (ProviderId) -> Unit,
     onBranchSelected: (ProviderBranch) -> Unit,
 ) {
@@ -1551,6 +1709,7 @@ private fun AdvisorTopBar(
                         branches = profileBranches,
                         enabled = profileSelectorEnabled,
                         loading = profileBranchesLoading,
+                        openMenuRequest = profileMenuRequest,
                         onProviderSelected = onProviderSelected,
                         onBranchSelected = onBranchSelected,
                     )
@@ -1596,11 +1755,15 @@ private fun WorkingProfileSelector(
     branches: List<ProviderBranch>,
     enabled: Boolean,
     loading: Boolean,
+    openMenuRequest: Int = 0,
     onProviderSelected: (ProviderId) -> Unit,
     onBranchSelected: (ProviderBranch) -> Unit,
 ) {
     var providerExpanded by remember { mutableStateOf(false) }
     var branchExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(openMenuRequest) {
+        if (openMenuRequest > 0 && enabled) providerExpanded = true
+    }
     val providerLabel = if (workingProfile.providerId == KWANT_PROVIDER_ID) {
         stringResource(R.string.provider_kwant)
     } else {
@@ -1706,10 +1869,28 @@ private fun WorkingProfileSelector(
 private fun AdvisorComposer(
     value: String,
     enabled: Boolean,
+    attachment: AdvisorAttachment?,
+    attachmentError: AttachmentImportError?,
+    attachmentStorage: AttachmentStorage,
+    workingProfile: WorkingProfile,
+    branchLabel: String,
+    profileSwitchEnabled: Boolean,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
+    onRemoveAttachment: () -> Unit,
+    onOpenCamera: () -> Unit,
+    onOpenPhotos: () -> Unit,
+    onOpenFile: () -> Unit,
+    onOpenProfileSelector: () -> Unit,
 ) {
     val warmColors = MaterialTheme.towarownikColors
+    val context = LocalContext.current
+    var actionsExpanded by remember { mutableStateOf(false) }
+    val provider = if (workingProfile.providerId == KWANT_PROVIDER_ID) {
+        stringResource(R.string.provider_kwant)
+    } else {
+        stringResource(R.string.provider_obi)
+    }
 
     Surface(
         modifier = Modifier.bottomComposerSafeArea(),
@@ -1717,75 +1898,166 @@ private fun AdvisorComposer(
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
         Column {
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
-            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f))
+            attachmentError?.let {
+                Text(
+                    text = attachmentErrorText(it),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                )
+            }
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 720.dp)
+                modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = onValueChange,
+                Surface(
                     modifier = Modifier.weight(1f),
-                    enabled = enabled,
-                    minLines = 1,
-                    maxLines = 4,
                     shape = RoundedCornerShape(18.dp),
-                    placeholder = {
-                        Text(
-                            text = stringResource(
-                                R.string.advisor_composer_placeholder,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = warmColors.surfaceRaised,
-                        unfocusedContainerColor = warmColors.surfaceRaised,
-                        disabledContainerColor = warmColors.surfaceRaised,
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                        disabledBorderColor = MaterialTheme.colorScheme.outline.copy(
-                            alpha = 0.55f,
-                        ),
-                        cursorColor = MaterialTheme.colorScheme.primary,
-                    ),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Send,
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onSend = {
-                            if (enabled && value.isNotBlank()) {
-                                onSend()
+                    color = warmColors.surfaceRaised,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                ) {
+                    Column {
+                        attachment?.let { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                                    .padding(start = 10.dp, top = 8.dp, end = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (item.type == AttachmentType.IMAGE) {
+                                    AsyncImage(
+                                        model = attachmentStorage.contentUri(context, item.localId),
+                                        contentDescription = stringResource(R.string.attachment_image_preview),
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(48.dp),
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_document_24),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(40.dp),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                Text(
+                                    text = if (item.type == AttachmentType.IMAGE) {
+                                        item.displayName.ifBlank { stringResource(R.string.attachment_photo) }
+                                    } else item.displayName,
+                                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+                                    maxLines = 2,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                IconButton(onClick = onRemoveAttachment) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_close_24),
+                                        contentDescription = stringResource(R.string.attachment_remove),
+                                    )
+                                }
                             }
-                        },
-                    ),
-                )
+                        }
+                        OutlinedTextField(
+                            value = value,
+                            onValueChange = onValueChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = enabled,
+                            minLines = 1,
+                            maxLines = 4,
+                            shape = RoundedCornerShape(18.dp),
+                            placeholder = { Text(stringResource(R.string.advisor_composer_placeholder)) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = warmColors.surfaceRaised,
+                                unfocusedContainerColor = warmColors.surfaceRaised,
+                                disabledContainerColor = warmColors.surfaceRaised,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = warmColors.surfaceRaised,
+                                disabledBorderColor = warmColors.surfaceRaised,
+                                cursorColor = MaterialTheme.colorScheme.primary,
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Default,
+                            ),
+                        )
+                        Box(modifier = Modifier.padding(start = 4.dp, bottom = 3.dp)) {
+                            IconButton(
+                                onClick = { actionsExpanded = true },
+                                enabled = enabled,
+                                modifier = Modifier.size(40.dp),
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_add_24),
+                                    contentDescription = stringResource(R.string.attachment_add),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = actionsExpanded,
+                                onDismissRequest = { actionsExpanded = false },
+                            ) {
+                                AttachmentMenuItem(R.drawable.ic_camera_24, R.string.attachment_camera) {
+                                    actionsExpanded = false; onOpenCamera()
+                                }
+                                AttachmentMenuItem(R.drawable.ic_photo_24, R.string.attachment_photos) {
+                                    actionsExpanded = false; onOpenPhotos()
+                                }
+                                AttachmentMenuItem(R.drawable.ic_document_24, R.string.attachment_file) {
+                                    actionsExpanded = false; onOpenFile()
+                                }
+                                if (profileSwitchEnabled) {
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        leadingIcon = {
+                                            Icon(
+                                                painterResource(
+                                                    R.drawable.ic_store_24,
+                                                ),
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    stringResource(
+                                                        R.string.attachment_switch_store,
+                                                    ),
+                                                )
+                                                Text(
+                                                    "$provider • $branchLabel",
+                                                    style =
+                                                        MaterialTheme.typography.bodySmall,
+                                                    color =
+                                                        MaterialTheme.colorScheme
+                                                            .onSurfaceVariant,
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            actionsExpanded = false
+                                            onOpenProfileSelector()
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
                 FilledIconButton(
                     onClick = onSend,
-                    enabled = enabled && value.isNotBlank(),
+                    enabled = enabled && canSubmitAdvisorComposer(value, attachment),
                     modifier = Modifier.size(48.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
-                        disabledContainerColor = MaterialTheme.colorScheme.outline.copy(
-                            alpha = 0.45f,
-                        ),
+                        disabledContainerColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
                         disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_send_24),
-                        contentDescription = stringResource(
-                            R.string.cd_send_message,
-                        ),
+                        contentDescription = stringResource(R.string.cd_send_message),
                         modifier = Modifier.size(22.dp),
                     )
                 }
@@ -1793,6 +2065,26 @@ private fun AdvisorComposer(
         }
     }
 }
+
+@Composable
+private fun AttachmentMenuItem(icon: Int, label: Int, onClick: () -> Unit) {
+    DropdownMenuItem(
+        leadingIcon = { Icon(painterResource(icon), contentDescription = null) },
+        text = { Text(stringResource(label)) },
+        onClick = onClick,
+    )
+}
+
+@Composable
+private fun attachmentErrorText(error: AttachmentImportError): String = stringResource(
+    when (error) {
+        AttachmentImportError.UNSUPPORTED_TYPE -> R.string.attachment_error_unsupported
+        AttachmentImportError.TOO_LARGE -> R.string.attachment_error_too_large
+        AttachmentImportError.IMAGE_UNREADABLE -> R.string.attachment_error_image
+        AttachmentImportError.CANNOT_OPEN -> R.string.attachment_error_open
+        AttachmentImportError.CAMERA_FAILED -> R.string.attachment_error_camera
+    },
+)
 
 private val EMPTY_ADVISOR_PROMPTS = listOf(
     R.string.advisor_empty_prompt_sell,
@@ -2800,6 +3092,10 @@ private val HISTORY_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd.MM HH:mm")
 @Preview(showBackground = true)
 @Composable
 private fun AdvisorChatPreview() {
+    val context = LocalContext.current
+    val previewAttachmentStorage = remember(context) {
+        AttachmentStorage(context.applicationContext)
+    }
     TowarownikTheme {
         AdvisorChatScreen(
             advisorCase = AdvisorCaseUiState(
@@ -2819,6 +3115,14 @@ private fun AdvisorChatPreview() {
             state = AdvisorUiState.Idle,
             onDraftChange = {},
             onSubmit = {},
+            pendingAttachment = null,
+            attachmentError = null,
+            attachmentStorage = previewAttachmentStorage,
+            onRemoveAttachment = {},
+            onOpenCamera = {},
+            onOpenPhotos = {},
+            onOpenFile = {},
+            onOpenProfileSelector = {},
             onOpenDrawer = {},
             onNewCase = {},
             onOpenSearch = {},
@@ -2826,6 +3130,7 @@ private fun AdvisorChatPreview() {
             profileBranches = emptyList(),
             profileSelectorEnabled = true,
             profileBranchesLoading = false,
+            profileMenuRequest = 0,
             onProviderSelected = {},
             onBranchSelected = {},
             onReportAssistantMessage = {},

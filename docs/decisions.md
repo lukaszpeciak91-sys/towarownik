@@ -445,3 +445,11 @@ These decisions describe the broader intended product behavior. The currently im
 - Attachment-file lifetime follows explicit conversation deletion, retention cleanup, and interrupted-turn recovery. Interrupted recovery captures only the trailing USER message's attachment identifier before Room removes the message, then best-effort deletes exactly that file after the transaction succeeds; filesystem failure cannot block or corrupt draft recovery and cleanup never scans unrelated storage.
 - `AttachmentStorage` has a temporary v1 local private-storage ceiling of 16 MiB per attachment. Oversized declared metadata is rejected before opening/copying the source; copied-byte equality remains mandatory. This is an Android storage guard, not a Worker/OpenAI API or transport limit.
 - Camera, photo/file picker UI, compression, EXIF processing, PDF preprocessing, upload, Worker/OpenAI protocol changes, and attachment-only sending remain follow-up work.
+
+## 2026-10-04 — Android attachment acquisition and pending composer
+
+- Approved a compact `+` inside the advisor composer with Camera, Photos, File, then an existing WorkingProfile selector shortcut.
+- Chose Android Photo Picker through `PickVisualMedia`, system camera through `TakePicture` and a dedicated temporary FileProvider cache path, and system Documents UI through `OpenDocument` limited to PDF/images; no storage or camera runtime permission is declared.
+- Chose one pending private attachment and a 4096 px image dimension bound. Images are orientation-normalized and re-encoded at OCR-friendly JPEG quality 92 (or PNG for meaningful alpha); PDFs are not transformed. The existing 16 MiB local ceiling remains authoritative.
+- Enter is newline-only and the external send button remains the sole submit action.
+- Attachment submission is deliberately disabled and guarded from the current text-only controller until PR #3 supplies end-to-end multimodal transport.
