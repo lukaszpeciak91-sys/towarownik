@@ -24,6 +24,7 @@ internal class AttachmentStorage private constructor(
         height: Int? = null,
         createdAt: Long = System.currentTimeMillis(),
         source: () -> InputStream,
+        beforePublish: (AdvisorAttachment) -> Boolean = { true },
     ): AdvisorAttachment {
         require(byteSize <= ATTACHMENT_LOCAL_STORAGE_MAX_BYTES) {
             "Attachment exceeds local storage size limit"
@@ -49,6 +50,9 @@ internal class AttachmentStorage private constructor(
                 temporary.outputStream().use { output -> input.copyTo(output) }
             }
             require(copied == byteSize) { "Attachment size differs from validated metadata" }
+            check(beforePublish(metadata)) {
+                "Could not persist pending attachment ownership"
+            }
             check(temporary.renameTo(destination)) { "Could not persist attachment" }
         } catch (failure: Throwable) {
             temporary.delete()
