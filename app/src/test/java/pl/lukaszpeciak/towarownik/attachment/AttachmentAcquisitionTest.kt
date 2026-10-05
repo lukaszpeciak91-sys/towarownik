@@ -125,6 +125,52 @@ class AttachmentAcquisitionTest {
     }
 
     @Test
+    fun `failed activation commit keeps previous pending and removes new durable file`() {
+        val previous = storedPdf("previous-activation.pdf")
+        val preferences = pendingPreferences()
+        val setupOwnership = PendingAttachmentOwnership(storage, preferences)
+        assertTrue(setupOwnership.markPending(previous))
+
+        var commitCount = 0
+        val ownership = PendingAttachmentOwnership(
+            storage = storage,
+            preferences = preferences,
+            commitEditor = { editor ->
+                commitCount += 1
+                if (commitCount == 1) {
+                    editor.commit()
+                } else {
+                    false
+                }
+            },
+        )
+        val bytes = "%PDF-activation".toByteArray()
+        val next = storage.importValidated(
+            type = AttachmentType.PDF,
+            displayName = "next-activation.pdf",
+            mimeType = "application/pdf",
+            byteSize = bytes.size.toLong(),
+            source = { ByteArrayInputStream(bytes) },
+            beforePublish = ownership::stageImportedCandidate,
+        )
+        var active = previous
+
+        if (
+            ownership.activateImportedCandidate(
+                attachment = next,
+                previous = previous,
+            )
+        ) {
+            active = next
+        }
+
+        assertEquals(previous, active)
+        assertEquals(previous.localId, ownership.ownedLocalId())
+        assertTrue(storage.exists(previous.localId))
+        assertFalse(storage.exists(next.localId))
+    }
+
+    @Test
     fun `successful replacement never leaves ownership pointing at deleted previous file`() {
         val previous = storedPdf("previous-marker.pdf")
         val ownership = PendingAttachmentOwnership(
