@@ -42,6 +42,119 @@ class AttachmentAcquisitionTest {
         pendingPreferences().edit().clear().commit()
     }
 
+    @Test
+    fun `replacement ownership is staged before durable publish and then switched`() {
+        val previous = storedPdf("previous.pdf")
+        val ownership = PendingAttachmentOwnership(
+            storage,
+            pendingPreferences(),
+        )
+        assertTrue(ownership.markPending(previous))
+
+        val bytes = "%PDF-new".toByteArray()
+        var stagedBeforePublish = false
+        val next = storage.importValidated(
+            type = AttachmentType.PDF,
+            displayName = "next.pdf",
+            mimeType = "application/pdf",
+            byteSize = bytes.size.toLong(),
+            source = { ByteArrayInputStream(bytes) },
+            beforePublish = { attachment ->
+                stagedBeforePublish = !storage.exists(attachment.localId) &&
+                    ownership.stageImportedCandidate(attachment)
+                stagedBeforePublish
+            },
+        )
+
+        assertTrue(stagedBeforePublish)
+        assertEquals(previous.localId, ownership.ownedLocalId())
+        assertEquals(next.localId, ownership.stagedLocalId())
+        assertTrue(storage.exists(previous.localId))
+        assertTrue(storage.exists(next.localId))
+
+        assertTrue(
+            ownership.activateImportedCandidate(
+                attachment = next,
+                previous = previous,
+            ),
+        )
+
+        assertEquals(next.localId, ownership.ownedLocalId())
+        assertNull(ownership.stagedLocalId())
+        assertFalse(storage.exists(previous.localId))
+        assertTrue(storage.exists(next.localId))
+    }
+
+    @Test
+    fun `failed ownership commit never publishes replacement or changes active pending`() {
+        val previous = storedPdf("previous-failed.pdf")
+        val preferences = pendingPreferences()
+        val setupOwnership = PendingAttachmentOwnership(storage, preferences)
+        assertTrue(setupOwnership.markPending(previous))
+
+        val failingOwnership = PendingAttachmentOwnership(
+            storage = storage,
+            preferences = preferences,
+            commitEditor = { false },
+        )
+        val bytes = "%PDF-failed".toByteArray()
+
+        val result = runCatching {
+            storage.importValidated(
+                type = AttachmentType.PDF,
+                displayName = "replacement-failed.pdf",
+                mimeType = "application/pdf",
+                byteSize = bytes.size.toLong(),
+                source = { ByteArrayInputStream(bytes) },
+                beforePublish = failingOwnership::stageImportedCandidate,
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(previous.localId, failingOwnership.ownedLocalId())
+        assertTrue(storage.exists(previous.localId))
+        assertEquals(
+            listOf(previous.localId),
+            context.filesDir.resolve("advisor_attachments")
+                .listFiles()
+                .orEmpty()
+                .filter(File::isFile)
+                .map(File::getName)
+                .sorted(),
+        )
+    }
+
+    @Test
+    fun `successful replacement never leaves ownership pointing at deleted previous file`() {
+        val previous = storedPdf("previous-marker.pdf")
+        val ownership = PendingAttachmentOwnership(
+            storage,
+            pendingPreferences(),
+        )
+        assertTrue(ownership.markPending(previous))
+
+        val bytes = "%PDF-next".toByteArray()
+        val next = storage.importValidated(
+            type = AttachmentType.PDF,
+            displayName = "next-marker.pdf",
+            mimeType = "application/pdf",
+            byteSize = bytes.size.toLong(),
+            source = { ByteArrayInputStream(bytes) },
+            beforePublish = ownership::stageImportedCandidate,
+        )
+
+        assertTrue(
+            ownership.activateImportedCandidate(
+                attachment = next,
+                previous = previous,
+            ),
+        )
+
+        assertFalse(storage.exists(previous.localId))
+        assertEquals(next.localId, ownership.ownedLocalId())
+        assertTrue(storage.exists(next.localId))
+    }
+
     @Test fun `replacement deletes previous pending private file`() {
         val first = storedPdf("first.pdf")
         val second = storedPdf("second.pdf")
