@@ -8,7 +8,6 @@ import android.database.MatrixCursor
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.test.mock.MockContentResolver
 import androidx.test.core.app.ApplicationProvider
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -21,27 +20,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class AttachmentAcquisitionTest {
     private lateinit var context: Context
     private lateinit var storage: AttachmentStorage
-    private lateinit var resolver: MockContentResolver
     private lateinit var importer: AttachmentImporter
 
     @Before fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         storage = AttachmentStorage(context)
-        resolver = MockContentResolver().apply {
-            addProvider(
-                TEST_AUTHORITY,
-                TestAttachmentProvider(
-                    File(context.cacheDir, "advisor_camera_capture"),
-                ),
-            )
-        }
-        importer = AttachmentImporter(resolver, storage)
+        Robolectric.setupContentProvider(
+            TestAttachmentProvider::class.java,
+            TEST_AUTHORITY,
+        )
+        importer = AttachmentImporter(context.contentResolver, storage)
         context.filesDir.resolve("advisor_attachments").deleteRecursively()
         context.cacheDir.resolve("advisor_camera_capture").deleteRecursively()
         pendingPreferences().edit().clear().commit()
@@ -216,9 +211,7 @@ class AttachmentAcquisitionTest {
     private fun uri(file: File): Uri =
         Uri.parse("content://$TEST_AUTHORITY/${file.name}")
 
-    private class TestAttachmentProvider(
-        private val root: File,
-    ) : ContentProvider() {
+    private class TestAttachmentProvider : ContentProvider() {
         override fun onCreate(): Boolean = true
 
         override fun getType(uri: Uri): String =
@@ -284,7 +277,10 @@ class AttachmentAcquisitionTest {
         ): Int = 0
 
         private fun file(uri: Uri): File =
-            File(root, requireNotNull(uri.lastPathSegment))
+            File(
+                requireNotNull(context).cacheDir,
+                "advisor_camera_capture/${requireNotNull(uri.lastPathSegment)}",
+            )
     }
 
     private companion object {
