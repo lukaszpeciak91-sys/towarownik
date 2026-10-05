@@ -1,5 +1,6 @@
 package pl.lukaszpeciak.towarownik.agent
 
+import java.io.IOException
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -367,9 +368,28 @@ internal class AdvisorProxyClient(
             override fun contentLength() = attachment.byteSize
             override fun writeTo(sink: BufferedSink) {
                 val input = storage.open(attachment.localId)
-                    ?: error("Attachment unavailable")
+                    ?: throw AttachmentByteCountMismatchException()
                 input.use { source ->
-                    source.copyTo(sink.outputStream())
+                    val buffer = ByteArray(8 * 1024)
+                    var written = 0L
+
+                    while (written < attachment.byteSize) {
+                        val remaining = attachment.byteSize - written
+                        val read = source.read(
+                            buffer,
+                            0,
+                            minOf(buffer.size.toLong(), remaining).toInt(),
+                        )
+                        if (read < 0) {
+                            throw AttachmentByteCountMismatchException()
+                        }
+                        sink.write(buffer, 0, read)
+                        written += read
+                    }
+
+                    if (written != attachment.byteSize || source.read() != -1) {
+                        throw AttachmentByteCountMismatchException()
+                    }
                 }
             }
         }
@@ -390,8 +410,18 @@ internal class AdvisorProxyClient(
             val call = client.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
-                override fun onFailure(call: Call, exception: java.io.IOException) {
-                    if (continuation.isActive) continuation.resume(AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.NETWORK))
+                override fun onFailure(call: Call, exception: IOException) {
+                    if (continuation.isActive) {
+                        continuation.resume(
+                            AdvisorProxyCallResult.Failure(
+                                if (exception is AttachmentByteCountMismatchException) {
+                                    AdvisorProxyFailureKind.PROTOCOL
+                                } else {
+                                    AdvisorProxyFailureKind.NETWORK
+                                },
+                            ),
+                        )
+                    }
                 }
                 override fun onResponse(call: Call, response: Response) {
                     val result = response.use { mapResponse(it, endpoint.substringAfterLast('/')) }
@@ -1313,3 +1343,7 @@ internal class AdvisorProxyClient(
         const val MAX_WEB_SOURCE_URL_CHARS = 2048
     }
 }
+
+
+private class AttachmentByteCountMismatchException :
+    IOException("Attachment byte count differs from validated metadata")
