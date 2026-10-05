@@ -89,4 +89,46 @@ class AdvisorAttachmentTransportTest {
             assertEquals("/v1/agent/start", request.path)
         }
     }
+    @Test
+    fun `truncated private attachment fails locally during streaming`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val storage = AttachmentStorage(context)
+        val bytes = byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2d)
+        val attachment = storage.importValidated(
+            type = AttachmentType.PDF,
+            displayName = "spec.pdf",
+            mimeType = "application/pdf",
+            byteSize = bytes.size.toLong(),
+            source = { ByteArrayInputStream(bytes) },
+        )
+
+        val storedFile = java.io.File(
+            context.filesDir,
+            "advisor_attachments/${attachment.localId}",
+        )
+        storedFile.writeBytes(bytes.copyOf(3))
+
+        MockWebServer().use { server ->
+            val client = AdvisorProxyClient(
+                appToken = "token",
+                baseUrl = server.url("/"),
+                attachmentStorage = storage,
+            )
+
+            val result = client.start(
+                message = "",
+                providerId = "obi-pl",
+                branchId = "075",
+                attachment = attachment,
+            )
+
+            assertEquals(
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.NETWORK,
+                ),
+                result,
+            )
+        }
+    }
+
 }
