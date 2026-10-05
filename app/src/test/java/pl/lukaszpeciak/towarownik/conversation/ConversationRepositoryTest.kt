@@ -19,8 +19,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.attachment.ATTACHMENT_LOCAL_STORAGE_MAX_BYTES
+import pl.lukaszpeciak.towarownik.attachment.AttachmentRenderKind
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
+import pl.lukaszpeciak.towarownik.formatAttachmentByteSize
 import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentOwnership
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
@@ -78,6 +80,68 @@ class ConversationRepositoryTest {
         assertEquals(image, repository.load(first.conversationId)?.messages?.single()?.attachment)
         assertEquals(pdf, repository.load(second.conversationId)?.messages?.single()?.attachment)
         assertNull(repository.load(historical.conversationId)?.messages?.single()?.attachment)
+    }
+
+    @Test
+    fun `persisted image and PDF remain renderable after database recreation`() = runBlocking {
+        val image = attachmentStorage.importValidated(
+            type = AttachmentType.IMAGE,
+            displayName = "history-image.jpg",
+            mimeType = "image/jpeg",
+            byteSize = 3,
+            width = 80,
+            height = 60,
+            createdAt = 90,
+            source = { ByteArrayInputStream(byteArrayOf(1, 2, 3)) },
+        )
+        val imageTurn = repository.beginUserTurn(
+            null,
+            "image",
+            100,
+            attachment = image,
+        )
+        val pdfBytes = "%PDF-1.7".toByteArray()
+        val pdf = attachmentStorage.importValidated(
+            type = AttachmentType.PDF,
+            displayName = "history-manual.pdf",
+            mimeType = "application/pdf",
+            byteSize = pdfBytes.size.toLong(),
+            createdAt = 110,
+            source = { ByteArrayInputStream(pdfBytes) },
+        )
+        val pdfTurn = repository.beginUserTurn(
+            null,
+            "pdf",
+            120,
+            attachment = pdf,
+        )
+
+        database.close()
+        openDatabase()
+
+        val restoredImage = requireNotNull(
+            repository.load(imageTurn.conversationId),
+        ).messages.single().attachment
+        val restoredPdf = requireNotNull(
+            repository.load(pdfTurn.conversationId),
+        ).messages.single().attachment
+
+        requireNotNull(restoredImage)
+        requireNotNull(restoredPdf)
+        assertEquals(
+            AttachmentRenderKind.IMAGE,
+            attachmentStorage.renderKind(restoredImage),
+        )
+        assertEquals(
+            AttachmentRenderKind.PDF,
+            attachmentStorage.renderKind(restoredPdf),
+        )
+        assertEquals("history-manual.pdf", restoredPdf.displayName)
+        assertEquals(pdfBytes.size.toLong(), restoredPdf.byteSize)
+        assertEquals(
+            formatAttachmentByteSize(pdfBytes.size.toLong()),
+            formatAttachmentByteSize(restoredPdf.byteSize),
+        )
     }
 
     @Test
