@@ -227,5 +227,5 @@ The currently planned AI capability stage is complete after this selective web-s
 ## 2026-10-05 — attachment turn lifecycle
 
 - Enabled attachment-only USER submission and attachment-derived conversation titles without placeholder message text.
-- Completed pending-to-Room ownership handoff: pending ownership remains until USER metadata commits, then its marker is removed without deleting the persisted private file.
+- Completed pending-to-Room ownership handoff: pending ownership remains until USER metadata commits, then marker release is attempted synchronously without deleting the persisted private file; release failure is harmless and reconciled later.
 - Kept failed-turn retry behavior intact, including restored text/attachment state and preserved private bytes, while current conversation reloads retain USER attachment metadata.
