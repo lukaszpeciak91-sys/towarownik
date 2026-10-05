@@ -273,6 +273,10 @@ internal class ConversationRepository(
         )
     }
 
+    suspend fun isAttachmentPersisted(
+        localId: String,
+    ): Boolean = dao.hasAttachmentLocalId(localId)
+
     suspend fun recoverInterruptedTurn(
         conversationId: Long,
     ): PersistedConversation? {
