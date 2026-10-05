@@ -63,6 +63,13 @@ internal abstract class ConversationDao {
     abstract suspend fun getAttachmentIds(conversationId: Long): List<String>
 
     @Query(
+        "SELECT EXISTS(" +
+            "SELECT 1 FROM message_attachments WHERE localId = :localId" +
+            ")",
+    )
+    abstract suspend fun hasAttachmentLocalId(localId: String): Boolean
+
+    @Query(
         """
         SELECT ma.localId
         FROM messages m
