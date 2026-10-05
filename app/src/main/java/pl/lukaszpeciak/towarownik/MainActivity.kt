@@ -7,6 +7,7 @@ import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImportError
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImportResult
+import pl.lukaszpeciak.towarownik.attachment.AttachmentRenderKind
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImporter
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImportGuard
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
@@ -2274,9 +2275,10 @@ private fun UserMessageContent(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         attachment?.let { item ->
-            val available = attachmentStorage.isReadable(item)
+            val renderKind = attachmentStorage.renderKind(item)
             when {
-                !available || imageFailed -> {
+                renderKind == AttachmentRenderKind.UNAVAILABLE ||
+                    imageFailed -> {
                     Row(
                         modifier = Modifier
                             .widthIn(max = 300.dp)
@@ -2302,7 +2304,7 @@ private fun UserMessageContent(
                     }
                 }
 
-                item.type == AttachmentType.IMAGE -> {
+                renderKind == AttachmentRenderKind.IMAGE -> {
                     AsyncImage(
                         model = attachmentStorage.contentUri(
                             context,
