@@ -166,7 +166,7 @@ internal fun normalizeImage(bytes: ByteArray): NormalizedImage? {
 
 internal fun imageSampleSize(width: Int, height: Int, maxDimension: Int): Int {
     var sample = 1
-    while (max(width / sample, height / sample) > maxDimension * 2) sample *= 2
+    while (max(width / sample, height / sample) > maxDimension) sample *= 2
     return sample
 }
 
