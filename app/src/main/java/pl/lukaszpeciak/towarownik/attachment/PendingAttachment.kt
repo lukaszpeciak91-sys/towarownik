@@ -107,15 +107,11 @@ internal class PendingAttachmentOwnership(
      * attachment with its USER message. The private file is deliberately left
      * in place because Room now owns its lifecycle.
      */
-    fun handoffToPersisted(localId: String) {
-        check(ownedLocalId() == localId) {
-            "Attachment is not pending"
-        }
-        check(
-            commitEditor(preferences.edit().remove(KEY_LOCAL_ID)),
-        ) {
-            "Could not release pending attachment ownership"
-        }
+    fun handoffToPersisted(localId: String): Boolean {
+        if (ownedLocalId() != localId) return false
+        return commitEditor(
+            preferences.edit().remove(KEY_LOCAL_ID),
+        )
     }
 
     fun clearIfOwned(localId: String) {
