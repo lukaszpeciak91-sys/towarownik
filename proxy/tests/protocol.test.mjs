@@ -26,14 +26,35 @@ function request(path, body) {
   });
 }
 
-function multipartRequest(path, payload, bytes, mimeType, extraFile = null) {
+function multipartRequest(
+  path,
+  payload,
+  bytes,
+  mimeType,
+  extraFile = null,
+  options = {},
+) {
   const form = new FormData();
-  form.set("payload", JSON.stringify(payload));
-  form.set("attachment", new File([bytes], "attachment", { type: mimeType }));
+  const filename = options.filename ?? "attachment";
+  form.set(
+    "payload",
+    JSON.stringify(payload),
+  );
+  form.set(
+    "attachment",
+    new File([bytes], filename, { type: mimeType }),
+  );
   if (extraFile) form.append("attachment", extraFile);
+  const headers = {
+    Authorization: `Bearer ${APP_TOKEN}`,
+  };
+  if (!options.omitContentLength) {
+    headers["Content-Length"] =
+      String(options.contentLength ?? 1024);
+  }
   return new Request(`https://proxy.example${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${APP_TOKEN}` },
+    headers,
     body: form,
   });
 }
@@ -443,12 +464,55 @@ test("protocol v4 PDF message preserves previous_response_id and uses input_file
   const response = await worker.fetch(multipartRequest("/v1/agent/message", {
     protocolVersion: 4, previousResponseId: "resp_previous", message: "odczytaj kod",
     providerId: "kwant-pl", branchId: "205",
-  }, pdf, "application/pdf"), configuredEnv);
+  }, pdf, "application/pdf", null, {
+    filename: "instrukcja MBN116E.pdf",
+  }), configuredEnv);
   assert.equal(response.status, 200);
   assert.equal(fake.captures[0].body.previous_response_id, "resp_previous");
   assert.deepEqual(fake.captures[0].body.input[0].content.map((part) => part.type), ["input_text", "input_file"]);
+  assert.equal(
+    fake.captures[0].body.input[0].content[1].filename,
+    "instrukcja MBN116E.pdf",
+  );
   assert.equal(fake.captures[0].body.input[0].content[1].file_data,
     `data:application/pdf;base64,${Buffer.from(pdf).toString("base64")}`);
+});
+
+test("protocol v4 multipart rejects missing Content-Length before formData parsing", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const request = new Request("https://proxy.example/v1/agent/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${APP_TOKEN}`,
+      "Content-Type": "multipart/form-data; boundary=broken",
+    },
+    body: "not-a-valid-multipart-body",
+  });
+
+  const response = await worker.fetch(request, configuredEnv);
+
+  assert.equal(response.status, 400);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("protocol v4 multipart rejects oversized declared Content-Length before formData parsing", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const request = new Request("https://proxy.example/v1/agent/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${APP_TOKEN}`,
+      "Content-Type": "multipart/form-data; boundary=broken",
+      "Content-Length": String(16 * 1024 * 1024 + 16 * 1024 + 1),
+    },
+    body: "not-a-valid-multipart-body",
+  });
+
+  const response = await worker.fetch(request, configuredEnv);
+
+  assert.equal(response.status, 413);
+  assert.equal(fake.captures.length, 0);
 });
 
 test("protocol v4 multipart rejects wrong MIME signature and multiple attachments", async () => {
