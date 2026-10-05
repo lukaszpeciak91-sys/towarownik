@@ -1,8 +1,14 @@
 package pl.lukaszpeciak.towarownik.attachment
 
+import android.content.ContentProvider
+import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
+import android.database.MatrixCursor
 import android.graphics.Bitmap
-import androidx.core.content.FileProvider
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import android.test.mock.MockContentResolver
 import androidx.test.core.app.ApplicationProvider
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -21,10 +27,21 @@ import org.robolectric.RobolectricTestRunner
 class AttachmentAcquisitionTest {
     private lateinit var context: Context
     private lateinit var storage: AttachmentStorage
+    private lateinit var resolver: MockContentResolver
+    private lateinit var importer: AttachmentImporter
 
     @Before fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         storage = AttachmentStorage(context)
+        resolver = MockContentResolver().apply {
+            addProvider(
+                TEST_AUTHORITY,
+                TestAttachmentProvider(
+                    File(context.cacheDir, "advisor_camera_capture"),
+                ),
+            )
+        }
+        importer = AttachmentImporter(resolver, storage)
         context.filesDir.resolve("advisor_attachments").deleteRecursively()
         context.cacheDir.resolve("advisor_camera_capture").deleteRecursively()
         pendingPreferences().edit().clear().commit()
@@ -129,7 +146,7 @@ class AttachmentAcquisitionTest {
 
     @Test fun `unsupported file is rejected`() {
         val file = captureFile("unsupported.zip", byteArrayOf(1, 2, 3))
-        val result = AttachmentImporter(context.contentResolver, storage).import(uri(file))
+        val result = importer.import(uri(file))
         assertEquals(AttachmentImportResult.Failure(AttachmentImportError.UNSUPPORTED_TYPE), result)
     }
 
@@ -138,13 +155,13 @@ class AttachmentAcquisitionTest {
         // The bounded-stream behavior is independently guaranteed even when metadata is absent.
         val oversized = ByteArray((ATTACHMENT_LOCAL_STORAGE_MAX_BYTES + 1).toInt())
         file.writeBytes(oversized)
-        val result = AttachmentImporter(context.contentResolver, storage).import(uri(file))
+        val result = importer.import(uri(file))
         assertEquals(AttachmentImportResult.Failure(AttachmentImportError.TOO_LARGE), result)
     }
 
     @Test fun `valid PDF imports PDF metadata`() {
         val bytes = "%PDF-1.7\n%%EOF".toByteArray()
-        val result = AttachmentImporter(context.contentResolver, storage)
+        val result = importer
             .import(uri(captureFile("manual.pdf", bytes))) as AttachmentImportResult.Success
         assertEquals(AttachmentType.PDF, result.attachment.type)
         assertEquals("application/pdf", result.attachment.mimeType)
@@ -156,7 +173,7 @@ class AttachmentAcquisitionTest {
         val bitmap = Bitmap.createBitmap(4200, 1200, Bitmap.Config.RGB_565)
         val source = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 95, it) }.toByteArray()
         bitmap.recycle()
-        val result = AttachmentImporter(context.contentResolver, storage)
+        val result = importer
             .import(uri(captureFile("label.jpg", source))) as AttachmentImportResult.Success
         assertEquals(AttachmentType.IMAGE, result.attachment.type)
         assertTrue(maxOf(result.attachment.width!!, result.attachment.height!!) <= ATTACHMENT_IMAGE_MAX_DIMENSION)
@@ -196,7 +213,82 @@ class AttachmentAcquisitionTest {
             parentFile!!.mkdirs(); writeBytes(bytes)
         }
 
-    private fun uri(file: File) = FileProvider.getUriForFile(
-        context, "${context.packageName}.fileprovider", file,
-    )
+    private fun uri(file: File): Uri =
+        Uri.parse("content://$TEST_AUTHORITY/${file.name}")
+
+    private class TestAttachmentProvider(
+        private val root: File,
+    ) : ContentProvider() {
+        override fun onCreate(): Boolean = true
+
+        override fun getType(uri: Uri): String =
+            when (uri.lastPathSegment?.substringAfterLast('.', "")) {
+                "pdf" -> "application/pdf"
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                else -> "application/zip"
+            }
+
+        override fun query(
+            uri: Uri,
+            projection: Array<out String>?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+            sortOrder: String?,
+        ): Cursor {
+            val file = file(uri)
+            val columns = projection ?: arrayOf(
+                android.provider.OpenableColumns.DISPLAY_NAME,
+                android.provider.OpenableColumns.SIZE,
+            )
+            return MatrixCursor(columns).apply {
+                addRow(
+                    columns.map { column ->
+                        when (column) {
+                            android.provider.OpenableColumns.DISPLAY_NAME ->
+                                file.name
+                            android.provider.OpenableColumns.SIZE ->
+                                file.length()
+                            else -> null
+                        }
+                    },
+                )
+            }
+        }
+
+        override fun openFile(
+            uri: Uri,
+            mode: String,
+        ): ParcelFileDescriptor =
+            ParcelFileDescriptor.open(
+                file(uri),
+                ParcelFileDescriptor.MODE_READ_ONLY,
+            )
+
+        override fun insert(
+            uri: Uri,
+            values: ContentValues?,
+        ): Uri? = null
+
+        override fun delete(
+            uri: Uri,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ): Int = 0
+
+        override fun update(
+            uri: Uri,
+            values: ContentValues?,
+            selection: String?,
+            selectionArgs: Array<out String>?,
+        ): Int = 0
+
+        private fun file(uri: Uri): File =
+            File(root, requireNotNull(uri.lastPathSegment))
+    }
+
+    private companion object {
+        const val TEST_AUTHORITY =
+            "pl.lukaszpeciak.towarownik.test.attachments"
+    }
 }
