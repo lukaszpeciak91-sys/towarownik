@@ -734,8 +734,12 @@ private fun TowarownikApp() {
                 }
 
                 is AdvisorUiState.Error -> {
-                    val recovered = conversationRepository
-                        .recoverInterruptedTurn(turn.conversationId)
+                    val recovery = conversationRepository
+                        .recoverFailedAdvisorTurn(
+                            conversationId = turn.conversationId,
+                            claimPendingAttachment =
+                                pendingAttachmentOwnership::markPending,
+                        )
                     if (
                         advisorRequestGuard.isCurrent(
                             token = generation,
@@ -743,7 +747,8 @@ private fun TowarownikApp() {
                             activeConversationId = activeConversationId,
                         )
                     ) {
-                        applyConversation(recovered)
+                        pendingAttachment = recovery.pendingAttachment
+                        applyConversation(recovery.conversation)
                         advisorState = finalState
                     }
                 }
