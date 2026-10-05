@@ -302,7 +302,13 @@ private fun TowarownikApp() {
     }
     var attachmentError by remember { mutableStateOf<AttachmentImportError?>(null) }
     var profileMenuRequest by remember { mutableStateOf(0) }
-    val attachmentImporter = remember { AttachmentImporter(context.contentResolver, attachmentStorage) }
+    val attachmentImporter = remember {
+        AttachmentImporter(
+            resolver = context.contentResolver,
+            storage = attachmentStorage,
+            beforePublish = pendingAttachmentOwnership::stageImportedCandidate,
+        )
+    }
     val cameraCapture = remember { CameraCapture(context) }
     var advisorJob by remember { mutableStateOf<Job?>(null) }
     var showAiBudgetWarning by rememberSaveable {
@@ -322,11 +328,17 @@ private fun TowarownikApp() {
         when (result) {
             is AttachmentImportResult.Success -> {
                 val previous = pendingAttachment
-                pendingAttachmentOwnership.markPending(result.attachment)
-                pendingAttachment = result.attachment
-                previous?.takeIf { it.localId != result.attachment.localId }
-                    ?.let { attachmentStorage.delete(it.localId) }
-                attachmentError = null
+                if (
+                    pendingAttachmentOwnership.activateImportedCandidate(
+                        attachment = result.attachment,
+                        previous = previous,
+                    )
+                ) {
+                    pendingAttachment = result.attachment
+                    attachmentError = null
+                } else {
+                    attachmentError = AttachmentImportError.CANNOT_OPEN
+                }
             }
             is AttachmentImportResult.Failure -> attachmentError = result.error
         }
