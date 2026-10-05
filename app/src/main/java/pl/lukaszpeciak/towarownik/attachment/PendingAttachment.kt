@@ -26,6 +26,9 @@ internal class PendingAttachmentState(
 internal class PendingAttachmentOwnership(
     private val storage: AttachmentStorage,
     private val preferences: SharedPreferences,
+    private val commitEditor: (SharedPreferences.Editor) -> Boolean = {
+        it.commit()
+    },
 ) {
     constructor(
         context: Context,
@@ -38,54 +41,159 @@ internal class PendingAttachmentOwnership(
         ),
     )
 
-    fun markPending(attachment: AdvisorAttachment) {
-        preferences.edit()
+    /**
+     * Records ownership before AttachmentStorage publishes the durable file.
+     * A failed commit aborts publication, so no final unsent file can exist
+     * without a recoverable ownership marker.
+     */
+    fun stageImportedCandidate(attachment: AdvisorAttachment): Boolean =
+        commitEditor(
+            preferences.edit()
+                .putString(KEY_STAGED_LOCAL_ID, attachment.localId),
+        )
+
+    /**
+     * Durably switches ownership to the imported file before callers expose it
+     * as the active Compose pending attachment or release the previous file.
+     */
+    fun activateImportedCandidate(
+        attachment: AdvisorAttachment,
+        previous: AdvisorAttachment?,
+    ): Boolean {
+        if (stagedLocalId() != attachment.localId) {
+            runCatching { storage.delete(attachment.localId) }
+            return false
+        }
+
+        val previousId = previous
+            ?.localId
+            ?.takeIf { it != attachment.localId }
+        val editor = preferences.edit()
             .putString(KEY_LOCAL_ID, attachment.localId)
-            .apply()
+            .remove(KEY_STAGED_LOCAL_ID)
+        if (previousId != null) {
+            editor.putString(KEY_RETIRED_LOCAL_ID, previousId)
+        } else {
+            editor.remove(KEY_RETIRED_LOCAL_ID)
+        }
+
+        if (!commitEditor(editor)) {
+            runCatching { storage.delete(attachment.localId) }
+            clearStagedBestEffort(attachment.localId)
+            return false
+        }
+
+        if (previousId != null) {
+            val deleted = runCatching {
+                storage.delete(previousId)
+            }.getOrDefault(false)
+            if (deleted) {
+                clearRetiredBestEffort(previousId)
+            }
+        }
+        return true
+    }
+
+    fun markPending(attachment: AdvisorAttachment): Boolean {
+        if (ownedLocalId() == attachment.localId) return true
+        return commitEditor(
+            preferences.edit()
+                .putString(KEY_LOCAL_ID, attachment.localId),
+        )
     }
 
     fun clearIfOwned(localId: String) {
         if (ownedLocalId() == localId) {
             preferences.edit().remove(KEY_LOCAL_ID).apply()
         }
+        if (stagedLocalId() == localId) {
+            preferences.edit().remove(KEY_STAGED_LOCAL_ID).apply()
+        }
+        if (retiredLocalId() == localId) {
+            preferences.edit().remove(KEY_RETIRED_LOCAL_ID).apply()
+        }
     }
 
     fun ownedLocalId(): String? =
         preferences.getString(KEY_LOCAL_ID, null)
+
+    internal fun stagedLocalId(): String? =
+        preferences.getString(KEY_STAGED_LOCAL_ID, null)
+
+    internal fun retiredLocalId(): String? =
+        preferences.getString(KEY_RETIRED_LOCAL_ID, null)
 
     suspend fun reconcileAfterStartup(
         restored: AdvisorAttachment?,
         isPersisted: suspend (String) -> Boolean,
     ): AdvisorAttachment? {
         val owned = ownedLocalId()
+        val staged = stagedLocalId()
+        val retired = retiredLocalId()
         val usableRestored = restored?.takeIf {
             storage.exists(it.localId)
         }
 
         if (usableRestored != null) {
-            if (
-                owned != null &&
-                owned != usableRestored.localId &&
-                !isPersisted(owned)
-            ) {
-                runCatching { storage.delete(owned) }
+            if (owned != usableRestored.localId) {
+                if (!markPending(usableRestored)) {
+                    if (!isPersisted(usableRestored.localId)) {
+                        runCatching {
+                            storage.delete(usableRestored.localId)
+                        }
+                    }
+                    return null
+                }
             }
-            markPending(usableRestored)
+
+            listOfNotNull(owned, staged, retired)
+                .distinct()
+                .filter { it != usableRestored.localId }
+                .forEach { localId ->
+                    if (!isPersisted(localId)) {
+                        runCatching { storage.delete(localId) }
+                    }
+                }
+
+            preferences.edit()
+                .remove(KEY_STAGED_LOCAL_ID)
+                .remove(KEY_RETIRED_LOCAL_ID)
+                .apply()
             return usableRestored
         }
 
-        if (owned != null) {
-            if (!isPersisted(owned)) {
-                runCatching { storage.delete(owned) }
+        listOfNotNull(owned, staged, retired)
+            .distinct()
+            .forEach { localId ->
+                if (!isPersisted(localId)) {
+                    runCatching { storage.delete(localId) }
+                }
             }
-            preferences.edit().remove(KEY_LOCAL_ID).apply()
-        }
+        preferences.edit()
+            .remove(KEY_LOCAL_ID)
+            .remove(KEY_STAGED_LOCAL_ID)
+            .remove(KEY_RETIRED_LOCAL_ID)
+            .apply()
         return null
+    }
+
+    private fun clearStagedBestEffort(localId: String) {
+        if (stagedLocalId() == localId) {
+            preferences.edit().remove(KEY_STAGED_LOCAL_ID).apply()
+        }
+    }
+
+    private fun clearRetiredBestEffort(localId: String) {
+        if (retiredLocalId() == localId) {
+            preferences.edit().remove(KEY_RETIRED_LOCAL_ID).apply()
+        }
     }
 
     private companion object {
         const val PREFERENCES_NAME = "advisor_pending_attachment"
         const val KEY_LOCAL_ID = "local_id"
+        const val KEY_STAGED_LOCAL_ID = "staged_local_id"
+        const val KEY_RETIRED_LOCAL_ID = "retired_local_id"
     }
 }
 
