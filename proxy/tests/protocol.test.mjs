@@ -465,14 +465,14 @@ test("protocol v4 PDF message preserves previous_response_id and uses input_file
     protocolVersion: 4, previousResponseId: "resp_previous", message: "odczytaj kod",
     providerId: "kwant-pl", branchId: "205",
   }, pdf, "application/pdf", null, {
-    filename: "instrukcja MBN116E.pdf",
+    filename: "../instrukcja\u0007 MBN116E.pdf",
   }), configuredEnv);
   assert.equal(response.status, 200);
   assert.equal(fake.captures[0].body.previous_response_id, "resp_previous");
   assert.deepEqual(fake.captures[0].body.input[0].content.map((part) => part.type), ["input_text", "input_file"]);
   assert.equal(
     fake.captures[0].body.input[0].content[1].filename,
-    "instrukcja MBN116E.pdf",
+    ".._instrukcja MBN116E.pdf",
   );
   assert.equal(fake.captures[0].body.input[0].content[1].file_data,
     `data:application/pdf;base64,${Buffer.from(pdf).toString("base64")}`);
@@ -490,9 +490,45 @@ test("protocol v4 multipart rejects missing Content-Length before formData parsi
     body: "not-a-valid-multipart-body",
   });
 
+  let formDataCalled = false;
+  Object.defineProperty(request, "formData", {
+    value: async () => {
+      formDataCalled = true;
+      throw new Error("multipart parser must not run");
+    },
+  });
+
   const response = await worker.fetch(request, configuredEnv);
 
   assert.equal(response.status, 400);
+  assert.equal(formDataCalled, false);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("protocol v4 multipart rejects invalid Content-Length before formData parsing", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const request = new Request("https://proxy.example/v1/agent/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${APP_TOKEN}`,
+      "Content-Type": "multipart/form-data; boundary=broken",
+      "Content-Length": "not-a-number",
+    },
+    body: "not-a-valid-multipart-body",
+  });
+  let formDataCalled = false;
+  Object.defineProperty(request, "formData", {
+    value: async () => {
+      formDataCalled = true;
+      throw new Error("multipart parser must not run");
+    },
+  });
+
+  const response = await worker.fetch(request, configuredEnv);
+
+  assert.equal(response.status, 400);
+  assert.equal(formDataCalled, false);
   assert.equal(fake.captures.length, 0);
 });
 
@@ -509,9 +545,18 @@ test("protocol v4 multipart rejects oversized declared Content-Length before for
     body: "not-a-valid-multipart-body",
   });
 
+  let formDataCalled = false;
+  Object.defineProperty(request, "formData", {
+    value: async () => {
+      formDataCalled = true;
+      throw new Error("multipart parser must not run");
+    },
+  });
+
   const response = await worker.fetch(request, configuredEnv);
 
   assert.equal(response.status, 413);
+  assert.equal(formDataCalled, false);
   assert.equal(fake.captures.length, 0);
 });
 
