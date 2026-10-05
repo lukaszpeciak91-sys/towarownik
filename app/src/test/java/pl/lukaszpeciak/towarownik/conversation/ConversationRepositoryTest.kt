@@ -21,6 +21,7 @@ import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.attachment.ATTACHMENT_LOCAL_STORAGE_MAX_BYTES
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
+import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentOwnership
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
@@ -203,6 +204,136 @@ class ConversationRepositoryTest {
         assertEquals(0, messageAttachmentCount(started.conversationId))
         assertFalse(attachmentStorage.exists(interruptedAttachment.localId))
         assertTrue(attachmentStorage.exists(unrelatedAttachment.localId))
+    }
+
+    @Test
+    fun `failed text and attachment turn restores draft and pending attachment`() = runBlocking {
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "retry.pdf",
+            "application/pdf",
+            3,
+            createdAt = 21,
+            source = { ByteArrayInputStream(byteArrayOf(1, 2, 3)) },
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Spróbuj ponownie",
+            createdAt = 22,
+            attachment = attachment,
+        )
+        val ownership = PendingAttachmentOwnership(
+            attachmentStorage,
+            context.getSharedPreferences(
+                "failed-turn-text-attachment",
+                Context.MODE_PRIVATE,
+            ),
+        )
+
+        val recovery = repository.recoverFailedAdvisorTurn(
+            conversationId = started.conversationId,
+            claimPendingAttachment = ownership::markPending,
+        )
+
+        assertEquals("Spróbuj ponownie", recovery.conversation?.draft)
+        assertEquals(attachment, recovery.pendingAttachment)
+        assertEquals(0, messageAttachmentCount(started.conversationId))
+        assertEquals(attachment.localId, ownership.ownedLocalId())
+    }
+
+    @Test
+    fun `failed attachment only turn restores pending attachment with blank draft`() = runBlocking {
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "attachment-only.pdf",
+            "application/pdf",
+            2,
+            createdAt = 23,
+            source = { ByteArrayInputStream(byteArrayOf(4, 5)) },
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "",
+            createdAt = 24,
+            attachment = attachment,
+        )
+        val ownership = PendingAttachmentOwnership(
+            attachmentStorage,
+            context.getSharedPreferences(
+                "failed-turn-attachment-only",
+                Context.MODE_PRIVATE,
+            ),
+        )
+
+        val recovery = repository.recoverFailedAdvisorTurn(
+            conversationId = started.conversationId,
+            claimPendingAttachment = ownership::markPending,
+        )
+
+        assertEquals("", recovery.conversation?.draft)
+        assertEquals(attachment, recovery.pendingAttachment)
+        assertEquals(0, messageAttachmentCount(started.conversationId))
+    }
+
+    @Test
+    fun `failed attachment turn preserves private file for retry`() = runBlocking {
+        val bytes = byteArrayOf(7, 8, 9)
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "preserved.pdf",
+            "application/pdf",
+            bytes.size.toLong(),
+            createdAt = 25,
+            source = { ByteArrayInputStream(bytes) },
+        )
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "retry",
+            createdAt = 26,
+            attachment = attachment,
+        )
+        val ownership = PendingAttachmentOwnership(
+            attachmentStorage,
+            context.getSharedPreferences(
+                "failed-turn-file-preserved",
+                Context.MODE_PRIVATE,
+            ),
+        )
+
+        repository.recoverFailedAdvisorTurn(
+            conversationId = started.conversationId,
+            claimPendingAttachment = ownership::markPending,
+        )
+
+        assertTrue(attachmentStorage.exists(attachment.localId))
+        assertEquals(
+            bytes.toList(),
+            attachmentStorage.open(attachment.localId)
+                ?.use { it.readBytes().toList() },
+        )
+    }
+
+    @Test
+    fun `failed text only turn recovery remains unchanged`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "Tekst do ponowienia",
+            createdAt = 27,
+        )
+        var claimCalls = 0
+
+        val recovery = repository.recoverFailedAdvisorTurn(
+            conversationId = started.conversationId,
+            claimPendingAttachment = {
+                claimCalls += 1
+                true
+            },
+        )
+
+        assertEquals("Tekst do ponowienia", recovery.conversation?.draft)
+        assertNull(recovery.pendingAttachment)
+        assertEquals(0, claimCalls)
+        assertEquals(0, messageAttachmentCount(started.conversationId))
     }
 
     @Test

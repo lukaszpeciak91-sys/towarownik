@@ -2,6 +2,8 @@ package pl.lukaszpeciak.towarownik.agent
 
 import kotlinx.coroutines.CancellationException
 import pl.lukaszpeciak.towarownik.BuildConfig
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductKey
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
@@ -63,18 +65,32 @@ internal class AdvisorController(
     private val executeProviderTool: suspend (
         AdvisorToolArguments,
     ) -> AdvisorToolExecutionResult,
+    private val startAgentWithAttachment: (suspend (
+        String,
+        String,
+        String,
+        AdvisorAttachment,
+    ) -> AdvisorProxyCallResult)? = null,
+    private val messageAgentWithAttachment: (suspend (
+        String,
+        String,
+        String,
+        String,
+        AdvisorAttachment,
+    ) -> AdvisorProxyCallResult)? = null,
 ) {
     suspend fun runTurn(
         input: String,
         previousResponseId: String?,
         conversationStoreNumber: String = DEFAULT_OBI_STORE_NUMBER,
         conversationProviderId: String = OBI_PROVIDER_ID.value,
+        attachment: AdvisorAttachment? = null,
         onOpenAiResponse: (AdvisorUsage?, Long) -> Unit = { _, _ -> },
         onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
     ): AdvisorUiState {
         val normalizedInput = input.normalizeWhitespace()
-        if (normalizedInput.isBlank()) {
+        if (normalizedInput.isBlank() && attachment == null) {
             return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
         }
 
@@ -122,13 +138,24 @@ internal class AdvisorController(
 
         val initialCall = safeProxyCall {
             if (previousResponseId == null) {
-                startAgent(
+                if (attachment != null) requireNotNull(startAgentWithAttachment)(
+                    normalizedInput,
+                    conversationProviderId,
+                    conversationStoreNumber,
+                    attachment,
+                ) else startAgent(
                     normalizedInput,
                     conversationProviderId,
                     conversationStoreNumber,
                 )
             } else {
-                messageAgent(
+                if (attachment != null) requireNotNull(messageAgentWithAttachment)(
+                    previousResponseId,
+                    normalizedInput,
+                    conversationProviderId,
+                    conversationStoreNumber,
+                    attachment,
+                ) else messageAgent(
                     previousResponseId,
                     normalizedInput,
                     conversationProviderId,
@@ -357,8 +384,9 @@ internal class AdvisorController(
         }
 
     companion object {
-        fun production(): AdvisorController {
-            val proxyClient = AdvisorProxyClient()
+        fun production(context: android.content.Context): AdvisorController {
+            val attachmentStorage = AttachmentStorage(context.applicationContext)
+            val proxyClient = AdvisorProxyClient(attachmentStorage = attachmentStorage)
             val obiTool = FindObiProductsTool()
             val providerTool = FindProviderProductsTool()
             return AdvisorController(
@@ -427,6 +455,16 @@ internal class AdvisorController(
                 },
                 executeObiTool = obiTool::execute,
                 executeProviderTool = providerTool::execute,
+                startAgentWithAttachment = {
+                        message, providerId, branchId, attachment,
+                    ->
+                    proxyClient.start(message, providerId, branchId, attachment)
+                },
+                messageAgentWithAttachment = {
+                        responseId, message, providerId, branchId, attachment,
+                    ->
+                    proxyClient.message(responseId, message, providerId, branchId, attachment)
+                },
             )
         }
     }

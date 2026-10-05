@@ -125,6 +125,11 @@ internal data class PersistedMessage(
     val attachment: AdvisorAttachment? = null,
 )
 
+internal data class FailedAdvisorTurnRecovery(
+    val conversation: PersistedConversation?,
+    val pendingAttachment: AdvisorAttachment?,
+)
+
 internal data class UserTurnStart(
     val conversationId: Long,
     val previousResponseId: String?,
@@ -202,12 +207,14 @@ internal class ConversationRepository(
         attachment: AdvisorAttachment? = null,
     ): UserTurnStart {
         val normalized = normalizeConversationText(text)
-        require(normalized.isNotBlank())
+        require(normalized.isNotBlank() || attachment != null)
 
         return if (conversationId == null) {
             val (newId, previousResponseId) =
                 dao.createWithFirstUserMessage(
-                    title = deriveConversationTitle(normalized),
+                    title = deriveConversationTitle(
+                        normalized.ifBlank { attachment?.displayName.orEmpty() },
+                    ),
                     text = normalized,
                     createdAt = createdAt,
                     providerId = workingProfile.providerId.value,
@@ -282,6 +289,33 @@ internal class ConversationRepository(
     ): PersistedConversation? {
         recoverInterruptedTurnAndCleanup(conversationId)
         return load(conversationId)
+    }
+
+    suspend fun recoverFailedAdvisorTurn(
+        conversationId: Long,
+        claimPendingAttachment: (AdvisorAttachment) -> Boolean,
+    ): FailedAdvisorTurnRecovery {
+        val attachment = dao.getLastMessageAttachment(conversationId)
+            ?.toAdvisorAttachmentOrNull()
+            ?.takeIf { candidate ->
+                attachmentStorage?.exists(candidate.localId) != false
+            }
+
+        if (attachment != null && !claimPendingAttachment(attachment)) {
+            return FailedAdvisorTurnRecovery(
+                conversation = load(conversationId),
+                pendingAttachment = null,
+            )
+        }
+
+        val recovered = dao.recoverInterruptedTurn(
+            conversationId = conversationId,
+            recoveredAt = now(),
+        )
+        return FailedAdvisorTurnRecovery(
+            conversation = load(conversationId),
+            pendingAttachment = attachment.takeIf { recovered },
+        )
     }
 
     private suspend fun recoverInterruptedTurnAndCleanup(
@@ -439,3 +473,16 @@ private fun ConversationWithMessages.toPersisted(
     )
 
 private val CONVERSATION_WHITESPACE = Regex("""[\s\p{Cc}]+""")
+
+
+private fun MessageAttachmentEntity.toAdvisorAttachmentOrNull(): AdvisorAttachment? =
+    validatedAttachmentOrNull(
+        type = type,
+        displayName = displayName,
+        mimeType = mimeType,
+        localId = localId,
+        byteSize = byteSize,
+        width = width,
+        height = height,
+        createdAt = createdAt,
+    )

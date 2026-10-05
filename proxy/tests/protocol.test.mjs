@@ -26,6 +26,39 @@ function request(path, body) {
   });
 }
 
+function multipartRequest(
+  path,
+  payload,
+  bytes,
+  mimeType,
+  extraFile = null,
+  options = {},
+) {
+  const form = new FormData();
+  const filename = options.filename ?? "attachment";
+  form.set(
+    "payload",
+    JSON.stringify(payload),
+  );
+  form.set(
+    "attachment",
+    new File([bytes], filename, { type: mimeType }),
+  );
+  if (extraFile) form.append("attachment", extraFile);
+  const headers = {
+    Authorization: `Bearer ${APP_TOKEN}`,
+  };
+  if (!options.omitContentLength) {
+    headers["Content-Length"] =
+      String(options.contentLength ?? 1024);
+  }
+  return new Request(`https://proxy.example${path}`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+}
+
 function answerPayload(text = "Synthetic answer") {
   const structured = JSON.stringify({
     text,
@@ -409,6 +442,171 @@ test("protocol v3 KWANT request receives provider-aware product tool", async () 
   );
 });
 
+test("protocol v4 image multipart supports attachment-only and high-detail image input", async () => {
+  const fake = fakeOpenAI(answerPayload("image"));
+  const worker = createWorker(fake.fetch);
+  const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xdb, 1]);
+  const response = await worker.fetch(multipartRequest("/v1/agent/start", {
+    protocolVersion: 4, message: "", providerId: "obi-pl", branchId: "075",
+  }, jpeg, "image/jpeg"), configuredEnv);
+  assert.equal(response.status, 200);
+  const input = fake.captures[0].body.input;
+  assert.equal(input[0].content.length, 1);
+  assert.deepEqual(input[0].content[0], {
+    type: "input_image", image_url: `data:image/jpeg;base64,${Buffer.from(jpeg).toString("base64")}`, detail: "high",
+  });
+});
+
+test("protocol v4 PDF message preserves previous_response_id and uses input_file", async () => {
+  const fake = fakeOpenAI(answerPayload("pdf"));
+  const worker = createWorker(fake.fetch);
+  const pdf = new TextEncoder().encode("%PDF-1.7\n");
+  const response = await worker.fetch(multipartRequest("/v1/agent/message", {
+    protocolVersion: 4, previousResponseId: "resp_previous", message: "odczytaj kod",
+    providerId: "kwant-pl", branchId: "205",
+  }, pdf, "application/pdf", null, {
+    filename: "../instrukcja\u0007 MBN116E.pdf",
+  }), configuredEnv);
+  assert.equal(response.status, 200);
+  assert.equal(fake.captures[0].body.previous_response_id, "resp_previous");
+  assert.deepEqual(fake.captures[0].body.input[0].content.map((part) => part.type), ["input_text", "input_file"]);
+  assert.equal(
+    fake.captures[0].body.input[0].content[1].filename,
+    ".._instrukcja MBN116E.pdf",
+  );
+  assert.equal(fake.captures[0].body.input[0].content[1].file_data,
+    `data:application/pdf;base64,${Buffer.from(pdf).toString("base64")}`);
+});
+
+test("protocol v4 multipart rejects missing Content-Length before formData parsing", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const request = new Request("https://proxy.example/v1/agent/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${APP_TOKEN}`,
+      "Content-Type": "multipart/form-data; boundary=broken",
+    },
+    body: "not-a-valid-multipart-body",
+  });
+
+  let formDataCalled = false;
+  Object.defineProperty(request, "formData", {
+    value: async () => {
+      formDataCalled = true;
+      throw new Error("multipart parser must not run");
+    },
+  });
+
+  const response = await worker.fetch(request, configuredEnv);
+
+  assert.equal(response.status, 400);
+  assert.equal(formDataCalled, false);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("protocol v4 multipart rejects invalid Content-Length before formData parsing", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const request = new Request("https://proxy.example/v1/agent/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${APP_TOKEN}`,
+      "Content-Type": "multipart/form-data; boundary=broken",
+      "Content-Length": "not-a-number",
+    },
+    body: "not-a-valid-multipart-body",
+  });
+  let formDataCalled = false;
+  Object.defineProperty(request, "formData", {
+    value: async () => {
+      formDataCalled = true;
+      throw new Error("multipart parser must not run");
+    },
+  });
+
+  const response = await worker.fetch(request, configuredEnv);
+
+  assert.equal(response.status, 400);
+  assert.equal(formDataCalled, false);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("protocol v4 multipart rejects oversized declared Content-Length before formData parsing", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const request = new Request("https://proxy.example/v1/agent/start", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${APP_TOKEN}`,
+      "Content-Type": "multipart/form-data; boundary=broken",
+      "Content-Length": String(16 * 1024 * 1024 + 16 * 1024 + 1),
+    },
+    body: "not-a-valid-multipart-body",
+  });
+
+  let formDataCalled = false;
+  Object.defineProperty(request, "formData", {
+    value: async () => {
+      formDataCalled = true;
+      throw new Error("multipart parser must not run");
+    },
+  });
+
+  const response = await worker.fetch(request, configuredEnv);
+
+  assert.equal(response.status, 413);
+  assert.equal(formDataCalled, false);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("protocol v4 multipart rejects wrong MIME signature and multiple attachments", async () => {
+  const worker = createWorker(fakeOpenAI(answerPayload()).fetch);
+  const payload = { protocolVersion: 4, message: "x", providerId: "obi-pl", branchId: "075" };
+  const wrong = await worker.fetch(multipartRequest("/v1/agent/start", payload,
+    new TextEncoder().encode("%PDF-1.7"), "image/png"), configuredEnv);
+  assert.equal(wrong.status, 400);
+  const multiple = await worker.fetch(multipartRequest("/v1/agent/start", payload,
+    Uint8Array.from([0xff, 0xd8, 0xff]), "image/jpeg",
+    new File(["%PDF-"], "second.pdf", { type: "application/pdf" })), configuredEnv);
+  assert.equal(multiple.status, 400);
+});
+
+test("protocol v4 multipart rejects an attachment above 16 MiB", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const oversized = new Uint8Array(16 * 1024 * 1024 + 1);
+  oversized.set([0xff, 0xd8, 0xff]);
+  const response = await worker.fetch(multipartRequest("/v1/agent/start", {
+    protocolVersion: 4, message: "x", providerId: "obi-pl", branchId: "075",
+  }, oversized, "image/jpeg"), configuredEnv);
+  assert.equal(response.status, 413);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("protocol v4 continue remains JSON-only and does not resend attachment", async () => {
+  const fake = fakeOpenAI(answerPayload("continued"));
+  const worker = createWorker(fake.fetch);
+  const response = await worker.fetch(request("/v1/agent/continue", {
+    protocolVersion: 4,
+    responseId: "resp_with_attachment",
+    callId: "call_products",
+    providerId: "obi-pl",
+    branchId: "075",
+    tool: "find_products",
+    result: {
+      providerId: "obi-pl",
+      branchId: "075",
+      queries: [{ query: "kod ze zdjęcia", limit: 1 }],
+      rejection: "local_tool_limit_reached",
+    },
+  }), configuredEnv);
+  assert.equal(response.status, 200);
+  assert.equal(fake.captures[0].body.previous_response_id, "resp_with_attachment");
+  assert.deepEqual(fake.captures[0].body.input.map((entry) => entry.type), ["function_call_output"]);
+  assert.equal(JSON.stringify(fake.captures[0].body).includes("data:"), false);
+});
+
 test("protocol v3 KWANT continue preserves provider product refs", async () => {
   const structured = JSON.stringify({
     text: "Mam zweryfikowany produkt.",
@@ -495,7 +693,7 @@ test("unsupported future protocol version fails explicitly before upstream work"
 
   const response = await worker.fetch(
     request("/v1/agent/start", {
-      protocolVersion: 4,
+      protocolVersion: 5,
       message: "future client",
       providerId: "kwant-pl",
       branchId: "205",
