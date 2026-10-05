@@ -72,6 +72,11 @@ internal class AttachmentStorage private constructor(
 
     fun exists(localId: String): Boolean = file(localId)?.isFile == true
 
+    fun isReadable(attachment: AdvisorAttachment): Boolean {
+        val target = file(attachment.localId) ?: return false
+        return target.isFile && target.length() == attachment.byteSize
+    }
+
     fun delete(localId: String): Boolean {
         val target = file(localId) ?: return false
         return !target.exists() || target.delete()
