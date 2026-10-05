@@ -124,10 +124,11 @@ class AdvisorAttachmentTransportTest {
 
             assertEquals(
                 AdvisorProxyCallResult.Failure(
-                    AdvisorProxyFailureKind.NETWORK,
+                    AdvisorProxyFailureKind.PROTOCOL,
                 ),
                 result,
             )
+            assertEquals(0, server.requestCount)
         }
     }
 
