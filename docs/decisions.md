@@ -463,5 +463,5 @@ These decisions describe the broader intended product behavior. The currently im
 ## 2026-10-05 — attachment turn ownership completion
 
 - Accept a USER turn when it contains non-blank text, one attachment, or both; reject only a turn containing neither. Attachment-only conversations derive their title from the attachment display name and persist blank message text without synthetic `[IMAGE]` or `[PDF]` content.
-- Keep the pending-owner marker through the atomic Room USER-message insert. Release that marker synchronously only after the insert succeeds, and never delete the private file during the handoff because its lifecycle has moved to the persisted message.
+- Keep the pending-owner marker through the atomic Room USER-message insert. Attempt synchronous marker release only after the insert succeeds, never delete the private file during the handoff, and treat release failure as non-fatal because Room already owns the attachment.
 - Preserve overlapping pending/Room ownership across the narrow interruption window rather than risking an unowned file. Startup reconciliation recognizes Room ownership and clears stale pending state without deleting the persisted file.
