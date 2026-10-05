@@ -10,6 +10,7 @@ import pl.lukaszpeciak.towarownik.attachment.AttachmentImportResult
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImporter
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.attachment.CameraCapture
+import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentOwnership
 import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentSaver
 import pl.lukaszpeciak.towarownik.attachment.canSubmitAdvisorComposer
 import androidx.activity.compose.BackHandler
@@ -46,6 +47,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -223,6 +225,9 @@ private fun TowarownikApp() {
         WorkingProfileRepository.production(context)
     }
     val attachmentStorage = remember { AttachmentStorage(context) }
+    val pendingAttachmentOwnership = remember {
+        PendingAttachmentOwnership(context, attachmentStorage)
+    }
     val conversationRepository = remember {
         ConversationRepository(
             ConversationDatabase.get(context).conversationDao(),
@@ -306,10 +311,18 @@ private fun TowarownikApp() {
     var draftPersistJob by remember { mutableStateOf<Job?>(null) }
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
 
+    LaunchedEffect(Unit) {
+        pendingAttachment = pendingAttachmentOwnership.reconcileAfterStartup(
+            restored = pendingAttachment,
+            isPersisted = conversationRepository::isAttachmentPersisted,
+        )
+    }
+
     fun acceptImportResult(result: AttachmentImportResult) {
         when (result) {
             is AttachmentImportResult.Success -> {
                 val previous = pendingAttachment
+                pendingAttachmentOwnership.markPending(result.attachment)
                 pendingAttachment = result.attachment
                 previous?.takeIf { it.localId != result.attachment.localId }
                     ?.let { attachmentStorage.delete(it.localId) }
@@ -387,8 +400,12 @@ private fun TowarownikApp() {
     }
 
     fun clearPendingAttachment() {
-        pendingAttachment?.let { attachmentStorage.delete(it.localId) }
+        val previous = pendingAttachment
         pendingAttachment = null
+        previous?.let {
+            pendingAttachmentOwnership.clearIfOwned(it.localId)
+            attachmentStorage.delete(it.localId)
+        }
         attachmentError = null
     }
 
@@ -1536,6 +1553,7 @@ private fun AdvisorChatScreen(
                 branchLabel = profileBranches.firstOrNull {
                     it.branchId == workingProfile.branchId
                 }?.name ?: workingProfile.branchId.value,
+                profileSwitchEnabled = profileSelectorEnabled,
                 onValueChange = onDraftChange,
                 onSend = onSubmit,
                 onRemoveAttachment = onRemoveAttachment,
@@ -1844,6 +1862,7 @@ private fun AdvisorComposer(
     attachmentStorage: AttachmentStorage,
     workingProfile: WorkingProfile,
     branchLabel: String,
+    profileSwitchEnabled: Boolean,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
     onRemoveAttachment: () -> Unit,
@@ -1974,23 +1993,40 @@ private fun AdvisorComposer(
                                 AttachmentMenuItem(R.drawable.ic_document_24, R.string.attachment_file) {
                                     actionsExpanded = false; onOpenFile()
                                 }
-                                HorizontalDivider()
-                                DropdownMenuItem(
-                                    leadingIcon = {
-                                        Icon(painterResource(R.drawable.ic_store_24), contentDescription = null)
-                                    },
-                                    text = {
-                                        Column {
-                                            Text(stringResource(R.string.attachment_switch_store))
-                                            Text(
-                                                "$provider • $branchLabel",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                if (profileSwitchEnabled) {
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        leadingIcon = {
+                                            Icon(
+                                                painterResource(
+                                                    R.drawable.ic_store_24,
+                                                ),
+                                                contentDescription = null,
                                             )
-                                        }
-                                    },
-                                    onClick = { actionsExpanded = false; onOpenProfileSelector() },
-                                )
+                                        },
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    stringResource(
+                                                        R.string.attachment_switch_store,
+                                                    ),
+                                                )
+                                                Text(
+                                                    "$provider • $branchLabel",
+                                                    style =
+                                                        MaterialTheme.typography.bodySmall,
+                                                    color =
+                                                        MaterialTheme.colorScheme
+                                                            .onSurfaceVariant,
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            actionsExpanded = false
+                                            onOpenProfileSelector()
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -3044,6 +3080,10 @@ private val HISTORY_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd.MM HH:mm")
 @Preview(showBackground = true)
 @Composable
 private fun AdvisorChatPreview() {
+    val context = LocalContext.current
+    val previewAttachmentStorage = remember(context) {
+        AttachmentStorage(context.applicationContext)
+    }
     TowarownikTheme {
         AdvisorChatScreen(
             advisorCase = AdvisorCaseUiState(
@@ -3063,6 +3103,14 @@ private fun AdvisorChatPreview() {
             state = AdvisorUiState.Idle,
             onDraftChange = {},
             onSubmit = {},
+            pendingAttachment = null,
+            attachmentError = null,
+            attachmentStorage = previewAttachmentStorage,
+            onRemoveAttachment = {},
+            onOpenCamera = {},
+            onOpenPhotos = {},
+            onOpenFile = {},
+            onOpenProfileSelector = {},
             onOpenDrawer = {},
             onNewCase = {},
             onOpenSearch = {},
@@ -3070,6 +3118,7 @@ private fun AdvisorChatPreview() {
             profileBranches = emptyList(),
             profileSelectorEnabled = true,
             profileBranchesLoading = false,
+            profileMenuRequest = 0,
             onProviderSelected = {},
             onBranchSelected = {},
             onReportAssistantMessage = {},
