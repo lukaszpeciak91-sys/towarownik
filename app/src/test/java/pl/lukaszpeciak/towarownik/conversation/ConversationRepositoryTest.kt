@@ -223,6 +223,56 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `failed pending marker release after Room persistence keeps durable turn`() = runBlocking {
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "persisted-despite-marker.pdf",
+            "application/pdf",
+            2,
+            createdAt = 15,
+            source = { ByteArrayInputStream(byteArrayOf(5, 6)) },
+        )
+        val preferences = context.getSharedPreferences(
+            "persisted-handoff-failure",
+            Context.MODE_PRIVATE,
+        )
+        var commitCount = 0
+        val ownership = PendingAttachmentOwnership(
+            storage = attachmentStorage,
+            preferences = preferences,
+            commitEditor = { editor ->
+                commitCount += 1
+                if (commitCount == 1) {
+                    editor.commit()
+                } else {
+                    false
+                }
+            },
+        )
+        assertTrue(ownership.markPending(attachment))
+
+        val turn = repository.beginUserTurn(
+            conversationId = null,
+            text = "",
+            createdAt = 16,
+            attachment = attachment,
+        )
+        val released = ownership.handoffToPersisted(attachment.localId)
+
+        assertFalse(released)
+        assertTrue(repository.isAttachmentPersisted(attachment.localId))
+        assertTrue(attachmentStorage.exists(attachment.localId))
+        assertEquals(attachment.localId, ownership.ownedLocalId())
+        assertEquals(
+            attachment,
+            requireNotNull(repository.load(turn.conversationId))
+                .messages
+                .single()
+                .attachment,
+        )
+    }
+
+    @Test
     fun `failed begin user turn retains pending ownership`() = runBlocking {
         val attachment = attachmentStorage.importValidated(
             AttachmentType.PDF,
