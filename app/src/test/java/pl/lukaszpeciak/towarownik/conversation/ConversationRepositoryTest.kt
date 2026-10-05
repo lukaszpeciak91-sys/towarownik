@@ -81,6 +81,42 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `attachment only turn uses display name as title and reloads user metadata`() = runBlocking {
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "Installation manual.pdf",
+            "application/pdf",
+            3,
+            createdAt = 95,
+            source = { ByteArrayInputStream(byteArrayOf(1, 2, 3)) },
+        )
+
+        val started = repository.beginUserTurn(
+            conversationId = null,
+            text = "   ",
+            createdAt = 100,
+            attachment = attachment,
+        )
+        val current = requireNotNull(repository.load(started.conversationId))
+
+        assertEquals("Installation manual.pdf", current.title)
+        assertEquals("", current.messages.single().text)
+        assertEquals("USER", current.messages.single().role)
+        assertEquals(attachment, current.messages.single().attachment)
+        assertTrue(attachmentStorage.exists(attachment.localId))
+    }
+
+    @Test
+    fun `text only turn remains unchanged`() = runBlocking {
+        val started = repository.beginUserTurn(null, "  Plain question  ", 101)
+        val current = requireNotNull(repository.load(started.conversationId))
+
+        assertEquals("Plain question", current.title)
+        assertEquals("Plain question", current.messages.single().text)
+        assertNull(current.messages.single().attachment)
+    }
+
+    @Test
     fun `one attachment per message is structurally enforced and cascades with message`() = runBlocking {
         val attachment = attachmentStorage.importValidated(
             AttachmentType.PDF, "one.pdf", "application/pdf", 1, createdAt = 1,
@@ -160,6 +196,61 @@ class ConversationRepositoryTest {
 
         assertTrue(repository.isAttachmentPersisted(persisted.localId))
         assertFalse(repository.isAttachmentPersisted(unsent.localId))
+    }
+
+    @Test
+    fun `successful user turn transfers pending ownership to Room`() = runBlocking {
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "owned.pdf",
+            "application/pdf",
+            2,
+            createdAt = 11,
+            source = { ByteArrayInputStream(byteArrayOf(1, 2)) },
+        )
+        val ownership = PendingAttachmentOwnership(
+            attachmentStorage,
+            context.getSharedPreferences("successful-handoff", Context.MODE_PRIVATE),
+        )
+        assertTrue(ownership.markPending(attachment))
+
+        repository.beginUserTurn(null, "", 12, attachment = attachment)
+        assertTrue(repository.isAttachmentPersisted(attachment.localId))
+        ownership.handoffToPersisted(attachment.localId)
+
+        assertNull(ownership.ownedLocalId())
+        assertTrue(attachmentStorage.exists(attachment.localId))
+    }
+
+    @Test
+    fun `failed begin user turn retains pending ownership`() = runBlocking {
+        val attachment = attachmentStorage.importValidated(
+            AttachmentType.PDF,
+            "still-pending.pdf",
+            "application/pdf",
+            2,
+            createdAt = 13,
+            source = { ByteArrayInputStream(byteArrayOf(3, 4)) },
+        )
+        val ownership = PendingAttachmentOwnership(
+            attachmentStorage,
+            context.getSharedPreferences("failed-handoff", Context.MODE_PRIVATE),
+        )
+        assertTrue(ownership.markPending(attachment))
+
+        val result = runCatching {
+            repository.beginUserTurn(
+                conversationId = Long.MAX_VALUE,
+                text = "",
+                createdAt = 14,
+                attachment = attachment,
+            )
+        }
+
+        assertTrue(result.isFailure)
+        assertEquals(attachment.localId, ownership.ownedLocalId())
+        assertFalse(repository.isAttachmentPersisted(attachment.localId))
+        assertTrue(attachmentStorage.exists(attachment.localId))
     }
 
     @Test

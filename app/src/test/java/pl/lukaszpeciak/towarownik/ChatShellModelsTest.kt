@@ -7,6 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_USER
 import pl.lukaszpeciak.towarownik.conversation.PersistedConversation
@@ -62,6 +64,45 @@ class ChatShellModelsTest {
         val restored = restoreAdvisorCase(saveAdvisorCase(completed))
 
         assertEquals(completed, restored)
+    }
+
+    @Test
+    fun `current user message keeps persisted attachment metadata`() {
+        val attachment = AdvisorAttachment(
+            type = AttachmentType.PDF,
+            displayName = "manual.pdf",
+            mimeType = "application/pdf",
+            localId = "0123456789abcdef0123456789abcdef",
+            byteSize = 123L,
+            createdAt = 90L,
+        )
+        val current = persistedConversation(
+            PersistedMessage(
+                id = 3L,
+                role = MESSAGE_ROLE_USER,
+                text = "",
+                createdAt = 100L,
+                products = emptyList(),
+                attachment = attachment,
+            ),
+        ).toAdvisorCaseUiState()
+
+        assertEquals(attachment, current.messages.single().attachment)
+        assertEquals("", current.messages.single().text)
+        val completed = current.copy(
+            messages = current.messages + AdvisorChatMessage(
+                role = ChatMessageRole.ASSISTANT,
+                text = "Done",
+                createdAt = 110L,
+            ),
+        )
+        assertEquals(
+            attachment,
+            restoreAdvisorCase(saveAdvisorCase(completed))
+                .messages
+                .first()
+                .attachment,
+        )
     }
 
     @Test

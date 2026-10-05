@@ -339,13 +339,24 @@ class AttachmentAcquisitionTest {
         assertEquals(4, imageSampleSize(17000, 1000, ATTACHMENT_IMAGE_MAX_DIMENSION))
     }
 
-    @Test fun `text only eligibility stays unchanged and attachment never degrades`() {
+    @Test fun `composer accepts text or attachment and rejects an empty turn`() {
         assertTrue(canSubmitAdvisorComposer("question", null))
         assertFalse(canSubmitAdvisorComposer("", null))
         val attachment = storedPdf("pending.pdf")
-        assertFalse(canSubmitAdvisorComposer("question", attachment))
-        assertFalse(canSubmitAdvisorComposer("", attachment))
+        assertTrue(canSubmitAdvisorComposer("question", attachment))
+        assertTrue(canSubmitAdvisorComposer("", attachment))
         assertFalse(advisorSubmissionUsesTextTransport(attachment))
+    }
+
+    @Test fun `persisted handoff clears pending ownership without deleting file`() {
+        val attachment = storedPdf("sent.pdf")
+        val ownership = PendingAttachmentOwnership(storage, pendingPreferences())
+        assertTrue(ownership.markPending(attachment))
+
+        ownership.handoffToPersisted(attachment.localId)
+
+        assertNull(ownership.ownedLocalId())
+        assertTrue(storage.exists(attachment.localId))
     }
 
     private fun pendingPreferences() =

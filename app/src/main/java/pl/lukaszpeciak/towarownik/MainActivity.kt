@@ -614,10 +614,10 @@ private fun TowarownikApp() {
                 workingProfile = turnProfile,
                 attachment = submittedAttachment,
             )
-            pendingAttachment = null
             submittedAttachment?.let {
-                pendingAttachmentOwnership.clearIfOwned(it.localId)
+                pendingAttachmentOwnership.handoffToPersisted(it.localId)
             }
+            pendingAttachment = null
 
             if (!advisorRequestGuard.isTokenCurrent(generation)) {
                 conversationRepository.recoverInterruptedTurn(

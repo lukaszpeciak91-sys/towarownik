@@ -459,3 +459,9 @@ These decisions describe the broader intended product behavior. The currently im
 - Use multipart only when one private IMAGE/PDF attachment accompanies `/start` or `/message`; preserve JSON for text-only traffic and `/continue`.
 - Carry attachment bytes inline to Responses as a validated data URL rather than introducing Files API or persistent proxy storage.
 - Treat attachment-derived text as user content and retain local provider verification for current commercial facts; generic technical photos do not independently trigger provider search.
+
+## 2026-10-05 — attachment turn ownership completion
+
+- Accept a USER turn when it contains non-blank text, one attachment, or both; reject only a turn containing neither. Attachment-only conversations derive their title from the attachment display name and persist blank message text without synthetic `[IMAGE]` or `[PDF]` content.
+- Keep the pending-owner marker through the atomic Room USER-message insert. Release that marker synchronously only after the insert succeeds, and never delete the private file during the handoff because its lifecycle has moved to the persisted message.
+- Preserve overlapping pending/Room ownership across the narrow interruption window rather than risking an unowned file. Startup reconciliation recognizes Room ownership and clears stale pending state without deleting the persisted file.
