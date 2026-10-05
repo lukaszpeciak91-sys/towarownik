@@ -8,6 +8,7 @@ export type AdvisorProtocolVersion = 1 | 2 | 3 | 4;
 export interface AdvisorAttachment {
   mimeType: "image/jpeg" | "image/png" | "application/pdf";
   bytes: Uint8Array;
+  filename: string;
 }
 
 export interface ToolQuery {
