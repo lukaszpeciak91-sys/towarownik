@@ -20,6 +20,8 @@ import pl.lukaszpeciak.towarownik.conversation.PersistedSearchAction
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
 import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.validatedAttachmentOrNull
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
@@ -36,6 +38,7 @@ internal data class AdvisorChatMessage(
     val sources: List<PersistedWebSource> = emptyList(),
     val searchActions: List<PersistedSearchAction> = emptyList(),
     val persistedMessageId: Long? = null,
+    val attachment: AdvisorAttachment? = null,
 )
 
 internal data class AdvisorCaseUiState(
@@ -84,6 +87,7 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                 sources = display.sources,
                 searchActions = message.searchActions,
                 persistedMessageId = message.id,
+                attachment = message.attachment,
             )
         },
     )
@@ -202,6 +206,31 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                 message.persistedMessageId
                                     ?.let(::JsonPrimitive)
                                     ?: JsonNull,
+                            )
+                            put(
+                                "attachment",
+                                message.attachment?.let { attachment ->
+                                    buildJsonObject {
+                                        put("type", attachment.type.name)
+                                        put("displayName", attachment.displayName)
+                                        put("mimeType", attachment.mimeType)
+                                        put("localId", attachment.localId)
+                                        put("byteSize", attachment.byteSize)
+                                        put(
+                                            "width",
+                                            attachment.width
+                                                ?.let(::JsonPrimitive)
+                                                ?: JsonNull,
+                                        )
+                                        put(
+                                            "height",
+                                            attachment.height
+                                                ?.let(::JsonPrimitive)
+                                                ?: JsonNull,
+                                        )
+                                        put("createdAt", attachment.createdAt)
+                                    }
+                                } ?: JsonNull,
                             )
                             put(
                                 "searchActions",
@@ -461,6 +490,41 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                     persistedMessageId = objectValue["persistedMessageId"]
                         ?.jsonPrimitive
                         ?.longOrNull,
+                    attachment = (objectValue["attachment"] as? JsonObject)
+                        ?.let { attachment ->
+                            validatedAttachmentOrNull(
+                                type = attachment["type"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?: return@let null,
+                                displayName = attachment["displayName"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?: return@let null,
+                                mimeType = attachment["mimeType"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?: return@let null,
+                                localId = attachment["localId"]
+                                    ?.jsonPrimitive
+                                    ?.contentOrNull
+                                    ?: return@let null,
+                                byteSize = attachment["byteSize"]
+                                    ?.jsonPrimitive
+                                    ?.longOrNull
+                                    ?: return@let null,
+                                width = attachment["width"]
+                                    ?.jsonPrimitive
+                                    ?.intOrNull,
+                                height = attachment["height"]
+                                    ?.jsonPrimitive
+                                    ?.intOrNull,
+                                createdAt = attachment["createdAt"]
+                                    ?.jsonPrimitive
+                                    ?.longOrNull
+                                    ?: return@let null,
+                            )
+                        },
                 )
             }
             .orEmpty()

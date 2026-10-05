@@ -223,3 +223,9 @@ The currently planned AI capability stage is complete after this selective web-s
 - Enabled one persisted JPEG, PNG, or PDF to stream from Android private storage through Worker multipart validation to GPT-6 Luna.
 - Added image `input_image`/high-detail and PDF `input_file` data-URL request shaping while preserving response chaining and the local-tool continuation loop.
 - Kept protocol v2/v3 and text-only paths compatible, with attachment bytes restricted to the initial `/start` or `/message` request.
+
+## 2026-10-05 — attachment turn lifecycle
+
+- Enabled attachment-only USER submission and attachment-derived conversation titles without placeholder message text.
+- Completed pending-to-Room ownership handoff: pending ownership remains until USER metadata commits, then marker release is attempted synchronously without deleting the persisted private file; release failure is harmless and reconciled later.
+- Kept failed-turn retry behavior intact, including restored text/attachment state and preserved private bytes, while current conversation reloads retain USER attachment metadata.
