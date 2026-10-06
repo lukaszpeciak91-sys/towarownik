@@ -147,26 +147,40 @@ internal fun normalizeImage(bytes: ByteArray): NormalizedImage? {
         bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sampleSize },
     ) ?: return null
     val oriented = applyExifOrientation(decoded, orientation)
+    if (oriented !== decoded) decoded.recycle()
     val scaled = scaleWithin(oriented, ATTACHMENT_IMAGE_MAX_DIMENSION)
-    val hasAlpha = scaled.hasAlpha()
-    val output = ByteArrayOutputStream()
-    val format = if (hasAlpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
-    if (!scaled.compress(format, if (hasAlpha) 100 else JPEG_QUALITY, output)) return null
-    val result = NormalizedImage(
-        output.toByteArray(),
-        if (hasAlpha) "image/png" else "image/jpeg",
-        scaled.width,
-        scaled.height,
-    )
-    if (scaled !== oriented) scaled.recycle()
-    if (oriented !== decoded) oriented.recycle()
-    decoded.recycle()
-    return result
+    if (scaled !== oriented) oriented.recycle()
+    return try {
+        val hasAlpha = scaled.hasAlpha()
+        val output = ByteArrayOutputStream()
+        val format = if (hasAlpha) {
+            Bitmap.CompressFormat.PNG
+        } else {
+            Bitmap.CompressFormat.JPEG
+        }
+        if (!scaled.compress(
+                format,
+                if (hasAlpha) 100 else JPEG_QUALITY,
+                output,
+            )
+        ) {
+            null
+        } else {
+            NormalizedImage(
+                output.toByteArray(),
+                if (hasAlpha) "image/png" else "image/jpeg",
+                scaled.width,
+                scaled.height,
+            )
+        }
+    } finally {
+        scaled.recycle()
+    }
 }
 
 internal fun imageSampleSize(width: Int, height: Int, maxDimension: Int): Int {
     var sample = 1
-    while (max(width / sample, height / sample) > maxDimension * 2) sample *= 2
+    while (max(width / sample, height / sample) > maxDimension) sample *= 2
     return sample
 }
 

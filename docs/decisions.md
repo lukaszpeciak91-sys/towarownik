@@ -465,3 +465,11 @@ These decisions describe the broader intended product behavior. The currently im
 - Accept a USER turn when it contains non-blank text, one attachment, or both; reject only a turn containing neither. Attachment-only conversations derive their title from the attachment display name and persist blank message text without synthetic `[IMAGE]` or `[PDF]` content.
 - Keep the pending-owner marker through the atomic Room USER-message insert. Attempt synchronous marker release only after the insert succeeds, never delete the private file during the handoff, and treat release failure as non-fatal because Room already owns the attachment.
 - Preserve overlapping pending/Room ownership across the narrow interruption window rather than risking an unowned file. Startup reconciliation recognizes Room ownership and clears stale pending state without deleting the persisted file.
+
+## 2026-10-05 — sent attachment rendering and import isolation
+
+- Render persisted USER images and PDFs from their existing app-private attachment files; keep image media above optional user text and show PDF filename plus human-readable size without synthetic `[IMAGE]`/`[PDF]` text.
+- Treat a missing, size-mismatched, or undecodable persisted attachment as unavailable presentation state. Never expose private paths, local IDs, URIs, or attachment contents in that fallback or problem-report diagnostics.
+- Serialize attachment imports and guard their UI publication with a monotonically changing generation. New selection, remove, new conversation, and conversation switch invalidate older generations; stale successful imports are deleted rather than attached to the active chat.
+- Disable send and show explicit composer loading only while the current attachment generation is importing/preprocessing. Keep one attachment maximum, multiline Enter behavior, dedicated-send-only submission, and the existing pending ownership/storage/protocol v4 contracts.
+- Keep the 4096 px image output policy but sample source bitmap decode directly toward that bound to reduce obvious peak-memory risk without redesigning preprocessing.

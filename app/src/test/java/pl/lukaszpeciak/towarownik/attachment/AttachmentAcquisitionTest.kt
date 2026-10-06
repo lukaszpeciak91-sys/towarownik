@@ -336,9 +336,103 @@ class AttachmentAcquisitionTest {
 
     @Test fun `resize sample helper is conservative and deterministic`() {
         assertEquals(1, imageSampleSize(4096, 1000, ATTACHMENT_IMAGE_MAX_DIMENSION))
-        assertEquals(4, imageSampleSize(17000, 1000, ATTACHMENT_IMAGE_MAX_DIMENSION))
+        assertEquals(8, imageSampleSize(17000, 1000, ATTACHMENT_IMAGE_MAX_DIMENSION))
+        assertEquals(2, imageSampleSize(8000, 8000, ATTACHMENT_IMAGE_MAX_DIMENSION))
     }
 
+    @Test
+    fun `persisted attachment render kind fails soft when private file is missing or truncated`() {
+        val image = storage.importValidated(
+            type = AttachmentType.IMAGE,
+            displayName = "render.jpg",
+            mimeType = "image/jpeg",
+            byteSize = 3,
+            width = 40,
+            height = 20,
+            source = { ByteArrayInputStream(byteArrayOf(1, 2, 3)) },
+        )
+        val pdf = storedPdf("render.pdf")
+
+        assertEquals(AttachmentRenderKind.IMAGE, storage.renderKind(image))
+        assertEquals(AttachmentRenderKind.PDF, storage.renderKind(pdf))
+
+        assertTrue(storage.delete(image.localId))
+        assertEquals(
+            AttachmentRenderKind.UNAVAILABLE,
+            storage.renderKind(image),
+        )
+
+        context.filesDir.resolve("advisor_attachments/${pdf.localId}")
+            .writeBytes(byteArrayOf(1))
+        assertEquals(
+            AttachmentRenderKind.UNAVAILABLE,
+            storage.renderKind(pdf),
+        )
+    }
+
+    @Test
+    fun `import guard ignores stale result after newer selection`() {
+        val guard = AttachmentImportGuard()
+        val first = guard.begin()
+        val second = guard.begin()
+
+        assertFalse(guard.isCurrent(first))
+        assertTrue(guard.isCurrent(second))
+    }
+
+    @Test
+    fun `conversation switch or remove invalidates in flight import`() {
+        val guard = AttachmentImportGuard()
+        val token = guard.begin()
+
+        guard.invalidate()
+
+        assertFalse(guard.isCurrent(token))
+    }
+
+    @Test
+    fun `stale imported candidate is removed without replacing active pending`() {
+        val active = storedPdf("active.pdf")
+        val ownership = PendingAttachmentOwnership(storage, pendingPreferences())
+        assertTrue(ownership.markPending(active))
+
+        val bytes = "%PDF-stale".toByteArray()
+        val stale = storage.importValidated(
+            type = AttachmentType.PDF,
+            displayName = "stale.pdf",
+            mimeType = "application/pdf",
+            byteSize = bytes.size.toLong(),
+            source = { ByteArrayInputStream(bytes) },
+            beforePublish = ownership::stageImportedCandidate,
+        )
+
+        ownership.discardImportedCandidate(stale)
+
+        assertEquals(active.localId, ownership.ownedLocalId())
+        assertNull(ownership.stagedLocalId())
+        assertTrue(storage.exists(active.localId))
+        assertFalse(storage.exists(stale.localId))
+    }
+
+    @Test
+    fun `import loading disables send without changing text only eligibility`() {
+        assertFalse(
+            canSendAdvisorComposer(
+                enabled = true,
+                importInProgress = true,
+                text = "question",
+                attachment = null,
+            ),
+        )
+        assertTrue(
+            canSendAdvisorComposer(
+                enabled = true,
+                importInProgress = false,
+                text = "question",
+                attachment = null,
+            ),
+        )
+    }
     @Test fun `composer accepts text or attachment and rejects an empty turn`() {
         assertTrue(canSubmitAdvisorComposer("question", null))
         assertFalse(canSubmitAdvisorComposer("", null))

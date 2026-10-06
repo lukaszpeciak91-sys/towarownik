@@ -324,3 +324,11 @@ The composer uses multiline IME behavior: Enter inserts a newline and only the d
 - The Worker accepts only one `image/jpeg`, `image/png`, or `application/pdf` part, verifies its magic signature and a 16 MiB limit, and holds no file state.
 - Images become Responses `input_image` data URLs with `detail=high`; PDFs become `input_file.file_data` data URLs. The Files API and Cloudflare R2/KV/D1 are not involved.
 - Attachment content is untrusted user input. It may ground identity, codes, and specifications, but current provider stock, price, and availability retain the existing local verification boundary.
+
+## Sent attachment presentation and import isolation
+
+Persisted USER attachment metadata remains the pointer to the existing app-private attachment file. Chat presentation resolves only that private file: images render as compact USER-bubble media above optional text, while PDFs render as a compact document row with the persisted sanitized display name and human-readable size. Missing files, size-mismatched files, or image decode failures degrade to a bounded unavailable-attachment message without exposing a path, URI, or content. Text-only history is unchanged.
+
+Attachment acquisition remains a one-file pipeline. Composer imports are serialized and each selection receives a UI generation token. A newer selection, explicit removal, new conversation, or conversation switch invalidates older generations; a late successful import is discarded with its staged private file instead of replacing the current pending attachment. While the current import/preprocessing generation is active, the composer shows a compact loading row and the dedicated send action is disabled. The existing pending-to-Room ownership handoff and protocol v4 transport are unchanged.
+
+Image preprocessing keeps the existing 4096 px output bound and now chooses decode sampling against that bound directly, reducing peak bitmap memory for very large source images before the existing EXIF/orientation/scale/re-encode steps.

@@ -36,6 +36,8 @@
     <string name="attachment_remove">Usuń załącznik</string>
     <string name="attachment_photo">Zdjęcie</string>
     <string name="attachment_image_preview">Podgląd zdjęcia</string>
+    <string name="attachment_importing">Przetwarzanie załącznika…</string>
+    <string name="attachment_error_missing_persisted">Załącznik nie jest już dostępny.</string>
     <string name="attachment_error_unsupported">Ten typ pliku nie jest obsługiwany.</string>
     <string name="attachment_error_too_large">Plik jest za duży.</string>
     <string name="attachment_error_image">Nie udało się odczytać zdjęcia.</string>

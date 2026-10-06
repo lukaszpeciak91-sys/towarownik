@@ -229,3 +229,12 @@ The currently planned AI capability stage is complete after this selective web-s
 - Enabled attachment-only USER submission and attachment-derived conversation titles without placeholder message text.
 - Completed pending-to-Room ownership handoff: pending ownership remains until USER metadata commits, then marker release is attempted synchronously without deleting the persisted private file; release failure is harmless and reconciled later.
 - Kept failed-turn retry behavior intact, including restored text/attachment state and preserved private bytes, while current conversation reloads retain USER attachment metadata.
+
+## 2026-10-05 — sent attachment rendering + final attachment UX polish
+
+- Added persisted USER image/PDF rendering in current chat and restored history using the existing private attachment file; PDFs show sanitized filename and readable size, images render above optional user text, and timestamps retain the existing bubble layout.
+- Added graceful missing/corrupt-file presentation with no private path/content disclosure.
+- Finalized composer import UX with a compact loading/preview row, always-available remove action, send disabled during preprocessing, and generation-guarded serialized imports so stale results cannot cross conversations or replace newer selections.
+- Tightened large-image decode sampling while preserving the existing normalization pipeline and 4096 px output cap.
+- Added focused coverage for persisted image/PDF render state, database recreation, missing/truncated files, loading send gating, stale selections/conversation invalidation, stale-file cleanup, removal, and text-only behavior.
+- Kept provider behavior, advisor protocol v4, local-tool authority, response chaining, and PR #76 ownership/recovery semantics unchanged; no proxy runtime change is required.

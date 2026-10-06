@@ -7,12 +7,14 @@ import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImportError
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImportResult
+import pl.lukaszpeciak.towarownik.attachment.AttachmentRenderKind
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImporter
+import pl.lukaszpeciak.towarownik.attachment.AttachmentImportGuard
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.attachment.CameraCapture
 import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentOwnership
 import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentSaver
-import pl.lukaszpeciak.towarownik.attachment.canSubmitAdvisorComposer
+import pl.lukaszpeciak.towarownik.attachment.canSendAdvisorComposer
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -103,11 +105,14 @@ import coil3.compose.AsyncImage
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import pl.lukaszpeciak.towarownik.agent.AdvisorController
 import pl.lukaszpeciak.towarownik.agent.AdvisorError
 import pl.lukaszpeciak.towarownik.agent.AdvisorUiState
@@ -301,6 +306,9 @@ private fun TowarownikApp() {
         mutableStateOf<AdvisorAttachment?>(null)
     }
     var attachmentError by remember { mutableStateOf<AttachmentImportError?>(null) }
+    var attachmentImporting by remember { mutableStateOf(false) }
+    val attachmentImportGuard = remember { AttachmentImportGuard() }
+    val attachmentImportMutex = remember { Mutex() }
     var profileMenuRequest by remember { mutableStateOf(0) }
     val attachmentImporter = remember {
         AttachmentImporter(
@@ -324,7 +332,25 @@ private fun TowarownikApp() {
         )
     }
 
-    fun acceptImportResult(result: AttachmentImportResult) {
+    fun invalidateAttachmentImport() {
+        attachmentImportGuard.invalidate()
+        attachmentImporting = false
+    }
+
+    fun acceptImportResult(
+        token: Long,
+        result: AttachmentImportResult,
+    ) {
+        if (!attachmentImportGuard.isCurrent(token)) {
+            if (result is AttachmentImportResult.Success) {
+                pendingAttachmentOwnership.discardImportedCandidate(
+                    result.attachment,
+                )
+            }
+            return
+        }
+
+        attachmentImporting = false
         when (result) {
             is AttachmentImportResult.Success -> {
                 val previous = pendingAttachment
@@ -344,12 +370,27 @@ private fun TowarownikApp() {
         }
     }
 
-    fun importAttachment(uri: Uri, suggestedName: String? = null, afterImport: () -> Unit = {}) {
+    fun importAttachment(
+        uri: Uri,
+        suggestedName: String? = null,
+        afterImport: () -> Unit = {},
+    ) {
+        val token = attachmentImportGuard.begin()
+        attachmentImporting = true
+        attachmentError = null
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                attachmentImporter.import(uri, suggestedName)
+            val result = attachmentImportMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    try {
+                        attachmentImporter.import(uri, suggestedName)
+                    } catch (_: Exception) {
+                        AttachmentImportResult.Failure(
+                            AttachmentImportError.CANNOT_OPEN,
+                        )
+                    }
+                }
             }
-            acceptImportResult(result)
+            acceptImportResult(token, result)
             afterImport()
         }
     }
@@ -412,6 +453,7 @@ private fun TowarownikApp() {
     }
 
     fun clearPendingAttachment() {
+        invalidateAttachmentImport()
         val previous = pendingAttachment
         pendingAttachment = null
         previous?.let {
@@ -596,7 +638,7 @@ private fun TowarownikApp() {
     }
 
     fun submitAdvisorTurn() {
-        if (advisorJob?.isActive == true) return
+        if (advisorJob?.isActive == true || attachmentImporting) return
 
         val submitted = advisorCase.draft.trim()
         val submittedAttachment = pendingAttachment
@@ -996,6 +1038,7 @@ private fun TowarownikApp() {
                     onSubmit = ::submitAdvisorTurn,
                     pendingAttachment = pendingAttachment,
                     attachmentError = attachmentError,
+                    attachmentImporting = attachmentImporting,
                     attachmentStorage = attachmentStorage,
                     onRemoveAttachment = ::clearPendingAttachment,
                     onOpenCamera = {
@@ -1523,6 +1566,7 @@ private fun AdvisorChatScreen(
     onSubmit: () -> Unit,
     pendingAttachment: AdvisorAttachment?,
     attachmentError: AttachmentImportError?,
+    attachmentImporting: Boolean,
     attachmentStorage: AttachmentStorage,
     onRemoveAttachment: () -> Unit,
     onOpenCamera: () -> Unit,
@@ -1569,6 +1613,7 @@ private fun AdvisorChatScreen(
                 enabled = composerEnabled,
                 attachment = pendingAttachment,
                 attachmentError = attachmentError,
+                importInProgress = attachmentImporting,
                 attachmentStorage = attachmentStorage,
                 workingProfile = workingProfile,
                 branchLabel = profileBranches.firstOrNull {
@@ -1619,6 +1664,7 @@ private fun AdvisorChatScreen(
                     items(advisorCase.messages) { message ->
                         AdvisorMessageBubble(
                             message = message,
+                            attachmentStorage = attachmentStorage,
                             onReportAssistantMessage =
                                 onReportAssistantMessage,
                             onOpenSearchAction =
@@ -1880,6 +1926,7 @@ private fun AdvisorComposer(
     enabled: Boolean,
     attachment: AdvisorAttachment?,
     attachmentError: AttachmentImportError?,
+    importInProgress: Boolean,
     attachmentStorage: AttachmentStorage,
     workingProfile: WorkingProfile,
     branchLabel: String,
@@ -1929,39 +1976,91 @@ private fun AdvisorComposer(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 ) {
                     Column {
-                        attachment?.let { item ->
+                        if (attachment != null || importInProgress) {
                             Row(
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                                    .padding(start = 10.dp, top = 8.dp, end = 4.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .padding(
+                                        start = 10.dp,
+                                        top = 8.dp,
+                                        end = 4.dp,
+                                    ),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                if (item.type == AttachmentType.IMAGE) {
-                                    AsyncImage(
-                                        model = attachmentStorage.contentUri(context, item.localId),
-                                        contentDescription = stringResource(R.string.attachment_image_preview),
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.size(48.dp),
-                                    )
-                                } else {
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_document_24),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(40.dp),
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
+                                val item = attachment
+                                when {
+                                    importInProgress -> {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(28.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                    }
+                                    item?.type == AttachmentType.IMAGE -> {
+                                        AsyncImage(
+                                            model = attachmentStorage.contentUri(
+                                                context,
+                                                item.localId,
+                                            ),
+                                            contentDescription = stringResource(
+                                                R.string.attachment_image_preview,
+                                            ),
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.size(48.dp),
+                                        )
+                                    }
+                                    else -> {
+                                        PdfAttachmentBadge(
+                                            modifier = Modifier.size(40.dp),
+                                        )
+                                    }
                                 }
-                                Text(
-                                    text = if (item.type == AttachmentType.IMAGE) {
-                                        item.displayName.ifBlank { stringResource(R.string.attachment_photo) }
-                                    } else item.displayName,
-                                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
-                                    maxLines = 2,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 10.dp),
+                                ) {
+                                    Text(
+                                        text = when {
+                                            importInProgress ->
+                                                stringResource(
+                                                    R.string.attachment_importing,
+                                                )
+                                            item?.type == AttachmentType.IMAGE ->
+                                                item.displayName.ifBlank {
+                                                    stringResource(
+                                                        R.string.attachment_photo,
+                                                    )
+                                                }
+                                            else -> item?.displayName.orEmpty()
+                                        },
+                                        maxLines = 2,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    if (
+                                        !importInProgress &&
+                                        item?.type == AttachmentType.PDF
+                                    ) {
+                                        Text(
+                                            text = formatAttachmentByteSize(
+                                                item.byteSize,
+                                            ),
+                                            style =
+                                                MaterialTheme.typography.bodySmall,
+                                            color =
+                                                MaterialTheme.colorScheme
+                                                    .onSurfaceVariant,
+                                        )
+                                    }
+                                }
                                 IconButton(onClick = onRemoveAttachment) {
                                     Icon(
-                                        painter = painterResource(R.drawable.ic_close_24),
-                                        contentDescription = stringResource(R.string.attachment_remove),
+                                        painter = painterResource(
+                                            R.drawable.ic_close_24,
+                                        ),
+                                        contentDescription = stringResource(
+                                            R.string.attachment_remove,
+                                        ),
                                     )
                                 }
                             }
@@ -2055,7 +2154,12 @@ private fun AdvisorComposer(
 
                 FilledIconButton(
                     onClick = onSend,
-                    enabled = enabled && canSubmitAdvisorComposer(value, attachment),
+                    enabled = canSendAdvisorComposer(
+                        enabled = enabled,
+                        importInProgress = importInProgress,
+                        text = value,
+                        attachment = attachment,
+                    ),
                     modifier = Modifier.size(48.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -2136,8 +2240,167 @@ private fun EmptyAdvisorState(
 }
 
 @Composable
+private fun PdfAttachmentBadge(
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(7.dp),
+        color = MaterialTheme.colorScheme.error,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "PDF",
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
+internal fun formatAttachmentByteSize(byteSize: Long): String {
+    val value = when {
+        byteSize < 1024L -> return "$byteSize B"
+        byteSize < 1024L * 1024L -> byteSize / 1024.0
+        else -> byteSize / (1024.0 * 1024.0)
+    }
+    val unit = if (byteSize < 1024L * 1024L) "KB" else "MB"
+    val formatted = String.format(Locale.ROOT, "%.1f", value)
+        .removeSuffix(".0")
+    return "$formatted $unit"
+}
+
+@Composable
+private fun UserMessageContent(
+    message: AdvisorChatMessage,
+    attachmentStorage: AttachmentStorage,
+) {
+    val context = LocalContext.current
+    val attachment = message.attachment
+    var imageFailed by remember(attachment?.localId) {
+        mutableStateOf(false)
+    }
+
+    Column(
+        modifier = Modifier.padding(
+            horizontal = 10.dp,
+            vertical = 9.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        attachment?.let { item ->
+            val renderKind = attachmentStorage.renderKind(item)
+            when {
+                renderKind == AttachmentRenderKind.UNAVAILABLE ||
+                    imageFailed -> {
+                    Row(
+                        modifier = Modifier
+                            .widthIn(max = 300.dp)
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            painter = painterResource(
+                                R.drawable.ic_document_24,
+                            ),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.attachment_error_missing_persisted,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                renderKind == AttachmentRenderKind.IMAGE -> {
+                    AsyncImage(
+                        model = attachmentStorage.contentUri(
+                            context,
+                            item.localId,
+                        ),
+                        contentDescription = stringResource(
+                            R.string.attachment_image_preview,
+                        ),
+                        contentScale = ContentScale.Crop,
+                        onError = { imageFailed = true },
+                        modifier = Modifier
+                            .width(260.dp)
+                            .heightIn(min = 140.dp, max = 220.dp),
+                    )
+                }
+
+                else -> {
+                    Surface(
+                        modifier = Modifier.widthIn(max = 320.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(
+                            alpha = 0.45f,
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline.copy(
+                                alpha = 0.5f,
+                            ),
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(
+                                horizontal = 12.dp,
+                                vertical = 10.dp,
+                            ),
+                            horizontalArrangement =
+                                Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PdfAttachmentBadge(
+                                modifier = Modifier.size(32.dp),
+                            )
+                            Column {
+                                Text(
+                                    text = item.displayName,
+                                    maxLines = 2,
+                                    style =
+                                        MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    text = formatAttachmentByteSize(
+                                        item.byteSize,
+                                    ),
+                                    style =
+                                        MaterialTheme.typography.bodySmall,
+                                    color =
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (message.text.isNotBlank()) {
+            Text(
+                text = message.text,
+                modifier = Modifier.padding(horizontal = 4.dp),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
+    }
+}
+
+@Composable
 private fun AdvisorMessageBubble(
     message: AdvisorChatMessage,
+    attachmentStorage: AttachmentStorage,
     onReportAssistantMessage: (Long) -> Unit,
     onOpenSearchAction: (PersistedSearchAction) -> Unit,
 ) {
@@ -2171,13 +2434,9 @@ private fun AdvisorMessageBubble(
             },
         ) {
             if (isUser) {
-                Text(
-                    text = message.text,
-                    modifier = Modifier.padding(
-                        horizontal = 14.dp,
-                        vertical = 10.dp,
-                    ),
-                    style = MaterialTheme.typography.bodyLarge,
+                UserMessageContent(
+                    message = message,
+                    attachmentStorage = attachmentStorage,
                 )
             } else {
                 AdvisorAnswerText(message)
@@ -3126,6 +3385,7 @@ private fun AdvisorChatPreview() {
             onSubmit = {},
             pendingAttachment = null,
             attachmentError = null,
+            attachmentImporting = false,
             attachmentStorage = previewAttachmentStorage,
             onRemoveAttachment = {},
             onOpenCamera = {},

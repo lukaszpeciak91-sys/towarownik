@@ -94,6 +94,17 @@ internal class PendingAttachmentOwnership(
         return true
     }
 
+    fun discardImportedCandidate(attachment: AdvisorAttachment) {
+        if (ownedLocalId() == attachment.localId) return
+        if (stagedLocalId() == attachment.localId) {
+            preferences.edit().remove(KEY_STAGED_LOCAL_ID).apply()
+        }
+        if (retiredLocalId() == attachment.localId) {
+            preferences.edit().remove(KEY_RETIRED_LOCAL_ID).apply()
+        }
+        runCatching { storage.delete(attachment.localId) }
+    }
+
     fun markPending(attachment: AdvisorAttachment): Boolean {
         if (ownedLocalId() == attachment.localId) return true
         return commitEditor(
@@ -209,8 +220,33 @@ internal class PendingAttachmentOwnership(
     }
 }
 
+internal class AttachmentImportGuard {
+    private var generation = 0L
+
+    fun begin(): Long {
+        generation += 1L
+        return generation
+    }
+
+    fun invalidate() {
+        generation += 1L
+    }
+
+    fun isCurrent(token: Long): Boolean = token == generation
+}
+
 internal fun canSubmitAdvisorComposer(text: String, attachment: AdvisorAttachment?): Boolean =
     text.isNotBlank() || attachment != null
+
+internal fun canSendAdvisorComposer(
+    enabled: Boolean,
+    importInProgress: Boolean,
+    text: String,
+    attachment: AdvisorAttachment?,
+): Boolean =
+    enabled &&
+        !importInProgress &&
+        canSubmitAdvisorComposer(text, attachment)
 
 internal fun advisorSubmissionUsesTextTransport(attachment: AdvisorAttachment?): Boolean = attachment == null
 
