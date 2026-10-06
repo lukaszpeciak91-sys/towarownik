@@ -1,11 +1,26 @@
 package pl.lukaszpeciak.towarownik
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import org.junit.Test
 
 class AdvisorUiPolishTest {
+    @Test
+    fun `local tool progress label follows active provider`() {
+        assertEquals(
+            R.string.advisor_progress_checking_obi,
+            advisorLocalToolProgressRes(OBI_PROVIDER_ID),
+        )
+        assertEquals(
+            R.string.advisor_progress_checking_kwant,
+            advisorLocalToolProgressRes(KWANT_PROVIDER_ID),
+        )
+    }
+
     @Test
     fun `assistant messages use chat specific product cards only`() {
         val source = mainActivitySource()
