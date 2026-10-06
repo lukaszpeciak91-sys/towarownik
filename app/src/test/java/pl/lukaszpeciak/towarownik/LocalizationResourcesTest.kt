@@ -63,6 +63,14 @@ class LocalizationResourcesTest {
             "Incorrect / fabricated answer",
             english.getValue("report_category_incorrect_fabricated"),
         )
+        assertEquals(
+            "Sprawdzam KWANT…",
+            polish.getValue("advisor_progress_checking_kwant"),
+        )
+        assertEquals(
+            "Checking KWANT…",
+            english.getValue("advisor_progress_checking_kwant"),
+        )
     }
 
     @Test
