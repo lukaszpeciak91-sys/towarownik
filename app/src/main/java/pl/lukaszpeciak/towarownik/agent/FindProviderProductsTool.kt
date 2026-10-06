@@ -157,7 +157,7 @@ internal class FindProviderProductsTool(
                             ) {
                                 is ProviderLookupResult.Found -> {
                                     val product = lookup.product
-                                    verified += product.toAdvisorProduct()
+                                    verified += product.toAdvisorVerifiedProduct()
                                     snapshots += product.toSnapshot(now())
                                 }
 
@@ -204,27 +204,6 @@ internal class FindProviderProductsTool(
             status = AdvisorQueryResultStatus.NOT_FOUND,
             products = emptyList(),
         )
-
-    private fun pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
-        .toAdvisorProduct() = AdvisorVerifiedProduct(
-        obik = ref.productId,
-        productId = ref.productId,
-        articleNumber = articleNumber,
-        name = name,
-        brand = brand,
-        shortDescription = shortDescription,
-        technicalFacts = technicalFacts.map {
-            AdvisorTechnicalFact(it.label, it.value)
-        },
-        stock = stock,
-        centralStock = centralStock,
-        price = grossPrice,
-        priceScope = when (priceScope) {
-            ProviderPriceScope.BRANCH -> "branch"
-            ProviderPriceScope.ONLINE -> "online"
-            null -> null
-        },
-    )
 
     private fun pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
         .toSnapshot(verifiedAt: Long) = VerifiedProductSnapshot(
