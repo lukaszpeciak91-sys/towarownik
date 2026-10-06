@@ -90,6 +90,66 @@ jobs:
               ))
           PY
 
+      - name: Probe current-product API with Android cookie
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+
+          api = "https://services.kwant.net.pl/api/front/products/580/current"
+          branch = {
+              "department_stock_id": 205,
+              "department_stock_name": "Nowy Sącz",
+              "department_stock_postcode": "33-300",
+              "department_stock_street": "Tarnowska 149",
+          }
+          cookie_json = json.dumps(branch, ensure_ascii=False, separators=(",", ":"))
+          encoded = quote(cookie_json, safe="")
+
+          profiles = [
+              ("no_cookie", {}),
+              ("android_cookie", {
+                  "Cookie": "departmentCookie=" + encoded,
+              }),
+              ("android_cookie_origin", {
+                  "Cookie": "departmentCookie=" + encoded,
+                  "Origin": "https://kwant.net.pl",
+                  "Referer": "https://kwant.net.pl/",
+                  "Accept": "application/json, text/plain, */*",
+                  "Accept-Language": "pl-PL",
+              }),
+          ]
+
+          for name, extra in profiles:
+              headers = {"User-Agent": "okhttp/4.12.0", **extra}
+              req = Request(api, headers=headers, method="GET")
+              with urlopen(req, timeout=30) as response:
+                  data = json.loads(response.read().decode("utf-8", errors="replace"))
+                  ds = data.get("department_stock")
+                  safe = {
+                      "status": int(getattr(response, "status", response.getcode())),
+                      "product_id": data.get("product_id"),
+                      "central_stock": data.get("stock"),
+                      "department_stock": (
+                          {
+                              "department_id": ds.get("department_id"),
+                              "name": ds.get("name"),
+                              "stock": ds.get("stock"),
+                              "stock_num": ds.get("stock_num"),
+                          }
+                          if isinstance(ds, dict)
+                          else None
+                      ),
+                  }
+                  print("CURRENT_API profile=%s result=%s" % (
+                      name,
+                      json.dumps(safe, ensure_ascii=False, sort_keys=True),
+                  ))
+          PY
+
       - name: Capture hydrated stock source
         shell: bash
         run: |
