@@ -34,7 +34,7 @@ SECRET_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 SAFE_VALUE_KEY_RE = re.compile(
-    r"(query|search|term|phrase|q$|branch|oddzial|oddzia[lł]|warehouse|magazyn|store|shop|product|article|ean|sku)",
+    r"(query|search|term|phrase|q$|depstock$|branch|oddzial|oddzia[lł]|warehouse|magazyn|store|shop|product|article|ean|sku)",
     re.IGNORECASE,
 )
 RELEVANT_RESOURCE_TYPES = {"document", "xhr", "fetch"}
