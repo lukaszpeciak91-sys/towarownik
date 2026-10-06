@@ -140,7 +140,7 @@ class AdvisorProductShapingTest {
                     request.body.readUtf8(),
                 ).jsonObject
                 assertEquals(
-                    ADVISOR_PROTOCOL_VERSION,
+                    3,
                     root["protocolVersion"]!!.jsonPrimitive.content.toInt(),
                 )
                 val product = root["result"]!!
