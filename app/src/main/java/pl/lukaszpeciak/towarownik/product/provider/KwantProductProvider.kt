@@ -242,15 +242,16 @@ internal object KwantUrlPolicy {
 
     fun isTrustedCurrentProductUrl(rawUrl: String): Boolean {
         val url = rawUrl.toHttpUrlOrNull() ?: return false
-        val departmentIds = url.queryParameterValues("depstock")
+        val departmentId = url.queryParameterValues("depstock")
+            .singleOrNull()
+            ?: return false
         return url.scheme == "https" &&
             url.host == KWANT_SEARCH_HOST &&
             url.port == 443 &&
             CURRENT_PRODUCT_PATH.matches(url.encodedPath) &&
             url.queryParameterNames == setOf("depstock") &&
-            departmentIds.size == 1 &&
-            departmentIds.single().isNotEmpty() &&
-            departmentIds.single().all(Char::isDigit)
+            departmentId.isNotEmpty() &&
+            departmentId.all(Char::isDigit)
     }
 
     fun isTrustedProductUrl(rawUrl: String): Boolean {
