@@ -1,6 +1,11 @@
 package pl.lukaszpeciak.towarownik.product.provider
 
 import java.math.BigDecimal
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -39,6 +44,46 @@ class KwantProductProviderTest {
     }
 
     @Test
+    fun `HTTP search derives build id and uses query specific Next data`() {
+        val requested = mutableListOf<String>()
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                requested += request.url.toString()
+                val body = when (request.url.encodedPath) {
+                    "/" -> nextData("{}", buildId = "live-build_42")
+                    "/_next/data/live-build_42/pl/wyniki-wyszukiwania.json" ->
+                        SEARCH_DATA
+                    else -> error("Unexpected request: ${request.url}")
+                }
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        body.toResponseBody(
+                            "application/json".toMediaType(),
+                        ),
+                    )
+                    .build()
+            }
+            .build()
+
+        val result = KwantHttpFrontendClient(client)
+            .fetchSearch("MBN116E") as KwantFrontendResult.Success
+
+        assertEquals(SEARCH_DATA, result.html)
+        assertEquals(2, requested.size)
+        assertTrue(
+            requested[1].contains(
+                "/_next/data/live-build_42/pl/wyniki-wyszukiwania.json",
+            ),
+        )
+        assertTrue(requested[1].contains("phrase=MBN116E"))
+    }
+
+    @Test
     fun `article EAN and text searches preserve stable KWANT product ref`() {
         val frontend = FakeFrontend()
         val provider = KwantProductProvider(frontend = frontend)
@@ -70,7 +115,7 @@ class KwantProductProviderTest {
 
     @Test
     fun `search then lookup may use cached canonical product URL`() {
-        val frontend = FakeFrontend(productHtml = productHtml("140"))
+        val frontend = FakeFrontend(productHtml = productHtml("362"))
         val provider = KwantProductProvider(frontend = frontend)
         val ref = searchRef(provider)
 
@@ -88,7 +133,7 @@ class KwantProductProviderTest {
 
     @Test
     fun `fresh exact lookup resolves directly by numeric product route without search`() {
-        val frontend = FakeFrontend(productHtml = productHtml("140"))
+        val frontend = FakeFrontend(productHtml = productHtml("362"))
         val provider = KwantProductProvider(frontend = frontend)
         val ref = ProductRef(
             providerId = KWANT_PROVIDER_ID,
@@ -143,23 +188,41 @@ class KwantProductProviderTest {
         )
 
         assertNull(product?.stock)
-        assertEquals(5918, product?.centralStock)
+        assertEquals(10113, product?.centralStock)
     }
 
     @Test
     fun `selected and central stock stay distinct and missing central stays null`() {
         val parser = KwantFrontendParser()
         val distinct = parser.parseProduct(
-            productHtml("140"), PRODUCT_URL, "580", NOWY_SACZ,
+            productHtml("362"), PRODUCT_URL, "580", NOWY_SACZ,
         )
         val missingCentral = parser.parseProduct(
-            productHtml("140", null), PRODUCT_URL, "580", NOWY_SACZ,
+            productHtml("362", null), PRODUCT_URL, "580", NOWY_SACZ,
         )
 
-        assertEquals(140, distinct?.stock)
-        assertEquals(5918, distinct?.centralStock)
-        assertTrue(distinct?.stock != 6058)
+        assertEquals(362, distinct?.stock)
+        assertEquals(10113, distinct?.centralStock)
+        assertTrue(distinct?.stock != 10475)
         assertNull(missingCentral?.centralStock)
+    }
+
+    @Test
+    fun `recommended product stock cannot contaminate main product`() {
+        val product = KwantFrontendParser().parseProduct(
+            html = productHtml(
+                stock = "362",
+                centralStock = "10113",
+                includeRecommendedNoise = true,
+            ),
+            finalUrl = PRODUCT_URL,
+            expectedProductId = "580",
+            branch = NOWY_SACZ,
+        )
+
+        assertEquals("580", product?.ref?.productId)
+        assertEquals(362, product?.stock)
+        assertEquals(10113, product?.centralStock)
     }
 
     @Test
@@ -240,13 +303,16 @@ class KwantProductProviderTest {
     }
 
     private fun assertProductFixture(result: ProviderLookupResult.Found) {
+        assertEquals(KWANT_PROVIDER_ID, result.product.ref.providerId)
+        assertEquals("580", result.product.ref.productId)
         assertEquals(BranchId("205"), result.product.branchId)
-        assertEquals(140, result.product.stock)
-        assertEquals(5918, result.product.centralStock)
+        assertEquals(362, result.product.stock)
+        assertEquals(10113, result.product.centralStock)
         assertEquals(BigDecimal("14.55"), result.product.grossPrice)
         assertEquals(ProviderPriceScope.ONLINE, result.product.priceScope)
         assertEquals("MBN116E/HAG", result.product.articleNumber)
         assertEquals("3250614312762", result.product.ean)
+        assertEquals(PRODUCT_URL, result.product.productUrl)
         assertEquals("HAGER", result.product.brand)
     }
 
@@ -257,7 +323,7 @@ class KwantProductProviderTest {
         ).items.first().ref
 
     private class FakeFrontend(
-        private val productHtml: String = productHtml("140"),
+        private val productHtml: String = productHtml("362"),
     ) : KwantFrontendClient {
         val searchQueries = mutableListOf<String>()
         var lastProductId: String? = null
@@ -279,9 +345,10 @@ class KwantProductProviderTest {
             }
             searchQueries += query
             return KwantFrontendResult.Success(
-                html = SEARCH_HTML,
+                html = SEARCH_DATA,
                 finalUrl =
-                    "https://kwant.net.pl/wyniki-wyszukiwania?phrase=$query",
+                    "https://kwant.net.pl/_next/data/test-build/pl/" +
+                        "wyniki-wyszukiwania.json?phrase=$query",
             )
         }
 
@@ -346,42 +413,57 @@ class KwantProductProviderTest {
             """,
         )
 
-        val SEARCH_HTML = nextData(
+        val SEARCH_DATA =
             """
             {
-              "categoriesFacetsProducts": [
-                {
-                  "categoryId": 530,
-                  "list": [
-                    {
-                      "id": 580,
-                      "slug": "wylacznik-nadpradowy-b16-a-1p-6ka-mbn116e-hager-580",
-                      "code": "MBN116E/HAG",
-                      "name": "$PRODUCT_NAME"
-                    },
-                    {
-                      "id": 677,
-                      "slug": "rozlacznik-sbn490-hager-677",
-                      "code": "SBN490/HAG",
-                      "name": "Rozłącznik SBN490 HAGER"
-                    }
-                  ]
-                }
-              ]
+              "pageProps": {
+                "categoriesFacetsProducts": [
+                  {
+                    "categoryId": 530,
+                    "list": [
+                      {
+                        "id": 580,
+                        "slug": "wylacznik-nadpradowy-b16-a-1p-6ka-mbn116e-hager-580",
+                        "code": "MBN116E/HAG",
+                        "name": "$PRODUCT_NAME"
+                      },
+                      {
+                        "id": 677,
+                        "slug": "rozlacznik-sbn490-hager-677",
+                        "code": "SBN490/HAG",
+                        "name": "Rozłącznik SBN490 HAGER"
+                      }
+                    ]
+                  }
+                ]
+              }
             }
-            """,
-        )
+            """.trimIndent()
 
         fun productHtml(
             stock: String?,
-            centralStock: String? = "5918",
+            centralStock: String? = "10113",
+            includeRecommendedNoise: Boolean = false,
         ): String {
-            val stockMarkup = stock?.let {
-                """<p>Nowy Sącz: <span>$it szt.</span></p>"""
+            val centralStockField = centralStock
+                ?.let { ""","stock":$it""" }
+                .orEmpty()
+            val selectedBranchMarkup = stock?.let {
+                """
+                <div aria-label="Sprawdź stan i kup towar w oddziałach Kwant">
+                  <div><div>$it szt.</div> w Nowy Sącz</div>
+                </div>
+                """
             }.orEmpty()
-            val centralStockMarkup = centralStock?.let {
-                """<p>Centrala: <span>$it szt.</span></p>"""
-            }.orEmpty()
+            val recommendedNoise = if (includeRecommendedNoise) {
+                """
+                <button data-testid="add-to-cart-button-577"></button>
+                <p>Centrala: <span>5894 szt.</span></p>
+                <p>Nowy Sącz: <span>139 szt.</span></p>
+                """
+            } else {
+                ""
+            }
             return nextData(
                 """
                 {
@@ -390,7 +472,7 @@ class KwantProductProviderTest {
                     "name": "$PRODUCT_NAME",
                     "code": "MBN116E/HAG",
                     "ean": "3250614312762",
-                    "gross_price": 14.55,
+                    "gross_price": 14.55$centralStockField,
                     "producer": {"name": "HAGER"},
                     "description": "<p>Wyłącznik instalacyjny.</p>",
                     "main_image": {
@@ -402,14 +484,20 @@ class KwantProductProviderTest {
                   }
                 }
                 """,
-            ) + stockMarkup + centralStockMarkup
+            ) +
+                """<button data-testid="add-to-cart-button-580"></button>""" +
+                selectedBranchMarkup +
+                recommendedNoise
         }
 
-        fun nextData(pageProps: String): String =
+        fun nextData(
+            pageProps: String,
+            buildId: String = "test-build",
+        ): String =
             """
             <html><body>
             <script id="__NEXT_DATA__" type="application/json">
-            {"props":{"pageProps":$pageProps}}
+            {"props":{"pageProps":$pageProps},"buildId":"$buildId"}
             </script>
             </body></html>
             """.trimIndent()

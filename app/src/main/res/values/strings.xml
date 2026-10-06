@@ -46,6 +46,7 @@
     <string name="advisor_composer_placeholder">Opisz czego potrzebuje klient…</string>
     <string name="advisor_progress_connecting">Łączę z doradcą…</string>
     <string name="advisor_progress_checking_obi">Sprawdzam OBI…</string>
+    <string name="advisor_progress_checking_kwant">Sprawdzam KWANT…</string>
     <string name="advisor_progress_preparing">Przygotowuję odpowiedź…</string>
     <string name="advisor_error_not_configured">Doradca nie jest skonfigurowany w tej wersji aplikacji.</string>
     <string name="advisor_error_authentication">Nie udało się uwierzytelnić aplikacji. Zaktualizuj Taksulę lub zgłoś problem.</string>
