@@ -57,7 +57,11 @@ class AdvisorProductShapingTest {
             assertTrue(!fact.value.contains("  "))
         }
 
-        assertTrue(\n            shaped.technicalFacts[0].label.startsWith(\n                "Fakt 1 bardzo długa etykieta",\n            ),\n        )
+        assertTrue(
+            shaped.technicalFacts[0].label.startsWith(
+                "Fakt 1 bardzo długa etykieta",
+            ),
+        )
         assertEquals("Fakt 2", shaped.technicalFacts[1].label)
     }
 
