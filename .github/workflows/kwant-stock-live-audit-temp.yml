@@ -256,6 +256,35 @@ jobs:
                               }
                       except Exception:
                           body = {"type": "opaque", "length": len(req.post_data)}
+                  headers = req.all_headers()
+                  cookie_names = []
+                  cookie_public = {}
+                  raw_cookie = headers.get("cookie", "")
+                  for part in raw_cookie.split(";"):
+                      if "=" not in part:
+                          continue
+                      name, value = part.strip().split("=", 1)
+                      cookie_names.append(name)
+                      if name.lower() == "departmentcookie":
+                          try:
+                              from urllib.parse import unquote
+                              parsed_cookie = json.loads(unquote(value))
+                              if isinstance(parsed_cookie, dict):
+                                  cookie_public["departmentCookie"] = {
+                                      "department_stock_id": parsed_cookie.get("department_stock_id"),
+                                      "department_stock_name": parsed_cookie.get("department_stock_name"),
+                                  }
+                          except Exception:
+                              cookie_public["departmentCookie"] = "present-unparsed"
+                  safe_headers = {}
+                  for key, value in headers.items():
+                      lk = key.lower()
+                      if lk == "cookie":
+                          continue
+                      if any(token in lk for token in (
+                          "department", "branch", "warehouse", "stock", "shop", "store"
+                      )):
+                          safe_headers[key] = value[:200]
                   events.append({
                       "method": req.method,
                       "host": parsed.hostname,
@@ -263,6 +292,9 @@ jobs:
                       "status": response.status,
                       "contentType": ct.split(";", 1)[0],
                       "body": body,
+                      "cookieNames": sorted(set(cookie_names)),
+                      "cookiePublic": cookie_public,
+                      "branchHeaders": safe_headers,
                       "matches": found[:20],
                   })
 
