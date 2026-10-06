@@ -238,6 +238,42 @@ class KwantProductProviderTest {
     }
 
     @Test
+    fun `current stock failure stays fail soft after exact product verification`() {
+        listOf<KwantFrontendResult>(
+            KwantFrontendResult.Failure("network unavailable"),
+            KwantFrontendResult.NotFound,
+        ).forEach { currentStockResult ->
+            val frontend = FakeFrontend(
+                currentProductResult = currentStockResult,
+            )
+            val provider = KwantProductProvider(frontend = frontend)
+            val ref = ProductRef(
+                providerId = KWANT_PROVIDER_ID,
+                productId = "580",
+            )
+
+            val result = provider.lookup(ref, BranchId("205"))
+                as ProviderLookupResult.Found
+            val product = result.product
+
+            assertEquals(KWANT_PROVIDER_ID, product.ref.providerId)
+            assertEquals("580", product.ref.productId)
+            assertEquals(BranchId("205"), product.branchId)
+            assertEquals(PRODUCT_NAME, product.name)
+            assertEquals(PRODUCT_URL, product.productUrl)
+            assertEquals(BigDecimal("14.55"), product.grossPrice)
+            assertEquals(ProviderPriceScope.ONLINE, product.priceScope)
+            assertEquals(10113, product.centralStock)
+            assertNull(product.stock)
+            assertTrue(product.stock != product.centralStock)
+            assertEquals("MBN116E/HAG", product.articleNumber)
+            assertEquals("3250614312762", product.ean)
+            assertEquals("580", frontend.lastCurrentProductId)
+            assertEquals(205, frontend.lastCurrentDepartmentStockId)
+        }
+    }
+
+    @Test
     fun `lookup scope resolves branch directory once for a candidate batch`() {
         val frontend = FakeFrontend(productHtml = productHtml())
         val provider = KwantProductProvider(frontend = frontend)
@@ -493,6 +529,7 @@ class KwantProductProviderTest {
         private val productHtml: String = productHtml(),
         private val searchData: String = SEARCH_DATA,
         private val currentProductData: String = CURRENT_PRODUCT_DATA,
+        private val currentProductResult: KwantFrontendResult? = null,
     ) : KwantFrontendClient {
         val searchQueries = mutableListOf<String>()
         var lastProductId: String? = null
@@ -553,12 +590,14 @@ class KwantProductProviderTest {
         ): KwantFrontendResult {
             lastCurrentProductId = productId
             lastCurrentDepartmentStockId = departmentStockId
-            return KwantFrontendResult.Success(
-                html = currentProductData,
-                finalUrl =
-                    "https://services.kwant.net.pl/api/front/products/" +
-                        productId + "/current?depstock=" + departmentStockId,
-            )
+            return currentProductResult
+                ?: KwantFrontendResult.Success(
+                    html = currentProductData,
+                    finalUrl =
+                        "https://services.kwant.net.pl/api/front/products/" +
+                            productId + "/current?depstock=" +
+                            departmentStockId,
+                )
         }
     }
 
