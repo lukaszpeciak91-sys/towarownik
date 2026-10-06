@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-10-06 — KWANT selected-branch stock source
+
+- Live Android-like HTTP confirmed the server-rendered product page carries the selected branch identity but not the selected-branch quantity; the hydrated frontend obtains it from `GET https://services.kwant.net.pl/api/front/products/<productId>/current?depstock=<department_stock_id>`.
+- The exact-product page remains authoritative for product identity, canonical URL, online price, and structured central `product.stock`. The current-product API is used only for selected-branch stock after exact identity succeeds.
+- Selected-branch stock is accepted only when the current-product response root `product_id` matches the expected provider product and root `department_stock.department_id` matches the resolved branch. Missing, malformed, mismatched, or unavailable branch stock stays null; zero remains zero.
+- Recommendation endpoints and nested recommendation stock are never consulted for the main product, and branch stock is never added to central stock.
+
 ## 2026-10-06 — KWANT live search and main-product stock parsing
 
 - The live audit corrected the earlier Next-data assumption: KWANT search discovery uses `POST https://services.kwant.net.pl/api/front/search-engine/page` with the public frontend JSON contract `q/page/limit/tags`. Next.js buildId and `/_next/data/.../wyniki-wyszukiwania.json` are not search-result sources and are no longer used for Android search discovery.
