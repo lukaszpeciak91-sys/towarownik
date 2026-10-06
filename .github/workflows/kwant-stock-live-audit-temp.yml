@@ -285,10 +285,18 @@ jobs:
                           "department", "branch", "warehouse", "stock", "shop", "store"
                       )):
                           safe_headers[key] = value[:200]
+                  query = {}
+                  from urllib.parse import parse_qsl
+                  for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+                      if any(token in key.lower() for token in (
+                          "department", "branch", "warehouse", "stock", "shop", "store", "id"
+                      )):
+                          query[key] = value[:120]
                   events.append({
                       "method": req.method,
                       "host": parsed.hostname,
                       "path": parsed.path,
+                      "query": query,
                       "status": response.status,
                       "contentType": ct.split(";", 1)[0],
                       "body": body,
