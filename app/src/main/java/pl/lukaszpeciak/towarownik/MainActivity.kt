@@ -1687,7 +1687,9 @@ private fun AdvisorChatScreen(
                         AdvisorUiState.RunningLocalTool -> item {
                             AdvisorProgressBubble(
                                 stringResource(
-                                    R.string.advisor_progress_checking_obi,
+                                    advisorLocalToolProgressRes(
+                                        workingProfile.providerId,
+                                    ),
                                 ),
                             )
                         }
@@ -2704,6 +2706,15 @@ private fun AdvisorWebSources(
         }
     }
 }
+
+internal fun advisorLocalToolProgressRes(
+    providerId: ProviderId,
+): Int =
+    if (providerId == KWANT_PROVIDER_ID) {
+        R.string.advisor_progress_checking_kwant
+    } else {
+        R.string.advisor_progress_checking_obi
+    }
 
 @Composable
 private fun AdvisorProgressBubble(text: String) {
