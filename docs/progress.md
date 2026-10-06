@@ -238,3 +238,12 @@ The currently planned AI capability stage is complete after this selective web-s
 - Tightened large-image decode sampling while preserving the existing normalization pipeline and 4096 px output cap.
 - Added focused coverage for persisted image/PDF render state, database recreation, missing/truncated files, loading send gating, stale selections/conversation invalidation, stale-file cleanup, removal, and text-only behavior.
 - Kept provider behavior, advisor protocol v4, local-tool authority, response chaining, and PR #76 ownership/recovery semantics unchanged; no proxy runtime change is required.
+
+
+## 2026-10-06 — live KWANT search and stock repair
+
+- Replaced stale KWANT HTML-search discovery with the live Next.js data request, deriving and caching the current public buildId with one refresh-on-404 retry.
+- Search parsing now accepts the query-specific Next data payload and preserves article, EAN, and text discovery followed by exact product verification.
+- Central stock now comes from structured main-product `product.stock`; selected branch stock is bounded to the main product availability block so recommendation cards cannot leak their stock into product 580.
+- Added regression coverage for MBN116E, EAN 3250614312762, plain-text Hager search, dynamic buildId request construction, exact product identity/URL/online price, selected-vs-central stock, recommendation contamination, and provider-aware progress copy.
+- OBI paths, provider routing, protocol versions, WorkingProfile behavior, branch lookup, and Room schema remain unchanged.
