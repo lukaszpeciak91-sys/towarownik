@@ -83,6 +83,15 @@ class SanitizationTest(unittest.TestCase):
         )
         self.assertNotIn(secret, serialized)
 
+    def test_selected_branch_depstock_is_safe_query_evidence(self):
+        query = probe.sanitized_query(
+            "https://services.kwant.net.pl/api/front/products/580/current"
+            "?depstock=205"
+        )
+
+        self.assertIn("depstock", query["names"])
+        self.assertEqual("205", query["safeValues"]["depstock"])
+
     def test_cookie_summary_contains_names_not_values(self):
         secret = "COOKIE_VALUE_SHOULD_NOT_LEAK"
         summary = probe.cookie_summary(
