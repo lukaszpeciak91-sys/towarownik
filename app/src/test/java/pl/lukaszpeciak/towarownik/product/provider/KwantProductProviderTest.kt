@@ -188,7 +188,7 @@ class KwantProductProviderTest {
         )
 
         assertNull(product?.stock)
-        assertEquals(5918, product?.centralStock)
+        assertEquals(10113, product?.centralStock)
     }
 
     @Test
@@ -303,6 +303,8 @@ class KwantProductProviderTest {
     }
 
     private fun assertProductFixture(result: ProviderLookupResult.Found) {
+        assertEquals(KWANT_PROVIDER_ID, result.product.ref.providerId)
+        assertEquals("580", result.product.ref.productId)
         assertEquals(BranchId("205"), result.product.branchId)
         assertEquals(362, result.product.stock)
         assertEquals(10113, result.product.centralStock)
@@ -310,6 +312,7 @@ class KwantProductProviderTest {
         assertEquals(ProviderPriceScope.ONLINE, result.product.priceScope)
         assertEquals("MBN116E/HAG", result.product.articleNumber)
         assertEquals("3250614312762", result.product.ean)
+        assertEquals(PRODUCT_URL, result.product.productUrl)
         assertEquals("HAGER", result.product.brand)
     }
 
