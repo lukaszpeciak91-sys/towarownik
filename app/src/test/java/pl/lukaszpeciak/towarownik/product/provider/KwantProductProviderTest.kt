@@ -297,9 +297,14 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun `KWANT URL policy requires exact https host and product route`() {
+    fun `KWANT URL policy requires exact trusted hosts and routes`() {
         assertTrue(
             KwantUrlPolicy.isTrustedProductUrl(PRODUCT_URL),
+        )
+        assertTrue(
+            KwantUrlPolicy.isTrustedSearchServiceUrl(
+                "https://services.kwant.net.pl/api/front/search-engine/page",
+            ),
         )
         assertTrue(
             !KwantUrlPolicy.isTrustedProductUrl(
@@ -314,6 +319,16 @@ class KwantProductProviderTest {
         assertTrue(
             !KwantUrlPolicy.isTrustedProductUrl(
                 "https://kwant.net.pl/kategorie/test-580",
+            ),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedSearchServiceUrl(
+                "https://services.kwant.net.pl.evil.example/api/front/search-engine/page",
+            ),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedSearchServiceUrl(
+                "https://services.kwant.net.pl/api/front/products/prices/580",
             ),
         )
     }
