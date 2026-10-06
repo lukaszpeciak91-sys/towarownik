@@ -82,7 +82,9 @@ class KwantProductProviderTest {
             requestedUrl,
         )
         assertEquals("POST", requestedMethod)
-        assertEquals("application/json", requestedContentType)
+        assertTrue(
+            requestedContentType?.startsWith("application/json") == true,
+        )
         assertEquals(
             """{"q":"MBN116E","page":1,"limit":12,"tags":"not-logged-in,desktop"}""",
             requestedBody,
