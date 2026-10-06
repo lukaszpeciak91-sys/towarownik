@@ -46,6 +46,7 @@
     <string name="advisor_composer_placeholder">Describe what the customer needs…</string>
     <string name="advisor_progress_connecting">Connecting to advisor…</string>
     <string name="advisor_progress_checking_obi">Checking OBI…</string>
+    <string name="advisor_progress_checking_kwant">Checking KWANT…</string>
     <string name="advisor_progress_preparing">Preparing answer…</string>
     <string name="advisor_error_not_configured">The advisor is not configured in this app build.</string>
     <string name="advisor_error_authentication">The app could not authenticate with the advisor. Update Taksula or report the problem.</string>
