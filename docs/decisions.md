@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-10-06 — advisor provider-product transport shaping
+
+- Provider parsers may preserve richer source metadata; the shared Android advisor boundary now shapes every `ProviderProduct` before it becomes an `AdvisorVerifiedProduct` for continuation transport.
+- The boundary normalizes whitespace, bounds short description to 220 characters, keeps at most six deterministic valid technical facts, and bounds fact labels/values to 60/100 characters. Blank normalized facts are discarded.
+- This shaping is provider-neutral and applies to OBI and KWANT through the common `FindProviderProductsTool` path. It is transport conformance, not query-aware fact ranking; no AI selection is added.
+- Existing proxy v3 limits remain unchanged and authoritative. Provider parsing, product identity, stock/central-stock, price, WorkingProfile, Room, attachments, prompts, web-search policy, and protocol versions remain unchanged.
+
 ## 2026-10-06 — KWANT selected-branch stock source
 
 - Live Android-like HTTP confirmed the server-rendered product page carries the selected branch identity but not the selected-branch quantity; the hydrated frontend obtains it from `GET https://services.kwant.net.pl/api/front/products/<productId>/current?depstock=<department_stock_id>`.
