@@ -33,11 +33,7 @@ jobs:
               "department_stock_postcode": "33-300",
               "department_stock_street": "Tarnowska 149",
           }
-          cookie_json = json.dumps(
-              branch,
-              ensure_ascii=False,
-              separators=(",", ":"),
-          )
+          cookie_json = json.dumps(branch, ensure_ascii=False, separators=(",", ":"))
           cookie = "departmentCookie=" + quote(cookie_json, safe="")
 
           class Recorder(HTTPRedirectHandler):
@@ -50,18 +46,13 @@ jobs:
                       "from": urlsplit(req.full_url).path,
                       "to": urlsplit(newurl).path,
                   })
-                  return super().redirect_request(
-                      req, fp, code, msg, headers, newurl
-                  )
+                  return super().redirect_request(req, fp, code, msg, headers, newurl)
 
           recorder = Recorder()
           opener = build_opener(recorder)
           request = Request(
               origin + "/produkt/" + product_id,
-              headers={
-                  "User-Agent": "okhttp/4.12.0",
-                  "Cookie": cookie,
-              },
+              headers={"User-Agent": "okhttp/4.12.0", "Cookie": cookie},
               method="GET",
           )
           with opener.open(request, timeout=30) as response:
@@ -74,10 +65,7 @@ jobs:
               html = raw.decode("utf-8", errors="replace")
 
           print("RAW_HTTP status=%s finalPath=%s contentType=%s redirects=%s" % (
-              status,
-              urlsplit(final_url).path,
-              content_type.split(";", 1)[0],
-              recorder.redirects,
+              status, urlsplit(final_url).path, content_type.split(";", 1)[0], recorder.redirects
           ))
           print("RAW_HTTP size=%d mainCart580=%s branchName=%s availabilityLabel=%s" % (
               len(html),
@@ -88,77 +76,152 @@ jobs:
 
           next_match = re.search(
               r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
-              html,
-              re.I | re.S,
+              html, re.I | re.S,
           )
           root = json.loads(next_match.group(1)) if next_match else {}
           page_props = ((root.get("props") or {}).get("pageProps") or {})
           product = page_props.get("product") or {}
-          print(
-              "NEXT productId=%s centralStock=%s code=%s ean=%s pagePropKeys=%s"
-              % (
-                  product.get("id"),
-                  product.get("stock"),
-                  product.get("code"),
-                  product.get("ean"),
-                  sorted(page_props.keys()),
-              )
-          )
+          print("NEXT productId=%s centralStock=%s code=%s ean=%s" % (
+              product.get("id"), product.get("stock"), product.get("code"), product.get("ean")
+          ))
+          for marker in ("w mag. centralnym", "w Nowy Sącz", "Nowy Sącz: <span>", "Centrala: <span>"):
+              print("RAW marker=%s count=%d" % (
+                  marker, len(list(re.finditer(re.escape(marker), html, re.I)))
+              ))
+          PY
+
+      - name: Capture hydrated stock source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check "playwright==1.63.0"
+          python3 -m playwright install --with-deps chromium
+          python3 - <<'PY'
+          import json
+          from urllib.parse import quote, urlsplit
+          from playwright.sync_api import sync_playwright
+
+          origin = "https://kwant.net.pl"
+          canonical = origin + "/produkt/wylacznik-nadpradowy-b16-a-1p-6ka-mbn116e-hager-580"
+          branch = {
+              "department_stock_id": 205,
+              "department_stock_name": "Nowy Sącz",
+              "department_stock_postcode": "33-300",
+              "department_stock_street": "Tarnowska 149",
+          }
+          cookie_json = json.dumps(branch, ensure_ascii=False, separators=(",", ":"))
+          cookie_value = quote(cookie_json, safe="")
+          events = []
 
           def scalar(v):
               return isinstance(v, (str, int, float)) and not isinstance(v, bool)
 
-          branch_paths = []
-          stock_objects = []
-          def walk(v, path="$"):
-              if isinstance(v, dict):
-                  rendered = {str(k): val for k, val in v.items() if scalar(val)}
-                  joined = " ".join(str(x) for x in rendered.values())
-                  if "Nowy Sącz" in joined or str(rendered.get("department_stock_id", "")) == "205":
-                      branch_paths.append((path, rendered))
-                  stock_keys = [k for k in rendered if "stock" in k.lower()]
-                  if stock_keys:
-                      stock_objects.append((path, {k: rendered[k] for k in stock_keys}, rendered))
-                  for k, child in v.items():
-                      walk(child, path + "." + str(k))
-              elif isinstance(v, list):
-                  for i, child in enumerate(v):
-                      walk(child, path + "[" + str(i) + "]")
-          walk(page_props)
+          def matches(value, path="$", out=None):
+              if out is None:
+                  out = []
+              if isinstance(value, dict):
+                  rendered = {str(k): v for k, v in value.items() if scalar(v)}
+                  joined = " ".join(str(v) for v in rendered.values())
+                  interesting = (
+                      "Nowy Sącz" in joined or
+                      str(rendered.get("product_id", "")) == "580" or
+                      str(rendered.get("productId", "")) == "580" or
+                      str(rendered.get("id", "")) == "580" or
+                      any(v == 446 for v in rendered.values())
+                  )
+                  if interesting:
+                      safe = {
+                          k: v for k, v in rendered.items()
+                          if k.lower() not in {
+                              "token", "secret", "cookie", "session",
+                              "authorization", "password", "key"
+                          }
+                      }
+                      out.append((path, safe))
+                  for k, child in value.items():
+                      matches(child, path + "." + str(k), out)
+              elif isinstance(value, list):
+                  for i, child in enumerate(value):
+                      matches(child, path + "[" + str(i) + "]", out)
+              return out
 
-          print("NEXT branchPaths=%s" % branch_paths[:20])
-          print("NEXT stockObjects=%s" % [
-              (path, stocks, {k: vals[k] for k in vals if k in (
-                  "id", "product_id", "productId", "department_id",
-                  "department_stock_id", "name", "code"
-              )})
-              for path, stocks, vals in stock_objects[:40]
-          ])
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              context = browser.new_context(
+                  locale="pl-PL",
+                  user_agent=(
+                      "Mozilla/5.0 (X11; Linux x86_64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/140.0.0.0 Safari/537.36"
+                  ),
+                  viewport={"width": 1440, "height": 1000},
+              )
+              context.add_cookies([{
+                  "name": "departmentCookie",
+                  "value": cookie_value,
+                  "domain": "kwant.net.pl",
+                  "path": "/",
+                  "secure": True,
+              }])
+              page = context.new_page()
 
-          markers = [
-              "add-to-cart-button-580",
-              "w mag. centralnym",
-              "w Nowy Sącz",
-              "Nowy Sącz: <span>",
-              "Centrala: <span>",
-          ]
-          for marker in markers:
-              indexes = [m.start() for m in re.finditer(re.escape(marker), html, re.I)]
-              print("RAW marker=%s count=%d indexes=%s" % (
-                  marker,
-                  len(indexes),
-                  indexes[:10],
-              ))
-              if indexes:
-                  i = indexes[0]
-                  excerpt = re.sub(r"\s+", " ", html[max(0, i-450):i+900])
-                  print("RAW excerpt[%s]=%s" % (marker, excerpt[:1400]))
+              def on_response(response):
+                  req = response.request
+                  if req.resource_type not in {"xhr", "fetch"}:
+                      return
+                  parsed = urlsplit(response.url)
+                  if parsed.hostname not in {"kwant.net.pl", "services.kwant.net.pl"}:
+                      return
+                  ct = response.headers.get("content-type", "")
+                  if "json" not in ct.lower():
+                      return
+                  try:
+                      data = response.json()
+                  except Exception:
+                      return
+                  found = matches(data)
+                  if not found:
+                      return
+                  body = None
+                  if req.post_data:
+                      try:
+                          parsed_body = json.loads(req.post_data)
+                          if isinstance(parsed_body, dict):
+                              body = {
+                                  k: v for k, v in parsed_body.items()
+                                  if k.lower() not in {
+                                      "token", "secret", "cookie", "session",
+                                      "authorization", "password", "key"
+                                  } and scalar(v)
+                              }
+                      except Exception:
+                          body = {"type": "opaque", "length": len(req.post_data)}
+                  events.append({
+                      "method": req.method,
+                      "host": parsed.hostname,
+                      "path": parsed.path,
+                      "status": response.status,
+                      "contentType": ct.split(";", 1)[0],
+                      "body": body,
+                      "matches": found[:20],
+                  })
 
-          branch_stock_patterns = [
-              r'([0-9]+)\s*szt\.\s*</div>\s*w\s*Nowy\s+Sącz',
-              r'Nowy\s+Sącz\s*:\s*<span[^>]*>\s*([0-9]+)\s*szt',
-          ]
-          for pattern in branch_stock_patterns:
-              found = re.findall(pattern, html, re.I | re.S)
-              print("RAW regex=%s matches=%s" % (pattern, found[:20]))
+              page.on("response", on_response)
+              page.goto(canonical, wait_until="domcontentloaded", timeout=45000)
+              try:
+                  page.wait_for_load_state("networkidle", timeout=12000)
+              except Exception:
+                  page.wait_for_timeout(2500)
+
+              body_text = page.locator("body").inner_text(timeout=5000)
+              lines = [line.strip() for line in body_text.splitlines() if line.strip()]
+              safe_lines = [
+                  line for line in lines
+                  if "Nowy Sącz" in line or "mag. centralnym" in line
+              ]
+              print("DOM_STOCK lines=%s" % safe_lines[:20])
+
+              for event in events:
+                  print("STOCK_SOURCE " + json.dumps(event, ensure_ascii=False, sort_keys=True))
+              browser.close()
           PY
