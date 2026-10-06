@@ -11,7 +11,6 @@ import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
 import pl.lukaszpeciak.towarownik.product.provider.ProviderId
 import pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult
 import pl.lukaszpeciak.towarownik.product.provider.ProviderLookupScopeResult
-import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 import pl.lukaszpeciak.towarownik.product.provider.ProviderSearchResult
 
 internal class FindProviderProductsTool(
