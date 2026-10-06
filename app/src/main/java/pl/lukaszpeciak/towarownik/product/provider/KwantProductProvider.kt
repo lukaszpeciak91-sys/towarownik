@@ -70,6 +70,9 @@ internal interface KwantFrontendClient {
 internal class KwantHttpFrontendClient(
     private val client: OkHttpClient = OkHttpClient(),
 ) : KwantFrontendClient {
+    @Volatile
+    private var searchBuildId: String? = null
+
     override fun fetchBranchDirectory(): KwantFrontendResult =
         execute(
             Request.Builder()
@@ -80,13 +83,63 @@ internal class KwantHttpFrontendClient(
 
     override fun fetchSearch(query: String): KwantFrontendResult {
         val encoded = encodeComponent(query)
-        return execute(
+        val buildId = searchBuildId ?: when (
+            val bootstrap = fetchSearchBootstrap()
+        ) {
+            is KwantFrontendResult.Success ->
+                kwantBuildIdFromHtml(bootstrap.html)?.also {
+                    searchBuildId = it
+                } ?: return KwantFrontendResult.Failure(
+                    "KWANT Next.js buildId could not be parsed",
+                )
+            KwantFrontendResult.NotFound ->
+                return KwantFrontendResult.NotFound
+            is KwantFrontendResult.Failure ->
+                return bootstrap
+        }
+
+        val first = fetchSearchData(buildId, encoded)
+        if (first != KwantFrontendResult.NotFound) {
+            return first
+        }
+
+        searchBuildId = null
+        val refreshed = when (val bootstrap = fetchSearchBootstrap()) {
+            is KwantFrontendResult.Success ->
+                kwantBuildIdFromHtml(bootstrap.html)?.also {
+                    searchBuildId = it
+                } ?: return KwantFrontendResult.Failure(
+                    "KWANT Next.js buildId could not be parsed",
+                )
+            KwantFrontendResult.NotFound ->
+                return KwantFrontendResult.NotFound
+            is KwantFrontendResult.Failure ->
+                return bootstrap
+        }
+        return fetchSearchData(refreshed, encoded)
+    }
+
+    private fun fetchSearchBootstrap(): KwantFrontendResult =
+        execute(
             Request.Builder()
-                .url("$KWANT_ORIGIN/wyniki-wyszukiwania?phrase=$encoded")
+                .url(KWANT_ORIGIN)
                 .get()
                 .build(),
         )
-    }
+
+    private fun fetchSearchData(
+        buildId: String,
+        encodedQuery: String,
+    ): KwantFrontendResult =
+        execute(
+            Request.Builder()
+                .url(
+                    "$KWANT_ORIGIN/_next/data/$buildId/pl/" +
+                        "wyniki-wyszukiwania.json?phrase=$encodedQuery",
+                )
+                .get()
+                .build(),
+        )
 
     // Live-confirmed by tools/kwant_live_contract_probe.py:
     // GET /produkt/580 -> 308 canonical product route -> 200, payload product.id=580.
@@ -529,8 +582,12 @@ internal class KwantFrontendParser(
             ref = ProductRef(KWANT_PROVIDER_ID, productId),
             branchId = branch.branchId,
             name = name,
-            stock = selectedBranchStock(html, branch.departmentStockName),
-            centralStock = labelledStock(html, "Centrala"),
+            stock = selectedBranchStock(
+                html = html,
+                expectedProductId = expectedProductId,
+                branchName = branch.departmentStockName,
+            ),
+            centralStock = product.int("stock"),
             grossPrice = price,
             priceScope = price?.let { ProviderPriceScope.ONLINE },
             productUrl = finalUrl.substringBefore("?"),
@@ -545,25 +602,55 @@ internal class KwantFrontendParser(
 
     private fun selectedBranchStock(
         html: String,
+        expectedProductId: String,
         branchName: String,
     ): Int? {
-        return labelledStock(html, branchName)
+        val stockBlock = mainProductStockBlock(
+            html = html,
+            expectedProductId = expectedProductId,
+        ) ?: return null
+        return Regex(
+            """([0-9]+)\s*szt\.\s*</div>\s*w\s*""" +
+                Regex.escape(branchName),
+            setOf(
+                RegexOption.IGNORE_CASE,
+                RegexOption.DOT_MATCHES_ALL,
+            ),
+        ).find(stockBlock)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
     }
 
-    private fun labelledStock(html: String, label: String): Int? =
-        Regex(
-            Regex.escape(label) +
-                """\s*:\s*<span[^>]*>\s*([0-9]+)\s*""",
-            RegexOption.IGNORE_CASE,
-        ).find(html)?.groupValues?.get(1)?.toIntOrNull()
+    private fun mainProductStockBlock(
+        html: String,
+        expectedProductId: String,
+    ): String? {
+        val markers = PRODUCT_CART_MARKER.findAll(html).toList()
+        val mainMarker = markers.lastOrNull {
+            it.groupValues[1] == expectedProductId
+        } ?: return null
+        val end = markers.firstOrNull {
+            it.range.first > mainMarker.range.first &&
+                it.groupValues[1] != expectedProductId
+        }?.range?.first ?: html.length
+        return html.substring(mainMarker.range.first, end)
+    }
 
-    private fun pageProps(html: String): JsonObject? {
-        val match = NEXT_DATA.find(html) ?: return null
-        val root = runCatching {
-            json.parseToJsonElement(match.groupValues[1]).jsonObject
-        }.getOrNull() ?: return null
-        return ((root["props"] as? JsonObject)
-            ?.get("pageProps")) as? JsonObject
+    private fun pageProps(payload: String): JsonObject? {
+        val root = nextDataRoot(payload) ?: return null
+        return (root["pageProps"] as? JsonObject)
+            ?: (((root["props"] as? JsonObject)
+                ?.get("pageProps")) as? JsonObject)
+    }
+
+    private fun nextDataRoot(payload: String): JsonObject? {
+        val serialized = NEXT_DATA.find(payload)?.groupValues?.get(1)
+            ?: payload.trim().takeIf { it.startsWith("{") }
+            ?: return null
+        return runCatching {
+            json.parseToJsonElement(serialized).jsonObject
+        }.getOrNull()
     }
 
     private fun JsonObject.string(key: String): String? =
@@ -580,12 +667,33 @@ internal class KwantFrontendParser(
             ?.toBigDecimalOrNull()
 
     private companion object {
-        val NEXT_DATA = Regex(
-            """<script[^>]+id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>""",
-            setOf(
-                RegexOption.IGNORE_CASE,
-                RegexOption.DOT_MATCHES_ALL,
-            ),
+        val NEXT_DATA = KWANT_NEXT_DATA
+        val PRODUCT_CART_MARKER = Regex(
+            """data-testid=["']add-to-cart-button-([0-9]+)["']""",
+            RegexOption.IGNORE_CASE,
         )
     }
+}
+
+private val KWANT_NEXT_DATA = Regex(
+    """<script[^>]+id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>""",
+    setOf(
+        RegexOption.IGNORE_CASE,
+        RegexOption.DOT_MATCHES_ALL,
+    ),
+)
+
+private val KWANT_BUILD_ID = Regex("""[A-Za-z0-9_-]{1,128}""")
+
+internal fun kwantBuildIdFromHtml(html: String): String? {
+    val serialized = KWANT_NEXT_DATA.find(html)
+        ?.groupValues
+        ?.get(1)
+        ?: return null
+    val root = runCatching {
+        Json.parseToJsonElement(serialized).jsonObject
+    }.getOrNull() ?: return null
+    return (root["buildId"] as? JsonPrimitive)
+        ?.contentOrNull
+        ?.takeIf(KWANT_BUILD_ID::matches)
 }
