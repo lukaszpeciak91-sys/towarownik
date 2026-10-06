@@ -92,6 +92,44 @@ class KwantProductProviderTest {
     }
 
     @Test
+    fun `HTTP selected branch stock uses current product depstock contract`() {
+        var requestedUrl: String? = null
+        var requestedMethod: String? = null
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                requestedUrl = request.url.toString()
+                requestedMethod = request.method
+                Response.Builder()
+                    .request(request)
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body(
+                        CURRENT_PRODUCT_DATA.toResponseBody(
+                            "application/json".toMediaType(),
+                        ),
+                    )
+                    .build()
+            }
+            .build()
+
+        val result = KwantHttpFrontendClient(client)
+            .fetchCurrentProductStock(
+                productId = "580",
+                departmentStockId = 205,
+            ) as KwantFrontendResult.Success
+
+        assertEquals(CURRENT_PRODUCT_DATA, result.html)
+        assertEquals(
+            "https://services.kwant.net.pl/api/front/products/580/current" +
+                "?depstock=205",
+            requestedUrl,
+        )
+        assertEquals("GET", requestedMethod)
+    }
+
+    @Test
     fun `empty or malformed KWANT hits fail closed as not found`() {
         listOf(
             """{"hits":[]}""",
@@ -157,7 +195,7 @@ class KwantProductProviderTest {
 
     @Test
     fun `search then lookup may use cached canonical product URL`() {
-        val frontend = FakeFrontend(productHtml = productHtml("362"))
+        val frontend = FakeFrontend(productHtml = productHtml())
         val provider = KwantProductProvider(frontend = frontend)
         val ref = searchRef(provider)
 
@@ -171,11 +209,13 @@ class KwantProductProviderTest {
         )
         assertEquals(PRODUCT_URL, frontend.lastProductUrl)
         assertNull(frontend.lastProductId)
+        assertEquals("580", frontend.lastCurrentProductId)
+        assertEquals(205, frontend.lastCurrentDepartmentStockId)
     }
 
     @Test
     fun `fresh exact lookup resolves directly by numeric product route without search`() {
-        val frontend = FakeFrontend(productHtml = productHtml("362"))
+        val frontend = FakeFrontend(productHtml = productHtml())
         val provider = KwantProductProvider(frontend = frontend)
         val ref = ProductRef(
             providerId = KWANT_PROVIDER_ID,
@@ -189,6 +229,8 @@ class KwantProductProviderTest {
         assertTrue(frontend.searchQueries.isEmpty())
         assertEquals("580", frontend.lastProductId)
         assertNull(frontend.lastProductUrl)
+        assertEquals("580", frontend.lastCurrentProductId)
+        assertEquals(205, frontend.lastCurrentDepartmentStockId)
         assertEquals(
             NOWY_SACZ.departmentCookieJson(),
             frontend.lastDepartmentCookie,
@@ -196,8 +238,44 @@ class KwantProductProviderTest {
     }
 
     @Test
+    fun `current stock failure stays fail soft after exact product verification`() {
+        listOf<KwantFrontendResult>(
+            KwantFrontendResult.Failure("network unavailable"),
+            KwantFrontendResult.NotFound,
+        ).forEach { currentStockResult ->
+            val frontend = FakeFrontend(
+                currentProductResult = currentStockResult,
+            )
+            val provider = KwantProductProvider(frontend = frontend)
+            val ref = ProductRef(
+                providerId = KWANT_PROVIDER_ID,
+                productId = "580",
+            )
+
+            val result = provider.lookup(ref, BranchId("205"))
+                as ProviderLookupResult.Found
+            val product = result.product
+
+            assertEquals(KWANT_PROVIDER_ID, product.ref.providerId)
+            assertEquals("580", product.ref.productId)
+            assertEquals(BranchId("205"), product.branchId)
+            assertEquals(PRODUCT_NAME, product.name)
+            assertEquals(PRODUCT_URL, product.productUrl)
+            assertEquals(BigDecimal("14.55"), product.grossPrice)
+            assertEquals(ProviderPriceScope.ONLINE, product.priceScope)
+            assertEquals(10113, product.centralStock)
+            assertNull(product.stock)
+            assertTrue(product.stock != product.centralStock)
+            assertEquals("MBN116E/HAG", product.articleNumber)
+            assertEquals("3250614312762", product.ean)
+            assertEquals("580", frontend.lastCurrentProductId)
+            assertEquals(205, frontend.lastCurrentDepartmentStockId)
+        }
+    }
+
+    @Test
     fun `lookup scope resolves branch directory once for a candidate batch`() {
-        val frontend = FakeFrontend(productHtml = productHtml("140"))
+        val frontend = FakeFrontend(productHtml = productHtml())
         val provider = KwantProductProvider(frontend = frontend)
         val scope = provider.openLookupScope(BranchId("205"))
             as ProviderLookupScopeResult.Available
@@ -209,62 +287,113 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun `zero selected branch stock remains zero`() {
-        val product = KwantFrontendParser().parseProduct(
-            html = productHtml("0"),
-            finalUrl = PRODUCT_URL,
+    fun `selected branch stock parses from real current product shape`() {
+        val stock = KwantFrontendParser().parseSelectedBranchStock(
+            payload = currentProductData(stock = 362),
             expectedProductId = "580",
-            branch = NOWY_SACZ,
+            expectedDepartmentStockId = 205,
         )
 
-        assertEquals(0, product?.stock)
+        assertEquals(362, stock)
     }
 
     @Test
-    fun `missing selected branch stock remains unknown`() {
-        val product = KwantFrontendParser().parseProduct(
-            html = productHtml(null),
-            finalUrl = PRODUCT_URL,
+    fun `zero selected branch stock remains zero`() {
+        val stock = KwantFrontendParser().parseSelectedBranchStock(
+            payload = currentProductData(stock = 0),
             expectedProductId = "580",
-            branch = NOWY_SACZ,
+            expectedDepartmentStockId = 205,
+        )
+
+        assertEquals(0, stock)
+    }
+
+    @Test
+    fun `missing or mismatched selected branch stock remains unknown`() {
+        val parser = KwantFrontendParser()
+
+        assertNull(
+            parser.parseSelectedBranchStock(
+                payload = currentProductData(stock = null),
+                expectedProductId = "580",
+                expectedDepartmentStockId = 205,
+            ),
+        )
+        assertNull(
+            parser.parseSelectedBranchStock(
+                payload = currentProductData(
+                    stock = 362,
+                    departmentStockId = 216,
+                ),
+                expectedProductId = "580",
+                expectedDepartmentStockId = 205,
+            ),
+        )
+        assertNull(
+            parser.parseSelectedBranchStock(
+                payload = currentProductData(
+                    stock = 362,
+                    productId = 577,
+                ),
+                expectedProductId = "580",
+                expectedDepartmentStockId = 205,
+            ),
+        )
+    }
+
+    @Test
+    fun `selected and central stock stay distinct`() {
+        val parser = KwantFrontendParser()
+        val product = parser.parseProduct(
+            productHtml(), PRODUCT_URL, "580", NOWY_SACZ,
+        )
+        val selectedStock = parser.parseSelectedBranchStock(
+            payload = currentProductData(stock = 362),
+            expectedProductId = "580",
+            expectedDepartmentStockId = 205,
         )
 
         assertNull(product?.stock)
         assertEquals(10113, product?.centralStock)
+        assertEquals(362, selectedStock)
+        assertTrue(selectedStock != product?.centralStock)
     }
 
     @Test
-    fun `selected and central stock stay distinct and missing central stays null`() {
-        val parser = KwantFrontendParser()
-        val distinct = parser.parseProduct(
-            productHtml("362"), PRODUCT_URL, "580", NOWY_SACZ,
-        )
-        val missingCentral = parser.parseProduct(
-            productHtml("362", null), PRODUCT_URL, "580", NOWY_SACZ,
+    fun `missing central stock remains unknown independently`() {
+        val product = KwantFrontendParser().parseProduct(
+            productHtml(centralStock = null),
+            PRODUCT_URL,
+            "580",
+            NOWY_SACZ,
         )
 
-        assertEquals(362, distinct?.stock)
-        assertEquals(10113, distinct?.centralStock)
-        assertTrue(distinct?.stock != 10475)
-        assertNull(missingCentral?.centralStock)
+        assertNull(product?.stock)
+        assertNull(product?.centralStock)
     }
 
     @Test
     fun `recommended product stock cannot contaminate main product`() {
-        val product = KwantFrontendParser().parseProduct(
-            html = productHtml(
-                stock = "362",
-                centralStock = "10113",
-                includeRecommendedNoise = true,
+        val parser = KwantFrontendParser()
+        val selected = parser.parseSelectedBranchStock(
+            payload = currentProductData(
+                stock = 362,
+                recommendationStock = 139,
             ),
-            finalUrl = PRODUCT_URL,
             expectedProductId = "580",
-            branch = NOWY_SACZ,
+            expectedDepartmentStockId = 205,
+        )
+        val missingMain = parser.parseSelectedBranchStock(
+            payload = currentProductData(
+                stock = null,
+                recommendationStock = 139,
+            ),
+            expectedProductId = "580",
+            expectedDepartmentStockId = 205,
         )
 
-        assertEquals("580", product?.ref?.productId)
-        assertEquals(362, product?.stock)
-        assertEquals(10113, product?.centralStock)
+        assertEquals(362, selected)
+        assertNull(missingMain)
     }
 
     @Test
@@ -306,6 +435,23 @@ class KwantProductProviderTest {
         assertTrue(
             KwantUrlPolicy.isTrustedSearchServiceUrl(
                 "https://services.kwant.net.pl/api/front/search-engine/page",
+            ),
+        )
+        assertTrue(
+            KwantUrlPolicy.isTrustedCurrentProductUrl(
+                "https://services.kwant.net.pl/api/front/products/580/current" +
+                    "?depstock=205",
+            ),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedCurrentProductUrl(
+                "https://services.kwant.net.pl/api/front/products/580/current",
+            ),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedCurrentProductUrl(
+                "https://services.kwant.net.pl/api/front/products/580/current" +
+                    "?depstock=205&other=1",
             ),
         )
         assertTrue(
@@ -380,13 +526,17 @@ class KwantProductProviderTest {
         ).items.first().ref
 
     private class FakeFrontend(
-        private val productHtml: String = productHtml("362"),
+        private val productHtml: String = productHtml(),
         private val searchData: String = SEARCH_DATA,
+        private val currentProductData: String = CURRENT_PRODUCT_DATA,
+        private val currentProductResult: KwantFrontendResult? = null,
     ) : KwantFrontendClient {
         val searchQueries = mutableListOf<String>()
         var lastProductId: String? = null
         var lastProductUrl: String? = null
         var lastDepartmentCookie: String? = null
+        var lastCurrentProductId: String? = null
+        var lastCurrentDepartmentStockId: Int? = null
         var branchDirectoryCalls: Int = 0
 
         override fun fetchBranchDirectory(): KwantFrontendResult {
@@ -432,6 +582,22 @@ class KwantProductProviderTest {
                 html = productHtml,
                 finalUrl = PRODUCT_URL,
             )
+        }
+
+        override fun fetchCurrentProductStock(
+            productId: String,
+            departmentStockId: Int,
+        ): KwantFrontendResult {
+            lastCurrentProductId = productId
+            lastCurrentDepartmentStockId = departmentStockId
+            return currentProductResult
+                ?: KwantFrontendResult.Success(
+                    html = currentProductData,
+                    finalUrl =
+                        "https://services.kwant.net.pl/api/front/products/" +
+                            productId + "/current?depstock=" +
+                            departmentStockId,
+                )
         }
     }
 
@@ -501,30 +667,38 @@ class KwantProductProviderTest {
             }
             """.trimIndent()
 
+        val CURRENT_PRODUCT_DATA = currentProductData(stock = 362)
+
+        fun currentProductData(
+            stock: Int?,
+            productId: Int = 580,
+            departmentStockId: Int = 205,
+            recommendationStock: Int? = null,
+        ): String {
+            val departmentStock = stock?.let {
+                ""","department_stock":{"department_id":$departmentStockId,"name":"Nowy Sącz","stock":$it,"stock_num":$it}"""
+            }.orEmpty()
+            val recommendation = recommendationStock?.let {
+                ""","related":[{"product_id":577,"department_stock":{"department_id":205,"name":"Nowy Sącz","stock":$it,"stock_num":$it}}]"""
+            }.orEmpty()
+            return """
+                {
+                  "product_id": $productId,
+                  "stock": 10113,
+                  "gross_price": 14.55,
+                  "unit": "szt."
+                  $departmentStock
+                  $recommendation
+                }
+            """.trimIndent()
+        }
+
         fun productHtml(
-            stock: String?,
             centralStock: String? = "10113",
-            includeRecommendedNoise: Boolean = false,
         ): String {
             val centralStockField = centralStock
                 ?.let { ""","stock":$it""" }
                 .orEmpty()
-            val selectedBranchMarkup = stock?.let {
-                """
-                <div aria-label="Sprawdź stan i kup towar w oddziałach Kwant">
-                  <div><div>$it szt.</div> w Nowy Sącz</div>
-                </div>
-                """
-            }.orEmpty()
-            val recommendedNoise = if (includeRecommendedNoise) {
-                """
-                <button data-testid="add-to-cart-button-577"></button>
-                <p>Centrala: <span>5894 szt.</span></p>
-                <p>Nowy Sącz: <span>139 szt.</span></p>
-                """
-            } else {
-                ""
-            }
             return nextData(
                 """
                 {
@@ -546,9 +720,7 @@ class KwantProductProviderTest {
                 }
                 """,
             ) +
-                """<button data-testid="add-to-cart-button-580"></button>""" +
-                selectedBranchMarkup +
-                recommendedNoise
+                """<button data-testid="add-to-cart-button-580"></button>"""
         }
 
         fun nextData(pageProps: String): String =

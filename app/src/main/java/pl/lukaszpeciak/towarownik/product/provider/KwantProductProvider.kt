@@ -67,6 +67,11 @@ internal interface KwantFrontendClient {
         productUrl: String,
         departmentCookieJson: String,
     ): KwantFrontendResult
+
+    fun fetchCurrentProductStock(
+        productId: String,
+        departmentStockId: Int,
+    ): KwantFrontendResult
 }
 
 internal class KwantHttpFrontendClient(
@@ -134,10 +139,30 @@ internal class KwantHttpFrontendClient(
         )
     }
 
+    override fun fetchCurrentProductStock(
+        productId: String,
+        departmentStockId: Int,
+    ): KwantFrontendResult =
+        execute(
+            request = Request.Builder()
+                .url(
+                    "$KWANT_CURRENT_PRODUCT_API/$productId/current" +
+                        "?depstock=$departmentStockId",
+                )
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Accept-Language", "pl-PL")
+                .header("Origin", KWANT_ORIGIN)
+                .header("Referer", "$KWANT_ORIGIN/")
+                .get()
+                .build(),
+            requireCurrentProductService = true,
+        )
+
     private fun execute(
         request: Request,
         requireProductPath: Boolean = false,
         requireSearchService: Boolean = false,
+        requireCurrentProductService: Boolean = false,
     ): KwantFrontendResult =
         try {
             client.newCall(request).execute().use { response ->
@@ -154,6 +179,10 @@ internal class KwantHttpFrontendClient(
                                 KwantUrlPolicy.isTrustedProductUrl(finalUrl)
                             requireSearchService ->
                                 KwantUrlPolicy.isTrustedSearchServiceUrl(
+                                    finalUrl,
+                                )
+                            requireCurrentProductService ->
+                                KwantUrlPolicy.isTrustedCurrentProductUrl(
                                     finalUrl,
                                 )
                             else ->
@@ -188,6 +217,8 @@ internal class KwantHttpFrontendClient(
         const val KWANT_ORIGIN = "https://kwant.net.pl"
         const val KWANT_SEARCH_API_URL =
             "https://services.kwant.net.pl/api/front/search-engine/page"
+        const val KWANT_CURRENT_PRODUCT_API =
+            "https://services.kwant.net.pl/api/front/products"
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
     }
 }
@@ -209,6 +240,20 @@ internal object KwantUrlPolicy {
             url.query == null
     }
 
+    fun isTrustedCurrentProductUrl(rawUrl: String): Boolean {
+        val url = rawUrl.toHttpUrlOrNull() ?: return false
+        val departmentId = url.queryParameterValues("depstock")
+            .singleOrNull()
+            ?: return false
+        return url.scheme == "https" &&
+            url.host == KWANT_SEARCH_HOST &&
+            url.port == 443 &&
+            CURRENT_PRODUCT_PATH.matches(url.encodedPath) &&
+            url.queryParameterNames == setOf("depstock") &&
+            departmentId.isNotEmpty() &&
+            departmentId.all(Char::isDigit)
+    }
+
     fun isTrustedProductUrl(rawUrl: String): Boolean {
         val url = rawUrl.toHttpUrlOrNull() ?: return false
         return isTrustedOriginUrl(rawUrl) &&
@@ -220,6 +265,8 @@ internal object KwantUrlPolicy {
     private const val KWANT_HOST = "kwant.net.pl"
     private const val KWANT_SEARCH_HOST = "services.kwant.net.pl"
     private const val KWANT_SEARCH_PATH = "/api/front/search-engine/page"
+    private val CURRENT_PRODUCT_PATH =
+        Regex("""/api/front/products/[0-9]+/current""")
 }
 
 internal class KwantProductProvider(
@@ -387,11 +434,28 @@ internal class KwantProductProvider(
                     failure = ProductProviderFailure.DATA,
                     reason = "KWANT product payload could not be parsed",
                 )
+                val selectedBranchStock = when (
+                    val stockResponse = frontend.fetchCurrentProductStock(
+                        productId = ref.productId,
+                        departmentStockId = branch.departmentStockId,
+                    )
+                ) {
+                    is KwantFrontendResult.Success ->
+                        parser.parseSelectedBranchStock(
+                            payload = stockResponse.html,
+                            expectedProductId = ref.productId,
+                            expectedDepartmentStockId =
+                                branch.departmentStockId,
+                        )
+                    KwantFrontendResult.NotFound -> null
+                    is KwantFrontendResult.Failure -> null
+                }
                 productUrls[ref.productId] = product.productUrl
                 ProviderLookupResult.Found(
                     product.copy(
                         ref = ref,
                         branchId = branchId,
+                        stock = selectedBranchStock,
                     ),
                 )
             }
@@ -560,11 +624,7 @@ internal class KwantFrontendParser(
             ref = ProductRef(KWANT_PROVIDER_ID, productId),
             branchId = branch.branchId,
             name = name,
-            stock = selectedBranchStock(
-                html = html,
-                expectedProductId = expectedProductId,
-                branchName = branch.departmentStockName,
-            ),
+            stock = null,
             centralStock = product.int("stock"),
             grossPrice = price,
             priceScope = price?.let { ProviderPriceScope.ONLINE },
@@ -578,41 +638,26 @@ internal class KwantFrontendParser(
         )
     }
 
-    private fun selectedBranchStock(
-        html: String,
+    fun parseSelectedBranchStock(
+        payload: String,
         expectedProductId: String,
-        branchName: String,
+        expectedDepartmentStockId: Int,
     ): Int? {
-        val stockBlock = mainProductStockBlock(
-            html = html,
-            expectedProductId = expectedProductId,
-        ) ?: return null
-        return Regex(
-            """([0-9]+)\s*szt\.\s*</div>\s*w\s*""" +
-                Regex.escape(branchName),
-            setOf(
-                RegexOption.IGNORE_CASE,
-                RegexOption.DOT_MATCHES_ALL,
-            ),
-        ).find(stockBlock)
-            ?.groupValues
-            ?.get(1)
-            ?.toIntOrNull()
-    }
+        val root = runCatching {
+            json.parseToJsonElement(payload).jsonObject
+        }.getOrNull() ?: return null
+        val productId = root.int("product_id")?.toString() ?: return null
+        if (productId != expectedProductId) return null
 
-    private fun mainProductStockBlock(
-        html: String,
-        expectedProductId: String,
-    ): String? {
-        val markers = PRODUCT_CART_MARKER.findAll(html).toList()
-        val mainMarker = markers.lastOrNull {
-            it.groupValues[1] == expectedProductId
-        } ?: return null
-        val end = markers.firstOrNull {
-            it.range.first > mainMarker.range.first &&
-                it.groupValues[1] != expectedProductId
-        }?.range?.first ?: html.length
-        return html.substring(mainMarker.range.first, end)
+        val departmentStock =
+            root["department_stock"] as? JsonObject ?: return null
+        if (
+            departmentStock.int("department_id") !=
+            expectedDepartmentStockId
+        ) {
+            return null
+        }
+        return departmentStock.int("stock")
     }
 
     private fun pageProps(payload: String): JsonObject? {
@@ -646,10 +691,6 @@ internal class KwantFrontendParser(
 
     private companion object {
         val NEXT_DATA = KWANT_NEXT_DATA
-        val PRODUCT_CART_MARKER = Regex(
-            """data-testid=["']add-to-cart-button-([0-9]+)["']""",
-            RegexOption.IGNORE_CASE,
-        )
     }
 }
 

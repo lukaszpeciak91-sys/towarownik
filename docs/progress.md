@@ -248,3 +248,11 @@ The currently planned AI capability stage is complete after this selective web-s
 - Central stock still comes from structured main-product `product.stock`; selected branch stock remains bounded to the main product availability block so recommendation cards cannot leak their stock into the verified product.
 - Live-probe evidence now records the trusted `services.kwant.net.pl` search API POST and uses its body `q` as query-specific evidence instead of treating a Next-data request as search proof.
 - OBI paths, proxy runtime, prompts, provider routing, protocol versions, WorkingProfile behavior, branch lookup, and Room schema remain unchanged.
+
+
+## 2026-10-06 — KWANT selected-branch stock repair
+
+- Live probe of product 580 / branch 205 showed raw Android-like HTML has the selected branch name but no branch quantity, while the hydrated frontend calls `/api/front/products/580/current?depstock=205` and receives root `department_stock` for the main product.
+- Exact KWANT lookup now keeps page parsing for identity, online price, canonical URL, and central stock, then performs one fail-soft current-product request for selected-branch stock only.
+- Parser validation requires exact `product_id` and `department_id`; zero is preserved, missing/malformed data remains null, and recommendation stock cannot contaminate the result.
+- KWANT search API from #79, OBI, proxy, prompts, WorkingProfile, advisor routing, and Room remain unchanged.
