@@ -6,6 +6,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -44,25 +45,27 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun `HTTP search derives build id and uses query specific Next data`() {
-        val requested = mutableListOf<String>()
+    fun `HTTP search uses real KWANT frontend search API contract`() {
+        var requestedUrl: String? = null
+        var requestedMethod: String? = null
+        var requestedBody: String? = null
+        var requestedContentType: String? = null
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 val request = chain.request()
-                requested += request.url.toString()
-                val body = when (request.url.encodedPath) {
-                    "/" -> nextData("{}", buildId = "live-build_42")
-                    "/_next/data/live-build_42/pl/wyniki-wyszukiwania.json" ->
-                        SEARCH_DATA
-                    else -> error("Unexpected request: ${request.url}")
-                }
+                requestedUrl = request.url.toString()
+                requestedMethod = request.method
+                requestedContentType = request.body?.contentType()?.toString()
+                requestedBody = Buffer().also { buffer ->
+                    request.body?.writeTo(buffer)
+                }.readUtf8()
                 Response.Builder()
                     .request(request)
                     .protocol(Protocol.HTTP_1_1)
                     .code(200)
                     .message("OK")
                     .body(
-                        body.toResponseBody(
+                        SEARCH_DATA.toResponseBody(
                             "application/json".toMediaType(),
                         ),
                     )
@@ -74,13 +77,52 @@ class KwantProductProviderTest {
             .fetchSearch("MBN116E") as KwantFrontendResult.Success
 
         assertEquals(SEARCH_DATA, result.html)
-        assertEquals(2, requested.size)
-        assertTrue(
-            requested[1].contains(
-                "/_next/data/live-build_42/pl/wyniki-wyszukiwania.json",
-            ),
+        assertEquals(
+            "https://services.kwant.net.pl/api/front/search-engine/page",
+            requestedUrl,
         )
-        assertTrue(requested[1].contains("phrase=MBN116E"))
+        assertEquals("POST", requestedMethod)
+        assertTrue(
+            requestedContentType?.startsWith("application/json") == true,
+        )
+        assertEquals(
+            """{"q":"MBN116E","page":1,"limit":12,"tags":"not-logged-in,desktop"}""",
+            requestedBody,
+        )
+    }
+
+    @Test
+    fun `empty or malformed KWANT hits fail closed as not found`() {
+        listOf(
+            """{"hits":[]}""",
+            """{"hits":[{"id":580,"code":"MBN116E/HAG"}]}""",
+            """{"hits":[{"slug":"product-580","code":"MBN116E/HAG"}]}""",
+            """{"unexpected":[]}""",
+            """not-json""",
+        ).forEach { payload ->
+            val provider = KwantProductProvider(
+                frontend = FakeFrontend(searchData = payload),
+            )
+
+            assertEquals(
+                ProviderSearchResult.NotFound,
+                provider.search("MBN116E", 5),
+            )
+        }
+    }
+
+    @Test
+    fun `KWANT not found never falls back to OBI`() {
+        val frontend = FakeFrontend(searchData = """{"hits":[]}""")
+        val provider = KwantProductProvider(frontend = frontend)
+
+        assertEquals(
+            ProviderSearchResult.NotFound,
+            provider.search("MBN116E", 5),
+        )
+        assertEquals(listOf("MBN116E"), frontend.searchQueries)
+        assertNull(frontend.lastProductId)
+        assertNull(frontend.lastProductUrl)
     }
 
     @Test
@@ -257,9 +299,14 @@ class KwantProductProviderTest {
     }
 
     @Test
-    fun `KWANT URL policy requires exact https host and product route`() {
+    fun `KWANT URL policy requires exact trusted hosts and routes`() {
         assertTrue(
             KwantUrlPolicy.isTrustedProductUrl(PRODUCT_URL),
+        )
+        assertTrue(
+            KwantUrlPolicy.isTrustedSearchServiceUrl(
+                "https://services.kwant.net.pl/api/front/search-engine/page",
+            ),
         )
         assertTrue(
             !KwantUrlPolicy.isTrustedProductUrl(
@@ -274,6 +321,16 @@ class KwantProductProviderTest {
         assertTrue(
             !KwantUrlPolicy.isTrustedProductUrl(
                 "https://kwant.net.pl/kategorie/test-580",
+            ),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedSearchServiceUrl(
+                "https://services.kwant.net.pl.evil.example/api/front/search-engine/page",
+            ),
+        )
+        assertTrue(
+            !KwantUrlPolicy.isTrustedSearchServiceUrl(
+                "https://services.kwant.net.pl/api/front/products/prices/580",
             ),
         )
     }
@@ -324,6 +381,7 @@ class KwantProductProviderTest {
 
     private class FakeFrontend(
         private val productHtml: String = productHtml("362"),
+        private val searchData: String = SEARCH_DATA,
     ) : KwantFrontendClient {
         val searchQueries = mutableListOf<String>()
         var lastProductId: String? = null
@@ -345,10 +403,10 @@ class KwantProductProviderTest {
             }
             searchQueries += query
             return KwantFrontendResult.Success(
-                html = SEARCH_DATA,
+                html = searchData,
                 finalUrl =
-                    "https://kwant.net.pl/_next/data/test-build/pl/" +
-                        "wyniki-wyszukiwania.json?phrase=$query",
+                    "https://services.kwant.net.pl/api/front/" +
+                        "search-engine/page",
             )
         }
 
@@ -416,27 +474,30 @@ class KwantProductProviderTest {
         val SEARCH_DATA =
             """
             {
-              "pageProps": {
-                "categoriesFacetsProducts": [
-                  {
-                    "categoryId": 530,
-                    "list": [
-                      {
-                        "id": 580,
-                        "slug": "wylacznik-nadpradowy-b16-a-1p-6ka-mbn116e-hager-580",
-                        "code": "MBN116E/HAG",
-                        "name": "$PRODUCT_NAME"
-                      },
-                      {
-                        "id": 677,
-                        "slug": "rozlacznik-sbn490-hager-677",
-                        "code": "SBN490/HAG",
-                        "name": "Rozłącznik SBN490 HAGER"
-                      }
-                    ]
-                  }
-                ]
-              }
+              "found": 2,
+              "out_of": 706,
+              "page": 1,
+              "search_time_ms": 4,
+              "hits": [
+                {
+                  "id": 580,
+                  "stock_id": 580,
+                  "stockId": 580,
+                  "slug": "wylacznik-nadpradowy-b16-a-1p-6ka-mbn116e-hager-580",
+                  "code": "MBN116E/HAG",
+                  "ean": "3250614312762",
+                  "name": "$PRODUCT_NAME"
+                },
+                {
+                  "id": 677,
+                  "slug": "rozlacznik-sbn490-hager-677",
+                  "code": "SBN490/HAG",
+                  "ean": "5900000000000",
+                  "name": "Rozłącznik SBN490 HAGER"
+                }
+              ],
+              "facets": {},
+              "categoryTree": []
             }
             """.trimIndent()
 
@@ -490,14 +551,11 @@ class KwantProductProviderTest {
                 recommendedNoise
         }
 
-        fun nextData(
-            pageProps: String,
-            buildId: String = "test-build",
-        ): String =
+        fun nextData(pageProps: String): String =
             """
             <html><body>
             <script id="__NEXT_DATA__" type="application/json">
-            {"props":{"pageProps":$pageProps},"buildId":"$buildId"}
+            {"props":{"pageProps":$pageProps}}
             </script>
             </body></html>
             """.trimIndent()

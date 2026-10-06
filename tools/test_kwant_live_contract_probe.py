@@ -16,6 +16,22 @@ class UrlSanitizationTest(unittest.TestCase):
             safe,
         )
 
+    def test_network_sanitizer_accepts_only_kwant_frontend_and_services_hosts(self):
+        for value in (
+            "https://kwant.net.pl/",
+            "https://services.kwant.net.pl/api/front/search-engine/page",
+        ):
+            with self.subTest(value=value):
+                expected, safe = probe.sanitize_kwant_network_url(value)
+                self.assertTrue(expected)
+                self.assertTrue(safe.startswith("https://"))
+
+        expected, safe = probe.sanitize_kwant_network_url(
+            "https://services.kwant.net.pl.evil.example/api/front/search-engine/page"
+        )
+        self.assertFalse(expected)
+        self.assertTrue(safe.startswith("REDACTED_"))
+
     def test_unexpected_hosts_and_unsafe_url_shapes_are_redacted(self):
         cases = [
             "https://example.com/produkt/example-580",
@@ -1577,17 +1593,21 @@ class SearchEvidenceTest(unittest.TestCase):
 
         self.assertEqual("UNSUPPORTED", status)
 
-    def test_search_request_requires_submitted_query_value(self):
+    def test_search_request_requires_real_frontend_api_and_submitted_query(self):
         network = [
             {
                 "action": "search:article",
-                "path": "/search",
-                "query": {
+                "method": "POST",
+                "host": probe.KWANT_SERVICES_HOST,
+                "path": probe.KWANT_SEARCH_API_PATH,
+                "query": {"safeValues": {}},
+                "body": {
                     "safeValues": {
-                        "query": "MBN116E",
+                        "q": "MBN116E",
+                        "page": 1,
+                        "limit": 12,
                     }
                 },
-                "body": None,
             }
         ]
 
@@ -1603,6 +1623,15 @@ class SearchEvidenceTest(unittest.TestCase):
                 network,
                 action="search:article",
                 query="6743009",
+            )
+        )
+
+        wrong_contract = [dict(network[0], path="/_next/data/build/search.json")]
+        self.assertFalse(
+            probe.search_request_observed(
+                wrong_contract,
+                action="search:article",
+                query="MBN116E",
             )
         )
 
@@ -1677,15 +1706,23 @@ class ReportWriterTest(unittest.TestCase):
             network=[
                 {
                     "action": "search:article",
-                    "method": "GET",
-                    "path": "/search",
+                    "method": "POST",
+                    "host": probe.KWANT_SERVICES_HOST,
+                    "path": probe.KWANT_SEARCH_API_PATH,
                     "query": {
-                        "names": ["query"],
-                        "safeValues": {"query": "MBN116E"},
+                        "names": [],
+                        "safeValues": {},
                     },
-                    "body": None,
+                    "body": {
+                        "fields": ["q", "page", "limit", "tags"],
+                        "safeValues": {
+                            "q": "MBN116E",
+                            "page": 1,
+                            "limit": 12,
+                        },
+                    },
                     "status": 200,
-                    "contentType": "text/html",
+                    "contentType": "application/json",
                 }
             ],
         )

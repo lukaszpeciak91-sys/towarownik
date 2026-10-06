@@ -2,8 +2,9 @@
 
 ## 2026-10-06 — KWANT live search and main-product stock parsing
 
-- KWANT discovery follows the live Next.js data contract: Android derives the current buildId from public `__NEXT_DATA__` and requests `/_next/data/<buildId>/pl/wyniki-wyszukiwania.json?phrase=...`; the buildId is never hardcoded.
-- Article/catalog number, EAN, and plain-text queries still produce provider-owned candidates and every candidate remains subject to the existing exact product lookup before advisor facts are trusted.
+- The live audit corrected the earlier Next-data assumption: KWANT search discovery uses `POST https://services.kwant.net.pl/api/front/search-engine/page` with the public frontend JSON contract `q/page/limit/tags`. Next.js buildId and `/_next/data/.../wyniki-wyszukiwania.json` are not search-result sources and are no longer used for Android search discovery.
+- Search candidates are parsed from the frontend API `hits[]` using provider-owned numeric `id`, `slug`, `code`, and `name`. Article/catalog number, EAN, and plain-text queries remain search-then-exact-verification inputs.
+- Every discovered candidate still goes through the existing exact KWANT product lookup before advisor facts are trusted; there is no OBI fallback or fabricated product ID.
 - Exact KWANT central stock comes from the main structured `product.stock` field. Selected-branch stock is parsed only from the main product availability block anchored to the expected product ID, so recommended products cannot contaminate either quantity.
 - Selected-branch stock and central stock remain separate and are never summed. Public price scope remains `ONLINE`; WorkingProfile, branch resolution, OBI transport, protocol split, and Room schema are unchanged.
 - Local-tool progress copy reflects the active provider (OBI or KWANT) without changing execution routing.

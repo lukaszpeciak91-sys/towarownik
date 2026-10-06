@@ -19,6 +19,8 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 KWANT_ORIGIN = "https://kwant.net.pl"
 KWANT_HOST = "kwant.net.pl"
+KWANT_SERVICES_HOST = "services.kwant.net.pl"
+KWANT_SEARCH_API_PATH = "/api/front/search-engine/page"
 UNKNOWN = "UNKNOWN"
 REDACTED = "REDACTED"
 DEPARTMENT_COOKIE_NAME = "departmentCookie"
@@ -96,17 +98,21 @@ class NetworkRecorder:
             return
         if getattr(request, "resource_type", None) not in RELEVANT_RESOURCE_TYPES:
             return
-        expected, safe_url = sanitize_kwant_url(getattr(request, "url", ""))
+        expected, safe_url = sanitize_kwant_network_url(
+            getattr(request, "url", "")
+        )
         if not expected:
             return
 
         method = str(getattr(request, "method", "GET")).upper()
         headers = getattr(request, "headers", {}) or {}
         post_data = getattr(request, "post_data", None)
+        parsed_safe_url = urlsplit(safe_url)
         record = {
             "action": self.action,
             "method": method,
-            "path": urlsplit(safe_url).path or "/",
+            "host": parsed_safe_url.hostname,
+            "path": parsed_safe_url.path or "/",
             "query": sanitized_query(
                 getattr(request, "url", ""),
                 action=self.action,
@@ -129,7 +135,9 @@ class NetworkRecorder:
             return
         if getattr(request, "resource_type", None) not in RELEVANT_RESOURCE_TYPES:
             return
-        expected, safe_url = sanitize_kwant_url(getattr(response, "url", ""))
+        expected, safe_url = sanitize_kwant_network_url(
+            getattr(response, "url", "")
+        )
         if not expected:
             return
 
@@ -260,6 +268,34 @@ def probe_numeric_product_route_http(product_id: str) -> dict[str, Any]:
         "finalParsedProductId": parsed_product_id,
         "matchesRequestedProductId": parsed_product_id == normalized_id,
     }
+
+
+def sanitize_kwant_network_url(raw_url: str) -> tuple[bool, str]:
+    try:
+        parsed = urlsplit(raw_url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return False, "REDACTED_INVALID_URL"
+
+    expected = bool(
+        parsed.scheme == "https"
+        and parsed.hostname in {KWANT_HOST, KWANT_SERVICES_HOST}
+        and port in (None, 443)
+        and parsed.username is None
+        and parsed.password is None
+    )
+    if not expected:
+        return False, "REDACTED_UNEXPECTED_HOST"
+
+    return True, urlunsplit(
+        (
+            "https",
+            parsed.hostname or "",
+            parsed.path or "/",
+            "",
+            "",
+        )
+    )
 
 
 def sanitize_kwant_url(raw_url: str) -> tuple[bool, str]:
@@ -1256,16 +1292,15 @@ def search_request_observed(
     for record in network:
         if record.get("action") != action:
             continue
-        for source in (
-            record.get("query", {}).get("safeValues", {}),
-            (record.get("body") or {}).get("safeValues", {}),
-        ):
-            for key, value in source.items():
-                if (
-                    SEARCH_VALUE_KEY_RE.search(str(key))
-                    and normalized_evidence_value(value) == expected
-                ):
-                    return True
+        if record.get("method") != "POST":
+            continue
+        if record.get("host") != KWANT_SERVICES_HOST:
+            continue
+        if record.get("path") != KWANT_SEARCH_API_PATH:
+            continue
+        safe_values = (record.get("body") or {}).get("safeValues", {})
+        if normalized_evidence_value(safe_values.get("q", "")) == expected:
+            return True
     return False
 
 
@@ -1548,6 +1583,7 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
                 [
                     f"action={record.get('action', UNKNOWN)}",
                     f"method={record.get('method', UNKNOWN)}",
+                    f"host={record.get('host', UNKNOWN)}",
                     f"path={record.get('path', UNKNOWN)}",
                     f"queryNames={query.get('names', [])}",
                     f"querySafeValues={query.get('safeValues', {})}",

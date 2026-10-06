@@ -12,8 +12,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import pl.lukaszpeciak.towarownik.product.TechnicalFact
 
 internal val KWANT_PROVIDER_ID = ProviderId("kwant-pl")
@@ -70,9 +72,6 @@ internal interface KwantFrontendClient {
 internal class KwantHttpFrontendClient(
     private val client: OkHttpClient = OkHttpClient(),
 ) : KwantFrontendClient {
-    @Volatile
-    private var searchBuildId: String? = null
-
     override fun fetchBranchDirectory(): KwantFrontendResult =
         execute(
             Request.Builder()
@@ -82,64 +81,27 @@ internal class KwantHttpFrontendClient(
         )
 
     override fun fetchSearch(query: String): KwantFrontendResult {
-        val encoded = encodeComponent(query)
-        val buildId = searchBuildId ?: when (
-            val bootstrap = fetchSearchBootstrap()
-        ) {
-            is KwantFrontendResult.Success ->
-                kwantBuildIdFromHtml(bootstrap.html)?.also {
-                    searchBuildId = it
-                } ?: return KwantFrontendResult.Failure(
-                    "KWANT Next.js buildId could not be parsed",
-                )
-            KwantFrontendResult.NotFound ->
-                return KwantFrontendResult.NotFound
-            is KwantFrontendResult.Failure ->
-                return bootstrap
-        }
+        val body = JsonObject(
+            mapOf(
+                "q" to JsonPrimitive(query),
+                "page" to JsonPrimitive(1),
+                "limit" to JsonPrimitive(12),
+                "tags" to JsonPrimitive("not-logged-in,desktop"),
+            ),
+        ).toString().toRequestBody(JSON_MEDIA_TYPE)
 
-        val first = fetchSearchData(buildId, encoded)
-        if (first != KwantFrontendResult.NotFound) {
-            return first
-        }
-
-        searchBuildId = null
-        val refreshed = when (val bootstrap = fetchSearchBootstrap()) {
-            is KwantFrontendResult.Success ->
-                kwantBuildIdFromHtml(bootstrap.html)?.also {
-                    searchBuildId = it
-                } ?: return KwantFrontendResult.Failure(
-                    "KWANT Next.js buildId could not be parsed",
-                )
-            KwantFrontendResult.NotFound ->
-                return KwantFrontendResult.NotFound
-            is KwantFrontendResult.Failure ->
-                return bootstrap
-        }
-        return fetchSearchData(refreshed, encoded)
+        return execute(
+            request = Request.Builder()
+                .url(KWANT_SEARCH_API_URL)
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Accept-Language", "pl-PL")
+                .header("Origin", KWANT_ORIGIN)
+                .header("Referer", "$KWANT_ORIGIN/")
+                .post(body)
+                .build(),
+            requireSearchService = true,
+        )
     }
-
-    private fun fetchSearchBootstrap(): KwantFrontendResult =
-        execute(
-            Request.Builder()
-                .url(KWANT_ORIGIN)
-                .get()
-                .build(),
-        )
-
-    private fun fetchSearchData(
-        buildId: String,
-        encodedQuery: String,
-    ): KwantFrontendResult =
-        execute(
-            Request.Builder()
-                .url(
-                    "$KWANT_ORIGIN/_next/data/$buildId/pl/" +
-                        "wyniki-wyszukiwania.json?phrase=$encodedQuery",
-                )
-                .get()
-                .build(),
-        )
 
     // Live-confirmed by tools/kwant_live_contract_probe.py:
     // GET /produkt/580 -> 308 canonical product route -> 200, payload product.id=580.
@@ -175,6 +137,7 @@ internal class KwantHttpFrontendClient(
     private fun execute(
         request: Request,
         requireProductPath: Boolean = false,
+        requireSearchService: Boolean = false,
     ): KwantFrontendResult =
         try {
             client.newCall(request).execute().use { response ->
@@ -186,10 +149,15 @@ internal class KwantHttpFrontendClient(
                         )
                     else -> {
                         val finalUrl = response.request.url.toString()
-                        val trusted = if (requireProductPath) {
-                            KwantUrlPolicy.isTrustedProductUrl(finalUrl)
-                        } else {
-                            KwantUrlPolicy.isTrustedOriginUrl(finalUrl)
+                        val trusted = when {
+                            requireProductPath ->
+                                KwantUrlPolicy.isTrustedProductUrl(finalUrl)
+                            requireSearchService ->
+                                KwantUrlPolicy.isTrustedSearchServiceUrl(
+                                    finalUrl,
+                                )
+                            else ->
+                                KwantUrlPolicy.isTrustedOriginUrl(finalUrl)
                         }
                         if (!trusted) {
                             KwantFrontendResult.Failure(
@@ -218,6 +186,9 @@ internal class KwantHttpFrontendClient(
 
     private companion object {
         const val KWANT_ORIGIN = "https://kwant.net.pl"
+        const val KWANT_SEARCH_API_URL =
+            "https://services.kwant.net.pl/api/front/search-engine/page"
+        val JSON_MEDIA_TYPE = "application/json".toMediaType()
     }
 }
 
@@ -229,6 +200,15 @@ internal object KwantUrlPolicy {
             url.port == 443
     }
 
+    fun isTrustedSearchServiceUrl(rawUrl: String): Boolean {
+        val url = rawUrl.toHttpUrlOrNull() ?: return false
+        return url.scheme == "https" &&
+            url.host == KWANT_SEARCH_HOST &&
+            url.port == 443 &&
+            url.encodedPath == KWANT_SEARCH_PATH &&
+            url.query == null
+    }
+
     fun isTrustedProductUrl(rawUrl: String): Boolean {
         val url = rawUrl.toHttpUrlOrNull() ?: return false
         return isTrustedOriginUrl(rawUrl) &&
@@ -238,6 +218,8 @@ internal object KwantUrlPolicy {
     }
 
     private const val KWANT_HOST = "kwant.net.pl"
+    private const val KWANT_SEARCH_HOST = "services.kwant.net.pl"
+    private const val KWANT_SEARCH_PATH = "/api/front/search-engine/page"
 }
 
 internal class KwantProductProvider(
@@ -495,28 +477,24 @@ internal class KwantFrontendParser(
     }
 
     fun parseSearch(
-        html: String,
+        payload: String,
         query: String,
     ): List<KwantSearchCandidate> {
-        val pageProps = pageProps(html) ?: return emptyList()
-        val groups = pageProps["categoriesFacetsProducts"] as? JsonArray
-            ?: return emptyList()
-        val candidates = mutableListOf<KwantSearchCandidate>()
+        val root = runCatching {
+            json.parseToJsonElement(payload).jsonObject
+        }.getOrNull() ?: return emptyList()
+        val hits = root["hits"] as? JsonArray ?: return emptyList()
 
-        groups.forEach { groupElement ->
-            val group = groupElement as? JsonObject ?: return@forEach
-            val items = group["list"] as? JsonArray ?: return@forEach
-            items.forEach { itemElement ->
-                val item = itemElement as? JsonObject ?: return@forEach
-                val id = item.int("id")?.toString() ?: return@forEach
-                val slug = item.string("slug") ?: return@forEach
-                candidates += KwantSearchCandidate(
-                    productId = id,
-                    name = item.string("name"),
-                    productUrl = "https://kwant.net.pl/produkt/$slug",
-                    code = item.string("code"),
-                )
-            }
+        val candidates = hits.mapNotNull { hitElement ->
+            val hit = hitElement as? JsonObject ?: return@mapNotNull null
+            val id = hit.int("id")?.toString() ?: return@mapNotNull null
+            val slug = hit.string("slug") ?: return@mapNotNull null
+            KwantSearchCandidate(
+                productId = id,
+                name = hit.string("name"),
+                productUrl = "https://kwant.net.pl/produkt/$slug",
+                code = hit.string("code"),
+            )
         }
 
         val normalizedQuery = query.trim().lowercase()
@@ -683,17 +661,3 @@ private val KWANT_NEXT_DATA = Regex(
     ),
 )
 
-private val KWANT_BUILD_ID = Regex("""[A-Za-z0-9_-]{1,128}""")
-
-internal fun kwantBuildIdFromHtml(html: String): String? {
-    val serialized = KWANT_NEXT_DATA.find(html)
-        ?.groupValues
-        ?.get(1)
-        ?: return null
-    val root = runCatching {
-        Json.parseToJsonElement(serialized).jsonObject
-    }.getOrNull() ?: return null
-    return (root["buildId"] as? JsonPrimitive)
-        ?.contentOrNull
-        ?.takeIf(KWANT_BUILD_ID::matches)
-}
