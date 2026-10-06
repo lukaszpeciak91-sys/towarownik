@@ -2010,13 +2010,8 @@ private fun AdvisorComposer(
                                         )
                                     }
                                     else -> {
-                                        Icon(
-                                            painter = painterResource(
-                                                R.drawable.ic_document_24,
-                                            ),
-                                            contentDescription = null,
+                                        PdfAttachmentBadge(
                                             modifier = Modifier.size(40.dp),
-                                            tint = MaterialTheme.colorScheme.primary,
                                         )
                                     }
                                 }
@@ -2244,6 +2239,27 @@ private fun EmptyAdvisorState(
     }
 }
 
+@Composable
+private fun PdfAttachmentBadge(
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(7.dp),
+        color = MaterialTheme.colorScheme.error,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "PDF",
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
 internal fun formatAttachmentByteSize(byteSize: Long): String {
     val value = when {
         byteSize < 1024L -> return "$byteSize B"
@@ -2344,13 +2360,8 @@ private fun UserMessageContent(
                                 Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                painter = painterResource(
-                                    R.drawable.ic_document_24,
-                                ),
-                                contentDescription = null,
+                            PdfAttachmentBadge(
                                 modifier = Modifier.size(32.dp),
-                                tint = MaterialTheme.colorScheme.primary,
                             )
                             Column {
                                 Text(
