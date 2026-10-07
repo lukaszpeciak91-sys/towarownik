@@ -1,6 +1,8 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import pl.lukaszpeciak.towarownik.BuildConfig
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
@@ -72,7 +74,7 @@ internal class AdvisorController(
     private val executeProviderTool: suspend (
         AdvisorToolArguments,
     ) -> AdvisorToolExecutionResult,
-    private val branchDirectory: (
+    private val branchDirectory: suspend (
         ProviderId,
     ) -> ProviderBranchResult,
     private val startAgentWithAttachment: (suspend (
@@ -120,7 +122,7 @@ internal class AdvisorController(
         }
         var turnBranches: List<ProviderBranch>? = null
 
-        fun loadTurnBranches(): ProviderBranchResult {
+        suspend fun loadTurnBranches(): ProviderBranchResult {
             turnBranches?.let {
                 return ProviderBranchResult.Available(it)
             }
@@ -144,7 +146,7 @@ internal class AdvisorController(
             }
         }
 
-        fun authorizeToolArguments(
+        suspend fun authorizeToolArguments(
             arguments: AdvisorToolArguments,
         ): ToolBranchAuthorization {
             if (arguments.providerId != conversationProviderId) {
@@ -572,7 +574,9 @@ internal class AdvisorController(
                 executeObiTool = obiTool::execute,
                 executeProviderTool = providerTool::execute,
                 branchDirectory = { providerId ->
-                    providers.resolve(providerId).branches()
+                    withContext(Dispatchers.IO) {
+                        providers.resolve(providerId).branches()
+                    }
                 },
                 startAgentWithAttachment = {
                         message, providerId, branchId, attachment,
