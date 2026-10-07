@@ -156,7 +156,7 @@ internal class FindProviderProductsTool(
                             ) {
                                 is ProviderLookupResult.Found -> {
                                     val product = lookup.product
-                                    verified += product.toAdvisorVerifiedProduct()
+                                    verified += product.toAdvisorVerifiedProduct(requested.query)
                                     snapshots += product.toSnapshot(now())
                                 }
 
