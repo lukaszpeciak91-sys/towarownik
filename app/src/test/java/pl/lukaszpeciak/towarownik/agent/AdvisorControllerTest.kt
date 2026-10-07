@@ -1702,6 +1702,7 @@ class AdvisorControllerTest {
                 callId,
                 _,
                 branchId,
+                _,
                 continuation,
             ->
             onContinueStore(branchId)
