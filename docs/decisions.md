@@ -514,7 +514,6 @@ These decisions describe the broader intended product behavior. The currently im
 - Disable send and show explicit composer loading only while the current attachment generation is importing/preprocessing. Keep one attachment maximum, multiline Enter behavior, dedicated-send-only submission, and the existing pending ownership/storage/protocol v4 contracts.
 - Keep the 4096 px image output policy but sample source bitmap decode directly toward that bound to reduce obvious peak-memory risk without redesigning preprocessing.
 
-
 ## 2026-10-07 — advisor tool continuation protocol continuity
 
 - Preserve one explicit transport contract for the full active tool-assisted turn rather than choosing `/continue` from provider identity alone.
