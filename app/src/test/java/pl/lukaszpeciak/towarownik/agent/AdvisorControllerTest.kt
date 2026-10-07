@@ -11,6 +11,11 @@ import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
+import pl.lukaszpeciak.towarownik.product.provider.ProviderId
 import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 class AdvisorControllerTest {
@@ -1372,6 +1377,8 @@ class AdvisorControllerTest {
             tool,
         providerTool: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult =
             tool,
+        branchDirectory: (ProviderId) -> ProviderBranchResult =
+            ::testBranchDirectory,
         onStartStore: (String) -> Unit = {},
         onMessageStore: (String) -> Unit = {},
         onContinueStore: (String) -> Unit = {},
@@ -1416,7 +1423,37 @@ class AdvisorControllerTest {
         },
         executeObiTool = obiTool,
         executeProviderTool = providerTool,
+        branchDirectory = branchDirectory,
     )
+
+    private fun testBranchDirectory(
+        providerId: ProviderId,
+    ): ProviderBranchResult =
+        when (providerId) {
+            OBI_PROVIDER_ID ->
+                pl.lukaszpeciak.towarownik.product.provider
+                    .ObiProductProvider()
+                    .branches()
+
+            ProviderId("kwant-pl") ->
+                ProviderBranchResult.Available(
+                    listOf(
+                        ProviderBranch(
+                            branchId = BranchId("205"),
+                            name = "Nowy Sącz",
+                            address = "33-300 Tarnowska 149",
+                        ),
+                        ProviderBranch(
+                            branchId = BranchId("128"),
+                            name = "Zamość",
+                            address = "22-400 Braterstwa Broni 60",
+                        ),
+                    ),
+                )
+
+            else ->
+                ProviderBranchResult.Available(emptyList())
+        }
 
     private fun successAnswer(
         responseId: String,
