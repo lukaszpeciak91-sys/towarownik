@@ -2429,11 +2429,11 @@ test("E zero stock contract suggests current-store alternative without inventing
   );
   assert.match(
     instructions,
-    /do not invent another market number or claim availability there/i,
+    /never invent another market number or claim availability there/i,
   );
   assert.match(
     instructions,
-    /query another market only after the USER supplies its exact supported 3-digit market number/i,
+    /natural location reference.*do not demand a numeric ID/i,
   );
 });
 
