@@ -336,6 +336,7 @@ The composer uses multiline IME behavior: Enter inserts a newline and only the d
 
 - Protocol v4 is provider-aware v3 plus one optional attachment; v2/v3 JSON compatibility remains intact.
 - Android streams the persisted private file through OkHttp multipart on the initial `/start` or `/message` request. `/continue` is always JSON and never contains attachment bytes.
+- A tool-assisted turn keeps the transport contract that created its function call for every continuation: OBI text-only stays v2 + `find_obi_products`, provider text-only stays v3 + `find_products`, and any attachment turn stays v4 + `find_products`. Provider identity still independently selects the existing local retrieval implementation, so OBI v4 continues to execute `FindObiProductsTool` rather than migrating retrieval to the neutral provider adapter.
 - The Worker accepts only one `image/jpeg`, `image/png`, or `application/pdf` part, verifies its magic signature and a 16 MiB limit, and holds no file state.
 - Images become Responses `input_image` data URLs with `detail=high`; PDFs become `input_file.file_data` data URLs. The Files API and Cloudflare R2/KV/D1 are not involved.
 - Attachment content is untrusted user input. It may ground identity, codes, and specifications, but current provider stock, price, and availability retain the existing local verification boundary.
