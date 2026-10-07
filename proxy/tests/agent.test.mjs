@@ -2433,7 +2433,7 @@ test("E zero stock contract suggests current-store alternative without inventing
   );
   assert.match(
     instructions,
-    /natural location reference.*do not demand a numeric ID/i,
+    /do not demand a numeric ID.*sufficient natural location reference/i,
   );
 });
 
