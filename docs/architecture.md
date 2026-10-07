@@ -8,21 +8,27 @@ separate facts; OBI leaves `centralStock` null.
 
 Android owns one provider-neutral `BranchResolver` over
 `ProviderBranch(branchId, name, address)`. It normalizes case, whitespace,
-Polish diacritics and basic street forms, then resolves exact branch IDs,
-branch/city names and address fragments without edit-distance guessing. OBI
-branches come from one canonical static directory verified against OBI
-Poland's official customer-relations market list; KWANT continues to expose its
-live public branch directory.
+Polish diacritics and basic street forms. Exact branch IDs and bounded
+current-branch aliases are always eligible. Natural city/name/street/address
+metadata participates only when the USER text contains an explicit branch or
+store location phrase such as `OBI ...`, `Kwant ...`, `w markecie ...`,
+`w hurtowni ...`, or `na magazynie ...`; the matching metadata must occur
+adjacent to that intent marker after only small location connectors such as
+`w`, `na`, `ul.`, or `al.`. Incidental product text therefore cannot
+authorize a branch merely because it contains a city or street token. No
+edit-distance guessing is used. OBI branches come from one canonical static
+directory verified against OBI Poland's official customer-relations market
+list; KWANT continues to expose its live public branch directory.
 
 The current user message, not the model's `requestedBranch`, authorizes a
-turn-scoped branch. A unique natural reference may rewrite only the local tool
-branch ID for that call. Current-branch aliases such as `u nas` and the
-bounded Nowy Sącz/Sączu variants resolve back to the conversation branch.
-Ambiguous and explicit unknown locations fail closed. Multiple separately
-stated exact IDs may still be queried one at a time using the tool hint only
-to choose among those already user-authorized IDs. The conversation
-WorkingProfile and provider/branch passed to subsequent continuation remain
-unchanged.
+turn-scoped branch. A unique explicitly scoped natural reference may rewrite
+only the local tool branch ID for that call. Current-branch aliases such as
+`u nas` and the bounded Nowy Sącz/Sączu variants resolve back to the
+conversation branch independently of the natural-location gate. Ambiguous and
+explicit unknown locations fail closed. Multiple separately stated exact IDs
+may still be queried one at a time using the tool hint only to choose among
+those already user-authorized IDs. The conversation WorkingProfile and
+provider/branch passed to subsequent continuation remain unchanged.
 
 ## Goal
 
