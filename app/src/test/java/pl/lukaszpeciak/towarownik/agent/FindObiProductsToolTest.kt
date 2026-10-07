@@ -389,6 +389,53 @@ class FindObiProductsToolTest {
         }
 
     @Test
+    fun `OBI search rescues one clearly query relevant late fact`() = runBlocking {
+        val facts = (1..6).map {
+            TechnicalFact("Parametr $it", "wartość $it")
+        } + TechnicalFact("Stopień ochrony", "IP65")
+        val tool = tool(
+            search = {
+                ProductSearchResult.Candidates(
+                    listOf(
+                        ProductSearchCandidate("1234567", "Candidate"),
+                    ),
+                )
+            },
+            lookup = { obik, _ ->
+                ProductLookupResult.Found(
+                    product(
+                        obik = obik,
+                        technicalFacts = facts,
+                    ),
+                )
+            },
+        )
+
+        val result = tool.execute(
+            arguments(
+                query = "oprawa IP65",
+                limit = 1,
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(
+            listOf(
+                "Parametr 1",
+                "Parametr 2",
+                "Parametr 3",
+                "Parametr 4",
+                "Parametr 5",
+                "Stopień ochrony",
+            ),
+            result.result.products.single().technicalFacts.map { it.label },
+        )
+        assertEquals(
+            "IP65",
+            result.result.products.single().technicalFacts.last().value,
+        )
+    }
+
+    @Test
     fun `tool respects requested limit and searches sequential candidates`() = runBlocking {
         val lookedUp = mutableListOf<String>()
         val tool = tool(
