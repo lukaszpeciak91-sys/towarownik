@@ -1,0 +1,260 @@
+package pl.lukaszpeciak.towarownik.product.provider
+
+import java.text.Normalizer
+
+internal sealed interface BranchResolution {
+    data object NotMentioned : BranchResolution
+
+    data class CurrentBranch(
+        val branch: ProviderBranch,
+    ) : BranchResolution
+
+    data class Resolved(
+        val branch: ProviderBranch,
+    ) : BranchResolution
+
+    data class Ambiguous(
+        val candidates: List<ProviderBranch>,
+    ) : BranchResolution
+
+    data object UnknownMention : BranchResolution
+}
+
+internal object BranchResolver {
+    fun resolve(
+        userText: String,
+        branches: List<ProviderBranch>,
+        currentBranchId: BranchId,
+    ): BranchResolution {
+        if (branches.isEmpty()) return BranchResolution.NotMentioned
+
+        val current = branches.singleOrNull {
+            it.branchId == currentBranchId
+        }
+        val textTokens = comparisonTokens(userText)
+        val metadataMatches = branches
+            .mapNotNull { branch ->
+                branchMentionScore(
+                    textTokens = textTokens,
+                    rawText = userText,
+                    branch = branch,
+                ).takeIf { it > 0 }?.let { score ->
+                    BranchMatch(branch, score)
+                }
+            }
+
+        val strongestMetadata = metadataMatches
+            .maxOfOrNull(BranchMatch::score)
+            ?.let { strongest ->
+                metadataMatches.filter { it.score == strongest }
+            }
+            .orEmpty()
+
+        val currentAliasMentioned =
+            current != null && currentBranchAliasMentioned(
+                userText = userText,
+                currentBranch = current,
+            )
+
+        val candidates = buildList {
+            strongestMetadata.forEach { add(it.branch) }
+            if (
+                currentAliasMentioned &&
+                current != null &&
+                none { it.branchId == current.branchId }
+            ) {
+                add(current)
+            }
+        }.distinctBy(ProviderBranch::branchId)
+
+        if (candidates.size > 1) {
+            return BranchResolution.Ambiguous(
+                candidates = candidates.sortedBy { it.branchId.value },
+            )
+        }
+
+        candidates.singleOrNull()?.let { branch ->
+            return if (branch.branchId == currentBranchId) {
+                BranchResolution.CurrentBranch(branch)
+            } else {
+                BranchResolution.Resolved(branch)
+            }
+        }
+
+        return if (hasExplicitUnknownLocationShape(userText)) {
+            BranchResolution.UnknownMention
+        } else {
+            BranchResolution.NotMentioned
+        }
+    }
+
+    private fun branchMentionScore(
+        textTokens: List<String>,
+        rawText: String,
+        branch: ProviderBranch,
+    ): Int {
+        var score = 0
+
+        if (containsExactBranchId(rawText, branch.branchId.value)) {
+            score += 1_000
+        }
+
+        val nameTokens = comparisonTokens(branch.name)
+        if (
+            nameTokens.isNotEmpty() &&
+            containsTokenSequence(textTokens, nameTokens)
+        ) {
+            score += 200
+        }
+
+        val addressTokens = significantAddressTokens(branch.address)
+        val addressMatches = addressTokens.count(textTokens::contains)
+        if (addressMatches > 0) {
+            score += 300 + addressMatches * 20
+        }
+
+        return score
+    }
+
+    private fun currentBranchAliasMentioned(
+        userText: String,
+        currentBranch: ProviderBranch,
+    ): Boolean {
+        val normalized = normalizedText(userText)
+        if (CURRENT_BRANCH_PHRASES.any {
+                containsNormalizedPhrase(normalized, it)
+            }
+        ) {
+            return true
+        }
+
+        val currentName = normalizedText(currentBranch.name)
+        val aliases = CURRENT_BRANCH_NAME_ALIASES[currentName].orEmpty()
+        return aliases.any {
+            containsNormalizedPhrase(normalized, it)
+        }
+    }
+
+    private fun hasExplicitUnknownLocationShape(
+        userText: String,
+    ): Boolean {
+        val normalized = normalizedText(userText)
+        return EXPLICIT_PROVIDER_LOCATION.containsMatchIn(normalized) ||
+            EXPLICIT_BRANCH_NOUN.containsMatchIn(normalized)
+    }
+
+    private fun significantAddressTokens(
+        address: String?,
+    ): Set<String> =
+        address
+            ?.let(::comparisonTokens)
+            .orEmpty()
+            .filter { token ->
+                token.length >= 3 &&
+                    token !in ADDRESS_NOISE &&
+                    token.none(Char::isDigit)
+            }
+            .toSet()
+
+    private fun comparisonTokens(text: String): List<String> =
+        normalizedText(text)
+            .split(' ')
+            .asSequence()
+            .filter(String::isNotBlank)
+            .filterNot(STREET_PREFIXES::contains)
+            .map(::canonicalLocationToken)
+            .toList()
+
+    private fun normalizedText(text: String): String =
+        Normalizer.normalize(
+            text.lowercase(),
+            Normalizer.Form.NFD,
+        )
+            .replace(Regex("""\p{M}+"""), "")
+            .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+
+    private fun canonicalLocationToken(token: String): String =
+        when {
+            token.length > 5 && token.endsWith("iej") ->
+                token.dropLast(3) + "a"
+            else -> token
+        }
+
+    private fun containsTokenSequence(
+        haystack: List<String>,
+        needle: List<String>,
+    ): Boolean {
+        if (needle.isEmpty() || needle.size > haystack.size) return false
+        return haystack
+            .windowed(needle.size)
+            .any { it == needle }
+    }
+
+    private fun containsExactBranchId(
+        text: String,
+        branchId: String,
+    ): Boolean =
+        Regex(
+            """(?<!\p{L}|\p{N})""" +
+                Regex.escape(branchId) +
+                """(?!\p{L}|\p{N})""",
+        ).containsMatchIn(text)
+
+    private fun containsNormalizedPhrase(
+        normalizedText: String,
+        normalizedPhrase: String,
+    ): Boolean =
+        (" $normalizedText ").contains(" $normalizedPhrase ")
+
+    private data class BranchMatch(
+        val branch: ProviderBranch,
+        val score: Int,
+    )
+
+    private val STREET_PREFIXES = setOf(
+        "ul",
+        "ulica",
+        "al",
+        "aleja",
+    )
+
+    private val ADDRESS_NOISE = setOf(
+        "centrum",
+        "ch",
+    )
+
+    private val CURRENT_BRANCH_PHRASES = setOf(
+        "u nas",
+        "na naszym magazynie",
+        "w naszym magazynie",
+        "na naszym oddziale",
+        "w naszym oddziale",
+        "w naszym sklepie",
+        "w naszym markecie",
+    )
+
+    private val CURRENT_BRANCH_NAME_ALIASES = mapOf(
+        "nowy sacz" to setOf(
+            "w nowym saczu",
+            "w nowym sacz",
+            "nowym saczu",
+            "nowym sacz",
+            "w saczu",
+            "w sacz",
+            "saczu",
+            "sacz",
+        ),
+    )
+
+    private val EXPLICIT_PROVIDER_LOCATION = Regex(
+        """\b(?:w|we|na)\s+(?:obi|kwant)\s+[\p{L}]{3,}""" +
+            """|\b(?:obi|kwant)\s+(?:w|we|na)\s+[\p{L}]{3,}""",
+    )
+
+    private val EXPLICIT_BRANCH_NOUN = Regex(
+        """\b(?:market|markecie|sklep|sklepie|oddzial|oddziale|""" +
+            """hurtownia|hurtowni|magazyn|magazynie)\s+[\p{L}]{3,}""",
+    )
+}
