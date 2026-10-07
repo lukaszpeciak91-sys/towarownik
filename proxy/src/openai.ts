@@ -33,7 +33,25 @@ import type {
   UpstreamFetch,
 } from "./types.js";
 
-export class UpstreamFailureError extends Error {}
+export type UpstreamFailureCategory =
+  | "upstream_network"
+  | "upstream_http_4xx"
+  | "upstream_rate_limit"
+  | "upstream_http_5xx"
+  | "upstream_invalid_json"
+  | "upstream_invalid_envelope"
+  | "upstream_invalid_tool_call"
+  | "upstream_invalid_final_answer";
+
+export class UpstreamFailureError extends Error {
+  constructor(
+    readonly category: UpstreamFailureCategory,
+    readonly upstreamStatus: number | null = null,
+  ) {
+    super(category);
+    this.name = "UpstreamFailureError";
+  }
+}
 
 export async function startAgent(
   message: string,
@@ -214,18 +232,27 @@ async function requestOpenAI(
       body: JSON.stringify(body),
     });
   } catch {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_network");
   }
 
   if (!response.ok) {
-    throw new UpstreamFailureError();
+    const category: UpstreamFailureCategory =
+      response.status === 429
+        ? "upstream_rate_limit"
+        : response.status >= 500
+          ? "upstream_http_5xx"
+          : "upstream_http_4xx";
+    throw new UpstreamFailureError(category, response.status);
   }
 
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError(
+      "upstream_invalid_json",
+      response.status,
+    );
   }
 
   return normalizeOpenAIResponse(
@@ -244,12 +271,15 @@ export function normalizeOpenAIResponse(
     CURRENT_ADVISOR_PROTOCOL_VERSION,
 ): AgentResult {
   if (!isRecord(payload)) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_envelope");
   }
 
-  const responseId = boundedUpstreamId(payload.id);
+  const responseId = boundedUpstreamId(
+    payload.id,
+    "upstream_invalid_envelope",
+  );
   if (!Array.isArray(payload.output)) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_envelope");
   }
 
   const webSearchCalls = countCompletedWebSearchCalls(payload.output);
@@ -260,12 +290,12 @@ export function normalizeOpenAIResponse(
   );
 
   if (functionCalls.length > 1) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_tool_call");
   }
 
   if (functionCalls.length === 1) {
     if (!allowLocalTool) {
-      throw new UpstreamFailureError();
+      throw new UpstreamFailureError("upstream_invalid_tool_call");
     }
     const call = functionCalls[0];
     const expectedToolName =
@@ -279,7 +309,7 @@ export function normalizeOpenAIResponse(
       call.call_id.length > 256 ||
       typeof call.arguments !== "string"
     ) {
-      throw new UpstreamFailureError();
+      throw new UpstreamFailureError("upstream_invalid_tool_call");
     }
 
     let argumentsValue;
@@ -290,7 +320,7 @@ export function normalizeOpenAIResponse(
       );
     } catch (error) {
       if (error instanceof InvalidRequestError) {
-        throw new UpstreamFailureError();
+        throw new UpstreamFailureError("upstream_invalid_tool_call");
       }
       throw error;
     }
@@ -493,18 +523,18 @@ function parseStructuredAnswer(
   textBoundaryMap: Map<number, number>;
 } {
   if (!raw) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_final_answer");
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
   } catch {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_final_answer");
   }
 
   if (!isRecord(parsed)) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_final_answer");
   }
 
   const keys = Object.keys(parsed);
@@ -513,17 +543,17 @@ function parseStructuredAnswer(
     !keys.includes("text") ||
     !keys.includes("productRefs")
   ) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_final_answer");
   }
 
   if (typeof parsed.text !== "string") {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_final_answer");
   }
   const trimmedText = parsed.text.trim();
   const sanitized = stripUnsupportedInternalMarkup(trimmedText);
   const text = sanitized.text;
   if (!text || text.length > MAX_ANSWER_CHARS) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_final_answer");
   }
   const rawTextBoundaryMap = mapStructuredTextBoundaries(
     raw,
@@ -539,14 +569,14 @@ function parseStructuredAnswer(
     !Array.isArray(parsed.productRefs) ||
     parsed.productRefs.length > MAX_SELECTED_PRODUCT_REFS
   ) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError("upstream_invalid_final_answer");
   }
 
   const deduplicated: ProductRef[] = [];
   const seen = new Set<string>();
   for (const value of parsed.productRefs) {
     if (!isRecord(value)) {
-      throw new UpstreamFailureError();
+      throw new UpstreamFailureError("upstream_invalid_final_answer");
     }
     if (protocolVersion >= 3) {
       const refKeys = Object.keys(value);
@@ -562,7 +592,7 @@ function parseStructuredAnswer(
         typeof value.productId !== "string" ||
         !/^[A-Za-z0-9._-]{1,128}$/.test(value.productId)
       ) {
-        throw new UpstreamFailureError();
+        throw new UpstreamFailureError("upstream_invalid_final_answer");
       }
       const key =
         value.providerId + ":" + value.branchId + ":" + value.productId;
@@ -585,7 +615,7 @@ function parseStructuredAnswer(
         typeof value.obik !== "string" ||
         !/^\d{7}$/.test(value.obik)
       ) {
-        throw new UpstreamFailureError();
+        throw new UpstreamFailureError("upstream_invalid_final_answer");
       }
       const key = value.storeNumber + ":" + value.obik;
       if (!seen.has(key)) {
@@ -922,9 +952,12 @@ function normalizeHttpsUrl(raw: string): string | null {
   }
 }
 
-function boundedUpstreamId(value: unknown): string {
+function boundedUpstreamId(
+  value: unknown,
+  category: UpstreamFailureCategory,
+): string {
   if (typeof value !== "string" || !value || value.length > 256) {
-    throw new UpstreamFailureError();
+    throw new UpstreamFailureError(category);
   }
   return value;
 }
