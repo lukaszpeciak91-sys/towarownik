@@ -32,6 +32,7 @@ internal enum class AdvisorTransportContract(
         toolName = FIND_PRODUCTS,
     ),
 }
+
 internal const val MAX_LOCAL_TOOL_CALLS_PER_TURN = 3
 internal const val MAX_TOOL_PRODUCTS = 5
 internal const val MAX_TOOL_QUERIES = 5
