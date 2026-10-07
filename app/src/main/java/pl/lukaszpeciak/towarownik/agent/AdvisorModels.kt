@@ -11,8 +11,27 @@ internal const val ADVISOR_PROXY_BASE_URL =
 
 internal const val ADVISOR_PROTOCOL_VERSION = 3
 internal const val OBI_ADVISOR_PROTOCOL_VERSION = 2
+internal const val MULTIMODAL_ADVISOR_PROTOCOL_VERSION = 4
 internal const val FIND_OBI_PRODUCTS = "find_obi_products"
 internal const val FIND_PRODUCTS = "find_products"
+
+internal enum class AdvisorTransportContract(
+    val protocolVersion: Int,
+    val toolName: String,
+) {
+    OBI_V2(
+        protocolVersion = OBI_ADVISOR_PROTOCOL_VERSION,
+        toolName = FIND_OBI_PRODUCTS,
+    ),
+    PROVIDER_V3(
+        protocolVersion = ADVISOR_PROTOCOL_VERSION,
+        toolName = FIND_PRODUCTS,
+    ),
+    PROVIDER_V4(
+        protocolVersion = MULTIMODAL_ADVISOR_PROTOCOL_VERSION,
+        toolName = FIND_PRODUCTS,
+    ),
+}
 internal const val MAX_LOCAL_TOOL_CALLS_PER_TURN = 3
 internal const val MAX_TOOL_PRODUCTS = 5
 internal const val MAX_TOOL_QUERIES = 5
