@@ -1635,8 +1635,9 @@ class AdvisorControllerTest {
             tool,
         providerTool: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult =
             tool,
-        branchDirectory: (ProviderId) -> ProviderBranchResult =
-            ::testBranchDirectory,
+        branchDirectory: suspend (ProviderId) -> ProviderBranchResult = {
+            testBranchDirectory(it)
+        },
         onStartStore: (String) -> Unit = {},
         onMessageStore: (String) -> Unit = {},
         onContinueStore: (String) -> Unit = {},
