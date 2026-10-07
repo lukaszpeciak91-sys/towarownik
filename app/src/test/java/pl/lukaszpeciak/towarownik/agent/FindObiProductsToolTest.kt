@@ -279,6 +279,116 @@ class FindObiProductsToolTest {
     }
 
     @Test
+    fun `oversized OBI metadata uses shared shaping for search and exact OBIK`() =
+        runBlocking {
+            val longDescription =
+                "  Bardzo   długi opis produktu z dodatkowymi informacjami. "
+                    .repeat(8)
+            val facts = buildList {
+                add(
+                    TechnicalFact(
+                        "Bardzo długa etykieta parametru " +
+                            "z dodatkowym opisem ".repeat(4),
+                        "Bardzo długa wartość parametru technicznego " +
+                            "z dodatkowymi szczegółami ".repeat(5),
+                    ),
+                )
+                add(TechnicalFact("   ", "wartość do odrzucenia"))
+                add(TechnicalFact("Fakt 2", "230   V"))
+                add(TechnicalFact("Fakt 3", "wartość 3"))
+                add(TechnicalFact("Fakt 4", "wartość 4"))
+                add(TechnicalFact("Fakt 5", "wartość 5"))
+                add(TechnicalFact("Fakt 6", "wartość 6"))
+                add(TechnicalFact("Fakt 7", "wartość 7"))
+                add(TechnicalFact("Fakt 8", "wartość 8"))
+            }
+            fun oversized(obik: String) = product(
+                obik = obik,
+                name = "Exact OBI product",
+                stock = 7,
+                price = BigDecimal("12.34"),
+                brand = "Bosch",
+                shortDescription = longDescription,
+                technicalFacts = facts,
+            )
+
+            val searchTool = tool(
+                search = {
+                    ProductSearchResult.Candidates(
+                        listOf(
+                            ProductSearchCandidate(
+                                "1234567",
+                                "Candidate",
+                            ),
+                        ),
+                    )
+                },
+                lookup = { obik, _ ->
+                    ProductLookupResult.Found(oversized(obik))
+                },
+            )
+            val exactTool = tool(
+                search = {
+                    error("exact OBIK must not use search")
+                },
+                lookup = { obik, _ ->
+                    ProductLookupResult.Found(oversized(obik))
+                },
+            )
+
+            val fromSearch = (
+                searchTool.execute(
+                    arguments(
+                        query = "wyłącznik Bosch",
+                        limit = 1,
+                    ),
+                ) as AdvisorToolExecutionResult.Success
+            ).result.products.single()
+            val fromExact = (
+                exactTool.execute(
+                    arguments(
+                        query = "1234567",
+                        limit = 1,
+                    ),
+                ) as AdvisorToolExecutionResult.Success
+            ).result.products.single()
+
+            assertEquals(fromSearch, fromExact)
+            assertEquals("1234567", fromSearch.obik)
+            assertEquals("Exact OBI product", fromSearch.name)
+            assertEquals("Bosch", fromSearch.brand)
+            assertEquals(7, fromSearch.stock)
+            assertEquals(BigDecimal("12.34"), fromSearch.price)
+            assertTrue(
+                fromSearch.shortDescription!!.length <=
+                    ADVISOR_PRODUCT_DESCRIPTION_MAX_CHARS,
+            )
+            assertTrue(!fromSearch.shortDescription.contains("  "))
+            assertEquals(
+                ADVISOR_PRODUCT_TECHNICAL_FACTS_MAX,
+                fromSearch.technicalFacts.size,
+            )
+            fromSearch.technicalFacts.forEach { fact ->
+                assertTrue(
+                    fact.label.length <=
+                        ADVISOR_PRODUCT_FACT_LABEL_MAX_CHARS,
+                )
+                assertTrue(
+                    fact.value.length <=
+                        ADVISOR_PRODUCT_FACT_VALUE_MAX_CHARS,
+                )
+                assertTrue(fact.label.isNotBlank())
+                assertTrue(fact.value.isNotBlank())
+                assertTrue(!fact.label.contains("  "))
+                assertTrue(!fact.value.contains("  "))
+            }
+            assertEquals(
+                "230 V",
+                fromSearch.technicalFacts[1].value,
+            )
+        }
+
+    @Test
     fun `tool respects requested limit and searches sequential candidates`() = runBlocking {
         val lookedUp = mutableListOf<String>()
         val tool = tool(

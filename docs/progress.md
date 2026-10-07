@@ -256,3 +256,12 @@ The currently planned AI capability stage is complete after this selective web-s
 - Exact KWANT lookup now keeps page parsing for identity, online price, canonical URL, and central stock, then performs one fail-soft current-product request for selected-branch stock only.
 - Parser validation requires exact `product_id` and `department_id`; zero is preserved, missing/malformed data remains null, and recommendation stock cannot contaminate the result.
 - KWANT search API from #79, OBI, proxy, prompts, WorkingProfile, advisor routing, and Room remain unchanged.
+
+
+## 2026-10-06 — advisor product facts bounded before continuation
+
+- Added one shared Android text/fact shaping policy used by both `ProviderProduct -> AdvisorVerifiedProduct` and OBI `LocalProduct -> AdvisorVerifiedProduct`.
+- `FindProviderProductsTool` plus normal-search and exact-OBIK paths in `FindObiProductsTool` now all pass through that same policy before continuation serialization.
+- Oversized descriptions/facts are normalized and bounded to the existing Worker contract (220-char description, six facts, 60-char labels, 100-char values); blank facts are discarded in stable source order.
+- Added oversized provider, serialized v3 `/continue`, and oversized OBI search/exact regressions while preserving OBIK/provider identity, price, branch stock, central stock, and already-bounded content.
+- Proxy limits were not loosened; provider parsers and all routing/persistence/prompt behavior remain unchanged.
