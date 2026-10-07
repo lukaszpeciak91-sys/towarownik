@@ -44,7 +44,7 @@ class BranchResolverTest {
         listOf(
             "czy jest w OBI Kraków Wielicka?",
             "OBI na Wielickiej",
-            "Wielicka",
+            "w markecie na Wielickiej",
         ).forEach { text ->
             assertResolved(
                 BranchResolver.resolve(
@@ -70,6 +70,45 @@ class BranchResolverTest {
             resolution.candidates.map { it.branchId.value }.toSet(),
         )
         assertTrue(!resolution.allowsExplicitBranchHint)
+    }
+
+    @Test
+    fun `natural metadata without branch intent is not mentioned`() {
+        listOf(
+            "szukam długą listwę",
+            "potrzebuję produktu do Krakowa",
+            "szukam produktu Wielicka",
+            "model Kraków 400 V",
+            "Wielicka",
+            "Kraków",
+        ).forEach { text ->
+            assertEquals(
+                text,
+                BranchResolution.NotMentioned,
+                BranchResolver.resolve(
+                    userText = text,
+                    branches = obiBranches,
+                    currentBranchId = BranchId("075"),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `exact OBI branch id stays authoritative without natural location intent`() {
+        listOf(
+            "003",
+            "market 003",
+        ).forEach { text ->
+            assertResolved(
+                BranchResolver.resolve(
+                    userText = text,
+                    branches = obiBranches,
+                    currentBranchId = BranchId("075"),
+                ),
+                "003",
+            )
+        }
     }
 
     @Test
@@ -106,15 +145,21 @@ class BranchResolverTest {
     }
 
     @Test
-    fun `KWANT Zamosc resolves verified branch 128`() {
-        assertResolved(
-            BranchResolver.resolve(
-                userText = "ile tego jest w Kwant Zamość?",
-                branches = kwantBranches,
-                currentBranchId = BranchId("205"),
-            ),
-            "128",
-        )
+    fun `KWANT Zamosc resolves verified branch 128 with explicit intent`() {
+        listOf(
+            "ile tego jest w Kwant Zamość?",
+            "Kwant Zamość",
+            "w hurtowni Zamość",
+        ).forEach { text ->
+            assertResolved(
+                BranchResolver.resolve(
+                    userText = text,
+                    branches = kwantBranches,
+                    currentBranchId = BranchId("205"),
+                ),
+                "128",
+            )
+        }
     }
 
     @Test
@@ -132,6 +177,24 @@ class BranchResolverTest {
                     currentBranchId = BranchId("205"),
                 ),
                 "205",
+            )
+        }
+    }
+
+    @Test
+    fun `incidental KWANT branch metadata without intent does not route`() {
+        listOf(
+            "produkt Zamość 16 A",
+            "model Tarnowska 149",
+        ).forEach { text ->
+            assertEquals(
+                text,
+                BranchResolution.NotMentioned,
+                BranchResolver.resolve(
+                    userText = text,
+                    branches = kwantBranches,
+                    currentBranchId = BranchId("205"),
+                ),
             )
         }
     }
