@@ -255,12 +255,25 @@ async function requestOpenAI(
     );
   }
 
-  return normalizeOpenAIResponse(
-    payload,
-    requestType,
-    allowLocalTool,
-    protocolVersion,
-  );
+  try {
+    return normalizeOpenAIResponse(
+      payload,
+      requestType,
+      allowLocalTool,
+      protocolVersion,
+    );
+  } catch (error) {
+    if (
+      error instanceof UpstreamFailureError &&
+      error.upstreamStatus === null
+    ) {
+      throw new UpstreamFailureError(
+        error.category,
+        response.status,
+      );
+    }
+    throw error;
+  }
 }
 
 export function normalizeOpenAIResponse(
