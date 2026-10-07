@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-07 — shared provider branch/location resolver
+
+- Branch/location authorization is centralized in one Android `BranchResolver` over the active provider's `ProviderBranch(branchId, name, address)` directory. OBI and KWANT do not keep separate natural-language routing logic.
+- OBI's supported-store allowlist is now derived from one canonical metadata directory verified against OBI Poland's official customer-relations market list; the existing three-digit store number remains the authoritative branch ID.
+- Matching is deterministic and conservative: exact branch IDs and bounded current-branch aliases remain independent; natural city/name/street/address matching is enabled only by an explicit branch/store location phrase in the current USER message and the metadata must be adjacent to that intent marker after small location connectors. Incidental product text such as `długą listwę`, `produkt do Krakowa`, or a bare `Wielicka` does not become branch intent. No geocoding, distance inference, or edit-distance fuzzy matching is added.
+- The current user message authorizes branch identity. Model-produced `storeNumber`/`requestedBranch` is only a hint and cannot turn an incidental city/street token into authorization. Ambiguous aliases such as Kraków with explicit branch intent and explicit unknown locations fail closed.
+- A uniquely resolved cross-branch lookup rewrites only the local tool argument for that turn. The persisted WorkingProfile and conversation branch remain unchanged. Provider directories remain isolated and there is no cross-provider fallback.
+
 ## 2026-10-07 — conservative advisor fact relevance rescue
 
 - The shared OBI/provider advisor shaping boundary keeps source order as the default and still applies the existing 220/6/60/100 transport bounds and blank-fact filtering.
@@ -288,7 +296,7 @@ These decisions describe the broader intended product behavior. The currently im
 - Room schema advances v2→v3 by adding `conversations.storeNumber` and `message_products.storeNumber`, both defaulting historical rows to `075`. No destructive migration is allowed.
 - Verified snapshot identity is `(storeNumber, obik)`, not OBIK alone. Historical snapshots retain their original store even if the conversation selector changes later.
 - The advisor has one generic tool: `find_obi_products(storeNumber, queries[])`. There are no per-store tools or repositories. One batch has one shared store, at most five query groups, and `sum(limit) <= 5`, preserving the maximum of five exact lookups per local call. Android still executes at most three local batches per USER turn; a fourth requested batch does zero OBI work and resolves through `local_tool_limit_reached` before a final continuation without the local tool.
-- Android captures an immutable turn-store snapshot and exact supported three-digit store tokens literally present in the current USER message. A tool store is authorized only when it equals the conversation store or is both allowlisted and literally present in that current message. Previous turns, city/region/store names, unsupported numbers, and digits embedded in longer numbers do not authorize it.
+- This historical OBI-only rule was superseded on 2026-10-07 by shared provider-neutral branch/location routing. Android still keeps the immutable conversation branch, but current-turn authorization may now use a uniquely resolved real branch name/address or an explicit supported branch ID; ambiguous/unknown references and model-only branch hints remain unauthorized.
 - Rejected store tool calls fail closed before OBI and return bounded `store_not_authorized` continuation data; no silent fallback or fabricated empty result exists.
 - The proxy receives the selected conversation store on START/MESSAGE/CONTINUE, validates only exact three-digit syntax, and adds the current store as small dynamic instruction context without receiving the full allowlist.
 - Final structured output is `{text, productRefs:[{storeNumber,obik}]}`. Android resolves references only against current-turn verified snapshots; unknown references never trigger a lookup.
@@ -353,7 +361,7 @@ These decisions describe the broader intended product behavior. The currently im
 - The advisor tool result is bounded to at most five verified products per batch. For "what variants/sizes exist" browse questions, never present that bounded subset as exhaustive unless completeness is actually verified; prefer example/among-others wording when completeness is unknown.
 - Direct current price/stock questions stay direct and do not trigger routine cross-sell.
 - Preserve distinct evidence semantics: stock `0` = confirmed unavailable in that verified store; null stock = unknown; `not_found` = no verified match; `unavailable` = retrieval could not establish the fact. Never collapse unknown/failure into "brak".
-- When a requested verified item has stock zero or an exact requested item is not found, Taksula may verify a reasonable substitute in the current store and may offer another-market checking. Do not invent another store number or availability; another market remains authorized only after the user supplies its exact supported three-digit number in the current turn.
+- When a requested verified item has stock zero or an exact requested item is not found, Taksula may verify a reasonable substitute in the current store and may offer another-market checking. Historical exact-number-only authorization was superseded on 2026-10-07 by the shared deterministic branch/location resolver; Android still never invents a branch or availability.
 - Keep `local_tool_limit_reached` graceful if the Android hard guard is reached. Preserve grouped results, partial group failures, continuation byte budget, web search, current-turn `productRefs` trust, and composite `(storeNumber, obik)` identity.
 - Do not add cross-market scanning, distance logic, a new availability tool, parser/manual-search/Room changes, RAG, or other retailer integrations in this iteration.
 

@@ -1,19 +1,34 @@
 # Architecture
 
-## KWANT logistics facts and one-off branch lookup
+## Provider branch resolution and one-off lookup
 
 `ProviderProduct` carries nullable `centralStock` independently from the
-existing selected-branch `stock`. The KWANT parser reads the labelled
-`Centrala` row and never combines it with the branch value; OBI leaves the new
-field null. Advisor snapshots persist the value in Room v9 so restored cards
-retain the same evidence.
+existing selected-branch `stock`. KWANT central and branch stock remain
+separate facts; OBI leaves `centralStock` null.
 
-Protocol v3 keeps the WorkingProfile provider/branch as immutable request
-context. Its optional `requestedBranch` is accepted only for KWANT when the
-literal location occurs in the current user message. Android resolves an exact,
-diacritic-insensitive unique name from `ProductProvider.branches()` and uses
-that branch only for the current tool execution. Missing, unknown, or ambiguous
-names never fall back to a guessed branch.
+Android owns one provider-neutral `BranchResolver` over
+`ProviderBranch(branchId, name, address)`. It normalizes case, whitespace,
+Polish diacritics and basic street forms. Exact branch IDs and bounded
+current-branch aliases are always eligible. Natural city/name/street/address
+metadata participates only when the USER text contains an explicit branch or
+store location phrase such as `OBI ...`, `Kwant ...`, `w markecie ...`,
+`w hurtowni ...`, or `na magazynie ...`; the matching metadata must occur
+adjacent to that intent marker after only small location connectors such as
+`w`, `na`, `ul.`, or `al.`. Incidental product text therefore cannot
+authorize a branch merely because it contains a city or street token. No
+edit-distance guessing is used. OBI branches come from one canonical static
+directory verified against OBI Poland's official customer-relations market
+list; KWANT continues to expose its live public branch directory.
+
+The current user message, not the model's `requestedBranch`, authorizes a
+turn-scoped branch. A unique explicitly scoped natural reference may rewrite
+only the local tool branch ID for that call. Current-branch aliases such as
+`u nas` and the bounded Nowy Sącz/Sączu variants resolve back to the
+conversation branch independently of the natural-location gate. Ambiguous and
+explicit unknown locations fail closed. Multiple separately stated exact IDs
+may still be queried one at a time using the tool hint only to choose among
+those already user-authorized IDs. The conversation WorkingProfile and
+provider/branch passed to subsequent continuation remain unchanged.
 
 ## Goal
 
@@ -208,7 +223,7 @@ Using `previous_response_id` avoids manually sending the complete local transcri
 
 Advisor transport is explicitly versioned at the Android/Worker boundary. Current Android sends `protocolVersion: 2` on START, MESSAGE, and CONTINUE; v2 is the grouped `find_obi_products(storeNumber, queries[])` contract. The Worker also retains an explicit v1 single-query contract for controlled compatibility, but an absent `protocolVersion` is deliberately pinned to v2. This is required because the already-deployed grouped Android client predates the marker and is therefore also unversioned; absence cannot safely distinguish it from still older single-query builds. Future protocol evolution must not reinterpret an unversioned request as v1. Pre-versioned single-query Android builds are not recovered by this mechanism and must update rather than receive an incompatible guessed response shape.
 
-Server-side instructions define Taksula as a practical in-store home-improvement retail product/technical advisor following Advisor Product Contract v1. Normal model knowledge answers ordinary technical and sales-advice questions when sufficient; OBI is not called merely because a product category can be inferred. Ambiguous product-selection requests ask one concise decision-critical clarification before `find_obi_products`; job/project requests similarly clarify materially different interpretations first and then give essentials-first advice without automatically becoming an OBI shopping list. The local tool is used immediately for explicit assortment/browse, direct current price/stock/availability or OBIK verification, sufficiently specified selection with an explicit selected-market request, and explicit sufficiently specified verified store kits. Those store kits may batch related categories efficiently, while complements remain restrained and are searched only when requested or materially required by an explicit verified kit. Android independently retains `MAX_LOCAL_TOOL_CALLS_PER_TURN = 3` as a safety guard and resolves exhaustion through the existing graceful `local_tool_limit_reached` path. Availability semantics remain strict: stock `0` is confirmed unavailable in that store, null stock is unknown, `not_found` is no verified match, and `unavailable` is retrieval failure. A zero-stock/not-found requested item may lead to a verified current-store substitute; another store may be queried only when its exact supported three-digit number appears literally in the current USER message. Verified tool facts remain authoritative for SKU/current-store facts, missing SKU-specific facts remain unknown, and historical stock/price statements are context only, never current authority.
+Server-side instructions define Taksula as a practical in-store home-improvement retail product/technical advisor following Advisor Product Contract v1. Normal model knowledge answers ordinary technical and sales-advice questions when sufficient; OBI is not called merely because a product category can be inferred. Ambiguous product-selection requests ask one concise decision-critical clarification before `find_obi_products`; job/project requests similarly clarify materially different interpretations first and then give essentials-first advice without automatically becoming an OBI shopping list. The local tool is used immediately for explicit assortment/browse, direct current price/stock/availability or OBIK verification, sufficiently specified selection with an explicit selected-market request, and explicit sufficiently specified verified store kits. Those store kits may batch related categories efficiently, while complements remain restrained and are searched only when requested or materially required by an explicit verified kit. Android independently retains `MAX_LOCAL_TOOL_CALLS_PER_TURN = 3` as a safety guard and resolves exhaustion through the existing graceful `local_tool_limit_reached` path. Availability semantics remain strict: stock `0` is confirmed unavailable in that store, null stock is unknown, `not_found` is no verified match, and `unavailable` is retrieval failure. A zero-stock/not-found requested item may lead to a verified current-store substitute; another branch may be queried only when Android deterministically resolves the current USER message against the active provider’s real branch directory. Exact supported branch/store numbers remain valid, while ambiguous or unknown location references fail closed. Verified tool facts remain authoritative for SKU/current-store facts, missing SKU-specific facts remain unknown, and historical stock/price statements are context only, never current authority.
 
 
 ## AI usage observability v0.1
