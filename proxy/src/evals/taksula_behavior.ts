@@ -1,6 +1,6 @@
 import {
   OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
-  CURRENT_ADVISOR_PROTOCOL_VERSION,
+  PROVIDER_ADVISOR_PROTOCOL_VERSION,
   LOCAL_TOOL_NAME,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
@@ -601,7 +601,7 @@ export function createProductionAdvisorDriver(
         upstreamFetch,
         provider === "obi-v2"
           ? OBI_GROUPED_ADVISOR_PROTOCOL_VERSION
-          : CURRENT_ADVISOR_PROTOCOL_VERSION,
+          : PROVIDER_ADVISOR_PROTOCOL_VERSION,
       );
     },
     continueTurn(responseId, callId, branchId, result) {
@@ -615,7 +615,7 @@ export function createProductionAdvisorDriver(
         upstreamFetch,
         provider === "obi-v2"
           ? OBI_GROUPED_ADVISOR_PROTOCOL_VERSION
-          : CURRENT_ADVISOR_PROTOCOL_VERSION,
+          : PROVIDER_ADVISOR_PROTOCOL_VERSION,
       );
     },
   };
