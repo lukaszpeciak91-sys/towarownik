@@ -1618,7 +1618,9 @@ private fun AdvisorChatScreen(
                 workingProfile = workingProfile,
                 branchLabel = profileBranches.firstOrNull {
                     it.branchId == workingProfile.branchId
-                }?.name ?: workingProfile.branchId.value,
+                }?.let {
+                    "${it.branchId.value} • ${it.name}"
+                } ?: workingProfile.branchId.value,
                 profileSwitchEnabled = profileSelectorEnabled,
                 onValueChange = onDraftChange,
                 onSend = onSubmit,
@@ -1829,7 +1831,9 @@ private fun WorkingProfileSelector(
     val branch = branches.firstOrNull {
         it.branchId == workingProfile.branchId
     }
-    val branchLabel = branch?.name ?: workingProfile.branchId.value
+    val branchLabel = branch?.let {
+        "${it.branchId.value} • ${it.name}"
+    } ?: workingProfile.branchId.value
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -1901,7 +1905,9 @@ private fun WorkingProfileSelector(
                     DropdownMenuItem(
                         text = {
                             Column {
-                                Text(option.name)
+                                Text(
+                                    "${option.branchId.value} • ${option.name}",
+                                )
                                 option.address?.let { address ->
                                     Text(
                                         text = address,
