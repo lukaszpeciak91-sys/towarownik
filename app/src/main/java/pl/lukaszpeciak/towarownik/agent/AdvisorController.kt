@@ -121,12 +121,10 @@ internal class AdvisorController(
                 AdvisorError.INPUT,
             ).also(onState)
         }
-        val turnContract = when {
-            attachment != null -> AdvisorTransportContract.PROVIDER_V4
-            conversationProvider == OBI_PROVIDER_ID ->
-                AdvisorTransportContract.OBI_V2
-            else -> AdvisorTransportContract.PROVIDER_V3
-        }
+        val turnContract = advisorTransportContract(
+            providerId = conversationProvider,
+            hasAttachment = attachment != null,
+        )
         var turnBranches: List<ProviderBranch>? = null
 
         suspend fun loadTurnBranches(): ProviderBranchResult {
@@ -595,6 +593,16 @@ internal class AdvisorController(
         }
     }
 }
+
+internal fun advisorTransportContract(
+    providerId: ProviderId,
+    hasAttachment: Boolean,
+): AdvisorTransportContract =
+    when {
+        hasAttachment -> AdvisorTransportContract.PROVIDER_V4
+        providerId == OBI_PROVIDER_ID -> AdvisorTransportContract.OBI_V2
+        else -> AdvisorTransportContract.PROVIDER_V3
+    }
 
 internal suspend fun continueAdvisorToolTurn(
     proxyClient: AdvisorProxyClient,
