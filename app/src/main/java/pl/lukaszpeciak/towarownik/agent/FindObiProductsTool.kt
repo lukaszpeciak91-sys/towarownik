@@ -130,7 +130,7 @@ internal class FindObiProductsTool(
                                 is ProductLookupResult.Found -> {
                                     val product = lookup.product
                                     verified +=
-                                        product.toAdvisorVerifiedProduct()
+                                        product.toAdvisorVerifiedProduct(requested.query)
                                     snapshots +=
                                         product.toVerifiedProductSnapshot(
                                             verifiedAt = now(),
@@ -209,7 +209,7 @@ internal class FindObiProductsTool(
                 AdvisorVerifiedQueryResult(
                     query = query,
                     status = AdvisorQueryResultStatus.VERIFIED,
-                    products = listOf(product.toAdvisorVerifiedProduct()),
+                    products = listOf(product.toAdvisorVerifiedProduct(query)),
                 )
             }
             is ProductLookupResult.InvalidStore -> unavailable(query)

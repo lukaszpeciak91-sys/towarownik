@@ -11,6 +11,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.product.LocalProduct
 import pl.lukaszpeciak.towarownik.product.TechnicalFact
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.ProductRef
@@ -21,7 +22,7 @@ import pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
 class AdvisorProductShapingTest {
     @Test
     fun `oversized provider facts are bounded for advisor contract`() {
-        val shaped = oversizedProduct().toAdvisorVerifiedProduct()
+        val shaped = oversizedProduct().toAdvisorVerifiedProduct("MBN116E")
 
         assertEquals("580", shaped.productId)
         assertEquals("580", shaped.obik)
@@ -75,7 +76,7 @@ class AdvisorProductShapingTest {
             ),
         )
 
-        val shaped = source.toAdvisorVerifiedProduct()
+        val shaped = source.toAdvisorVerifiedProduct("potrzebuję 16 A")
 
         assertEquals(source.shortDescription, shaped.shortDescription)
         assertEquals(
@@ -88,6 +89,123 @@ class AdvisorProductShapingTest {
         assertEquals(source.stock, shaped.stock)
         assertEquals(source.centralStock, shaped.centralStock)
         assertEquals(source.grossPrice, shaped.price)
+    }
+
+    @Test
+    fun `more than six facts without relevance keeps first six in source order`() {
+        val facts = (1..8).map {
+            TechnicalFact("Parametr $it", "wartość $it")
+        }
+
+        val shaped = baseProduct(
+            shortDescription = null,
+            technicalFacts = facts,
+        ).toAdvisorVerifiedProduct("szukam dobrego produktu Hager")
+
+        assertEquals(
+            (1..6).map { AdvisorTechnicalFact("Parametr $it", "wartość $it") },
+            shaped.technicalFacts,
+        )
+    }
+
+    @Test
+    fun `late exact current fact is rescued with minimal displacement`() {
+        val shaped = baseProduct(
+            shortDescription = null,
+            technicalFacts = baselineFacts() +
+                TechnicalFact("Prąd znamionowy", "16 A"),
+        ).toAdvisorVerifiedProduct("potrzebuję wyłącznik 16 A")
+
+        assertEquals(
+            listOf(
+                "Parametr 1",
+                "Parametr 2",
+                "Parametr 3",
+                "Parametr 4",
+                "Parametr 5",
+                "Prąd znamionowy",
+            ),
+            shaped.technicalFacts.map { it.label },
+        )
+        assertEquals("16 A", shaped.technicalFacts.last().value)
+    }
+
+    @Test
+    fun `strong technical values rescue late facts conservatively`() {
+        val cases = listOf(
+            Triple("szukam 16 A", "Prąd znamionowy", "16 A"),
+            Triple("potrzebuję 400 V", "Napięcie znamionowe", "400 V"),
+            Triple("oprawa IP65", "Stopień ochrony", "IP65"),
+            Triple("przewód 2,5 mm2", "Przekrój żyły", "2,5 mm2"),
+            Triple("urządzenie 3 fazy", "Liczba faz", "3"),
+        )
+
+        cases.forEach { (query, label, value) ->
+            val shaped = baseProduct(
+                shortDescription = null,
+                technicalFacts = baselineFacts() + TechnicalFact(label, value),
+            ).toAdvisorVerifiedProduct(query)
+
+            assertEquals(query, label, shaped.technicalFacts.last().label)
+            assertEquals(query, value, shaped.technicalFacts.last().value)
+            assertEquals(
+                query,
+                baselineFacts().take(5).map { it.label },
+                shaped.technicalFacts.take(5).map { it.label },
+            )
+        }
+    }
+
+    @Test
+    fun `vague lexical overlap does not reshuffle facts`() {
+        val facts = baselineFacts() +
+            TechnicalFact("Producent", "Hager")
+
+        val shaped = baseProduct(
+            shortDescription = null,
+            technicalFacts = facts,
+        ).toAdvisorVerifiedProduct("dobry wyłącznik Hager")
+
+        assertEquals(
+            baselineFacts().map {
+                AdvisorTechnicalFact(it.label, it.value)
+            },
+            shaped.technicalFacts,
+        )
+    }
+
+    @Test
+    fun `OBI and provider products use the same relevance rescue policy`() {
+        val facts = baselineFacts() +
+            TechnicalFact("Stopień ochrony", "IP65")
+        val provider = baseProduct(
+            shortDescription = "  ten   sam opis  ",
+            technicalFacts = facts,
+        ).toAdvisorVerifiedProduct("potrzebuję IP65")
+        val obi = LocalProduct(
+            obik = "1234567",
+            name = "Oprawa",
+            stock = 4,
+            grossPrice = BigDecimal("19.99"),
+            productUrl = "https://www.obi.pl/p/1234567/test",
+            ean = "5900000000000",
+            storeNumber = "075",
+            brand = "Marka",
+            shortDescription = "  ten   sam opis  ",
+            technicalFacts = facts,
+        ).toAdvisorVerifiedProduct("potrzebuję IP65")
+
+        assertEquals(provider.shortDescription, obi.shortDescription)
+        assertEquals(provider.technicalFacts, obi.technicalFacts)
+        assertEquals("580", provider.productId)
+        assertEquals("MBN116E/HAG", provider.articleNumber)
+        assertEquals(362, provider.stock)
+        assertEquals(10113, provider.centralStock)
+        assertEquals(BigDecimal("14.55"), provider.price)
+        assertEquals("online", provider.priceScope)
+        assertEquals("1234567", obi.obik)
+        assertEquals(4, obi.stock)
+        assertEquals(BigDecimal("19.99"), obi.price)
     }
 
     @Test
@@ -113,7 +231,7 @@ class AdvisorProductShapingTest {
                     appToken = "test-token",
                     baseUrl = server.url("/"),
                 )
-                val shaped = oversizedProduct().toAdvisorVerifiedProduct()
+                val shaped = oversizedProduct().toAdvisorVerifiedProduct("MBN116E")
 
                 val result = client.continueTurn(
                     responseId = "resp_tool",
@@ -186,6 +304,11 @@ class AdvisorProductShapingTest {
                     )
                 }
             }
+        }
+
+    private fun baselineFacts(): List<TechnicalFact> =
+        (1..6).map {
+            TechnicalFact("Parametr $it", "wartość $it")
         }
 
     private fun oversizedProduct(): ProviderProduct =

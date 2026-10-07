@@ -265,3 +265,11 @@ The currently planned AI capability stage is complete after this selective web-s
 - Oversized descriptions/facts are normalized and bounded to the existing Worker contract (220-char description, six facts, 60-char labels, 100-char values); blank facts are discarded in stable source order.
 - Added oversized provider, serialized v3 `/continue`, and oversized OBI search/exact regressions while preserving OBIK/provider identity, price, branch stock, central stock, and already-bounded content.
 - Proxy limits were not loosened; provider parsers and all routing/persistence/prompt behavior remain unchanged.
+
+
+## 2026-10-07 — conservative advisor fact relevance rescue
+
+- Extended the shared OBI/provider advisor shaper with source-order baseline + one optional query-relevant rescue when more than six valid technical facts exist.
+- Normal/no-match behavior remains the first six valid normalized/bounded facts in source order. A later fact is admitted only for a clear deterministic lexical/value signal and only if it is stronger than the weakest selected fact.
+- Added exact-value coverage for 16 A, 400 V, IP65, 2,5 mm2 and 3 phases, plus no-match/no-aggressive-reorder, minimal displacement, OBI/provider parity, and tool-level OBI/provider query propagation.
+- Existing continuation bounds, identity/price/stock fields, parsers, proxy contract, protocol versions, prompts, WorkingProfile, Room, attachments, and web-search policy remain unchanged.

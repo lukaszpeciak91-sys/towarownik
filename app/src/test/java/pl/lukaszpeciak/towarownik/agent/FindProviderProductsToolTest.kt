@@ -6,6 +6,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.product.TechnicalFact
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ProductProvider
@@ -63,6 +64,44 @@ class FindProviderProductsToolTest {
         assertEquals(ProviderPriceScope.ONLINE, snapshot.priceScope)
         assertEquals(1234L, snapshot.verifiedAt)
         assertTrue(result.searchActions.isEmpty())
+    }
+
+    @Test
+    fun `provider tool rescues one clearly query relevant late fact`() = runBlocking {
+        val facts = (1..6).map {
+            TechnicalFact("Parametr $it", "wartość $it")
+        } + TechnicalFact("Prąd znamionowy", "16 A")
+        val provider = FakeKwantProvider(technicalFacts = facts)
+        val tool = FindProviderProductsTool(
+            providers = ProductProviderRegistry(listOf(provider)),
+            ioDispatcher = Dispatchers.Unconfined,
+        )
+
+        val result = tool.execute(
+            AdvisorToolArguments(
+                providerId = "kwant-pl",
+                storeNumber = "205",
+                queries = listOf(
+                    AdvisorToolQuery("wyłącznik 16 A", 1),
+                ),
+            ),
+        ) as AdvisorToolExecutionResult.Success
+
+        assertEquals(
+            listOf(
+                "Parametr 1",
+                "Parametr 2",
+                "Parametr 3",
+                "Parametr 4",
+                "Parametr 5",
+                "Prąd znamionowy",
+            ),
+            result.result.products.single().technicalFacts.map { it.label },
+        )
+        assertEquals(
+            "16 A",
+            result.result.products.single().technicalFacts.last().value,
+        )
     }
 
     @Test
@@ -134,7 +173,9 @@ class FindProviderProductsToolTest {
         assertEquals(0, provider.searchCalls)
     }
 
-    private class FakeKwantProvider : ProductProvider {
+    private class FakeKwantProvider(
+        private val technicalFacts: List<TechnicalFact> = emptyList(),
+    ) : ProductProvider {
         override val providerId: ProviderId = KWANT_PROVIDER_ID
         var searchCalls: Int = 0
         val lookupBranches = mutableListOf<String>()
@@ -200,6 +241,7 @@ class FindProviderProductsToolTest {
                     ean = "3250614312762",
                     articleNumber = "MBN116E/HAG",
                     brand = "Hager",
+                    technicalFacts = technicalFacts,
                 ),
             )
         }

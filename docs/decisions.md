@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-07 — conservative advisor fact relevance rescue
+
+- The shared OBI/provider advisor shaping boundary keeps source order as the default and still applies the existing 220/6/60/100 transport bounds and blank-fact filtering.
+- When more than six valid technical facts exist, the first six remain the baseline. At most one later fact may replace one selected fact, and only when deterministic lexical matching finds a clear query relevance signal that is stronger than the weakest selected fact.
+- Clear signals are deliberately small: exact technical value+unit matches such as `16 A`, `400 V`, `IP65`, or `2,5 mm2`; a small universal technical alias set (voltage/current/power/phase/pole/IP/diameter/cross-section/thread/dimensions); or multiple meaningful shared tokens. There are no embeddings, AI calls, category classifiers, or product-specific ontologies.
+- Replacement is minimal: among equally weak selected facts the latest one is displaced, all other selected facts keep their positions, and only one rescue is allowed per product. If no later fact has a clear stronger signal, output remains the first six useful facts exactly as in the previous shaping policy.
+- `FindProviderProductsTool` and both OBI paths in `FindObiProductsTool` pass the current tool query into the same selector. Provider parsers, proxy limits, protocol versions, prompts, selection behavior, store/provider lookup, persistence, attachments, and web-search policy are unchanged.
+
 ## 2026-10-06 — advisor product transport shaping
 
 - Provider parsers may preserve richer source metadata; the shared Android advisor boundary shapes both provider-neutral `ProviderProduct` and legacy OBI `LocalProduct` before either becomes an `AdvisorVerifiedProduct` for continuation transport.
