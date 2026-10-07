@@ -99,7 +99,7 @@ internal class AdvisorProxyClient(
         }
 
         val body = buildJsonObject {
-            put("protocolVersion", if (attachment == null) ADVISOR_PROTOCOL_VERSION else MULTIMODAL_PROTOCOL_VERSION)
+            put("protocolVersion", if (attachment == null) ADVISOR_PROTOCOL_VERSION else MULTIMODAL_ADVISOR_PROTOCOL_VERSION)
             put("message", message)
             put("providerId", providerId)
             put("branchId", branchId)
@@ -159,7 +159,7 @@ internal class AdvisorProxyClient(
         }
 
         val body = buildJsonObject {
-            put("protocolVersion", if (attachment == null) ADVISOR_PROTOCOL_VERSION else MULTIMODAL_PROTOCOL_VERSION)
+            put("protocolVersion", if (attachment == null) ADVISOR_PROTOCOL_VERSION else MULTIMODAL_ADVISOR_PROTOCOL_VERSION)
             put("previousResponseId", previousResponseId)
             put("message", message)
             put("providerId", providerId)
@@ -241,13 +241,20 @@ internal class AdvisorProxyClient(
         providerId: String,
         branchId: String,
         continuation: AdvisorToolContinuation,
+        protocolVersion: Int = ADVISOR_PROTOCOL_VERSION,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.NOT_CONFIGURED,
             )
         }
-        if (!isValidProfile(providerId, branchId)) {
+        if (
+            !isValidProfile(providerId, branchId) ||
+            protocolVersion !in setOf(
+                ADVISOR_PROTOCOL_VERSION,
+                MULTIMODAL_ADVISOR_PROTOCOL_VERSION,
+            )
+        ) {
             return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
             )
@@ -261,6 +268,7 @@ internal class AdvisorProxyClient(
                     providerId = providerId,
                     branchId = branchId,
                     result = continuation.result,
+                    protocolVersion = protocolVersion,
                 )
 
             is AdvisorToolContinuation.RejectedStore ->
@@ -269,6 +277,7 @@ internal class AdvisorProxyClient(
                     callId = callId,
                     providerId = providerId,
                     branchId = branchId,
+                    protocolVersion = protocolVersion,
                     result = buildJsonObject {
                         put("providerId", continuation.providerId)
                         put("branchId", continuation.storeNumber)
@@ -283,6 +292,7 @@ internal class AdvisorProxyClient(
                     callId = callId,
                     providerId = providerId,
                     branchId = branchId,
+                    protocolVersion = protocolVersion,
                     result = buildJsonObject {
                         put("providerId", continuation.providerId)
                         put("branchId", continuation.storeNumber)
@@ -723,6 +733,7 @@ internal class AdvisorProxyClient(
         providerId: String,
         branchId: String,
         result: AdvisorVerifiedToolResult,
+        protocolVersion: Int,
     ): JsonObject? {
         var grouped = result.results
 
@@ -733,6 +744,7 @@ internal class AdvisorProxyClient(
                 providerId = providerId,
                 branchId = branchId,
                 result = result.copy(results = grouped).toJsonV3(),
+                protocolVersion = protocolVersion,
             )
 
         fun updateProduct(
@@ -808,9 +820,10 @@ internal class AdvisorProxyClient(
         providerId: String,
         branchId: String,
         result: JsonObject,
+        protocolVersion: Int,
     ): JsonObject =
         buildJsonObject {
-            put("protocolVersion", ADVISOR_PROTOCOL_VERSION)
+            put("protocolVersion", protocolVersion)
             put("responseId", responseId)
             put("callId", callId)
             put("providerId", providerId)
@@ -1338,7 +1351,6 @@ internal class AdvisorProxyClient(
         const val MAX_USAGE_TOKENS = 10_000_000_000L
         const val MAX_WEB_SEARCH_CALLS = 1L
         const val MAX_WEB_SOURCES = 6
-        const val MULTIMODAL_PROTOCOL_VERSION = 4
         const val MAX_WEB_SOURCE_TITLE_CHARS = 200
         const val MAX_WEB_SOURCE_URL_CHARS = 2048
     }
