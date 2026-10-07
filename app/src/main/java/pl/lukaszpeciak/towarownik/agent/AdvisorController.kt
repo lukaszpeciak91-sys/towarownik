@@ -66,6 +66,7 @@ internal class AdvisorController(
         callId: String,
         providerId: String,
         branchId: String,
+        contract: AdvisorTransportContract,
         continuation: AdvisorToolContinuation,
     ) -> AdvisorProxyCallResult,
     private val executeObiTool: suspend (
@@ -119,6 +120,12 @@ internal class AdvisorController(
             return AdvisorUiState.Error(
                 AdvisorError.INPUT,
             ).also(onState)
+        }
+        val turnContract = when {
+            attachment != null -> AdvisorTransportContract.PROVIDER_V4
+            conversationProvider == OBI_PROVIDER_ID ->
+                AdvisorTransportContract.OBI_V2
+            else -> AdvisorTransportContract.PROVIDER_V3
         }
         var turnBranches: List<ProviderBranch>? = null
 
@@ -325,6 +332,7 @@ internal class AdvisorController(
                                     toolRequest.callId,
                                     conversationProviderId,
                                     conversationStoreNumber,
+                                    turnContract,
                                     AdvisorToolContinuation.LocalToolLimitReached(
                                         queries = toolRequest.arguments.queries,
                                         storeNumber =
@@ -430,6 +438,7 @@ internal class AdvisorController(
                                 toolRequest.callId,
                                 conversationProviderId,
                                 conversationStoreNumber,
+                                turnContract,
                                 continuation,
                             )
                         }
@@ -552,23 +561,28 @@ internal class AdvisorController(
                         callId,
                         providerId,
                         branchId,
+                        contract,
                         continuation,
                     ->
-                    if (providerId == OBI_PROVIDER_ID.value) {
-                        proxyClient.continueTurn(
-                            responseId = responseId,
-                            callId = callId,
-                            storeNumber = branchId,
-                            continuation = continuation,
-                        )
-                    } else {
-                        proxyClient.continueTurn(
-                            responseId = responseId,
-                            callId = callId,
-                            providerId = providerId,
-                            branchId = branchId,
-                            continuation = continuation,
-                        )
+                    when (contract) {
+                        AdvisorTransportContract.OBI_V2 ->
+                            proxyClient.continueTurn(
+                                responseId = responseId,
+                                callId = callId,
+                                storeNumber = branchId,
+                                continuation = continuation,
+                            )
+                        AdvisorTransportContract.PROVIDER_V3,
+                        AdvisorTransportContract.PROVIDER_V4,
+                        ->
+                            proxyClient.continueTurn(
+                                responseId = responseId,
+                                callId = callId,
+                                providerId = providerId,
+                                branchId = branchId,
+                                continuation = continuation,
+                                protocolVersion = contract.protocolVersion,
+                            )
                     }
                 },
                 executeObiTool = obiTool::execute,
