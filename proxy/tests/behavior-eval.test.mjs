@@ -2,13 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  CURRENT_ADVISOR_PROTOCOL_VERSION,
+  OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
+  PROVIDER_ADVISOR_PROTOCOL_VERSION,
   FINAL_ANSWER_FORMAT,
+  PROVIDER_FINAL_ANSWER_FORMAT,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
   WEB_SEARCH_TOOL,
+  agentInstructionsForProfile,
   agentInstructionsForStore,
+  localToolForProtocol,
   obiToolForProtocol,
 } from "../.test-dist/config.js";
 import {
@@ -1369,7 +1373,7 @@ test("production eval driver reuses production advisor request configuration", a
       body.instructions,
       agentInstructionsForStore(
         "075",
-        CURRENT_ADVISOR_PROTOCOL_VERSION,
+        OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
       ),
     );
     assert.deepEqual(body.text, {
@@ -1377,7 +1381,7 @@ test("production eval driver reuses production advisor request configuration", a
     });
     assert.deepEqual(body.tools, [
       obiToolForProtocol(
-        CURRENT_ADVISOR_PROTOCOL_VERSION,
+        OBI_GROUPED_ADVISOR_PROTOCOL_VERSION,
       ),
       WEB_SEARCH_TOOL,
     ]);
@@ -1392,13 +1396,13 @@ test("production eval driver reuses production advisor request configuration", a
   );
 });
 
-test("production eval driver selects protocol v3 for KWANT", async () => {
-  let capture;
+test("production eval driver uses protocol v3 for KWANT start and continue", async () => {
+  const captures = [];
   const fakeFetch = async (_input, init) => {
-    capture = JSON.parse(init.body);
+    captures.push(JSON.parse(init.body));
     const output = JSON.stringify({ text: "OK", productRefs: [] });
     return new Response(JSON.stringify({
-      id: "resp_kwant_eval",
+      id: `resp_kwant_eval_${captures.length}`,
       output_text: output,
       output: [{
         type: "message",
@@ -1413,10 +1417,54 @@ test("production eval driver selects protocol v3 for KWANT", async () => {
     "kwant-v3",
   );
   await driver.start("Test", "205");
+  await driver.continueTurn(
+    "resp_tool",
+    "call_tool",
+    "205",
+    {
+      providerId: "kwant-pl",
+      branchId: "205",
+      results: [{
+        query: "test",
+        status: "not_found",
+        products: [],
+      }],
+    },
+  );
 
-  assert.match(capture.instructions, /providerId=kwant-pl/);
-  assert.match(capture.instructions, /branchId=205/);
-  assert.equal(capture.tools[0].name, "find_products");
+  assert.equal(captures.length, 2);
+  for (const body of captures) {
+    assert.equal(
+      body.instructions,
+      agentInstructionsForProfile(
+        "kwant-pl",
+        "205",
+        PROVIDER_ADVISOR_PROTOCOL_VERSION,
+      ),
+    );
+    assert.match(body.instructions, /providerId=kwant-pl/);
+    assert.match(body.instructions, /branchId=205/);
+    assert.doesNotMatch(
+      body.instructions,
+      /current USER turn may include one image or PDF/i,
+    );
+    assert.deepEqual(body.text, {
+      format: PROVIDER_FINAL_ANSWER_FORMAT,
+    });
+    assert.deepEqual(body.tools, [
+      localToolForProtocol(
+        PROVIDER_ADVISOR_PROTOCOL_VERSION,
+      ),
+      WEB_SEARCH_TOOL,
+    ]);
+    assert.equal(body.tools[0].name, "find_products");
+  }
+
+  assert.equal(captures[1].previous_response_id, "resp_tool");
+  assert.equal(
+    captures[1].input[0].type,
+    "function_call_output",
+  );
 });
 
 test("semantic grader uses the normal eval output budget and accepts a valid grade", async () => {
