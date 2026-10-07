@@ -519,14 +519,20 @@ function parseStructuredAnswer(
   if (typeof parsed.text !== "string") {
     throw new UpstreamFailureError();
   }
-  const text = parsed.text.trim();
+  const trimmedText = parsed.text.trim();
+  const sanitized = stripUnsupportedInternalMarkup(trimmedText);
+  const text = sanitized.text;
   if (!text || text.length > MAX_ANSWER_CHARS) {
     throw new UpstreamFailureError();
   }
-  const textBoundaryMap = mapStructuredTextBoundaries(
+  const rawTextBoundaryMap = mapStructuredTextBoundaries(
     raw,
     parsed.text,
-    text,
+    trimmedText,
+  );
+  const textBoundaryMap = remapTextBoundaries(
+    rawTextBoundaryMap,
+    sanitized.boundaryMap,
   );
 
   if (
@@ -746,6 +752,51 @@ function extractWebSources(
     }
   }
   return sources;
+}
+
+function stripUnsupportedInternalMarkup(
+  text: string,
+): {
+  text: string;
+  boundaryMap: Map<number, number>;
+} {
+  const unsupported =
+    /\uE200(?:cite|entity)\uE202[\s\S]{0,1024}?\uE201/g;
+  const removed = new Array<boolean>(text.length).fill(false);
+  for (const match of text.matchAll(unsupported)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    for (let index = start; index < end; index += 1) {
+      removed[index] = true;
+    }
+  }
+
+  const boundaryMap = new Map<number, number>();
+  let sanitized = "";
+  for (let index = 0; index < text.length; index += 1) {
+    boundaryMap.set(index, sanitized.length);
+    if (!removed[index]) sanitized += text[index];
+  }
+  boundaryMap.set(text.length, sanitized.length);
+
+  return {
+    text: sanitized.trim(),
+    boundaryMap,
+  };
+}
+
+function remapTextBoundaries(
+  rawToText: Map<number, number>,
+  textToSanitized: Map<number, number>,
+): Map<number, number> {
+  const remapped = new Map<number, number>();
+  for (const [rawBoundary, textBoundary] of rawToText) {
+    const sanitizedBoundary = textToSanitized.get(textBoundary);
+    if (sanitizedBoundary !== undefined) {
+      remapped.set(rawBoundary, sanitizedBoundary);
+    }
+  }
+  return remapped;
 }
 
 function mapStructuredTextBoundaries(
