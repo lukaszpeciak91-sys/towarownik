@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-07 — shared provider branch/location resolver
+
+- Branch/location authorization is centralized in one Android `BranchResolver` over the active provider's `ProviderBranch(branchId, name, address)` directory. OBI and KWANT do not keep separate natural-language routing logic.
+- OBI's supported-store allowlist is now derived from one canonical metadata directory verified against OBI Poland's official customer-relations market list; the existing three-digit store number remains the authoritative branch ID.
+- Matching is deterministic and conservative: exact branch ID, normalized city/name, unique street/address fragments, small street-prefix normalization, and bounded current-branch aliases. No geocoding, distance inference, or edit-distance fuzzy matching is added.
+- The current user message authorizes branch identity. Model-produced `storeNumber`/`requestedBranch` is only a hint and cannot authorize a branch not deterministically identified by the user. Ambiguous aliases such as Kraków and explicit unknown locations fail closed.
+- A uniquely resolved cross-branch lookup rewrites only the local tool argument for that turn. The persisted WorkingProfile and conversation branch remain unchanged. Provider directories remain isolated and there is no cross-provider fallback.
+
 ## 2026-10-07 — conservative advisor fact relevance rescue
 
 - The shared OBI/provider advisor shaping boundary keeps source order as the default and still applies the existing 220/6/60/100 transport bounds and blank-fact filtering.
