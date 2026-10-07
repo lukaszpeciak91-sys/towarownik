@@ -41,7 +41,12 @@ internal object BranchResolver {
                     textTokens = textTokens,
                     rawText = userText,
                     branch = branch,
-                    allowNaturalMetadata = naturalLocationIntent,
+                    allowNaturalMetadata =
+                        naturalLocationIntent &&
+                            hasScopedNaturalReference(
+                                userText = userText,
+                                branch = branch,
+                            ),
                 ).takeIf { it > 0 }?.let { score ->
                     BranchMatch(branch, score)
                 }
@@ -179,6 +184,38 @@ internal object BranchResolver {
             BRANCH_NOUN_LOCATION_INTENT.containsMatchIn(normalized)
     }
 
+    private fun hasScopedNaturalReference(
+        userText: String,
+        branch: ProviderBranch,
+    ): Boolean {
+        val tokens = normalizedText(userText)
+            .split(' ')
+            .filter(String::isNotBlank)
+            .map(::canonicalLocationToken)
+        val branchNameTokens = comparisonTokens(branch.name)
+        val addressTokens = significantAddressTokens(branch.address)
+
+        return tokens.indices.any { index ->
+            if (tokens[index] !in LOCATION_INTENT_MARKERS) {
+                return@any false
+            }
+            var locationIndex = index + 1
+            while (
+                locationIndex < tokens.size &&
+                tokens[locationIndex] in LOCATION_CONNECTORS
+            ) {
+                locationIndex += 1
+            }
+            if (locationIndex >= tokens.size) {
+                return@any false
+            }
+
+            val afterMarker = tokens.drop(locationIndex)
+            containsTokenSequence(afterMarker, branchNameTokens) ||
+                afterMarker.first() in addressTokens
+        }
+    }
+
     private fun significantAddressTokens(
         address: String?,
     ): Set<String> =
@@ -215,6 +252,10 @@ internal object BranchResolver {
         when {
             token.length > 5 && token.endsWith("iej") ->
                 token.dropLast(3) + "a"
+            token.length > 5 && token.endsWith("sciu") ->
+                token.dropLast(2)
+            token.length > 5 && token.endsWith("owie") ->
+                token.dropLast(2)
             else -> token
         }
 
@@ -247,6 +288,31 @@ internal object BranchResolver {
     private data class BranchMatch(
         val branch: ProviderBranch,
         val score: Int,
+    )
+
+    private val LOCATION_INTENT_MARKERS = setOf(
+        "obi",
+        "kwant",
+        "market",
+        "markecie",
+        "sklep",
+        "sklepie",
+        "oddzial",
+        "oddziale",
+        "hurtownia",
+        "hurtowni",
+        "magazyn",
+        "magazynie",
+    )
+
+    private val LOCATION_CONNECTORS = setOf(
+        "w",
+        "we",
+        "na",
+        "ul",
+        "ulica",
+        "al",
+        "aleja",
     )
 
     private val STREET_PREFIXES = setOf(
