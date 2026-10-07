@@ -78,6 +78,12 @@ function kwantScriptedDriver(scenario) {
   const base = scriptedDriver(scenario);
   return {
     async start(...args) {
+      if (scenario.id === "D") {
+        return answer(
+          "Czy potrzebny jest wyłącznik 1P, czy inna konfiguracja biegunów i zastosowanie?",
+        );
+      }
+
       const result = await base.start(...args);
       if (result.type !== "tool_request") return result;
       const identifiers = {
@@ -98,13 +104,30 @@ function kwantScriptedDriver(scenario) {
             branchId: "205",
             queries: result.tool.arguments.queries.map((query) => ({
               ...query,
-              query: identifier ?? query.query,
+              query:
+                scenario.id === "ONLY_IN_STOCK"
+                  ? "wyłączniki nadprądowe B16 1P"
+                  : identifier ?? query.query,
             })),
           },
         },
       };
     },
-    continueTurn: base.continueTurn,
+    async continueTurn(...args) {
+      if (scenario.id === "ONLY_IN_STOCK") {
+        const result = args[3];
+        const qualifying = verifiedRefs(result).filter(
+          (ref) =>
+            "productId" in ref &&
+            ref.productId === "kw-7400002",
+        );
+        return answer(
+          "Na pewno na stanie w wybranym oddziale jest zweryfikowany wyłącznik B16 1P: 4 szt. To wynik ograniczonego sprawdzenia, nie pełny dowód braku innych wariantów.",
+          qualifying,
+        );
+      }
+      return base.continueTurn(...args);
+    },
   };
 }
 
@@ -296,6 +319,82 @@ test("deterministic harness passes all initial scenarios with scripted observabl
   );
 });
 
+test("scenario A remains identical for OBI and KWANT", () => {
+  const obi = behaviorScenarioForProvider("A", "obi-v2");
+  const kwant = behaviorScenarioForProvider("A", "kwant-v3");
+
+  assert.equal(obi.name, "Broad black cable-tie product intent");
+  assert.equal(obi.userMessage, "Klient potrzebuje czarnych trytytek.");
+  assert.deepEqual(kwant, obi);
+});
+
+test("scenario D keeps OBI plumbing content and shapes KWANT to electrical clarification", async () => {
+  const obi = behaviorScenarioForProvider("D", "obi-v2");
+  const kwant = behaviorScenarioForProvider("D", "kwant-v3");
+
+  assert.equal(
+    obi.userMessage,
+    "Klient potrzebuje końcówki z sitkiem do kranu.",
+  );
+  assert.match(obi.name, /faucet|aerator/i);
+  assert.equal(
+    kwant.userMessage,
+    "Klient potrzebuje wyłącznika nadprądowego B16. Co mu dać?",
+  );
+  assert.match(kwant.name, /B16 breaker/i);
+  assert.notDeepEqual(kwant.semanticRubric, obi.semanticRubric);
+  assert.equal(
+    kwant.semanticRubric.some((line) =>
+      /decision-critical|pole configuration|application/i.test(line),
+    ),
+    true,
+  );
+
+  const obiResult = await runBehaviorTrial(
+    obi,
+    1,
+    scriptedDriver(obi),
+    passingSemanticJudge,
+    "obi-v2",
+  );
+  const kwantResult = await runBehaviorTrial(
+    kwant,
+    1,
+    kwantScriptedDriver(kwant),
+    passingSemanticJudge,
+    "kwant-v3",
+  );
+
+  for (const result of [obiResult, kwantResult]) {
+    assert.equal(result.status, "PASS");
+    assert.equal(result.localToolCallCount, 0);
+    assert.equal(result.trace.finalProductRefs.length, 0);
+    assert.equal(
+      result.trace.clarificationOrFinalAnswer.kind,
+      "clarification_candidate",
+    );
+  }
+});
+
+test("ONLY_IN_STOCK messages are explicit and provider-shaped", () => {
+  const obi = behaviorScenarioForProvider(
+    "ONLY_IN_STOCK",
+    "obi-v2",
+  );
+  const kwant = behaviorScenarioForProvider(
+    "ONLY_IN_STOCK",
+    "kwant-v3",
+  );
+
+  assert.equal(
+    obi.userMessage,
+    "Pokaż tylko te miski, które mamy na pewno na stanie.",
+  );
+  assert.match(kwant.userMessage, /wyłączniki B16 1P/i);
+  assert.match(kwant.userMessage, /oddziale/i);
+  assert.doesNotMatch(kwant.userMessage, /misk/i);
+});
+
 test("the same behavior families pass through provider v3 KWANT mocks", async () => {
   const results = await runBehaviorSuite({
     provider: "kwant-v3",
@@ -449,17 +548,37 @@ test("ambiguous OBI city fails closed and asks for a more precise location", asy
   assert.equal(result.status, "PASS");
   assert.equal(result.localToolCallCount, 1);
   assert.equal(
+    result.trace.localProductCalls[0].arguments.storeNumber,
+    "075",
+  );
+  assert.equal(
+    result.trace.mockedToolResults[0].storeNumber,
+    "075",
+  );
+  assert.equal(
     result.trace.mockedToolResults[0].rejection,
     "store_not_authorized",
   );
   assert.equal(result.trace.finalProductRefs.length, 0);
+  assert.equal(
+    result.trace.finalProductRefs.some((ref) =>
+      "storeNumber" in ref && ref.storeNumber !== "075"
+    ),
+    false,
+  );
   assert.match(
     result.trace.clarificationOrFinalAnswer.text,
     /ulic|lokaliz|market/i,
   );
+  assert.equal(
+    scenario.semanticRubric.some((line) =>
+      /075.*Nowy Sącz|Nowy Sącz.*075/i.test(line)
+    ),
+    true,
+  );
 });
 
-test("only-in-stock filters zero and unknown selected-branch stock for OBI and KWANT", async () => {
+test("only-in-stock fixtures qualify only positive selected-branch stock", async () => {
   for (const provider of ["obi-v2", "kwant-v3"]) {
     const scenario = behaviorScenarioForProvider(
       "ONLY_IN_STOCK",
@@ -485,15 +604,73 @@ test("only-in-stock filters zero and unknown selected-branch stock for OBI and K
       "obik" in ref ? ref.obik : ref.productId,
       provider === "obi-v2" ? "7400002" : "kw-7400002",
     );
+
+    const products =
+      result.trace.mockedToolResults[0].results[0].products;
+    assert.deepEqual(
+      products.map((product) => product.stock),
+      [0, 4, null],
+    );
+
     if (provider === "kwant-v3") {
-      const products =
-        result.trace.mockedToolResults[0].results[0].products;
-      assert.equal(products[0].stock, 0);
+      assert.equal(
+        result.trace.localProductCalls[0].arguments.queries[0].query,
+        "wyłączniki nadprądowe B16 1P",
+      );
+      assert.equal(
+        products.every((product) =>
+          /wyłącznik/i.test(product.name)
+        ),
+        true,
+      );
       assert.equal(products[0].centralStock, 20);
-      assert.equal(products[2].stock, null);
       assert.equal(products[2].centralStock, 20);
+      assert.equal(products[1].stock > 0, true);
     }
   }
+});
+
+test("KWANT central stock alone cannot qualify ONLY_IN_STOCK", async () => {
+  const scenario = behaviorScenarioForProvider(
+    "ONLY_IN_STOCK",
+    "kwant-v3",
+  );
+  const base = kwantScriptedDriver(scenario);
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      start: (...args) => base.start(...args),
+      async continueTurn(
+        _responseId,
+        _callId,
+        _branchId,
+        mockedResult,
+      ) {
+        const zeroStock = verifiedRefs(mockedResult).find(
+          (ref) =>
+            "productId" in ref &&
+            ref.productId === "kw-7400001",
+        );
+        return answer(
+          "Jest dostępny dzięki stanowi centralnemu.",
+          zeroStock ? [zeroStock] : [],
+        );
+      },
+    },
+    passingSemanticJudge,
+    "kwant-v3",
+  );
+
+  assert.equal(result.status, "FAIL");
+  assert.match(
+    result.reason,
+    /zero\/null selected-branch stock/i,
+  );
+  const products =
+    result.trace.mockedToolResults[0].results[0].products;
+  assert.equal(products[0].stock, 0);
+  assert.equal(products[0].centralStock, 20);
 });
 
 test("repeated trials stay configurable and summary reports pass totals", async () => {
@@ -523,26 +700,49 @@ test("repeated trials stay configurable and summary reports pass totals", async 
   assert.match(summary, /failed scenarios: none/);
 });
 
-test("decision-critical clarification scenarios fail on local lookup before clarification", async () => {
+test("decision-critical D variants fail on provider lookup before clarification", async () => {
   const cases = [
-    ["D", "końcówka do kranu"],
-    ["H_AMBIGUOUS", "silikon do umywalki"],
+    {
+      provider: "obi-v2",
+      scenario: behaviorScenarioForProvider("D", "obi-v2"),
+      query: "końcówka do kranu",
+    },
+    {
+      provider: "kwant-v3",
+      scenario: behaviorScenarioForProvider("D", "kwant-v3"),
+      query: "wyłącznik nadprądowy B16",
+    },
   ];
 
-  for (const [id, query] of cases) {
-    const scenario = behaviorScenario(id);
+  for (const { provider, scenario, query } of cases) {
     const result = await runBehaviorTrial(
       scenario,
       1,
       {
         async start() {
-          return toolRequest([{ query, limit: 3 }]);
+          return provider === "obi-v2"
+            ? toolRequest([{ query, limit: 3 }])
+            : {
+                type: "tool_request",
+                responseId: "resp_tool",
+                tool: {
+                  name: "find_products",
+                  callId: "call_tool",
+                  arguments: {
+                    providerId: "kwant-pl",
+                    branchId: "205",
+                    queries: [{ query, limit: 3 }],
+                  },
+                },
+                webSearchCalls: 0,
+              };
         },
         async continueTurn() {
           return answer("Jaki dokładnie wariant jest potrzebny?");
         },
       },
       passingSemanticJudge,
+      provider,
     );
 
     assert.equal(result.status, "FAIL");
