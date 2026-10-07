@@ -332,6 +332,10 @@ Selected content crosses an Android-local `AttachmentImporter` boundary before b
 
 The composer uses multiline IME behavior: Enter inserts a newline and only the dedicated button submits. Text-only transport is unchanged. A pending attachment enables the dedicated submit path and can be sent with or without accompanying text through protocol v4. During submission the pending-owner marker remains durable until the USER message and its attachment metadata commit in Room; only then does Android synchronously attempt to release the marker without deleting the private file. A failed marker release after the Room commit is non-fatal and leaves harmless overlapping pending + Room ownership for startup reconciliation. A failed Room begin still leaves pending state and its marker usable.
 
+## Advisor upstream failure diagnostics
+
+Advisor-facing upstream failures retain the public `502 {"error":"upstream_failure"}` contract. Internally, the Worker classifies the failure at its source as network, HTTP 4xx/rate-limit/5xx, invalid upstream JSON, invalid Responses envelope, invalid local-tool call, or invalid structured final answer. The existing structured Cloudflare protocol log records only stage, protocol version, internal failure category, and upstream HTTP status when available. It never logs request/response payloads, messages, prompts, tool queries/results, product data, attachment filenames/bytes, IDs, tokens, keys, or cookies. No retry behavior is coupled to these diagnostics.
+
 ## Multimodal advisor transport (protocol v4)
 
 - Protocol v4 is provider-aware v3 plus one optional attachment; v2/v3 JSON compatibility remains intact.
