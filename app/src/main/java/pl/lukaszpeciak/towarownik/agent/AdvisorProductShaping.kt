@@ -63,7 +63,6 @@ private data class AdvisorBoundProductFacts(
 )
 
 private data class AdvisorFactCandidate(
-    val sourceIndex: Int,
     val fact: AdvisorTechnicalFact,
 )
 
@@ -82,7 +81,7 @@ private fun shapeAdvisorProductFacts(
     shortDescription: String?,
     technicalFacts: List<TechnicalFact>,
 ): AdvisorBoundProductFacts {
-    val candidates = technicalFacts.mapIndexedNotNull { index, fact ->
+    val candidates = technicalFacts.mapNotNull { fact ->
         val label = fact.label.toAdvisorBoundText(
             ADVISOR_PRODUCT_FACT_LABEL_MAX_CHARS,
         )
@@ -93,7 +92,6 @@ private fun shapeAdvisorProductFacts(
             null
         } else {
             AdvisorFactCandidate(
-                sourceIndex = index,
                 fact = AdvisorTechnicalFact(label, value),
             )
         }
