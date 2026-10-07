@@ -519,3 +519,11 @@ These decisions describe the broader intended product behavior. The currently im
 - Preserve one explicit transport contract for the full active tool-assisted turn rather than choosing `/continue` from provider identity alone.
 - Text-only OBI remains protocol v2 + `find_obi_products`; text-only provider/KWANT remains v3 + `find_products`; attachment START/MESSAGE and every resulting continuation remain provider-aware v4 + `find_products`.
 - OBI attachment turns still execute the existing Android `FindObiProductsTool`; only the continuation serialization is provider-aware v4. BranchResolver, WorkingProfile, product retrieval, persistence, prompts, and protocol version numbers are unchanged.
+
+
+## 2026-10-07 — safe advisor upstream failure diagnostics
+
+- Keep every advisor upstream failure externally collapsed to HTTP 502 with `{"error":"upstream_failure"}`.
+- Classify failures only where their cause is known: fetch/network, upstream HTTP class, JSON parsing, Responses envelope, function-call contract, or structured final-answer contract.
+- Reuse the existing `advisor_protocol` Cloudflare log and add only the internal upstream category plus upstream HTTP status. Do not log user/model/tool/product/attachment content, identifiers, credentials, tokens, cookies, or raw upstream bodies.
+- Diagnostics are observational only: no retry, persistence, analytics provider, Android/UI change, protocol/version change, or advisor behavior change.
