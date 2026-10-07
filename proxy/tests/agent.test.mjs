@@ -153,6 +153,25 @@ async function responseJson(response) {
   return JSON.parse(await response.text());
 }
 
+async function captureWarnLogs(run) {
+  const originalWarn = console.warn;
+  const lines = [];
+  console.warn = (value) => {
+    lines.push(String(value));
+  };
+  try {
+    const result = await run();
+    return { result, lines };
+  } finally {
+    console.warn = originalWarn;
+  }
+}
+
+function parsedWarn(lines) {
+  assert.equal(lines.length, 1);
+  return JSON.parse(lines[0]);
+}
+
 function validContinueBody(overrides = {}) {
   return {
     responseId: "resp_previous",
@@ -2847,52 +2866,207 @@ test("tool schema is generic and final schema is store-aware", () => {
   );
 });
 
-for (const status of [401, 429, 500]) {
-  test(`OpenAI ${status} body is not leaked`, async () => {
-    const upstreamSecret = `synthetic-upstream-secret-${status}`;
-    const fake = fakeOpenAI(
-      { error: { message: upstreamSecret, internal: "details" } },
-      { status },
-    );
+const upstreamFailureCases = [
+  {
+    name: "network exception",
+    expectedCategory: "upstream_network",
+    expectedStatus: null,
+    fake: () => fakeOpenAI(answerPayload(), { throwNetwork: true }),
+  },
+  {
+    name: "HTTP 400",
+    expectedCategory: "upstream_http_4xx",
+    expectedStatus: 400,
+    fake: () => fakeOpenAI(
+      { error: { message: "UPSTREAM_BODY_SENTINEL_400" } },
+      { status: 400 },
+    ),
+  },
+  {
+    name: "HTTP 429",
+    expectedCategory: "upstream_rate_limit",
+    expectedStatus: 429,
+    fake: () => fakeOpenAI(
+      { error: { message: "UPSTREAM_BODY_SENTINEL_429" } },
+      { status: 429 },
+    ),
+  },
+  {
+    name: "HTTP 500",
+    expectedCategory: "upstream_http_5xx",
+    expectedStatus: 500,
+    fake: () => fakeOpenAI(
+      { error: { message: "UPSTREAM_BODY_SENTINEL_500" } },
+      { status: 500 },
+    ),
+  },
+  {
+    name: "HTTP 200 invalid JSON",
+    expectedCategory: "upstream_invalid_json",
+    expectedStatus: 200,
+    fake: () => fakeOpenAI("UPSTREAM_BODY_SENTINEL_NOT_JSON"),
+  },
+  {
+    name: "HTTP 200 malformed Responses envelope",
+    expectedCategory: "upstream_invalid_envelope",
+    expectedStatus: 200,
+    fake: () => fakeOpenAI({
+      id: "resp_bad_envelope",
+      output: "UPSTREAM_BODY_SENTINEL_BAD_ENVELOPE",
+    }),
+  },
+  {
+    name: "HTTP 200 incompatible function call",
+    expectedCategory: "upstream_invalid_tool_call",
+    expectedStatus: 200,
+    fake: () => fakeOpenAI(
+      toolPayload(
+        '{"storeNumber":"075","queries":[{"query":"secret-query","limit":1}]}',
+        "wrong_tool",
+      ),
+    ),
+  },
+  {
+    name: "HTTP 200 invalid structured final answer",
+    expectedCategory: "upstream_invalid_final_answer",
+    expectedStatus: 200,
+    fake: () => fakeOpenAI({
+      id: "resp_bad_final",
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({
+                text: "UPSTREAM_BODY_SENTINEL_BAD_FINAL",
+                productRefs: "not-an-array",
+              }),
+            },
+          ],
+        },
+      ],
+    }),
+  },
+];
+
+for (const scenario of upstreamFailureCases) {
+  test(`${scenario.name} logs safe failure category and keeps public 502 contract`, async () => {
+    const userText = "USER_TEXT_MUST_NOT_APPEAR";
+    const fake = scenario.fake();
     const worker = createWorker(fake.fetch);
 
-    const response = await worker.fetch(
-      jsonRequest("/v1/agent/start", { message: "hello" }),
-      configuredEnv,
+    const { result: response, lines } = await captureWarnLogs(() =>
+      worker.fetch(
+        jsonRequest("/v1/agent/start", { message: userText }),
+        configuredEnv,
+      ),
     );
-    const text = await response.text();
 
     assert.equal(response.status, 502);
-    assert.equal(text.includes(upstreamSecret), false);
-    assert.deepEqual(JSON.parse(text), { error: "upstream_failure" });
+    assert.deepEqual(
+      await responseJson(response),
+      { error: "upstream_failure" },
+    );
+
+    const diagnostic = parsedWarn(lines);
+    assert.deepEqual(
+      {
+        event: diagnostic.event,
+        protocolVersion: diagnostic.protocolVersion,
+        endpointStage: diagnostic.endpointStage,
+        responseEnvelopeType: diagnostic.responseEnvelopeType,
+        validationFailureCategory: diagnostic.validationFailureCategory,
+        upstreamFailureCategory: diagnostic.upstreamFailureCategory,
+        upstreamStatus: diagnostic.upstreamStatus,
+      },
+      {
+        event: "advisor_protocol",
+        protocolVersion: 2,
+        endpointStage: "START",
+        responseEnvelopeType: null,
+        validationFailureCategory: null,
+        upstreamFailureCategory: scenario.expectedCategory,
+        upstreamStatus: scenario.expectedStatus,
+      },
+    );
+
+    const logged = lines.join("\n");
+    assert.equal(logged.includes(userText), false);
+    assert.equal(logged.includes(APP_TOKEN), false);
+    assert.equal(logged.includes(OPENAI_KEY), false);
+    assert.equal(logged.includes("Bearer"), false);
+    assert.equal(logged.includes("UPSTREAM_BODY_SENTINEL"), false);
+    assert.equal(logged.includes("secret-query"), false);
   });
 }
 
-test("malformed OpenAI JSON becomes bounded upstream failure", async () => {
-  const fake = fakeOpenAI("{not-json");
+test("v4 attachment upstream failure log excludes attachment filename and payload content", async () => {
+  const attachmentFilename = "SECRET_ATTACHMENT_FILENAME.pdf";
+  const userText = "SECRET_ATTACHMENT_USER_TEXT";
+  const upstreamBodySentinel = "SECRET_UPSTREAM_RESPONSE_BODY";
+  const fake = fakeOpenAI(
+    { error: { message: upstreamBodySentinel } },
+    { status: 500 },
+  );
   const worker = createWorker(fake.fetch);
+  const form = new FormData();
+  const payload = {
+    protocolVersion: 4,
+    message: userText,
+    providerId: "obi-pl",
+    branchId: "075",
+  };
+  form.set("payload", JSON.stringify(payload));
+  form.set(
+    "attachment",
+    new File(
+      [new TextEncoder().encode("%PDF-1.7\n")],
+      attachmentFilename,
+      { type: "application/pdf" },
+    ),
+  );
+  const request = new Request(
+    "https://proxy.example/v1/agent/start",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${APP_TOKEN}`,
+        "Content-Length": "1024",
+      },
+      body: form,
+    },
+  );
 
-  const response = await worker.fetch(
-    jsonRequest("/v1/agent/start", { message: "hello" }),
-    configuredEnv,
+  const { result: response, lines } = await captureWarnLogs(() =>
+    worker.fetch(request, configuredEnv),
   );
 
   assert.equal(response.status, 502);
-  assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
-});
-
-test("OpenAI transport exception becomes bounded upstream failure without retry", async () => {
-  const fake = fakeOpenAI(answerPayload(), { throwNetwork: true });
-  const worker = createWorker(fake.fetch);
-
-  const response = await worker.fetch(
-    jsonRequest("/v1/agent/start", { message: "hello" }),
-    configuredEnv,
+  assert.deepEqual(
+    await responseJson(response),
+    { error: "upstream_failure" },
   );
+  const diagnostic = parsedWarn(lines);
+  assert.equal(diagnostic.protocolVersion, 4);
+  assert.equal(diagnostic.endpointStage, "START");
+  assert.equal(
+    diagnostic.upstreamFailureCategory,
+    "upstream_http_5xx",
+  );
+  assert.equal(diagnostic.upstreamStatus, 500);
 
-  assert.equal(response.status, 502);
-  assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
-  assert.equal(fake.captures.length, 1);
+  const logged = lines.join("\n");
+  for (const secret of [
+    attachmentFilename,
+    userText,
+    upstreamBodySentinel,
+    APP_TOKEN,
+    OPENAI_KEY,
+    "Bearer",
+  ]) {
+    assert.equal(logged.includes(secret), false);
+  }
 });
 
 test("protected agent endpoint rejects unsupported method after authentication", async () => {

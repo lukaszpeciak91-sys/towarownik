@@ -70,6 +70,8 @@ function logProtocolDiagnostic(
     stage: AgentStage;
     responseEnvelopeType: AgentResult["type"] | null;
     validationFailureCategory: string | null;
+    upstreamFailureCategory?: string | null;
+    upstreamStatus?: number | null;
   },
 ): void {
   const line = JSON.stringify({
@@ -78,6 +80,8 @@ function logProtocolDiagnostic(
     endpointStage: data.stage,
     responseEnvelopeType: data.responseEnvelopeType,
     validationFailureCategory: data.validationFailureCategory,
+    upstreamFailureCategory: data.upstreamFailureCategory ?? null,
+    upstreamStatus: data.upstreamStatus ?? null,
   });
 
   if (level === "warn") {
@@ -209,7 +213,9 @@ async function handleProtectedAgentRequest(
         protocolVersion: failureProtocolVersion,
         stage,
         responseEnvelopeType: null,
-        validationFailureCategory: "upstream_failure",
+        validationFailureCategory: null,
+        upstreamFailureCategory: error.category,
+        upstreamStatus: error.upstreamStatus,
       });
       return jsonResponse({ error: "upstream_failure" }, 502);
     }
