@@ -51,7 +51,6 @@ class AdvisorControllerTest {
         )
     }
 
-
     @Test
     fun `first user turn uses start and returns final response id`() = runBlocking {
         var starts = 0
