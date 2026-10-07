@@ -33,12 +33,15 @@ internal object BranchResolver {
             it.branchId == currentBranchId
         }
         val textTokens = comparisonTokens(userText)
+        val naturalLocationIntent =
+            hasExplicitBranchLocationIntent(userText)
         val metadataMatches = branches
             .mapNotNull { branch ->
                 branchMentionScore(
                     textTokens = textTokens,
                     rawText = userText,
                     branch = branch,
+                    allowNaturalMetadata = naturalLocationIntent,
                 ).takeIf { it > 0 }?.let { score ->
                     BranchMatch(branch, score)
                 }
@@ -88,7 +91,7 @@ internal object BranchResolver {
             }
         }
 
-        return if (hasExplicitUnknownLocationShape(userText)) {
+        return if (naturalLocationIntent) {
             BranchResolution.UnknownMention
         } else {
             BranchResolution.NotMentioned
@@ -122,6 +125,7 @@ internal object BranchResolver {
         textTokens: List<String>,
         rawText: String,
         branch: ProviderBranch,
+        allowNaturalMetadata: Boolean = true,
     ): Int {
         var score = 0
 
@@ -129,18 +133,20 @@ internal object BranchResolver {
             score += 1_000
         }
 
-        val nameTokens = comparisonTokens(branch.name)
-        if (
-            nameTokens.isNotEmpty() &&
-            containsTokenSequence(textTokens, nameTokens)
-        ) {
-            score += 200
-        }
+        if (allowNaturalMetadata) {
+            val nameTokens = comparisonTokens(branch.name)
+            if (
+                nameTokens.isNotEmpty() &&
+                containsTokenSequence(textTokens, nameTokens)
+            ) {
+                score += 200
+            }
 
-        val addressTokens = significantAddressTokens(branch.address)
-        val addressMatches = addressTokens.count(textTokens::contains)
-        if (addressMatches > 0) {
-            score += 300 + addressMatches * 20
+            val addressTokens = significantAddressTokens(branch.address)
+            val addressMatches = addressTokens.count(textTokens::contains)
+            if (addressMatches > 0) {
+                score += 300 + addressMatches * 20
+            }
         }
 
         return score
@@ -165,12 +171,12 @@ internal object BranchResolver {
         }
     }
 
-    private fun hasExplicitUnknownLocationShape(
+    private fun hasExplicitBranchLocationIntent(
         userText: String,
     ): Boolean {
         val normalized = normalizedText(userText)
-        return EXPLICIT_PROVIDER_LOCATION.containsMatchIn(normalized) ||
-            EXPLICIT_BRANCH_NOUN.containsMatchIn(normalized)
+        return PROVIDER_LOCATION_INTENT.containsMatchIn(normalized) ||
+            BRANCH_NOUN_LOCATION_INTENT.containsMatchIn(normalized)
     }
 
     private fun significantAddressTokens(
@@ -269,22 +275,20 @@ internal object BranchResolver {
         "nowy sacz" to setOf(
             "w nowym saczu",
             "w nowym sacz",
-            "nowym saczu",
-            "nowym sacz",
             "w saczu",
             "w sacz",
-            "saczu",
-            "sacz",
         ),
     )
 
-    private val EXPLICIT_PROVIDER_LOCATION = Regex(
-        """\b(?:w|we|na)\s+(?:obi|kwant)\s+[\p{L}]{3,}""" +
-            """|\b(?:obi|kwant)\s+(?:w|we|na)\s+[\p{L}]{3,}""",
+    private val PROVIDER_LOCATION_INTENT = Regex(
+        """\b(?:obi|kwant)\b(?:\s+(?:w|we|na))?\s+[\p{L}]{3,}""" +
+            """|\b(?:w|we|na)\s+(?:obi|kwant)\b""",
     )
 
-    private val EXPLICIT_BRANCH_NOUN = Regex(
-        """\b(?:market|markecie|sklep|sklepie|oddzial|oddziale|""" +
-            """hurtownia|hurtowni|magazyn|magazynie)\s+[\p{L}]{3,}""",
+    private val BRANCH_NOUN_LOCATION_INTENT = Regex(
+        """\b(?:w|we|na)\s+(?:markecie|sklepie|oddziale|hurtowni|""" +
+            """magazynie)\b""" +
+            """|\b(?:market|sklep|oddzial|hurtownia|magazyn)""" +
+            """\s+(?:w|we|na\s+)?[\p{L}]{3,}""",
     )
 }
