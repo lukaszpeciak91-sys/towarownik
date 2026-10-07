@@ -15,6 +15,7 @@ internal sealed interface BranchResolution {
 
     data class Ambiguous(
         val candidates: List<ProviderBranch>,
+        val allowsExplicitBranchHint: Boolean = false,
     ) : BranchResolution
 
     data object UnknownMention : BranchResolution
@@ -70,6 +71,12 @@ internal object BranchResolver {
         if (candidates.size > 1) {
             return BranchResolution.Ambiguous(
                 candidates = candidates.sortedBy { it.branchId.value },
+                allowsExplicitBranchHint = candidates.all {
+                    containsExactBranchId(
+                        userText,
+                        it.branchId.value,
+                    )
+                },
             )
         }
 
@@ -86,6 +93,29 @@ internal object BranchResolver {
         } else {
             BranchResolution.NotMentioned
         }
+    }
+
+    fun resolveHint(
+        hint: String,
+        branches: List<ProviderBranch>,
+    ): ProviderBranch? {
+        val textTokens = comparisonTokens(hint)
+        val matches = branches.mapNotNull { branch ->
+            branchMentionScore(
+                textTokens = textTokens,
+                rawText = hint,
+                branch = branch,
+            ).takeIf { it > 0 }?.let { score ->
+                BranchMatch(branch, score)
+            }
+        }
+        val strongest = matches.maxOfOrNull(BranchMatch::score)
+            ?: return null
+        return matches
+            .filter { it.score == strongest }
+            .map(BranchMatch::branch)
+            .distinctBy(ProviderBranch::branchId)
+            .singleOrNull()
     }
 
     private fun branchMentionScore(
