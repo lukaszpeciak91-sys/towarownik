@@ -649,6 +649,264 @@ class AdvisorControllerTest {
     }
 
     @Test
+    fun `OBI Wielicka user text authorizes one-off 003 without changing conversation branch`() =
+        runBlocking {
+            val toolBranches = mutableListOf<String>()
+            val continueBranches = mutableListOf<String>()
+            val controller = controller(
+                start = {
+                    successTool(
+                        responseId = "resp_tool",
+                        callId = "call_tool",
+                        query = "klej",
+                        storeNumber = "075",
+                    )
+                },
+                continueCall = { _, _, result ->
+                    assertEquals("003", result.storeNumber)
+                    successAnswer("resp_final", "Done")
+                },
+                obiTool = { arguments ->
+                    toolBranches += arguments.storeNumber
+                    assertEquals(null, arguments.requestedBranch)
+                    verifiedResult(
+                        arguments.query,
+                        snapshot(
+                            obik = "3496072",
+                            name = "Product",
+                            stock = 3,
+                            price = BigDecimal("12.99"),
+                            storeNumber = arguments.storeNumber,
+                        ),
+                    )
+                },
+                onContinueStore = { continueBranches += it },
+            )
+
+            controller.runTurn(
+                input = "czy jest w OBI Kraków Wielicka?",
+                previousResponseId = null,
+                conversationStoreNumber = "075",
+                conversationProviderId = "obi-pl",
+            ) { }
+
+            assertEquals(listOf("003"), toolBranches)
+            assertEquals(listOf("075"), continueBranches)
+        }
+
+    @Test
+    fun `ambiguous OBI Krakow cannot be bypassed by model store number`() =
+        runBlocking {
+            var toolCalls = 0
+            var rejected = false
+            val controller = controller(
+                start = {
+                    successTool(
+                        responseId = "resp_tool",
+                        callId = "call_tool",
+                        query = "klej",
+                        storeNumber = "003",
+                    )
+                },
+                rejectedContinueCall = { _, _, _ ->
+                    rejected = true
+                    successAnswer("resp_final", "Który market?")
+                },
+                obiTool = {
+                    toolCalls += 1
+                    error("ambiguous branch must not execute")
+                },
+            )
+
+            controller.runTurn(
+                input = "sprawdź OBI Kraków",
+                previousResponseId = null,
+                conversationStoreNumber = "075",
+                conversationProviderId = "obi-pl",
+            ) { }
+
+            assertEquals(0, toolCalls)
+            assertTrue(rejected)
+        }
+
+    @Test
+    fun `KWANT Zamosc user text resolves one-off branch 128 without changing conversation branch`() =
+        runBlocking {
+            val toolBranches = mutableListOf<String>()
+            val continueBranches = mutableListOf<String>()
+            val controller = controller(
+                start = {
+                    AdvisorProxyCallResult.Success(
+                        AdvisorProxyResult.ToolRequest(
+                            responseId = "resp_tool",
+                            callId = "call_tool",
+                            arguments = AdvisorToolArguments(
+                                providerId = "kwant-pl",
+                                storeNumber = "205",
+                                requestedBranch = "Zamość",
+                                queries = listOf(
+                                    AdvisorToolQuery("MBN116E", 1),
+                                ),
+                            ),
+                        ),
+                    )
+                },
+                continueCall = { _, _, result ->
+                    assertEquals("kwant-pl", result.providerId)
+                    assertEquals("128", result.storeNumber)
+                    successAnswer("resp_final", "Done")
+                },
+                providerTool = { arguments ->
+                    toolBranches += arguments.storeNumber
+                    assertEquals(null, arguments.requestedBranch)
+                    AdvisorToolExecutionResult.Success(
+                        result = AdvisorVerifiedToolResult(
+                            providerId = "kwant-pl",
+                            storeNumber = arguments.storeNumber,
+                            results = emptyList(),
+                        ),
+                        snapshots = emptyList(),
+                    )
+                },
+                onContinueStore = { continueBranches += it },
+            )
+
+            controller.runTurn(
+                input = "ile tego jest w Kwant Zamość?",
+                previousResponseId = null,
+                conversationStoreNumber = "205",
+                conversationProviderId = "kwant-pl",
+            ) { }
+
+            assertEquals(listOf("128"), toolBranches)
+            assertEquals(listOf("205"), continueBranches)
+        }
+
+    @Test
+    fun `KWANT Sacz current alias stays on branch 205`() = runBlocking {
+        val toolBranches = mutableListOf<String>()
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.ToolRequest(
+                        responseId = "resp_tool",
+                        callId = "call_tool",
+                        arguments = AdvisorToolArguments(
+                            providerId = "kwant-pl",
+                            storeNumber = "205",
+                            requestedBranch = "Nowy Sącz",
+                            queries = listOf(
+                                AdvisorToolQuery("MBN116E", 1),
+                            ),
+                        ),
+                    ),
+                )
+            },
+            continueCall = { _, _, _ ->
+                successAnswer("resp_final", "Done")
+            },
+            providerTool = { arguments ->
+                toolBranches += arguments.storeNumber
+                AdvisorToolExecutionResult.Success(
+                    result = AdvisorVerifiedToolResult(
+                        providerId = "kwant-pl",
+                        storeNumber = arguments.storeNumber,
+                        results = emptyList(),
+                    ),
+                    snapshots = emptyList(),
+                )
+            },
+        )
+
+        controller.runTurn(
+            input = "a ile mamy tego w Sączu?",
+            previousResponseId = null,
+            conversationStoreNumber = "205",
+            conversationProviderId = "kwant-pl",
+        ) { }
+
+        assertEquals(listOf("205"), toolBranches)
+    }
+
+    @Test
+    fun `model requestedBranch cannot authorize location absent from user text`() =
+        runBlocking {
+            var toolCalls = 0
+            var rejected = false
+            val controller = controller(
+                start = {
+                    AdvisorProxyCallResult.Success(
+                        AdvisorProxyResult.ToolRequest(
+                            responseId = "resp_tool",
+                            callId = "call_tool",
+                            arguments = AdvisorToolArguments(
+                                providerId = "kwant-pl",
+                                storeNumber = "205",
+                                requestedBranch = "Zamość",
+                                queries = listOf(
+                                    AdvisorToolQuery("MBN116E", 1),
+                                ),
+                            ),
+                        ),
+                    )
+                },
+                rejectedContinueCall = { _, _, _ ->
+                    rejected = true
+                    successAnswer("resp_final", "Clarify")
+                },
+                providerTool = {
+                    toolCalls += 1
+                    error("model hint must not authorize a branch")
+                },
+            )
+
+            controller.runTurn(
+                input = "sprawdź MBN116E",
+                previousResponseId = null,
+                conversationStoreNumber = "205",
+                conversationProviderId = "kwant-pl",
+            ) { }
+
+            assertEquals(0, toolCalls)
+            assertTrue(rejected)
+        }
+
+    @Test
+    fun `unknown explicit location does not fall back to current branch`() =
+        runBlocking {
+            var toolCalls = 0
+            var rejected = false
+            val controller = controller(
+                start = {
+                    successTool(
+                        responseId = "resp_tool",
+                        callId = "call_tool",
+                        query = "klej",
+                        storeNumber = "075",
+                    )
+                },
+                rejectedContinueCall = { _, _, _ ->
+                    rejected = true
+                    successAnswer("resp_final", "Clarify")
+                },
+                obiTool = {
+                    toolCalls += 1
+                    error("unknown location must not use current branch")
+                },
+            )
+
+            controller.runTurn(
+                input = "sprawdź w OBI Zakopane",
+                previousResponseId = null,
+                conversationStoreNumber = "075",
+                conversationProviderId = "obi-pl",
+            ) { }
+
+            assertEquals(0, toolCalls)
+            assertTrue(rejected)
+        }
+
+    @Test
     fun `KWANT conversation executes provider tool and selects current turn card`() = runBlocking {
         var toolCalls = 0
         val snapshot = snapshot(
