@@ -45,6 +45,7 @@ class BranchResolverTest {
             "czy jest w OBI Kraków Wielicka?",
             "OBI na Wielickiej",
             "w markecie na Wielickiej",
+            "w sklepie na Wielickiej",
         ).forEach { text ->
             assertResolved(
                 BranchResolver.resolve(
@@ -150,6 +151,7 @@ class BranchResolverTest {
             "ile tego jest w Kwant Zamość?",
             "Kwant Zamość",
             "w hurtowni Zamość",
+            "na magazynie w Zamościu",
         ).forEach { text ->
             assertResolved(
                 BranchResolver.resolve(
