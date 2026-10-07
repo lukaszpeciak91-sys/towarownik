@@ -20,6 +20,38 @@ import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 class AdvisorControllerTest {
     @Test
+    fun `transport contract follows initiating turn path instead of provider alone`() {
+        assertEquals(
+            AdvisorTransportContract.OBI_V2,
+            advisorTransportContract(
+                providerId = OBI_PROVIDER_ID,
+                hasAttachment = false,
+            ),
+        )
+        assertEquals(
+            AdvisorTransportContract.PROVIDER_V3,
+            advisorTransportContract(
+                providerId = ProviderId("kwant-pl"),
+                hasAttachment = false,
+            ),
+        )
+        assertEquals(
+            AdvisorTransportContract.PROVIDER_V4,
+            advisorTransportContract(
+                providerId = OBI_PROVIDER_ID,
+                hasAttachment = true,
+            ),
+        )
+        assertEquals(
+            AdvisorTransportContract.PROVIDER_V4,
+            advisorTransportContract(
+                providerId = ProviderId("kwant-pl"),
+                hasAttachment = true,
+            ),
+        )
+    }
+
+    @Test
     fun `first user turn uses start and returns final response id`() = runBlocking {
         var starts = 0
         var messages = 0
@@ -1702,6 +1734,7 @@ class AdvisorControllerTest {
                 callId,
                 _,
                 branchId,
+                _,
                 continuation,
             ->
             onContinueStore(branchId)

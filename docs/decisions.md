@@ -513,3 +513,9 @@ These decisions describe the broader intended product behavior. The currently im
 - Serialize attachment imports and guard their UI publication with a monotonically changing generation. New selection, remove, new conversation, and conversation switch invalidate older generations; stale successful imports are deleted rather than attached to the active chat.
 - Disable send and show explicit composer loading only while the current attachment generation is importing/preprocessing. Keep one attachment maximum, multiline Enter behavior, dedicated-send-only submission, and the existing pending ownership/storage/protocol v4 contracts.
 - Keep the 4096 px image output policy but sample source bitmap decode directly toward that bound to reduce obvious peak-memory risk without redesigning preprocessing.
+
+## 2026-10-07 — advisor tool continuation protocol continuity
+
+- Preserve one explicit transport contract for the full active tool-assisted turn rather than choosing `/continue` from provider identity alone.
+- Text-only OBI remains protocol v2 + `find_obi_products`; text-only provider/KWANT remains v3 + `find_products`; attachment START/MESSAGE and every resulting continuation remain provider-aware v4 + `find_products`.
+- OBI attachment turns still execute the existing Android `FindObiProductsTool`; only the continuation serialization is provider-aware v4. BranchResolver, WorkingProfile, product retrieval, persistence, prompts, and protocol version numbers are unchanged.

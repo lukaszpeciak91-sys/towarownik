@@ -66,6 +66,7 @@ internal class AdvisorController(
         callId: String,
         providerId: String,
         branchId: String,
+        contract: AdvisorTransportContract,
         continuation: AdvisorToolContinuation,
     ) -> AdvisorProxyCallResult,
     private val executeObiTool: suspend (
@@ -120,6 +121,10 @@ internal class AdvisorController(
                 AdvisorError.INPUT,
             ).also(onState)
         }
+        val turnContract = advisorTransportContract(
+            providerId = conversationProvider,
+            hasAttachment = attachment != null,
+        )
         var turnBranches: List<ProviderBranch>? = null
 
         suspend fun loadTurnBranches(): ProviderBranchResult {
@@ -325,6 +330,7 @@ internal class AdvisorController(
                                     toolRequest.callId,
                                     conversationProviderId,
                                     conversationStoreNumber,
+                                    turnContract,
                                     AdvisorToolContinuation.LocalToolLimitReached(
                                         queries = toolRequest.arguments.queries,
                                         storeNumber =
@@ -430,6 +436,7 @@ internal class AdvisorController(
                                 toolRequest.callId,
                                 conversationProviderId,
                                 conversationStoreNumber,
+                                turnContract,
                                 continuation,
                             )
                         }
@@ -552,24 +559,18 @@ internal class AdvisorController(
                         callId,
                         providerId,
                         branchId,
+                        contract,
                         continuation,
                     ->
-                    if (providerId == OBI_PROVIDER_ID.value) {
-                        proxyClient.continueTurn(
-                            responseId = responseId,
-                            callId = callId,
-                            storeNumber = branchId,
-                            continuation = continuation,
-                        )
-                    } else {
-                        proxyClient.continueTurn(
-                            responseId = responseId,
-                            callId = callId,
-                            providerId = providerId,
-                            branchId = branchId,
-                            continuation = continuation,
-                        )
-                    }
+                    continueAdvisorToolTurn(
+                        proxyClient = proxyClient,
+                        responseId = responseId,
+                        callId = callId,
+                        providerId = providerId,
+                        branchId = branchId,
+                        contract = contract,
+                        continuation = continuation,
+                    )
                 },
                 executeObiTool = obiTool::execute,
                 executeProviderTool = providerTool::execute,
@@ -592,6 +593,46 @@ internal class AdvisorController(
         }
     }
 }
+
+internal fun advisorTransportContract(
+    providerId: ProviderId,
+    hasAttachment: Boolean,
+): AdvisorTransportContract =
+    when {
+        hasAttachment -> AdvisorTransportContract.PROVIDER_V4
+        providerId == OBI_PROVIDER_ID -> AdvisorTransportContract.OBI_V2
+        else -> AdvisorTransportContract.PROVIDER_V3
+    }
+
+internal suspend fun continueAdvisorToolTurn(
+    proxyClient: AdvisorProxyClient,
+    responseId: String,
+    callId: String,
+    providerId: String,
+    branchId: String,
+    contract: AdvisorTransportContract,
+    continuation: AdvisorToolContinuation,
+): AdvisorProxyCallResult =
+    when (contract) {
+        AdvisorTransportContract.OBI_V2 ->
+            proxyClient.continueTurn(
+                responseId = responseId,
+                callId = callId,
+                storeNumber = branchId,
+                continuation = continuation,
+            )
+        AdvisorTransportContract.PROVIDER_V3,
+        AdvisorTransportContract.PROVIDER_V4,
+        ->
+            proxyClient.continueTurn(
+                responseId = responseId,
+                callId = callId,
+                providerId = providerId,
+                branchId = branchId,
+                continuation = continuation,
+                protocolVersion = contract.protocolVersion,
+            )
+    }
 
 private sealed interface ToolBranchAuthorization {
     data class Authorized(

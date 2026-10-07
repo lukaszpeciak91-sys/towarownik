@@ -247,6 +247,106 @@ class AdvisorProxyClientTest {
                 ),
                 answer.productRefs,
             )
+
+            val startBody = Json.parseToJsonElement(
+                server.takeRequest().body.readUtf8(),
+            ).jsonObject
+            assertEquals(
+                ADVISOR_PROTOCOL_VERSION,
+                startBody["protocolVersion"]?.jsonPrimitive?.intOrNull,
+            )
+
+            val continueBody = Json.parseToJsonElement(
+                server.takeRequest().body.readUtf8(),
+            ).jsonObject
+            assertEquals(
+                ADVISOR_PROTOCOL_VERSION,
+                continueBody["protocolVersion"]?.jsonPrimitive?.intOrNull,
+            )
+            assertEquals(
+                FIND_PRODUCTS,
+                continueBody["tool"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                "kwant-pl",
+                continueBody["providerId"]?.jsonPrimitive?.content,
+            )
+            assertEquals(
+                "205",
+                continueBody["branchId"]?.jsonPrimitive?.content,
+            )
+        }
+    }
+
+    @Test
+    fun `provider v4 rejected and limit continuations keep provider contract`() = runBlocking {
+        MockWebServer().use { server ->
+            repeat(2) {
+                server.enqueue(answerResponse())
+            }
+            val client = client(server, FAKE_TOKEN)
+
+            val rejected = client.continueTurn(
+                responseId = "resp_rejected",
+                callId = "call_rejected",
+                providerId = "obi-pl",
+                branchId = "075",
+                continuation = AdvisorToolContinuation.RejectedStore(
+                    queries = listOf(AdvisorToolQuery("miska", 1)),
+                    storeNumber = "075",
+                    providerId = "obi-pl",
+                ),
+                protocolVersion = MULTIMODAL_ADVISOR_PROTOCOL_VERSION,
+            )
+            val limited = client.continueTurn(
+                responseId = "resp_limited",
+                callId = "call_limited",
+                providerId = "obi-pl",
+                branchId = "075",
+                continuation = AdvisorToolContinuation.LocalToolLimitReached(
+                    queries = listOf(AdvisorToolQuery("miska", 1)),
+                    storeNumber = "075",
+                    providerId = "obi-pl",
+                ),
+                protocolVersion = MULTIMODAL_ADVISOR_PROTOCOL_VERSION,
+            )
+
+            assertTrue(rejected is AdvisorProxyCallResult.Success)
+            assertTrue(limited is AdvisorProxyCallResult.Success)
+
+            val rejectedBody = Json.parseToJsonElement(
+                server.takeRequest().body.readUtf8(),
+            ).jsonObject
+            assertEquals(
+                MULTIMODAL_ADVISOR_PROTOCOL_VERSION,
+                rejectedBody["protocolVersion"]?.jsonPrimitive?.intOrNull,
+            )
+            assertEquals(
+                FIND_PRODUCTS,
+                rejectedBody["tool"]?.jsonPrimitive?.content,
+            )
+            val rejectedResult = rejectedBody["result"] as JsonObject
+            assertEquals(
+                "branch_not_authorized",
+                rejectedResult["rejection"]?.jsonPrimitive?.content,
+            )
+
+            val limitedBody = Json.parseToJsonElement(
+                server.takeRequest().body.readUtf8(),
+            ).jsonObject
+            assertEquals(
+                MULTIMODAL_ADVISOR_PROTOCOL_VERSION,
+                limitedBody["protocolVersion"]?.jsonPrimitive?.intOrNull,
+            )
+            assertEquals(
+                FIND_PRODUCTS,
+                limitedBody["tool"]?.jsonPrimitive?.content,
+            )
+            val limitedResult = limitedBody["result"] as JsonObject
+            assertEquals(
+                "local_tool_limit_reached",
+                limitedResult["rejection"]?.jsonPrimitive?.content,
+            )
         }
     }
 
