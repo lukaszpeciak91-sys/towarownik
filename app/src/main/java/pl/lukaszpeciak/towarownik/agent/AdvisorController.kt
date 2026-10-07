@@ -7,7 +7,14 @@ import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductKey
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.BranchResolution
+import pl.lukaszpeciak.towarownik.product.provider.BranchResolver
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
+import pl.lukaszpeciak.towarownik.product.provider.ProviderId
 
 internal enum class AdvisorError {
     NOT_CONFIGURED,
@@ -65,6 +72,9 @@ internal class AdvisorController(
     private val executeProviderTool: suspend (
         AdvisorToolArguments,
     ) -> AdvisorToolExecutionResult,
+    private val branchDirectory: (
+        ProviderId,
+    ) -> ProviderBranchResult,
     private val startAgentWithAttachment: (suspend (
         String,
         String,
@@ -94,39 +104,114 @@ internal class AdvisorController(
             return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
         }
 
-        val obiAuthorization =
-            if (conversationProviderId == OBI_PROVIDER_ID.value) {
-                runCatching {
-                    AdvisorTurnStoreAuthorization.capture(
-                        conversationStoreNumber =
-                            conversationStoreNumber,
-                        currentUserMessage = normalizedInput,
-                    )
+        val conversationProvider = runCatching {
+            ProviderId(conversationProviderId)
+        }.getOrElse {
+            return AdvisorUiState.Error(
+                AdvisorError.INPUT,
+            ).also(onState)
+        }
+        val currentBranchId = runCatching {
+            BranchId(conversationStoreNumber)
+        }.getOrElse {
+            return AdvisorUiState.Error(
+                AdvisorError.INPUT,
+            ).also(onState)
+        }
+        var turnBranches: List<ProviderBranch>? = null
+
+        fun loadTurnBranches(): ProviderBranchResult {
+            turnBranches?.let {
+                return ProviderBranchResult.Available(it)
+            }
+            return when (
+                val result = runCatching {
+                    branchDirectory(conversationProvider)
                 }.getOrElse {
-                    return AdvisorUiState.Error(
-                        AdvisorError.INPUT,
-                    ).also(onState)
+                    ProviderBranchResult.Unavailable(
+                        failure =
+                            pl.lukaszpeciak.towarownik.product.provider
+                                .ProductProviderFailure.NETWORK,
+                        reason = "Branch directory unavailable",
+                    )
                 }
-            } else {
-                null
+            ) {
+                is ProviderBranchResult.Available -> {
+                    turnBranches = result.branches
+                    result
+                }
+                is ProviderBranchResult.Unavailable -> result
+            }
+        }
+
+        fun authorizeToolArguments(
+            arguments: AdvisorToolArguments,
+        ): ToolBranchAuthorization {
+            if (arguments.providerId != conversationProviderId) {
+                return ToolBranchAuthorization.Rejected
+            }
+            val branches = when (val result = loadTurnBranches()) {
+                is ProviderBranchResult.Available -> result.branches
+                is ProviderBranchResult.Unavailable ->
+                    return ToolBranchAuthorization.Unavailable
+            }
+            if (branches.none { it.branchId == currentBranchId }) {
+                return ToolBranchAuthorization.Rejected
             }
 
-        fun isToolAuthorized(
-            arguments: AdvisorToolArguments,
-        ): Boolean =
-            if (conversationProviderId == OBI_PROVIDER_ID.value) {
-                arguments.providerId == OBI_PROVIDER_ID.value &&
-                    requireNotNull(obiAuthorization)
-                        .isAuthorized(arguments.storeNumber)
-            } else {
-                arguments.providerId == conversationProviderId &&
-                    arguments.storeNumber == conversationStoreNumber &&
-                    arguments.requestedBranch?.let { requested ->
-                        normalizedInput.normalizedBranchText().contains(
-                            requested.normalizedBranchText(),
+            return when (
+                val resolution = BranchResolver.resolve(
+                    userText = normalizedInput,
+                    branches = branches,
+                    currentBranchId = currentBranchId,
+                )
+            ) {
+                is BranchResolution.CurrentBranch ->
+                    ToolBranchAuthorization.Authorized(
+                        arguments.forResolvedBranch(
+                            resolution.branch.branchId,
+                        ),
+                    )
+
+                is BranchResolution.Resolved ->
+                    ToolBranchAuthorization.Authorized(
+                        arguments.forResolvedBranch(
+                            resolution.branch.branchId,
+                        ),
+                    )
+
+                is BranchResolution.Ambiguous,
+                BranchResolution.UnknownMention ->
+                    ToolBranchAuthorization.Rejected
+
+                BranchResolution.NotMentioned -> {
+                    val modelRequestedOtherBranch =
+                        arguments.storeNumber != currentBranchId.value ||
+                            arguments.requestedBranch?.let { hint ->
+                                when (
+                                    BranchResolver.resolve(
+                                        userText = hint,
+                                        branches = branches,
+                                        currentBranchId = currentBranchId,
+                                    )
+                                ) {
+                                    is BranchResolution.CurrentBranch ->
+                                        false
+                                    else -> true
+                                }
+                            } == true
+                    if (modelRequestedOtherBranch) {
+                        ToolBranchAuthorization.Rejected
+                    } else {
+                        ToolBranchAuthorization.Authorized(
+                            arguments.forResolvedBranch(
+                                currentBranchId,
+                            ),
                         )
-                    } != false
+                    }
+                }
             }
+        }
 
         if (!isConfigured()) {
             return AdvisorUiState.Error(
@@ -254,21 +339,32 @@ internal class AdvisorController(
                     toolCalls += 1
 
                     val arguments = toolRequest.arguments
+                    val authorization = authorizeToolArguments(arguments)
                     val continuation =
-                        if (!isToolAuthorized(arguments)) {
-                            AdvisorToolContinuation.RejectedStore(
-                                queries = arguments.queries,
-                                storeNumber = arguments.storeNumber,
-                                providerId = arguments.providerId,
-                            )
-                        } else {
-                            onState(AdvisorUiState.RunningLocalTool)
-                            when (
-                                val localResult = safeExecuteTool(
-                                    conversationProviderId = conversationProviderId,
-                                    arguments = arguments,
+                        when (authorization) {
+                            ToolBranchAuthorization.Rejected ->
+                                AdvisorToolContinuation.RejectedStore(
+                                    queries = arguments.queries,
+                                    storeNumber = arguments.storeNumber,
+                                    providerId = arguments.providerId,
                                 )
-                            ) {
+
+                            ToolBranchAuthorization.Unavailable ->
+                                return AdvisorUiState.Error(
+                                    AdvisorError.PRODUCT_PROVIDER,
+                                ).also(onState)
+
+                            is ToolBranchAuthorization.Authorized -> {
+                                val resolvedArguments =
+                                    authorization.arguments
+                                onState(AdvisorUiState.RunningLocalTool)
+                                when (
+                                    val localResult = safeExecuteTool(
+                                        conversationProviderId =
+                                            conversationProviderId,
+                                        arguments = resolvedArguments,
+                                    )
+                                ) {
                                 is AdvisorToolExecutionResult.Success -> {
                                     localResult.snapshots.forEach {
                                         verifiedByKey[it.key] = it
@@ -293,17 +389,21 @@ internal class AdvisorController(
                                     )
                                 }
 
-                                AdvisorToolExecutionResult.UnsupportedStore ->
-                                    AdvisorToolContinuation.RejectedStore(
-                                        queries = arguments.queries,
-                                        storeNumber = arguments.storeNumber,
-                                        providerId = arguments.providerId,
-                                    )
+                                    AdvisorToolExecutionResult.UnsupportedStore ->
+                                        AdvisorToolContinuation.RejectedStore(
+                                            queries =
+                                                resolvedArguments.queries,
+                                            storeNumber =
+                                                resolvedArguments.storeNumber,
+                                            providerId =
+                                                resolvedArguments.providerId,
+                                        )
 
-                                AdvisorToolExecutionResult.Failure ->
-                                    return AdvisorUiState.Error(
-                                        AdvisorError.PRODUCT_PROVIDER,
-                                    ).also(onState)
+                                    AdvisorToolExecutionResult.Failure ->
+                                        return AdvisorUiState.Error(
+                                            AdvisorError.PRODUCT_PROVIDER,
+                                        ).also(onState)
+                                }
                             }
                         }
 
@@ -387,8 +487,11 @@ internal class AdvisorController(
         fun production(context: android.content.Context): AdvisorController {
             val attachmentStorage = AttachmentStorage(context.applicationContext)
             val proxyClient = AdvisorProxyClient(attachmentStorage = attachmentStorage)
+            val providers = ProductProviderRegistry.production()
             val obiTool = FindObiProductsTool()
-            val providerTool = FindProviderProductsTool()
+            val providerTool = FindProviderProductsTool(
+                providers = providers,
+            )
             return AdvisorController(
                 isConfigured = {
                     BuildConfig.TOWAROWNIK_APP_TOKEN.isNotBlank() &&
@@ -455,6 +558,9 @@ internal class AdvisorController(
                 },
                 executeObiTool = obiTool::execute,
                 executeProviderTool = providerTool::execute,
+                branchDirectory = { providerId ->
+                    providers.resolve(providerId).branches()
+                },
                 startAgentWithAttachment = {
                         message, providerId, branchId, attachment,
                     ->
@@ -505,7 +611,3 @@ private val ADVISOR_CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
 private fun String.normalizeWhitespace(): String =
     replace(ADVISOR_CONTROL_OR_WHITESPACE, " ").trim()
 
-private fun String.normalizedBranchText(): String =
-    java.text.Normalizer.normalize(this, java.text.Normalizer.Form.NFD)
-        .replace(Regex("\\p{M}+"), "")
-        .lowercase()
