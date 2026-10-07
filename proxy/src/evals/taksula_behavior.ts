@@ -541,6 +541,7 @@ export const BRANCH_AND_STOCK_REGRESSION_SCENARIOS: readonly BehaviorScenario[] 
       "Only the product with selected-branch stock greater than zero may be recommended as qualifying.",
       "Stock zero and null stock are not presented as confirmed available.",
       "For KWANT, central stock does not qualify a product as available in the selected branch.",
+      "The bounded mocked results are not described as proving complete assortment absence.",
     ],
   },
 ];
