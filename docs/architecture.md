@@ -1,19 +1,28 @@
 # Architecture
 
-## KWANT logistics facts and one-off branch lookup
+## Provider branch resolution and one-off lookup
 
 `ProviderProduct` carries nullable `centralStock` independently from the
-existing selected-branch `stock`. The KWANT parser reads the labelled
-`Centrala` row and never combines it with the branch value; OBI leaves the new
-field null. Advisor snapshots persist the value in Room v9 so restored cards
-retain the same evidence.
+existing selected-branch `stock`. KWANT central and branch stock remain
+separate facts; OBI leaves `centralStock` null.
 
-Protocol v3 keeps the WorkingProfile provider/branch as immutable request
-context. Its optional `requestedBranch` is accepted only for KWANT when the
-literal location occurs in the current user message. Android resolves an exact,
-diacritic-insensitive unique name from `ProductProvider.branches()` and uses
-that branch only for the current tool execution. Missing, unknown, or ambiguous
-names never fall back to a guessed branch.
+Android owns one provider-neutral `BranchResolver` over
+`ProviderBranch(branchId, name, address)`. It normalizes case, whitespace,
+Polish diacritics and basic street forms, then resolves exact branch IDs,
+branch/city names and address fragments without edit-distance guessing. OBI
+branches come from one canonical static directory verified against OBI
+Poland's official customer-relations market list; KWANT continues to expose its
+live public branch directory.
+
+The current user message, not the model's `requestedBranch`, authorizes a
+turn-scoped branch. A unique natural reference may rewrite only the local tool
+branch ID for that call. Current-branch aliases such as `u nas` and the
+bounded Nowy Sącz/Sączu variants resolve back to the conversation branch.
+Ambiguous and explicit unknown locations fail closed. Multiple separately
+stated exact IDs may still be queried one at a time using the tool hint only
+to choose among those already user-authorized IDs. The conversation
+WorkingProfile and provider/branch passed to subsequent continuation remain
+unchanged.
 
 ## Goal
 
