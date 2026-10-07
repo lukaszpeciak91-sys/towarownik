@@ -695,6 +695,52 @@ class AdvisorControllerTest {
         }
 
     @Test
+    fun `incidental OBI metadata cannot authorize branch through model hint`() =
+        runBlocking {
+            var toolCalls = 0
+            var rejected = false
+            val controller = controller(
+                start = {
+                    AdvisorProxyCallResult.Success(
+                        AdvisorProxyResult.ToolRequest(
+                            responseId = "resp_tool",
+                            callId = "call_tool",
+                            arguments = AdvisorToolArguments(
+                                providerId = "obi-pl",
+                                storeNumber = "003",
+                                requestedBranch = "Wielicka",
+                                queries = listOf(
+                                    AdvisorToolQuery(
+                                        "szukam długą listwę",
+                                        1,
+                                    ),
+                                ),
+                            ),
+                        ),
+                    )
+                },
+                rejectedContinueCall = { _, _, _ ->
+                    rejected = true
+                    successAnswer("resp_final", "Clarify")
+                },
+                obiTool = {
+                    toolCalls += 1
+                    error("incidental metadata must not authorize a branch")
+                },
+            )
+
+            controller.runTurn(
+                input = "szukam długą listwę",
+                previousResponseId = null,
+                conversationStoreNumber = "075",
+                conversationProviderId = "obi-pl",
+            ) { }
+
+            assertEquals(0, toolCalls)
+            assertTrue(rejected)
+        }
+
+    @Test
     fun `ambiguous OBI Krakow cannot be bypassed by model store number`() =
         runBlocking {
             var toolCalls = 0
