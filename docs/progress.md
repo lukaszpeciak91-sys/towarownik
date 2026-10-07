@@ -4,6 +4,8 @@
 
 **Advisor Product Contract v1 production policy**
 
+Protocol-continuity blocker follow-up: tool-assisted advisor turns now retain the transport family selected by their initiating START/MESSAGE, so an OBI attachment turn cannot drop from provider-aware v4 `find_products` to legacy v2 during `/continue`. OBI local retrieval remains `FindObiProductsTool`; text-only OBI v2 and KWANT v3 remain unchanged.
+
 Current branch/location integration follow-up: prompt behavior now follows the shared Android BranchResolver authorization model, branch selector labels retain real IDs alongside names/addresses, explicit only-confirmed-local-stock intent requires selected-branch stock > 0, and unsupported internal citation/entity tokens are removed at the proxy normalization boundary while real URL citation annotations remain authoritative.
 
 PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, richer verified OBI product facts, selective web search, graceful local-tool exhaustion, and multi-query OBI lookup are complete. The current iteration aligns production advisor policy with Product Contract v1: advisor-first general guidance, clarification-before-search for ambiguous selection, explicit-store-intent OBI lookup, restrained complements, and advice-first job/project handling while preserving infrastructure guards and trust boundaries.
