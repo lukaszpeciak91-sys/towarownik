@@ -8,7 +8,7 @@ import pl.lukaszpeciak.towarownik.product.ProductLookupRepository
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchRepository
 import pl.lukaszpeciak.towarownik.product.ProductSearchResult
-import pl.lukaszpeciak.towarownik.product.SUPPORTED_OBI_STORE_NUMBERS
+import pl.lukaszpeciak.towarownik.product.OBI_STORES
 
 internal val OBI_PROVIDER_ID = ProviderId("obi-pl")
 
@@ -34,10 +34,11 @@ internal class ObiProductProvider(
 
     override fun branches(): ProviderBranchResult =
         ProviderBranchResult.Available(
-            branches = SUPPORTED_OBI_STORE_NUMBERS.map { storeNumber ->
+            branches = OBI_STORES.map { store ->
                 ProviderBranch(
-                    branchId = BranchId(storeNumber),
-                    name = storeNumber,
+                    branchId = BranchId(store.storeNumber),
+                    name = store.city,
+                    address = store.address,
                 )
             },
         )
