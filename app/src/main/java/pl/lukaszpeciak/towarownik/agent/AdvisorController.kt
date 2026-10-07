@@ -180,26 +180,39 @@ internal class AdvisorController(
                         ),
                     )
 
-                is BranchResolution.Ambiguous,
+                is BranchResolution.Ambiguous -> {
+                    if (!resolution.allowsExplicitBranchHint) {
+                        ToolBranchAuthorization.Rejected
+                    } else {
+                        val hinted = arguments.resolveBranchHint(branches)
+                        if (
+                            hinted != null &&
+                            resolution.candidates.any {
+                                it.branchId == hinted.branchId
+                            }
+                        ) {
+                            ToolBranchAuthorization.Authorized(
+                                arguments.forResolvedBranch(
+                                    hinted.branchId,
+                                ),
+                            )
+                        } else {
+                            ToolBranchAuthorization.Rejected
+                        }
+                    }
+                }
+
                 BranchResolution.UnknownMention ->
                     ToolBranchAuthorization.Rejected
 
                 BranchResolution.NotMentioned -> {
+                    val hinted = arguments.resolveBranchHint(branches)
                     val modelRequestedOtherBranch =
                         arguments.storeNumber != currentBranchId.value ||
-                            arguments.requestedBranch?.let { hint ->
-                                when (
-                                    BranchResolver.resolve(
-                                        userText = hint,
-                                        branches = branches,
-                                        currentBranchId = currentBranchId,
-                                    )
-                                ) {
-                                    is BranchResolution.CurrentBranch ->
-                                        false
-                                    else -> true
-                                }
-                            } == true
+                            (
+                                arguments.requestedBranch != null &&
+                                    hinted?.branchId != currentBranchId
+                            )
                     if (modelRequestedOtherBranch) {
                         ToolBranchAuthorization.Rejected
                     } else {
@@ -583,6 +596,27 @@ private sealed interface ToolBranchAuthorization {
 
     data object Rejected : ToolBranchAuthorization
     data object Unavailable : ToolBranchAuthorization
+}
+
+private fun AdvisorToolArguments.resolveBranchHint(
+    branches: List<ProviderBranch>,
+): ProviderBranch? {
+    val byId = branches.singleOrNull {
+        it.branchId.value == storeNumber
+    }
+    val byRequestedBranch = requestedBranch?.let { hint ->
+        BranchResolver.resolveHint(
+            hint = hint,
+            branches = branches,
+        )
+    }
+    return when {
+        byRequestedBranch == null -> byId
+        byId == null -> byRequestedBranch
+        byRequestedBranch.branchId == byId.branchId ->
+            byRequestedBranch
+        else -> null
+    }
 }
 
 private fun AdvisorToolArguments.forResolvedBranch(
