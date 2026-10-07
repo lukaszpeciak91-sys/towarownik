@@ -6,9 +6,11 @@ import {
   KWANT_V3_APPENDIX,
   PROVIDER_V3_INSTRUCTIONS,
   agentInstructionsForStore,
+  agentInstructionsForProfile,
   FINAL_ANSWER_FORMAT,
   LOCAL_TOOL_NAME,
   CURRENT_MODEL_PRICING,
+  CURRENT_ADVISOR_PROTOCOL_VERSION,
   OPENAI_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
@@ -1294,6 +1296,65 @@ test("answer text containing a URL without url_citation metadata creates no sour
   assert.equal(Object.hasOwn(body, "sources"), false);
 });
 
+test("unsupported internal citation and entity tokens are removed without breaking real url citations", async () => {
+  const internalCitation = "\uE200cite\uE202turn0search0\uE201";
+  const internalEntity = "\uE200entity\uE202internal-product\uE201";
+  const answerText =
+    `Przed ${internalCitation} potwierdzony parametr ${internalEntity} dalej.`;
+  const structured = JSON.stringify({
+    text: answerText,
+    productRefs: [],
+  });
+  const citedFragment = "potwierdzony parametr";
+  const rawStart = structured.indexOf(citedFragment);
+  const rawEnd = rawStart + citedFragment.length;
+  const fake = fakeOpenAI({
+    id: "resp_internal_markup",
+    output_text: structured,
+    output: [
+      {
+        type: "message",
+        content: [
+          {
+            type: "output_text",
+            text: structured,
+            annotations: [
+              {
+                type: "url_citation",
+                start_index: rawStart,
+                end_index: rawEnd,
+                title: "Manufacturer manual",
+                url: "https://manufacturer.example/manual",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const worker = createWorker(fake.fetch);
+  const body = await responseJson(
+    await worker.fetch(
+      jsonRequest("/v1/agent/start", { message: "verify" }),
+      configuredEnv,
+    ),
+  );
+
+  assert.equal(body.type, "answer");
+  assert.equal(body.text.includes(internalCitation), false);
+  assert.equal(body.text.includes(internalEntity), false);
+  assert.match(body.text, /Przed\s+potwierdzony parametr\s+dalej\./);
+  const visibleStart = body.text.indexOf(citedFragment);
+  assert.deepEqual(body.sources, [
+    {
+      title: "Manufacturer manual",
+      url: "https://manufacturer.example/manual",
+      startIndex: visibleStart,
+      endIndex: visibleStart + citedFragment.length,
+    },
+  ]);
+});
+
 test("availability of web_search does not count as a search call or fee", async () => {
   const fake = fakeOpenAI(withUsage(answerPayload("No search.")));
   const worker = createWorker(fake.fetch);
@@ -2368,11 +2429,11 @@ test("E zero stock contract suggests current-store alternative without inventing
   );
   assert.match(
     instructions,
-    /do not invent another market number or claim availability there/i,
+    /never invent another market number or claim availability there/i,
   );
   assert.match(
     instructions,
-    /query another market only after the USER supplies its exact supported 3-digit market number/i,
+    /do not demand a numeric ID.*sufficient natural location reference/i,
   );
 });
 
@@ -2526,6 +2587,100 @@ test('ambiguity C — sufficiently specified concrete product intent proceeds to
   assert.match(
     instructions,
     /concrete product intent itself authorizes lookup in the selected market/i,
+  );
+});
+
+test("OBI natural branch instructions delegate current-turn location authorization to Android", () => {
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /clearly names an OBI market, location, street, or address/i,
+  );
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /using the current conversation storeNumber/i,
+  );
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /BranchResolver is authoritative/i,
+  );
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /ask for a more precise OBI market\/location reference/i,
+  );
+  assert.doesNotMatch(
+    AGENT_INSTRUCTIONS,
+    /query another market only after the USER supplies its exact supported 3-digit/i,
+  );
+  assert.doesNotMatch(
+    AGENT_INSTRUCTIONS,
+    /ask for that number instead of guessing/i,
+  );
+});
+
+test("OBI and provider prompts share explicit only-confirmed-local-stock semantics", () => {
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /only products with freshly verified selected-branch stock > 0 qualify/i,
+  );
+  assert.match(
+    AGENT_INSTRUCTIONS,
+    /Stock 0 does not qualify, null stock is not confirmed available/i,
+  );
+  assert.match(
+    PROVIDER_V3_INSTRUCTIONS,
+    /only products with freshly verified selected-branch stock > 0 qualify/i,
+  );
+  assert.match(
+    PROVIDER_V3_INSTRUCTIONS,
+    /centralStock does not prove selected-branch availability/i,
+  );
+  assert.match(
+    KWANT_V3_APPENDIX,
+    /centralStock > 0 does not mean the selected branch has stock/i,
+  );
+  assert.match(
+    KWANT_V3_APPENDIX,
+    /only selected-branch stock > 0 qualifies/i,
+  );
+});
+
+test("provider prompt keeps current branch default and current user turn authoritative for one-off routing", () => {
+  const instructions = agentInstructionsForProfile(
+    "obi-pl",
+    "075",
+    CURRENT_ADVISOR_PROTOCOL_VERSION,
+  );
+  assert.match(
+    instructions,
+    /selected provider and branch remain the conversation default/i,
+  );
+  assert.match(
+    instructions,
+    /CURRENT USER turn is authoritative for any one-off branch\/location routing/i,
+  );
+  assert.match(
+    instructions,
+    /call find_products with the conversation-default providerId and branchId/i,
+  );
+  assert.match(
+    instructions,
+    /Android's BranchResolver.*may rewrite the one-off branch/i,
+  );
+  assert.match(
+    instructions,
+    /branch_not_authorized.*ask for a more precise market\/branch\/location reference/i,
+  );
+  assert.match(
+    instructions,
+    /Android may rewrite only the turn-local branch after deterministic authorization/i,
+  );
+  assert.match(
+    PROVIDER_V3_INSTRUCTIONS,
+    /never imply the bounded tool subset is the whole assortment/i,
+  );
+  assert.match(
+    PROVIDER_V3_INSTRUCTIONS,
+    /Never invent missing SKU-specific/i,
   );
 });
 

@@ -44,7 +44,10 @@ export type BehaviorScenarioId =
   | "H"
   | "H_AMBIGUOUS"
   | "I"
-  | "PRODUCT_INTENT";
+  | "PRODUCT_INTENT"
+  | "OBI_NATURAL_BRANCH"
+  | "OBI_AMBIGUOUS_BRANCH"
+  | "ONLY_IN_STOCK";
 
 export type WebPolicy = "forbidden" | "allowed" | "required";
 
@@ -54,6 +57,7 @@ export interface BehaviorScenario {
   userMessage: string;
   webPolicy: WebPolicy;
   semanticRubric: string[];
+  providers?: readonly BehaviorProvider[];
 }
 
 interface BehaviorProviderContext {
@@ -254,6 +258,30 @@ const UNKNOWN_STOCK_PRODUCT = product(
   [],
 );
 
+const STOCK_FILTER_PRODUCTS: VerifiedProduct[] = [
+  product(
+    "7400001",
+    "Miska ceramiczna A",
+    0,
+    29.99,
+    [],
+  ),
+  product(
+    "7400002",
+    "Miska ceramiczna B",
+    4,
+    34.99,
+    [],
+  ),
+  product(
+    "7400003",
+    "Miska ceramiczna C",
+    null,
+    39.99,
+    [],
+  ),
+];
+
 const KIT_PRODUCTS = [
   product(
     "7200001",
@@ -429,9 +457,46 @@ export const PRODUCT_INTENT_SCENARIO: BehaviorScenario = {
   ],
 };
 
+export const BRANCH_AND_STOCK_REGRESSION_SCENARIOS: readonly BehaviorScenario[] = [
+  {
+    id: "OBI_NATURAL_BRANCH",
+    name: "OBI natural one-off branch reference",
+    userMessage: "sprawdź te miski w OBI Wielicka",
+    webPolicy: "forbidden",
+    providers: ["obi-v2"],
+    semanticRubric: [
+      "The advisor attempts the local OBI lookup instead of demanding a numeric market id.",
+      "After Android resolves the one-off branch, the answer does not ask for the 3-digit market number.",
+    ],
+  },
+  {
+    id: "OBI_AMBIGUOUS_BRANCH",
+    name: "OBI ambiguous natural branch reference",
+    userMessage: "sprawdź w OBI Kraków",
+    webPolicy: "forbidden",
+    providers: ["obi-v2"],
+    semanticRubric: [
+      "After Android rejects the ambiguous location, the answer asks for a more precise OBI market or location reference.",
+      "It does not guess a Kraków market or claim availability there, and it does not insist that only a numeric market id can resolve the ambiguity.",
+    ],
+  },
+  {
+    id: "ONLY_IN_STOCK",
+    name: "Only confirmed selected-branch stock",
+    userMessage: "pokaż tylko to co mamy na pewno na stanie",
+    webPolicy: "forbidden",
+    semanticRubric: [
+      "Only the product with selected-branch stock greater than zero may be recommended as qualifying.",
+      "Stock zero and null stock are not presented as confirmed available.",
+      "For KWANT, central stock does not qualify a product as available in the selected branch.",
+    ],
+  },
+];
+
 export const BEHAVIOR_REGRESSION_SCENARIOS: readonly BehaviorScenario[] = [
   ...BEHAVIOR_SCENARIOS,
   PRODUCT_INTENT_SCENARIO,
+  ...BRANCH_AND_STOCK_REGRESSION_SCENARIOS,
 ];
 
 export function behaviorScenario(
@@ -449,9 +514,13 @@ export function behaviorScenario(
 export function behaviorScenarios(
   provider: BehaviorProvider,
 ): BehaviorScenario[] {
-  return BEHAVIOR_REGRESSION_SCENARIOS.map((scenario) =>
-    behaviorScenarioForProvider(scenario.id, provider),
-  );
+  return BEHAVIOR_REGRESSION_SCENARIOS
+    .filter((scenario) =>
+      !scenario.providers || scenario.providers.includes(provider),
+    )
+    .map((scenario) =>
+      behaviorScenarioForProvider(scenario.id, provider),
+    );
 }
 
 export function behaviorScenarioForProvider(
@@ -670,9 +739,14 @@ export async function runBehaviorSuite(
   const provider = options.provider ?? "obi-v2";
   const scenarios = behaviorScenarios(provider);
   const selected = options.scenarioIds?.length
-    ? options.scenarioIds.map((id) =>
-        behaviorScenarioForProvider(id, provider),
-      )
+    ? options.scenarioIds
+        .map((id) => behaviorScenario(id))
+        .filter((scenario) =>
+          !scenario.providers || scenario.providers.includes(provider),
+        )
+        .map((scenario) =>
+          behaviorScenarioForProvider(scenario.id, provider),
+        )
     : scenarios;
 
   const results: BehaviorTrialResult[] = [];
@@ -1182,6 +1256,81 @@ function deterministicFailures(
       }
       break;
 
+    case "OBI_NATURAL_BRANCH":
+      if (calls.length === 0) {
+        failures.push(
+          "natural OBI branch request did not attempt local lookup",
+        );
+      }
+      if (
+        firstCall &&
+        "storeNumber" in firstCall.arguments &&
+        firstCall.arguments.storeNumber !== DEFAULT_EVAL_STORE_NUMBER
+      ) {
+        failures.push(
+          "model invented a target store number instead of using the conversation store",
+        );
+      }
+      if (
+        !trace.mockedToolResults.some(
+          (result) =>
+            "storeNumber" in result &&
+            result.storeNumber === "003" &&
+            "results" in result,
+        )
+      ) {
+        failures.push(
+          "natural branch fixture did not simulate Android rewrite to 003",
+        );
+      }
+      break;
+
+    case "OBI_AMBIGUOUS_BRANCH":
+      if (calls.length === 0) {
+        failures.push(
+          "ambiguous natural OBI reference did not reach Android authorization",
+        );
+      }
+      if (
+        !trace.mockedToolResults.some(
+          (result) =>
+            "rejection" in result &&
+            result.rejection === "store_not_authorized",
+        )
+      ) {
+        failures.push(
+          "ambiguous branch fixture did not fail closed",
+        );
+      }
+      if (trace.finalProductRefs.length !== 0) {
+        failures.push(
+          "ambiguous branch request returned a productRef",
+        );
+      }
+      break;
+
+    case "ONLY_IN_STOCK": {
+      if (calls.length === 0) {
+        failures.push(
+          "only-in-stock request did not use the local provider",
+        );
+      }
+      const disallowed = new Set([
+        expectedRefKey(trace.provider, "7400001"),
+        expectedRefKey(trace.provider, "7400003"),
+      ]);
+      if (
+        trace.finalProductRefs.some((ref) =>
+          disallowed.has(refKey(ref)),
+        )
+      ) {
+        failures.push(
+          "zero/null selected-branch stock was returned as a qualifying productRef",
+        );
+      }
+      break;
+    }
+
     case "I":
       if (calls.length !== 0) {
         failures.push(
@@ -1251,7 +1400,19 @@ function mockToolResultForScenario(
   args: EvalToolArguments,
   callOrder: number,
   context: BehaviorProviderContext,
-): VerifiedToolResult | import("../types.js").ProviderVerifiedToolResult {
+): ToolContinuationResult {
+  if (
+    scenario.id === "OBI_AMBIGUOUS_BRANCH" &&
+    context.provider === "obi-v2" &&
+    "storeNumber" in args
+  ) {
+    return {
+      storeNumber: args.storeNumber,
+      queries: args.queries,
+      rejection: "store_not_authorized",
+    };
+  }
+
   const results = args.queries.map((query, queryIndex) =>
       mockQueryResult(
         scenario.id,
@@ -1264,7 +1425,10 @@ function mockToolResultForScenario(
     );
   if (context.provider === "obi-v2") {
     return {
-      storeNumber: context.branchId,
+      storeNumber:
+        scenario.id === "OBI_NATURAL_BRANCH"
+          ? "003"
+          : context.branchId,
       results: results as VerifiedQueryResult[],
     };
   }
@@ -1401,6 +1565,19 @@ function mockObiQueryResult(
       return notFoundQuery(query);
     }
 
+    case "OBI_NATURAL_BRANCH":
+    case "ONLY_IN_STOCK":
+      return /\bmisk\w*/i.test(normalizeQuery(query))
+        ? verifiedQuery(
+            query,
+            STOCK_FILTER_PRODUCTS.slice(
+              0,
+              Math.min(limit, STOCK_FILTER_PRODUCTS.length),
+            ),
+          )
+        : notFoundQuery(query);
+
+    case "OBI_AMBIGUOUS_BRANCH":
     case "D":
     case "H_AMBIGUOUS":
     case "I":
@@ -1451,7 +1628,10 @@ function providerProduct(
         ]
       : value.technicalFacts,
     stock: value.stock,
-    centralStock: null,
+    centralStock:
+      value.obik === "7400001" || value.obik === "7400003"
+        ? 20
+        : null,
     price: value.price,
     priceScope: "online",
   };

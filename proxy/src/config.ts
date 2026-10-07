@@ -138,19 +138,26 @@ export const AGENT_INSTRUCTIONS =
   "store. Null stock means availability is unknown and must never be described as zero, out of stock, or unavailable. " +
   "A not_found query result means no verified matching product was found for that query; it does not mean stock zero. " +
   "An unavailable query result means retrieval could not establish the fact; it must not be presented as not_found " +
-  "or out of stock. Null price means current price is unknown. When a specifically requested verified product has " +
+  "or out of stock. Null price means current price is unknown. When the USER explicitly asks for ONLY products confirmed " +
+  "available in the selected branch (for example 'tylko to co mamy', 'tylko dostępne', 'co mamy na stanie', or equivalent), " +
+  "only products with freshly verified selected-branch stock > 0 qualify for recommendation or productRefs. Stock 0 does " +
+  "not qualify, null stock is not confirmed available, and no other stock scope may substitute for selected-branch stock. " +
+  "If no verified candidate has selected-branch stock > 0, say that no qualifying product was confirmed instead of padding " +
+  "the answer with zero- or unknown-stock products. When a specifically requested verified product has " +
   "stock 0, or a specifically requested item returns not_found, do not stop at a bare 'brak'. State the current-store " +
   "situation accurately and, when practical, consider and verify a reasonable substitute in the CURRENT store. You " +
-  "may offer to check another OBI market, but do not invent another market number or claim availability there. Under " +
-  "the current authorization model, query another market only after the USER supplies its exact supported 3-digit " +
-  "market number in the CURRENT USER message. " +
+  "may offer to check another OBI market, but never invent another market number or claim availability there without " +
+  "fresh verification. The current conversation OBI store remains the default. An exact supported 3-digit store ID in " +
+  "the CURRENT USER message may authorize that one-off market directly. If the USER instead clearly names an OBI " +
+  "market, location, street, or address, call find_obi_products using the current conversation storeNumber; Android " +
+  "BranchResolver is authoritative for deterministically authorizing and rewriting that one tool call to the resolved " +
+  "market. Do not try to derive, guess, or invent the target numeric store ID yourself, and do not demand a numeric ID " +
+  "when the USER already supplied a sufficient natural location reference. The CURRENT USER turn is authoritative for " +
+  "one-off branch routing; do not authorize a switch from older unrelated conversation text. If store_not_authorized " +
+  "is returned, the location was unknown, ambiguous, or otherwise unauthorized: do not guess or substitute a market; " +
+  "ask for a more precise OBI market/location reference. " +
   "Current stock and price must be freshly verified when relevant; historical conversation values are not current " +
-  "authority. The current conversation OBI store is the default store for this USER turn. A different store may be " +
-  "queried only when the USER literally supplied that exact 3-digit store number in the CURRENT USER message. Never " +
-  "infer a store number from a city, region, store name, or prior unrelated conversation text. If another store is " +
-  "requested without its exact 3-digit market number, ask for that number instead of guessing. If a tool result " +
-  "reports store_not_authorized, do not guess or substitute a store; ask for the exact supported 3-digit market " +
-  "number when clarification is needed. " +
+  "authority. " +
   "Use richer verified OBI product-page facts selectively for the customer's question instead of dumping all " +
   "technicalFacts or repeating marketing copy. Descriptive and technical facts are product-level facts unless the " +
   "supplied source explicitly says otherwise; stock and price are current selected-store facts. When several " +
@@ -206,12 +213,13 @@ export const PROVIDER_V3_INSTRUCTIONS =
   "For task/project or 'what do I need' intent, understand the job first. If materially different interpretations change required categories, compatibility, or safety, ask one concise clarification before concrete lookup or kit assembly. Once understood, give essentials-first advice and distinguish essentials from optional convenience items. " +
   "Search concrete products for a task when the user clearly wants concrete recommendations, provider products, a verified kit, current assortment, or current provider facts. For a sufficiently specified verified kit, batch related categories where practical and do not build an exhaustive shopping list. " +
   "Use find_products immediately when the user clearly wants a concrete product, recommendation, assortment option, current price, current stock, availability, direct specific-product verification, or a sufficiently specified verified kit. Do not wait for an extra request to check the selected branch. This does not override a genuinely decision-critical clarification. " +
-  "For browse intent, return several relevant verified variants when useful and do not imply bounded results are the whole assortment. " +
+  "For browse intent, return several relevant verified variants when useful and never imply the bounded tool subset is the whole assortment unless completeness is independently established. " +
   "For complements, be restrained. Mention or search extras only when they materially help correctness, compatibility, safety, avoiding an obvious failure, or when the user asks for them. " +
   "If local_tool_limit_reached is returned, do not request find_products again in the same USER turn; finish from already verified products plus relevant general guidance. " +
   "Preserve strict availability semantics: stock 0 means confirmed unavailable in the selected branch; null stock means unknown; not_found means no verified match was found for that query; unavailable means retrieval could not establish the fact; null price means current price is unknown. " +
+  "When the USER explicitly asks for ONLY products confirmed available in the selected branch, only products with freshly verified selected-branch stock > 0 qualify for recommendation or productRefs. Stock 0 and null stock do not qualify. A different stock scope such as centralStock does not prove selected-branch availability, and a price value never proves stock. If no verified candidate has selected-branch stock > 0, state that no qualifying product was confirmed instead of padding the answer with zero- or unknown-stock products. " +
   "Current stock and price must be freshly verified when relevant; historical conversation values are not current authority. " +
-  "The selected provider and branch remain the conversation default. Never switch provider or mutate that default, and never fall back to another provider. " +
+  "The selected provider and branch remain the conversation default. Never switch provider or mutate that default, and never fall back to another provider. The CURRENT USER turn is authoritative for any one-off branch/location routing; never authorize a switch from older unrelated conversation text. If the USER clearly names another market, branch, location, street, or address while asking for local provider facts, call find_products with the conversation-default providerId and branchId; Android's BranchResolver, not the model, decides whether that current-turn natural location is unique and authorized and may rewrite the one-off branch. Never invent a target branch ID. If branch_not_authorized is returned, do not guess or substitute a branch; ask for a more precise market/branch/location reference. Follow any provider appendix requirement for a literal requestedBranch field without changing the conversation default. " +
   "Use richer verified product-page facts selectively for the user's question instead of dumping all technicalFacts. " +
   "Only reference products verified by find_products during the current USER turn. Structured productRefs must use providerId, branchId, and productId from those verified products. " +
   "Web search is selective, not default, and never replaces find_products for current provider stock, availability, price, or locally verified product selection. For missing SKU-specific technical facts, prefer official manufacturer product pages, manuals, datasheets, and technical documentation. " +
@@ -223,7 +231,7 @@ export const ATTACHMENT_V4_APPENDIX =
 export const KWANT_V3_APPENDIX =
   " KWANT-specific rules: selected providerId and branchId are fixed by the conversation WorkingProfile and remain the default. " +
   "Only when the USER explicitly names another KWANT location, pass that literal location name as requestedBranch for a one-off lookup; otherwise requestedBranch must be null. Never infer an ambiguous location or use this for another provider. Android resolves the real branch directory and may reject unknown or ambiguous names. " +
-  "find_products is authoritative for current KWANT product and stock facts. Keep branch stock and centralStock distinct and never add them. If centralStock is null, say it is unknown rather than zero. " +
+  "find_products is authoritative for current KWANT product and stock facts. Keep selected-branch stock and centralStock distinct and never add them. centralStock > 0 does not mean the selected branch has stock, and if centralStock is null say it is unknown rather than zero. For explicit only-confirmed-local-stock intent, only selected-branch stock > 0 qualifies. " +
   "If a verified product has priceScope=online, describe that value only as the public indicative online price, never as a branch, counter, negotiated, or customer-specific price. " +
   "Treat article numbers, EANs, product names, manufacturer text, and other user-supplied identifiers as search text so Android can search and exact-verify candidates. Never invent or infer an internal productId to bypass search. " +
   "Use returned productId and articleNumber exactly as verified; do not describe a KWANT identifier as OBIK.";
@@ -242,7 +250,7 @@ export function agentInstructionsForProfile(
     providerId +
     ", selected branchId=" +
     branchId +
-    ". find_products must use exactly these values.";
+    ". find_products must use these conversation-default values; Android may rewrite only the turn-local branch after deterministic authorization from the CURRENT USER message.";
 
   return PROVIDER_V3_INSTRUCTIONS +
     (protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION ? ATTACHMENT_V4_APPENDIX : "") +
@@ -302,7 +310,7 @@ export const OBI_TOOL = {
         type: "string",
         pattern: "^[0-9]{3}$",
         description:
-          "One explicit OBI store number shared by every query in this call. Use the current conversation store by default.",
+          "One OBI store number shared by every query. Use the current conversation store by default; when the USER supplied a natural OBI location reference, keep the current conversation store number here and let Android BranchResolver authorize/rewrite the one-off branch.",
       },
       queries: {
         type: "array",

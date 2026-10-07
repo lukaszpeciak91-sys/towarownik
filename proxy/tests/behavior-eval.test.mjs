@@ -139,6 +139,12 @@ function scriptedDriver(scenario) {
               limit: 1,
             },
           ]);
+        case "OBI_NATURAL_BRANCH":
+        case "OBI_AMBIGUOUS_BRANCH":
+        case "ONLY_IN_STOCK":
+          return toolRequest([
+            { query: "miski", limit: 3 },
+          ]);
         case "PRODUCT_INTENT":
           return toolRequest([
             {
@@ -194,6 +200,26 @@ function scriptedDriver(scenario) {
           );
         case "C":
           return answer("Pasuje zweryfikowany wariant.", refs);
+        case "OBI_NATURAL_BRANCH":
+          return answer(
+            "Sprawdziłam miski w OBI Wielicka.",
+            refs,
+          );
+        case "OBI_AMBIGUOUS_BRANCH":
+          return answer(
+            "Który market OBI w Krakowie masz na myśli? Podaj proszę ulicę lub dokładniejszą lokalizację.",
+          );
+        case "ONLY_IN_STOCK": {
+          const qualifying = refs.filter((ref) =>
+            "obik" in ref
+              ? ref.obik === "7400002"
+              : ref.productId === "kw-7400002",
+          );
+          return answer(
+            "Na pewno na stanie w wybranym oddziale jest Miska ceramiczna B: 4 szt.",
+            qualifying,
+          );
+        }
         case "PRODUCT_INTENT":
           return answer(
             "Polecam ten zweryfikowany wyłącznik B16 1P 6 kA.",
@@ -375,7 +401,95 @@ test("KWANT provider-neutral rubrics contain no OBI-specific wording outside pro
   }
 
   assert.equal(BEHAVIOR_SCENARIOS.length, 13);
-  assert.equal(BEHAVIOR_REGRESSION_SCENARIOS.length, 14);
+  assert.equal(BEHAVIOR_REGRESSION_SCENARIOS.length, 17);
+});
+
+test("natural OBI branch uses conversation store in the model call and simulates Android rewrite to 003", async () => {
+  const scenario = behaviorScenario("OBI_NATURAL_BRANCH");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    passingSemanticJudge,
+    "obi-v2",
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 1);
+  assert.equal(
+    result.trace.localProductCalls[0].arguments.storeNumber,
+    "075",
+  );
+  assert.equal(
+    result.trace.mockedToolResults[0].storeNumber,
+    "003",
+  );
+  assert.equal(
+    /3[- ]?cyfrow|numer marketu/i.test(
+      result.trace.clarificationOrFinalAnswer.text,
+    ),
+    false,
+  );
+});
+
+test("ambiguous OBI city fails closed and asks for a more precise location", async () => {
+  const scenario = behaviorScenario("OBI_AMBIGUOUS_BRANCH");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    scriptedDriver(scenario),
+    passingSemanticJudge,
+    "obi-v2",
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 1);
+  assert.equal(
+    result.trace.mockedToolResults[0].rejection,
+    "store_not_authorized",
+  );
+  assert.equal(result.trace.finalProductRefs.length, 0);
+  assert.match(
+    result.trace.clarificationOrFinalAnswer.text,
+    /ulic|lokaliz|market/i,
+  );
+});
+
+test("only-in-stock filters zero and unknown selected-branch stock for OBI and KWANT", async () => {
+  for (const provider of ["obi-v2", "kwant-v3"]) {
+    const scenario = behaviorScenarioForProvider(
+      "ONLY_IN_STOCK",
+      provider,
+    );
+    const driver =
+      provider === "obi-v2"
+        ? scriptedDriver(scenario)
+        : kwantScriptedDriver(scenario);
+    const result = await runBehaviorTrial(
+      scenario,
+      1,
+      driver,
+      passingSemanticJudge,
+      provider,
+    );
+
+    assert.equal(result.status, "PASS");
+    assert.equal(result.finalProductRefs, undefined);
+    assert.equal(result.trace.finalProductRefs.length, 1);
+    const ref = result.trace.finalProductRefs[0];
+    assert.equal(
+      "obik" in ref ? ref.obik : ref.productId,
+      provider === "obi-v2" ? "7400002" : "kw-7400002",
+    );
+    if (provider === "kwant-v3") {
+      const products =
+        result.trace.mockedToolResults[0].results[0].products;
+      assert.equal(products[0].stock, 0);
+      assert.equal(products[0].centralStock, 20);
+      assert.equal(products[2].stock, null);
+      assert.equal(products[2].centralStock, 20);
+    }
+  }
 });
 
 test("repeated trials stay configurable and summary reports pass totals", async () => {

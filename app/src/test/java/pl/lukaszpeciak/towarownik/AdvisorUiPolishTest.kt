@@ -85,6 +85,31 @@ class AdvisorUiPolishTest {
     }
 
     @Test
+    fun `working profile selector shows branch id name and optional address`() {
+        val source = mainActivitySource()
+        val selector = source
+            .substringAfter("private fun WorkingProfileSelector(")
+            .substringBefore("@Composable\nprivate fun AdvisorComposer(")
+
+        assertTrue(
+            selector.contains(
+                "\"\${it.branchId.value} • \${it.name}\"",
+            ),
+        )
+        assertTrue(
+            selector.contains(
+                "\"\${option.branchId.value} • \${option.name}\"",
+            ),
+        )
+        assertTrue(selector.contains("option.address?.let"))
+        assertFalse(
+            selector.contains(
+                "val branchLabel = branch?.name ?: workingProfile.branchId.value",
+            ),
+        )
+    }
+
+    @Test
     fun `cited answer text explicitly uses normal assistant foreground`() {
         val source = mainActivitySource()
         val answer = source
