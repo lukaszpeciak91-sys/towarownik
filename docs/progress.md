@@ -273,3 +273,12 @@ The currently planned AI capability stage is complete after this selective web-s
 - Normal/no-match behavior remains the first six valid normalized/bounded facts in source order. A later fact is admitted only for a clear deterministic lexical/value signal and only if it is stronger than the weakest selected fact.
 - Added exact-value coverage for 16 A, 400 V, IP65, 2,5 mm2 and 3 phases, plus no-match/no-aggressive-reorder, minimal displacement, OBI/provider parity, and tool-level OBI/provider query propagation.
 - Existing continuation bounds, identity/price/stock fields, parsers, proxy contract, protocol versions, prompts, WorkingProfile, Room, attachments, and web-search policy remain unchanged.
+
+
+## 2026-10-07 — shared OBI + KWANT branch/location routing
+
+- Added one provider-neutral branch resolver using real `ProviderBranch` IDs, names and addresses.
+- Replaced OBI's number-only branch metadata with a canonical 62-market directory verified against OBI Poland's official customer-relations list; Kraków Wielicka is market 003 and Nowy Sącz remains 075.
+- Advisor authorization now resolves the current USER message against only the active provider directory. Natural unique references rewrite the turn-local tool branch; ambiguous/unknown references reject instead of falling back, and raw model `requestedBranch` cannot authorize a switch.
+- KWANT routing uses the same resolver over its existing live branch metadata; verified examples include Nowy Sącz 205 and Zamość 128.
+- Current-branch aliases (`u nas`, bounded Nowy Sącz/Sączu forms) remain on the conversation branch. Cross-branch lookup does not mutate WorkingProfile, protocol versions, product search/lookup contracts, stock endpoints, Room, attachments, prompts, or advisor fact shaping.
