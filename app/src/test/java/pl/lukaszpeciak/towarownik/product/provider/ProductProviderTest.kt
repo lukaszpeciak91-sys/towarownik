@@ -31,14 +31,26 @@ class ProductProviderTest {
     }
 
     @Test
-    fun `OBI provider exposes existing supported branches including 075`() {
-        val branches = ObiProductProvider().branches()
-            as ProviderBranchResult.Available
+    fun `OBI provider exposes verified supported branch metadata`() {
+        val branches = (
+            ObiProductProvider().branches()
+                as ProviderBranchResult.Available
+        ).branches
 
-        assertTrue(
-            branches.branches.any {
-                it.branchId == BranchId("075")
-            },
+        val nowySacz = branches.single {
+            it.branchId == BranchId("075")
+        }
+        val wielicka = branches.single {
+            it.branchId == BranchId("003")
+        }
+
+        assertEquals("Nowy Sącz", nowySacz.name)
+        assertEquals("ul. Beliny Prażmowskiego 7", nowySacz.address)
+        assertEquals("Kraków", wielicka.name)
+        assertEquals("ul. Wielicka 259", wielicka.address)
+        assertEquals(
+            branches.map { it.branchId.value }.toSet().size,
+            branches.size,
         )
     }
 
