@@ -279,6 +279,6 @@ The currently planned AI capability stage is complete after this selective web-s
 
 - Added one provider-neutral branch resolver using real `ProviderBranch` IDs, names and addresses.
 - Replaced OBI's number-only branch metadata with a canonical 62-market directory verified against OBI Poland's official customer-relations list; Kraków Wielicka is market 003 and Nowy Sącz remains 075.
-- Advisor authorization now resolves the current USER message against only the active provider directory. Natural unique references rewrite the turn-local tool branch; ambiguous/unknown references reject instead of falling back, and raw model `requestedBranch` cannot authorize a switch.
+- Advisor authorization resolves the current USER message against only the active provider directory. Natural metadata now requires an explicit branch/store location phrase and adjacent location metadata; incidental city/street words stay `NotMentioned`. Unique authorized references rewrite only the turn-local tool branch, ambiguous/unknown explicit references reject instead of falling back, and raw model `requestedBranch` cannot authorize a switch.
 - KWANT routing uses the same resolver over its existing live branch metadata; verified examples include Nowy Sącz 205 and Zamość 128.
 - Current-branch aliases (`u nas`, bounded Nowy Sącz/Sączu forms) remain on the conversation branch. Cross-branch lookup does not mutate WorkingProfile, protocol versions, product search/lookup contracts, stock endpoints, Room, attachments, prompts, or advisor fact shaping.
