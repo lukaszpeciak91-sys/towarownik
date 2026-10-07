@@ -2660,6 +2660,18 @@ test("provider prompt keeps current branch default and current user turn authori
   );
   assert.match(
     instructions,
+    /call find_products with the conversation-default providerId and branchId/i,
+  );
+  assert.match(
+    instructions,
+    /Android's BranchResolver.*may rewrite the one-off branch/i,
+  );
+  assert.match(
+    instructions,
+    /branch_not_authorized.*ask for a more precise market\/branch\/location reference/i,
+  );
+  assert.match(
+    instructions,
     /Android may rewrite only the turn-local branch after deterministic authorization/i,
   );
   assert.match(
