@@ -4,6 +4,8 @@
 
 **Advisor Product Contract v1 production policy**
 
+Observability follow-up: Worker-side advisor upstream failures now retain the same public 502/upstream_failure response while Cloudflare logs distinguish safe structural failure categories and optional upstream HTTP status without payloads, content, identifiers, filenames, or secrets.
+
 Protocol-continuity blocker follow-up: tool-assisted advisor turns now retain the transport family selected by their initiating START/MESSAGE, so an OBI attachment turn cannot drop from provider-aware v4 `find_products` to legacy v2 during `/continue`. OBI local retrieval remains `FindObiProductsTool`; text-only OBI v2 and KWANT v3 remain unchanged.
 
 Current branch/location integration follow-up: prompt behavior now follows the shared Android BranchResolver authorization model, branch selector labels retain real IDs alongside names/addresses, explicit only-confirmed-local-stock intent requires selected-branch stock > 0, and unsupported internal citation/entity tokens are removed at the proxy normalization boundary while real URL citation annotations remain authoritative.
