@@ -171,10 +171,14 @@ Specific SKU facts not present in verified OBI data must not be invented.
 
 Availability semantics remain distinct:
 
-- stock `0` = confirmed zero in the verified store;
+- stock `0` = confirmed zero in the verified selected branch;
 - stock `null` = unknown;
 - `not_found` = no verified matching product found;
 - `unavailable` = retrieval could not establish the result.
+
+When the user explicitly asks for only items definitely available locally, only freshly verified selected-branch `stock > 0` qualifies for recommendation/cards. Stock `0` and `null` do not qualify. Provider-wide or central stock does not substitute for branch stock, and price never proves availability. If nothing qualifies, say that no qualifying product was confirmed.
+
+The conversation branch remains the default. A current-turn exact branch ID or sufficiently clear natural market/location/address reference may authorize a one-off lookup; Android's shared `BranchResolver` decides the actual branch and fails closed on ambiguity. The model must not invent a numeric branch ID or require one when the natural location is already sufficient.
 
 Web search remains supplemental and selective. It does not replace local OBI verification for current store facts.
 
