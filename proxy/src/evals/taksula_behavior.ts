@@ -282,6 +282,57 @@ const STOCK_FILTER_PRODUCTS: VerifiedProduct[] = [
   ),
 ];
 
+const KWANT_STOCK_FILTER_PRODUCTS: ProviderVerifiedProduct[] = [
+  {
+    productId: "kw-7400001",
+    articleNumber: "MCN116E/HAG",
+    name: "Wyłącznik nadprądowy B16 1P Hager — brak w oddziale",
+    brand: "Hager",
+    shortDescription: "Deterministic KWANT behavioral-eval fixture.",
+    technicalFacts: [
+      { label: "Charakterystyka", value: "B" },
+      { label: "Prąd znamionowy", value: "16 A" },
+      { label: "Liczba biegunów", value: "1" },
+    ],
+    stock: 0,
+    centralStock: 20,
+    price: 18.9,
+    priceScope: "online",
+  },
+  {
+    productId: "kw-7400002",
+    articleNumber: "EVAL-B16-1P-IN-STOCK",
+    name: "Wyłącznik nadprądowy B16 1P — dostępny w oddziale",
+    brand: "Mock Electric",
+    shortDescription: "Deterministic KWANT behavioral-eval fixture.",
+    technicalFacts: [
+      { label: "Charakterystyka", value: "B" },
+      { label: "Prąd znamionowy", value: "16 A" },
+      { label: "Liczba biegunów", value: "1" },
+    ],
+    stock: 4,
+    centralStock: 12,
+    price: 14.55,
+    priceScope: "online",
+  },
+  {
+    productId: "kw-7400003",
+    articleNumber: "EVAL-B16-1P-UNKNOWN",
+    name: "Wyłącznik nadprądowy B16 1P — stan oddziału nieznany",
+    brand: "Mock Electric",
+    shortDescription: "Deterministic KWANT behavioral-eval fixture.",
+    technicalFacts: [
+      { label: "Charakterystyka", value: "B" },
+      { label: "Prąd znamionowy", value: "16 A" },
+      { label: "Liczba biegunów", value: "1" },
+    ],
+    stock: null,
+    centralStock: 20,
+    price: 15.2,
+    priceScope: "online",
+  },
+];
+
 const KIT_PRODUCTS = [
   product(
     "7200001",
@@ -476,14 +527,15 @@ export const BRANCH_AND_STOCK_REGRESSION_SCENARIOS: readonly BehaviorScenario[] 
     webPolicy: "forbidden",
     providers: ["obi-v2"],
     semanticRubric: [
-      "After Android rejects the ambiguous location, the answer asks for a more precise OBI market or location reference.",
-      "It does not guess a Kraków market or claim availability there, and it does not insist that only a numeric market id can resolve the ambiguity.",
+      "The model may use the conversation-default OBI storeNumber 075 for the local tool call; that value represents the selected Nowy Sącz market and must not be interpreted as a guessed Kraków market.",
+      "After Android rejects the ambiguous Kraków location, the answer asks for a more precise OBI market or location reference.",
+      "It does not claim stock or price for any Kraków market, invent a Kraków market id, or insist that only a numeric market id can resolve the ambiguity.",
     ],
   },
   {
     id: "ONLY_IN_STOCK",
     name: "Only confirmed selected-branch stock",
-    userMessage: "pokaż tylko to co mamy na pewno na stanie",
+    userMessage: "Pokaż tylko te miski, które mamy na pewno na stanie.",
     webPolicy: "forbidden",
     semanticRubric: [
       "Only the product with selected-branch stock greater than zero may be recommended as qualifying.",
@@ -529,6 +581,33 @@ export function behaviorScenarioForProvider(
 ): BehaviorScenario {
   const scenario = behaviorScenario(id);
   if (provider === "obi-v2") return scenario;
+
+  if (id === "D") {
+    return {
+      ...scenario,
+      name: "Ambiguous B16 breaker selection",
+      userMessage:
+        "Klient potrzebuje wyłącznika nadprądowego B16. Co mu dać?",
+      semanticRubric: [
+        "The answer asks one concise clarification about a materially decision-critical missing parameter such as pole configuration or intended application before concrete selection.",
+        "It does not use the local provider, invent compatibility, or select an arbitrary concrete SKU before that clarification.",
+      ],
+    };
+  }
+
+  if (id === "ONLY_IN_STOCK") {
+    return {
+      ...scenario,
+      userMessage:
+        "Pokaż tylko te wyłączniki B16 1P, które mamy na pewno na stanie w oddziale.",
+      semanticRubric: [
+        "Only a B16 1P product with selected-branch stock greater than zero may be recommended as confirmed available in the branch.",
+        "Selected-branch stock zero and null stock are not presented as confirmed available.",
+        "centralStock greater than zero alone does not qualify a product as available in the selected branch.",
+        "The bounded mocked results are not described as proving complete assortment absence.",
+      ],
+    };
+  }
 
   const articleNumber = kwantArticleNumber(id);
   if (!articleNumber) return { ...scenario };
@@ -1292,6 +1371,15 @@ function deterministicFailures(
         );
       }
       if (
+        firstCall &&
+        "storeNumber" in firstCall.arguments &&
+        firstCall.arguments.storeNumber !== DEFAULT_EVAL_STORE_NUMBER
+      ) {
+        failures.push(
+          "ambiguous natural OBI lookup did not use conversation-default store 075",
+        );
+      }
+      if (
         !trace.mockedToolResults.some(
           (result) =>
             "rejection" in result &&
@@ -1326,6 +1414,16 @@ function deterministicFailures(
       ) {
         failures.push(
           "zero/null selected-branch stock was returned as a qualifying productRef",
+        );
+      }
+      if (
+        !trace.finalProductRefs.some(
+          (ref) =>
+            refKey(ref) === expectedRefKey(trace.provider, "7400002"),
+        )
+      ) {
+        failures.push(
+          "confirmed selected-branch stock product was not returned",
         );
       }
       break;
@@ -1447,6 +1545,27 @@ function mockQueryResult(
   _queryIndex: number,
   provider: BehaviorProvider,
 ): VerifiedQueryResult | ProviderVerifiedQueryResult {
+  if (
+    provider === "kwant-v3" &&
+    scenarioId === "ONLY_IN_STOCK"
+  ) {
+    const normalized = normalizeQuery(query);
+    const matchesBreaker =
+      /\b(wylacznik\w*|nadpradow\w*|eska\w*)\b/.test(normalized) &&
+      /\bb\s*16\b/.test(normalized) &&
+      /\b1\s*p\b/.test(normalized);
+    return {
+      query,
+      status: matchesBreaker ? "verified" : "not_found",
+      products: matchesBreaker
+        ? KWANT_STOCK_FILTER_PRODUCTS.slice(
+            0,
+            Math.min(limit, KWANT_STOCK_FILTER_PRODUCTS.length),
+          )
+        : [],
+    };
+  }
+
   const obiResult = mockObiQueryResult(scenarioId, query, limit);
   return provider === "obi-v2"
     ? obiResult
