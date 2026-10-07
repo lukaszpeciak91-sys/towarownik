@@ -129,22 +129,8 @@ internal class FindObiProductsTool(
                             when (lookup) {
                                 is ProductLookupResult.Found -> {
                                     val product = lookup.product
-                                    verified += AdvisorVerifiedProduct(
-                                        obik = product.obik,
-                                        name = product.name,
-                                        brand = product.brand,
-                                        shortDescription =
-                                            product.shortDescription,
-                                        technicalFacts =
-                                            product.technicalFacts.map {
-                                                AdvisorTechnicalFact(
-                                                    label = it.label,
-                                                    value = it.value,
-                                                )
-                                            },
-                                        stock = product.stock,
-                                        price = product.grossPrice,
-                                    )
+                                    verified +=
+                                        product.toAdvisorVerifiedProduct()
                                     snapshots +=
                                         product.toVerifiedProductSnapshot(
                                             verifiedAt = now(),
@@ -236,20 +222,6 @@ internal class FindObiProductsTool(
                 }
         }
     }
-
-    private fun pl.lukaszpeciak.towarownik.product.LocalProduct
-        .toAdvisorVerifiedProduct(): AdvisorVerifiedProduct =
-        AdvisorVerifiedProduct(
-            obik = obik,
-            name = name,
-            brand = brand,
-            shortDescription = shortDescription,
-            technicalFacts = technicalFacts.map {
-                AdvisorTechnicalFact(it.label, it.value)
-            },
-            stock = stock,
-            price = grossPrice,
-        )
 
     private fun notFound(query: String): AdvisorVerifiedQueryResult =
         AdvisorVerifiedQueryResult(
