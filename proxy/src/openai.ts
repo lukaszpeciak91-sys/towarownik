@@ -780,7 +780,7 @@ function stripUnsupportedInternalMarkup(
   boundaryMap.set(text.length, sanitized.length);
 
   return {
-    text: sanitized.trim(),
+    text: sanitized,
     boundaryMap,
   };
 }
