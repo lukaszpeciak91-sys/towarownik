@@ -56,9 +56,12 @@ The A–I behavioral scenario set contains:
 - **H_AMBIGUOUS** — original underspecified washbasin-sealing request: clarify wall/countertop joint versus drain/siphon-type work before any concrete OBI lookup;
 - **I** — general SDS+ versus SDS Max explanation without unnecessary tools.
 
-One additional provider-neutral regression runs beside that baseline:
+Additional focused regressions run beside that baseline:
 
 - **PRODUCT_INTENT** — a sufficiently specified concrete product/recommendation request must use the current provider immediately, without requiring an extra “check the market/branch” phrase. The user intent is identical on OBI v2 and KWANT v3; only the mocked tool/result shape differs by provider.
+- **OBI_NATURAL_BRANCH** — “OBI Wielicka” must trigger the OBI tool with the conversation store number while the fixture simulates Android resolving the one-off branch to 003; the advisor must not demand a numeric market ID.
+- **OBI_AMBIGUOUS_BRANCH** — ambiguous “OBI Kraków” fails closed through `store_not_authorized` and must produce a location clarification instead of a guessed market.
+- **ONLY_IN_STOCK** — on both OBI and KWANT, only selected-branch `stock > 0` may qualify; stock zero/null and KWANT central stock cannot be promoted to local availability.
 
 ## Trace and grading
 
@@ -125,7 +128,7 @@ npm ci
 npm run eval:behavior
 ```
 
-Default execution is deliberately small: one trial for every A–I baseline scenario plus the provider-neutral PRODUCT_INTENT regression on both provider paths.
+Default execution is deliberately small: one trial for every A–I baseline scenario plus the focused regression set. OBI-only branch scenarios run only on the OBI path; provider-neutral product and stock scenarios run on both provider paths.
 
 Run only one provider path:
 
