@@ -131,7 +131,7 @@ class FindProviderProductsToolTest {
     }
 
     @Test
-    fun `explicit other KWANT branch resolves uniquely for one-off lookup`() = runBlocking {
+    fun `provider tool treats resolved branchId as authoritative and ignores hint`() = runBlocking {
         val provider = FakeKwantProvider()
         val result = FindProviderProductsTool(
             providers = ProductProviderRegistry(listOf(provider)),
@@ -139,8 +139,8 @@ class FindProviderProductsToolTest {
         ).execute(
             AdvisorToolArguments(
                 providerId = "kwant-pl",
-                storeNumber = "205",
-                requestedBranch = "Tarnów",
+                storeNumber = "310",
+                requestedBranch = "Nowy Sącz",
                 queries = listOf(AdvisorToolQuery("MBN116E", 1)),
             ),
         ) as AdvisorToolExecutionResult.Success
@@ -149,29 +149,6 @@ class FindProviderProductsToolTest {
         assertEquals(listOf("310"), provider.lookupBranches)
     }
 
-    @Test
-    fun `ambiguous or unknown other branch is never guessed`() = runBlocking {
-        val provider = FakeKwantProvider()
-        val tool = FindProviderProductsTool(
-            providers = ProductProviderRegistry(listOf(provider)),
-            ioDispatcher = Dispatchers.Unconfined,
-        )
-
-        listOf("Tarnów Centrum", "Nieznany").forEach { requested ->
-            assertEquals(
-                AdvisorToolExecutionResult.UnsupportedStore,
-                tool.execute(
-                    AdvisorToolArguments(
-                        providerId = "kwant-pl",
-                        storeNumber = "205",
-                        requestedBranch = requested,
-                        queries = listOf(AdvisorToolQuery("MBN116E", 1)),
-                    ),
-                ),
-            )
-        }
-        assertEquals(0, provider.searchCalls)
-    }
 
     private class FakeKwantProvider(
         private val technicalFacts: List<TechnicalFact> = emptyList(),
