@@ -211,7 +211,11 @@ internal object BranchResolver {
             }
 
             val afterMarker = tokens.drop(locationIndex)
-            containsTokenSequence(afterMarker, branchNameTokens) ||
+            (
+                branchNameTokens.isNotEmpty() &&
+                    afterMarker.take(branchNameTokens.size) ==
+                    branchNameTokens
+                ) ||
                 afterMarker.first() in addressTokens
         }
     }
