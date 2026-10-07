@@ -576,6 +576,23 @@ internal class AdvisorController(
     }
 }
 
+private sealed interface ToolBranchAuthorization {
+    data class Authorized(
+        val arguments: AdvisorToolArguments,
+    ) : ToolBranchAuthorization
+
+    data object Rejected : ToolBranchAuthorization
+    data object Unavailable : ToolBranchAuthorization
+}
+
+private fun AdvisorToolArguments.forResolvedBranch(
+    branchId: BranchId,
+): AdvisorToolArguments =
+    copy(
+        storeNumber = branchId.value,
+        requestedBranch = null,
+    )
+
 private fun AdvisorProxyResult.usageOrNull(): AdvisorUsage? =
     when (this) {
         is AdvisorProxyResult.Answer -> usage
