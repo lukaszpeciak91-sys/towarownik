@@ -275,8 +275,12 @@ internal object BranchResolver {
         "nowy sacz" to setOf(
             "w nowym saczu",
             "w nowym sacz",
+            "nowym saczu",
+            "nowym sacz",
             "w saczu",
             "w sacz",
+            "saczu",
+            "sacz",
         ),
     )
 
