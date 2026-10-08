@@ -1310,6 +1310,28 @@ function deterministicFailures(
           "decision-critical safe browse exposed candidates outside the intended ambiguity",
         );
       }
+
+      const surfacedRefs = new Set(
+        trace.finalProductRefs.map((ref) => refKey(ref)),
+      );
+      for (const expected of expectedCandidates) {
+        if (!surfacedRefs.has(expected)) {
+          failures.push(
+            "decision-critical safe browse did not surface both expected candidate productRefs",
+          );
+          break;
+        }
+      }
+
+      if (
+        [...surfacedRefs].some(
+          (surfaced) => !expectedCandidates.has(surfaced),
+        )
+      ) {
+        failures.push(
+          "decision-critical final productRefs included candidates outside the intended ambiguity",
+        );
+      }
       break;
     }
 
