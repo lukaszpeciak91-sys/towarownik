@@ -168,6 +168,9 @@ function scriptedDriver(scenario) {
           ]);
         case "OBI_NATURAL_BRANCH":
         case "OBI_AMBIGUOUS_BRANCH":
+          return toolRequest([
+            { query: "OBIK 7000001", limit: 1 },
+          ]);
         case "ONLY_IN_STOCK":
           return toolRequest([
             { query: "miski", limit: 3 },
@@ -229,7 +232,7 @@ function scriptedDriver(scenario) {
           return answer("Pasuje zweryfikowany wariant.", refs);
         case "OBI_NATURAL_BRANCH":
           return answer(
-            "Sprawdziłam miski w OBI Wielicka.",
+            "Sprawdziłam OBIK 7000001 w OBI Wielicka.",
             refs,
           );
         case "OBI_AMBIGUOUS_BRANCH":
@@ -507,6 +510,24 @@ test("KWANT provider-neutral rubrics contain no OBI-specific wording outside pro
   assert.equal(BEHAVIOR_REGRESSION_SCENARIOS.length, 17);
 });
 
+test("OBI branch scenarios share the same exact unambiguous product identifier", () => {
+  const natural = behaviorScenario("OBI_NATURAL_BRANCH");
+  const ambiguous = behaviorScenario("OBI_AMBIGUOUS_BRANCH");
+
+  assert.equal(
+    natural.userMessage,
+    "Sprawdź OBIK 7000001 w OBI Wielicka.",
+  );
+  assert.equal(
+    ambiguous.userMessage,
+    "Sprawdź OBIK 7000001 w OBI Kraków.",
+  );
+  for (const scenario of [natural, ambiguous]) {
+    assert.match(scenario.userMessage, /OBIK 7000001/i);
+    assert.doesNotMatch(scenario.userMessage, /\bmiski\b/i);
+  }
+});
+
 test("natural OBI branch uses conversation store in the model call and simulates Android rewrite to 003", async () => {
   const scenario = behaviorScenario("OBI_NATURAL_BRANCH");
   const result = await runBehaviorTrial(
@@ -523,10 +544,21 @@ test("natural OBI branch uses conversation store in the model call and simulates
     result.trace.localProductCalls[0].arguments.storeNumber,
     "075",
   );
+  assert.deepEqual(
+    result.trace.localProductCalls[0].arguments.queries,
+    [{ query: "OBIK 7000001", limit: 1 }],
+  );
   assert.equal(
     result.trace.mockedToolResults[0].storeNumber,
     "003",
   );
+  assert.equal(
+    result.trace.mockedToolResults[0].results[0].products[0].obik,
+    "7000001",
+  );
+  assert.deepEqual(result.trace.finalProductRefs, [
+    { storeNumber: "003", obik: "7000001" },
+  ]);
   assert.equal(
     /3[- ]?cyfrow|numer marketu/i.test(
       result.trace.clarificationOrFinalAnswer.text,
@@ -550,6 +582,10 @@ test("ambiguous OBI city fails closed and asks for a more precise location", asy
   assert.equal(
     result.trace.localProductCalls[0].arguments.storeNumber,
     "075",
+  );
+  assert.deepEqual(
+    result.trace.localProductCalls[0].arguments.queries,
+    [{ query: "OBIK 7000001", limit: 1 }],
   );
   assert.equal(
     result.trace.mockedToolResults[0].storeNumber,
@@ -1271,6 +1307,64 @@ test("scenario E exposes three distinct indoor-compatible cable-tie variants", a
   assert.equal(dimensions.size, 3);
 });
 
+test("scenario E maps size-specific queries to distinct indoor variants", async () => {
+  const scenario = behaviorScenario("E");
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "czarne trytytki 2,5 x 100 mm", limit: 1 },
+          { query: "czarne trytytki 3,6 x 200 mm", limit: 1 },
+          { query: "czarne trytytki 4,8 x 300 mm", limit: 1 },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        return answer(
+          "Mam trzy zweryfikowane warianty czarnych trytytek do środka.",
+          verifiedRefs(mockedResult),
+        );
+      },
+    },
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 1);
+  const groups = result.trace.mockedToolResults[0].results;
+  assert.deepEqual(
+    groups.map((group) => group.products.length),
+    [1, 1, 1],
+  );
+  assert.deepEqual(
+    groups.map((group) =>
+      group.products[0].technicalFacts.find(
+        (fact) => fact.label === "Wymiary",
+      )?.value
+    ),
+    [
+      "2,5 x 100 mm",
+      "3,6 x 200 mm",
+      "4,8 x 300 mm",
+    ],
+  );
+  assert.equal(result.trace.finalProductRefs.length, 3);
+  assert.equal(
+    new Set(
+      result.trace.finalProductRefs.map((ref) =>
+        "obik" in ref ? ref.obik : ref.productId
+      ),
+    ).size,
+    3,
+  );
+});
+
 test("scenario E accepts a relevant black-cable-tie query without repeating the indoor constraint", async () => {
   const scenario = behaviorScenario("E");
   let observedRubric = [];
@@ -1349,6 +1443,60 @@ test("scenario E accepts a relevant black-cable-tie query without repeating the 
     ),
     true,
   );
+});
+
+test("scenario E size-specific fixture matching is provider-neutral for KWANT", async () => {
+  const scenario = behaviorScenarioForProvider("E", "kwant-v3");
+  const base = {
+    async start() {
+      return {
+        type: "tool_request",
+        responseId: "resp_tool",
+        tool: {
+          name: "find_products",
+          callId: "call_tool",
+          arguments: {
+            providerId: "kwant-pl",
+            branchId: "205",
+            requestedBranch: null,
+            queries: [
+              { query: "czarne trytytki 100 mm", limit: 1 },
+              { query: "czarne trytytki 200 mm", limit: 1 },
+              { query: "czarne trytytki 300 mm", limit: 1 },
+            ],
+          },
+        },
+        webSearchCalls: 0,
+      };
+    },
+    async continueTurn(
+      _responseId,
+      _callId,
+      _branchId,
+      mockedResult,
+    ) {
+      return answer(
+        "Mam trzy zweryfikowane warianty czarnych trytytek do środka.",
+        verifiedRefs(mockedResult),
+      );
+    },
+  };
+
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    base,
+    passingSemanticJudge,
+    "kwant-v3",
+  );
+
+  assert.equal(result.status, "PASS");
+  const groups = result.trace.mockedToolResults[0].results;
+  assert.deepEqual(
+    groups.map((group) => group.products[0].productId),
+    ["kw-6110001", "kw-6110002", "kw-6110003"],
+  );
+  assert.equal(result.trace.finalProductRefs.length, 3);
 });
 
 test("explicit browse and direct current-store fact scenarios still require local OBI", async () => {
