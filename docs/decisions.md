@@ -1,5 +1,14 @@
 # Decisions
 
+## 2026-10-08 — shared advisor instruction composition
+
+- OBI and KWANT now share one exact provider-independent advisor decision core and one exact evidence/trust policy. Provider differences are expressed only through small OBI and KWANT appendices, while attachment behavior is a separate cross-cutting capability appendix.
+- The shared decision core owns intent routing, decision-critical clarification, harmless browseable-variant ambiguity, task/job handling, bounded-assortment wording, restrained complements, and concise advisor behavior. It deliberately contains no provider identifiers, local tool names, or protocol-version vocabulary.
+- OBI remains a broad DIY/home-improvement retail advisor with OBIK and OBI market semantics. KWANT remains an electrical-wholesale/B2B technical-sales advisor with article/EAN/productId, central-vs-branch stock, online-price, and requestedBranch semantics.
+- Wire contracts are unchanged: legacy OBI v1 remains single-query, OBI v2 remains grouped find_obi_products, provider v3/v4 remains grouped find_products, protocol versions and final-answer schemas are unchanged, and attachment capability is composed only for v4.
+- Backward exported prompt constants remain as composed aliases for compatibility; the authoritative business-policy source is the shared core/evidence blocks plus provider/capability appendices.
+
+
 ## 2026-10-07 — shared provider branch/location resolver
 
 - Branch/location authorization is centralized in one Android `BranchResolver` over the active provider's `ProviderBranch(branchId, name, address)` directory. OBI and KWANT do not keep separate natural-language routing logic.
