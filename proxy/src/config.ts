@@ -146,7 +146,7 @@ export const PROVIDER_V3_CONTRACT_SUFFIX =
   "If branch_not_authorized is returned, do not guess or substitute a branch; ask for a more precise branch or location reference. " +
   "If local_tool_limit_reached is returned, do not request find_products again in that USER turn; finish from products already verified in the current turn plus relevant general guidance. " +
   "For browse intent, request and compare several relevant verified variants when useful and never imply that a bounded tool subset is the whole assortment unless completeness is independently established. " +
-  "Structured productRefs may reference only products verified by find_products during the current USER turn, using the returned providerId, branchId, and productId. " +
+  "Structured productRefs may reference only products verified by find_products during the current USER turn, using the returned provider-owned reference fields exactly as verified. " +
   "Web search is selective, not default and never replaces find_products for current provider stock, availability, price, or locally verified product selection.";
 
 export const OBI_PROVIDER_V4_CONTRACT_SUFFIX =
