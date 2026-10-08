@@ -512,7 +512,7 @@ export const BRANCH_AND_STOCK_REGRESSION_SCENARIOS: readonly BehaviorScenario[] 
   {
     id: "OBI_NATURAL_BRANCH",
     name: "OBI natural one-off branch reference",
-    userMessage: "sprawdź te miski w OBI Wielicka",
+    userMessage: "Sprawdź OBIK 7000001 w OBI Wielicka.",
     webPolicy: "forbidden",
     providers: ["obi-v2"],
     semanticRubric: [
@@ -523,7 +523,7 @@ export const BRANCH_AND_STOCK_REGRESSION_SCENARIOS: readonly BehaviorScenario[] 
   {
     id: "OBI_AMBIGUOUS_BRANCH",
     name: "OBI ambiguous natural branch reference",
-    userMessage: "sprawdź te miski w OBI Kraków",
+    userMessage: "Sprawdź OBIK 7000001 w OBI Kraków.",
     webPolicy: "forbidden",
     providers: ["obi-v2"],
     semanticRubric: [
@@ -1343,6 +1343,15 @@ function deterministicFailures(
         );
       }
       if (
+        !flattenQueries(calls).some((query) =>
+          hasExactObik(query, "7000001"),
+        )
+      ) {
+        failures.push(
+          "natural OBI branch lookup did not preserve exact OBIK 7000001 product intent",
+        );
+      }
+      if (
         firstCall &&
         "storeNumber" in firstCall.arguments &&
         firstCall.arguments.storeNumber !== DEFAULT_EVAL_STORE_NUMBER
@@ -1369,6 +1378,15 @@ function deterministicFailures(
       if (calls.length === 0) {
         failures.push(
           "ambiguous natural OBI reference did not reach Android authorization",
+        );
+      }
+      if (
+        !flattenQueries(calls).some((query) =>
+          hasExactObik(query, "7000001"),
+        )
+      ) {
+        failures.push(
+          "ambiguous OBI branch lookup did not preserve exact OBIK 7000001 product intent",
         );
       }
       if (
@@ -1603,16 +1621,12 @@ function mockObiQueryResult(
           )
         : notFoundQuery(query);
 
-    case "E":
-      return isBlackCableTieQuery(query)
-        ? verifiedQuery(
-            query,
-            INDOOR_ZIP_TIES.slice(
-              0,
-              Math.min(limit, INDOOR_ZIP_TIES.length),
-            ),
-          )
+    case "E": {
+      const products = indoorCableTieProductsForQuery(query, limit);
+      return products.length
+        ? verifiedQuery(query, products)
         : notFoundQuery(query);
+    }
 
     case "PRODUCT_INTENT":
       return isConcreteBreakerRecommendationQuery(query)
@@ -1686,6 +1700,13 @@ function mockObiQueryResult(
     }
 
     case "OBI_NATURAL_BRANCH":
+      return hasExactObik(query, "7000001")
+        ? verifiedQuery(
+            query,
+            [DIRECT_PRODUCT].slice(0, limit),
+          )
+        : notFoundQuery(query);
+
     case "ONLY_IN_STOCK":
       return /\bmisk\w*/i.test(normalizeQuery(query))
         ? verifiedQuery(
@@ -1777,6 +1798,28 @@ function isBlackCableTieQuery(query: string): boolean {
     /\b(czarn\w*)\b/.test(normalized) &&
     /\b(trytyt\w*|opask\w*)\b/.test(normalized)
   );
+}
+
+function indoorCableTieProductsForQuery(
+  query: string,
+  limit: number,
+): VerifiedProduct[] {
+  if (!isBlackCableTieQuery(query)) return [];
+
+  const normalized = normalizeQuery(query);
+  const sizeMatches = [
+    ["100", INDOOR_ZIP_TIES[0]],
+    ["200", INDOOR_ZIP_TIES[1]],
+    ["300", INDOOR_ZIP_TIES[2]],
+  ].filter(([length]) =>
+    new RegExp(`(?:^|\\D)${length}(?:\\D|$)`).test(normalized),
+  );
+
+  const matches = sizeMatches.length
+    ? sizeMatches.map(([, productValue]) => productValue)
+    : INDOOR_ZIP_TIES;
+
+  return matches.slice(0, Math.min(limit, matches.length));
 }
 
 function isSpecifiedBlackCableTieQuery(
