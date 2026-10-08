@@ -288,3 +288,11 @@ The currently planned AI capability stage is complete after this selective web-s
 - Advisor authorization resolves the current USER message against only the active provider directory. Natural metadata now requires an explicit branch/store location phrase and adjacent location metadata; incidental city/street words stay `NotMentioned`. Unique authorized references rewrite only the turn-local tool branch, ambiguous/unknown explicit references reject instead of falling back, and raw model `requestedBranch` cannot authorize a switch.
 - KWANT routing uses the same resolver over its existing live branch metadata; verified examples include Nowy Sącz 205 and Zamość 128.
 - Current-branch aliases (`u nas`, bounded Nowy Sącz/Sączu forms) remain on the conversation branch. Cross-branch lookup does not mutate WorkingProfile, protocol versions, product search/lookup contracts, stock endpoints, Room, attachments, prompts, or advisor fact shaping.
+
+
+## 2026-10-08 — Advisor observability B2.1
+
+- Added one privacy-safe structured `advisor_protocol` Cloudflare log event per protected Advisor Worker request, including protocol/provider/branch/stage, observable response/tool counts, normalized usage/cost when present, total request latency, and safe failure categories.
+- Added turn correlation through `X-Taksula-Trace-Id`: START/MESSAGE always create a new trace, while CONTINUE reuses a valid propagated trace or fails soft to a new trace when correlation is unavailable. Each HTTP request also receives an internal requestId.
+- CONTINUE logging records only deterministic aggregate local-result counts and safe rejection category; no user/model/query/product/attachment content, product identifiers, stock/price values, response/call IDs, upstream bodies, credentials, or chain-of-thought enter structured logs.
+- JSON protocol bodies, prompts, provider behavior, tool schemas, retrieval, attachments, usage pricing, Android, and protocol versions are unchanged. Android propagation/reporting remains B2.2.
