@@ -214,7 +214,7 @@ test("protocol v2 Android request receives grouped queries tool request", async 
   );
   assert.match(
     fake.captures[0].body.instructions,
-    /Current conversation store for this USER turn is OBI 075/,
+    /Current selected OBI store context: storeNumber=075/,
   );
   assert.match(
     fake.captures[0].body.instructions,
