@@ -62,44 +62,51 @@ test("shared core and evidence policy are protocol/provider independent", () => 
 
   assert.match(
     SHARED_ADVISOR_CORE,
-    /decision-critical clarification gate BEFORE deciding on any local provider verification/i,
+    /State 1 — unknown product category/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
-    /overrides concrete-product intent, browse intent, and immediate-verification intent/i,
+    /too vague to identify a useful product class.*ask ONE concise targeted clarification and do not perform local provider lookup yet/i,
+  );
+
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /State 2 — known category with a decision-critical variant still unknown/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
-    /missing parameter materially changes safety, compatibility, fit, the correct product class/i,
+    /ask ONE concise targeted clarification AND in the SAME turn perform a safe current-provider browse/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
-    /do not perform local provider or product lookup before the user answers/i,
+    /candidates or examples, not confirmed matches/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
-    /Never use provider assortment lookup as reconnaissance to discover, infer, or guess a missing decision-critical parameter/i,
+    /do not claim compatibility, do not select one as the correct recommendation/i,
+  );
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /Provider assortment lookup must never be used as reconnaissance to discover, infer, or guess the missing decision-critical parameter/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
     /thread or connection size\/type, pole configuration, voltage, fit-critical dimensions, IP or environment requirements, and required compatibility/i,
   );
+
   assert.match(
     SHARED_ADVISOR_CORE,
-    /use current-provider verification immediately/i,
+    /State 3 — sufficiently specified/i,
+  );
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /use current-provider verification immediately and recommend appropriate verified products/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
     /Do not wait for an additional phrase such as 'check in the store' or 'check in the branch'/i,
   );
-  assert.match(
-    SHARED_ADVISOR_CORE,
-    /Understanding the task does not automatically require provider lookup merely because product categories can be inferred/i,
-  );
-  assert.match(
-    SHARED_ADVISOR_CORE,
-    /concrete product recommendations, provider products, current provider facts, current assortment, or a verified kit/i,
-  );
+
   assert.match(
     SHARED_ADVISOR_CORE,
     /harmless assortment variation/i,
@@ -115,6 +122,15 @@ test("shared core and evidence policy are protocol/provider independent", () => 
   assert.match(
     SHARED_ADVISOR_CORE,
     /do not require length or width before any lookup/i,
+  );
+
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /Understanding the task does not automatically require provider lookup merely because product categories can be inferred/i,
+  );
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /concrete product recommendations, provider products, current provider facts, current assortment, or a verified kit/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
