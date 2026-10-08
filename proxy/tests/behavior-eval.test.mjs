@@ -96,7 +96,9 @@ function kwantScriptedDriver(scenario) {
           arguments: {
             providerId: "kwant-pl",
             branchId: "205",
-            requestedBranch: null,
+            ...(scenario.id === "D"
+              ? { requestedBranch: null }
+              : {}),
             queries: result.tool.arguments.queries.map((query) => ({
               ...query,
               query:
