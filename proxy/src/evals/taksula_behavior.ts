@@ -242,6 +242,66 @@ const RECOMMENDED_BREAKER: VerifiedProduct = {
   price: 24.99,
 };
 
+const AERATOR_CANDIDATES: VerifiedProduct[] = [
+  product(
+    "7310001",
+    "Perlator do baterii M22",
+    9,
+    19.99,
+    [
+      ["Przyłącze", "M22"],
+      ["Typ", "perlator"],
+    ],
+  ),
+  product(
+    "7310002",
+    "Perlator do baterii M24",
+    7,
+    21.99,
+    [
+      ["Przyłącze", "M24"],
+      ["Typ", "perlator"],
+    ],
+  ),
+];
+
+const KWANT_B16_CANDIDATES: ProviderVerifiedProduct[] = [
+  {
+    productId: "kw-7311001",
+    articleNumber: "EVAL-B16-1P-CANDIDATE",
+    name: "Wyłącznik nadprądowy B16 1P",
+    brand: "Mock Electric",
+    shortDescription:
+      "Zweryfikowany kandydat B16 1P do behavioral eval.",
+    technicalFacts: [
+      { label: "Charakterystyka", value: "B" },
+      { label: "Prąd znamionowy", value: "16 A" },
+      { label: "Liczba biegunów", value: "1" },
+    ],
+    stock: 6,
+    centralStock: 18,
+    price: 14.9,
+    priceScope: "online",
+  },
+  {
+    productId: "kw-7311003",
+    articleNumber: "EVAL-B16-3P-CANDIDATE",
+    name: "Wyłącznik nadprądowy B16 3P",
+    brand: "Mock Electric",
+    shortDescription:
+      "Zweryfikowany kandydat B16 3P do behavioral eval.",
+    technicalFacts: [
+      { label: "Charakterystyka", value: "B" },
+      { label: "Prąd znamionowy", value: "16 A" },
+      { label: "Liczba biegunów", value: "3" },
+    ],
+    stock: 3,
+    centralStock: 9,
+    price: 39.9,
+    priceScope: "online",
+  },
+];
+
 const ZERO_STOCK_PRODUCT = product(
   "7000002",
   "Mock produkt ze stanem zero",
@@ -394,8 +454,10 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     userMessage: "Klient potrzebuje końcówki z sitkiem do kranu.",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer asks one concise clarification about the missing connection/thread/size or fitting type before concrete selection.",
-      "It does not invent compatibility or select an arbitrary concrete SKU.",
+      "The answer understands the requested category as a faucet aerator/perlator or equivalent fitting category and asks one concise compatibility-critical clarification about the missing thread/connection size or type.",
+      "A relevant local provider browse is performed in the same turn and may surface verified candidate products or productRefs from that category.",
+      "Any surfaced products are clearly candidates/examples only; the answer does not claim that a candidate is compatible, will fit, or is the correct recommendation before the missing connection/thread parameter is resolved.",
+      "The provider browse is not used to infer or guess the missing compatibility-critical parameter.",
     ],
   },
   {
@@ -590,8 +652,10 @@ export function behaviorScenarioForProvider(
       userMessage:
         "Klient potrzebuje wyłącznika nadprądowego B16. Co mu dać?",
       semanticRubric: [
-        "The answer asks one concise clarification about a materially decision-critical missing parameter such as pole configuration or intended application before concrete selection.",
-        "It does not use the local provider, invent compatibility, or select an arbitrary concrete SKU before that clarification.",
+        "The answer asks one concise clarification about the missing decision-critical B16 configuration, such as pole configuration or intended application.",
+        "A useful local provider browse is performed in the same turn and exposes plausible verified B16 candidates such as 1P and 3P variants when available.",
+        "Any surfaced products are clearly candidates/examples only; the answer does not claim that one pole configuration is correct, compatible, or recommended before the missing configuration is resolved.",
+        "The provider browse is not used to infer or guess the missing decision-critical parameter.",
       ],
     };
   }
@@ -889,8 +953,7 @@ export async function runBehaviorTrial(
       trace.finalProductRefs = [...result.productRefs];
       trace.clarificationOrFinalAnswer = {
         kind:
-          (scenario.id === "D" ||
-            scenario.id === "H_AMBIGUOUS") &&
+          scenario.id === "H_AMBIGUOUS" &&
           trace.localProductCalls.length === 0
             ? "clarification_candidate"
             : "final_answer",
@@ -1204,16 +1267,83 @@ function deterministicFailures(
       }
       break;
 
-    case "D":
+    case "D": {
+      if (calls.length === 0) {
+        failures.push(
+          "known-category decision-critical request did not perform a safe local browse",
+        );
+      }
+
+      const expectedCandidates = trace.provider === "obi-v2"
+        ? new Set([
+            expectedRefKey(trace.provider, "7310001"),
+            expectedRefKey(trace.provider, "7310002"),
+          ])
+        : new Set([
+            refKey({
+              providerId: "kwant-pl",
+              branchId: DEFAULT_EVAL_KWANT_BRANCH_ID,
+              productId: "kw-7311001",
+            }),
+            refKey({
+              providerId: "kwant-pl",
+              branchId: DEFAULT_EVAL_KWANT_BRANCH_ID,
+              productId: "kw-7311003",
+            }),
+          ]);
+
+      for (const expected of expectedCandidates) {
+        if (!verifiedRefs.has(expected)) {
+          failures.push(
+            "decision-critical safe browse did not expose both fixture ambiguity variants",
+          );
+          break;
+        }
+      }
+
+      if (
+        [...verifiedRefs].some(
+          (verified) => !expectedCandidates.has(verified),
+        )
+      ) {
+        failures.push(
+          "decision-critical safe browse exposed candidates outside the intended ambiguity",
+        );
+      }
+
+      const surfacedRefs = new Set(
+        trace.finalProductRefs.map((ref) => refKey(ref)),
+      );
+      for (const expected of expectedCandidates) {
+        if (!surfacedRefs.has(expected)) {
+          failures.push(
+            "decision-critical safe browse did not surface both expected candidate productRefs",
+          );
+          break;
+        }
+      }
+
+      if (
+        [...surfacedRefs].some(
+          (surfaced) => !expectedCandidates.has(surfaced),
+        )
+      ) {
+        failures.push(
+          "decision-critical final productRefs included candidates outside the intended ambiguity",
+        );
+      }
+      break;
+    }
+
     case "H_AMBIGUOUS":
       if (calls.length !== 0) {
         failures.push(
-          "local provider lookup occurred before clarification",
+          "ambiguous job used local provider lookup before the job category was understood",
         );
       }
       if (trace.finalProductRefs.length !== 0) {
         failures.push(
-          "concrete productRef returned before clarification",
+          "ambiguous job returned productRefs before clarification",
         );
       }
       break;
@@ -1566,6 +1696,18 @@ function mockQueryResult(
 ): VerifiedQueryResult | ProviderVerifiedQueryResult {
   if (
     provider === "kwant-v3" &&
+    scenarioId === "D"
+  ) {
+    const products = kwantB16CandidatesForQuery(query, limit);
+    return {
+      query,
+      status: products.length ? "verified" : "not_found",
+      products,
+    };
+  }
+
+  if (
+    provider === "kwant-v3" &&
     scenarioId === "ONLY_IN_STOCK"
   ) {
     const normalized = normalizeQuery(query);
@@ -1718,8 +1860,14 @@ function mockObiQueryResult(
           )
         : notFoundQuery(query);
 
+    case "D": {
+      const products = aeratorCandidatesForQuery(query, limit);
+      return products.length
+        ? verifiedQuery(query, products)
+        : notFoundQuery(query);
+    }
+
     case "OBI_AMBIGUOUS_BRANCH":
-    case "D":
     case "H_AMBIGUOUS":
     case "I":
       return notFoundQuery(query);
@@ -1776,6 +1924,50 @@ function providerProduct(
     price: value.price,
     priceScope: "online",
   };
+}
+
+function aeratorCandidatesForQuery(
+  query: string,
+  limit: number,
+): VerifiedProduct[] {
+  const normalized = normalizeQuery(query);
+  const namesCategory =
+    /\b(perlator\w*|aerator\w*)\b/.test(normalized);
+  const naturalCategory =
+    /\bkoncowk\w*\b/.test(normalized) &&
+    /\b(kran\w*|bater\w*)\b/.test(normalized);
+  const variantCategory =
+    /\bm\s*(22|24)\b/.test(normalized) &&
+    (namesCategory ||
+      naturalCategory ||
+      /\b(kran\w*|bater\w*)\b/.test(normalized));
+  if (!namesCategory && !naturalCategory && !variantCategory) return [];
+
+  const m22 = /\bm\s*22\b/.test(normalized);
+  const m24 = /\bm\s*24\b/.test(normalized);
+  const candidates = m22 && !m24
+    ? [AERATOR_CANDIDATES[0]]
+    : m24 && !m22
+      ? [AERATOR_CANDIDATES[1]]
+      : AERATOR_CANDIDATES;
+  return candidates.slice(0, Math.min(limit, candidates.length));
+}
+
+function kwantB16CandidatesForQuery(
+  query: string,
+  limit: number,
+): ProviderVerifiedProduct[] {
+  const normalized = normalizeQuery(query);
+  if (!/\bb\s*16\b/.test(normalized)) return [];
+
+  const onePole = /\b1\s*p\b/.test(normalized);
+  const threePole = /\b3\s*p\b/.test(normalized);
+  const candidates = onePole && !threePole
+    ? [KWANT_B16_CANDIDATES[0]]
+    : threePole && !onePole
+      ? [KWANT_B16_CANDIDATES[1]]
+      : KWANT_B16_CANDIDATES;
+  return candidates.slice(0, Math.min(limit, candidates.length));
 }
 
 function isConcreteBreakerRecommendationQuery(
