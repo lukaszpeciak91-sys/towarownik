@@ -62,11 +62,27 @@ test("shared core and evidence policy are protocol/provider independent", () => 
 
   assert.match(
     SHARED_ADVISOR_CORE,
-    /missing parameter materially changes safety, compatibility, the correct product class/i,
+    /decision-critical clarification gate BEFORE deciding on any local provider verification/i,
+  );
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /overrides concrete-product intent, browse intent, and immediate-verification intent/i,
+  );
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /missing parameter materially changes safety, compatibility, fit, the correct product class/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
     /do not perform local provider or product lookup before the user answers/i,
+  );
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /Never use provider assortment lookup as reconnaissance to discover, infer, or guess a missing decision-critical parameter/i,
+  );
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /thread or connection size\/type, pole configuration, voltage, fit-critical dimensions, IP or environment requirements, and required compatibility/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
@@ -87,6 +103,10 @@ test("shared core and evidence policy are protocol/provider independent", () => 
   assert.match(
     SHARED_ADVISOR_CORE,
     /harmless assortment variation/i,
+  );
+  assert.match(
+    SHARED_ADVISOR_CORE,
+    /browse several relevant variants instead of forcing clarification/i,
   );
   assert.match(
     SHARED_ADVISOR_CORE,
