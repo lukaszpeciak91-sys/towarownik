@@ -212,7 +212,7 @@ test("OBI v1/v2 preserve exact current-turn numeric store and natural-location r
     );
     assert.match(
       suffix,
-      /Never guess a numeric market ID/i,
+      /Never (?:derive, )?guess(?:, or invent)? the target numeric store ID|Never guess a numeric market ID/i,
     );
     assert.match(
       suffix,
