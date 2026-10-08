@@ -1267,18 +1267,51 @@ function deterministicFailures(
       }
       break;
 
-    case "D":
+    case "D": {
       if (calls.length === 0) {
         failures.push(
           "known-category decision-critical request did not perform a safe local browse",
         );
       }
-      if (verifiedRefs.size === 0) {
+
+      const expectedCandidates = trace.provider === "obi-v2"
+        ? new Set([
+            expectedRefKey(trace.provider, "7310001"),
+            expectedRefKey(trace.provider, "7310002"),
+          ])
+        : new Set([
+            refKey({
+              providerId: "kwant-pl",
+              branchId: DEFAULT_EVAL_KWANT_BRANCH_ID,
+              productId: "kw-7311001",
+            }),
+            refKey({
+              providerId: "kwant-pl",
+              branchId: DEFAULT_EVAL_KWANT_BRANCH_ID,
+              productId: "kw-7311003",
+            }),
+          ]);
+
+      for (const expected of expectedCandidates) {
+        if (!verifiedRefs.has(expected)) {
+          failures.push(
+            "decision-critical safe browse did not expose both fixture ambiguity variants",
+          );
+          break;
+        }
+      }
+
+      if (
+        [...verifiedRefs].some(
+          (verified) => !expectedCandidates.has(verified),
+        )
+      ) {
         failures.push(
-          "decision-critical safe browse did not expose any verified candidates",
+          "decision-critical safe browse exposed candidates outside the intended ambiguity",
         );
       }
       break;
+    }
 
     case "H_AMBIGUOUS":
       if (calls.length !== 0) {
@@ -1876,10 +1909,17 @@ function aeratorCandidatesForQuery(
   limit: number,
 ): VerifiedProduct[] {
   const normalized = normalizeQuery(query);
-  const categoryMatch =
-    /\b(perlator\w*|aerator\w*|koncowk\w*)\b/.test(normalized) &&
+  const namesCategory =
+    /\b(perlator\w*|aerator\w*)\b/.test(normalized);
+  const naturalCategory =
+    /\bkoncowk\w*\b/.test(normalized) &&
     /\b(kran\w*|bater\w*)\b/.test(normalized);
-  if (!categoryMatch) return [];
+  const variantCategory =
+    /\bm\s*(22|24)\b/.test(normalized) &&
+    (namesCategory ||
+      naturalCategory ||
+      /\b(kran\w*|bater\w*)\b/.test(normalized));
+  if (!namesCategory && !naturalCategory && !variantCategory) return [];
 
   const m22 = /\bm\s*22\b/.test(normalized);
   const m24 = /\bm\s*24\b/.test(normalized);
@@ -1896,10 +1936,7 @@ function kwantB16CandidatesForQuery(
   limit: number,
 ): ProviderVerifiedProduct[] {
   const normalized = normalizeQuery(query);
-  const categoryMatch =
-    /\b(wylacznik\w*|nadpradow\w*|eska\w*)\b/.test(normalized) &&
-    /\bb\s*16\b/.test(normalized);
-  if (!categoryMatch) return [];
+  if (!/\bb\s*16\b/.test(normalized)) return [];
 
   const onePole = /\b1\s*p\b/.test(normalized);
   const threePole = /\b3\s*p\b/.test(normalized);
