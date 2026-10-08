@@ -12,6 +12,7 @@ import {
   emptyAdvisorDiagnostic,
   inputKindForAttachment,
   newRequestId,
+  summarizeContinuationResult,
   TRACE_HEADER_NAME,
   traceIdForRequest,
   type AdvisorOutcome,
@@ -186,7 +187,7 @@ async function handleProtectedAgentRequest(
       diagnostic.inputKind = "tool_result";
       applyContinuationSummary(
         diagnostic,
-        input.result,
+        summarizeContinuationResult(input.result),
       );
       result = await continueAgent(
         input.responseId,
