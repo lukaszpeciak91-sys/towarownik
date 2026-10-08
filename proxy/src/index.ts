@@ -5,6 +5,18 @@ import {
   startAgent,
   UpstreamFailureError,
 } from "./openai.js";
+import {
+  applyAgentResult,
+  applyContinuationSummary,
+  emitAdvisorDiagnostic,
+  emptyAdvisorDiagnostic,
+  inputKindForAttachment,
+  newRequestId,
+  TRACE_HEADER_NAME,
+  traceIdForRequest,
+  type AdvisorOutcome,
+  type AgentStage,
+} from "./observability.js";
 import type {
   AdvisorProtocolVersion,
   AgentResult,
@@ -25,7 +37,6 @@ const JSON_HEADERS = {
 } as const;
 
 type AgentEndpoint = "start" | "message" | "continue";
-type AgentStage = "START" | "MESSAGE" | "CONTINUE";
 
 function jsonResponse(
   body: unknown,
@@ -63,62 +74,71 @@ function stageFor(endpoint: AgentEndpoint): AgentStage {
   return endpoint.toUpperCase() as AgentStage;
 }
 
-function logProtocolDiagnostic(
-  level: "info" | "warn",
-  data: {
-    protocolVersion: number | null;
-    stage: AgentStage;
-    responseEnvelopeType: AgentResult["type"] | null;
-    validationFailureCategory: string | null;
-    upstreamFailureCategory?: string | null;
-    upstreamStatus?: number | null;
-  },
-): void {
-  const line = JSON.stringify({
-    event: "advisor_protocol",
-    protocolVersion: data.protocolVersion,
-    endpointStage: data.stage,
-    responseEnvelopeType: data.responseEnvelopeType,
-    validationFailureCategory: data.validationFailureCategory,
-    upstreamFailureCategory: data.upstreamFailureCategory ?? null,
-    upstreamStatus: data.upstreamStatus ?? null,
-  });
-
-  if (level === "warn") {
-    console.warn(line);
-  } else {
-    console.info(line);
-  }
-}
-
 async function handleProtectedAgentRequest(
   request: Request,
   env: Env,
   upstreamFetch: UpstreamFetch,
   endpoint: AgentEndpoint,
 ): Promise<Response> {
+  const stage = stageFor(endpoint);
+  const traceId = traceIdForRequest(request, stage);
+  const requestId = newRequestId();
+  const startedAt = Date.now();
+  const diagnostic = emptyAdvisorDiagnostic(
+    traceId,
+    requestId,
+    stage,
+  );
+
+  const finish = (
+    body: unknown,
+    status: number,
+    outcome: AdvisorOutcome,
+    level: "info" | "warn",
+    extraHeaders?: Record<string, string>,
+  ): Response => {
+    diagnostic.outcome = outcome;
+    diagnostic.httpStatus = status;
+    diagnostic.durationMs = Math.max(0, Date.now() - startedAt);
+    emitAdvisorDiagnostic(diagnostic, level);
+    return jsonResponse(body, status, {
+      ...(extraHeaders ?? {}),
+      [TRACE_HEADER_NAME]: traceId,
+    });
+  };
+
   const auth = authorizeApp(request, env);
   if (!auth.ok) {
-    return jsonResponse({ error: auth.error }, auth.status);
+    return finish(
+      { error: auth.error },
+      auth.status,
+      auth.status === 401
+        ? "unauthorized"
+        : "server_not_configured",
+      "warn",
+    );
   }
 
   if (request.method !== "POST") {
-    return jsonResponse(
+    return finish(
       { error: "method_not_allowed" },
       405,
+      "method_not_allowed",
+      "warn",
       { Allow: "POST" },
     );
   }
 
   const apiKey = env.OPENAI_API_KEY;
   if (!apiKey) {
-    return jsonResponse(
+    return finish(
       { error: "server_not_configured" },
       503,
+      "server_not_configured",
+      "warn",
     );
   }
 
-  const stage = stageFor(endpoint);
   let protocolVersion: AdvisorProtocolVersion | null = null;
 
   try {
@@ -127,6 +147,10 @@ async function handleProtectedAgentRequest(
     if (endpoint === "start") {
       const input = await parseStartRequest(request);
       protocolVersion = input.protocolVersion;
+      diagnostic.protocolVersion = input.protocolVersion;
+      diagnostic.providerId = input.providerId;
+      diagnostic.branchId = input.branchId;
+      diagnostic.inputKind = inputKindForAttachment(input.attachment);
       result = await startAgent(
         input.message,
         input.providerId,
@@ -139,6 +163,10 @@ async function handleProtectedAgentRequest(
     } else if (endpoint === "message") {
       const input = await parseMessageRequest(request);
       protocolVersion = input.protocolVersion;
+      diagnostic.protocolVersion = input.protocolVersion;
+      diagnostic.providerId = input.providerId;
+      diagnostic.branchId = input.branchId;
+      diagnostic.inputKind = inputKindForAttachment(input.attachment);
       result = await messageAgent(
         input.previousResponseId,
         input.message,
@@ -152,6 +180,14 @@ async function handleProtectedAgentRequest(
     } else {
       const input = await parseContinueRequest(request);
       protocolVersion = input.protocolVersion;
+      diagnostic.protocolVersion = input.protocolVersion;
+      diagnostic.providerId = input.providerId;
+      diagnostic.branchId = input.branchId;
+      diagnostic.inputKind = "tool_result";
+      applyContinuationSummary(
+        diagnostic,
+        input.result,
+      );
       result = await continueAgent(
         input.responseId,
         input.callId,
@@ -164,69 +200,61 @@ async function handleProtectedAgentRequest(
       );
     }
 
-    logProtocolDiagnostic("info", {
-      protocolVersion,
-      stage,
-      responseEnvelopeType: result.type,
-      validationFailureCategory: null,
-    });
-    return jsonResponse(result, 200);
+    applyAgentResult(diagnostic, result);
+    return finish(result, 200, "success", "info");
   } catch (error) {
     const failureProtocolVersion =
       error instanceof InvalidRequestError ||
       error instanceof UnsupportedProtocolVersionError
         ? error.protocolVersion
         : protocolVersion;
+    diagnostic.protocolVersion = failureProtocolVersion;
 
     if (error instanceof RequestTooLargeError) {
-      logProtocolDiagnostic("warn", {
-        protocolVersion: failureProtocolVersion,
-        stage,
-        responseEnvelopeType: null,
-        validationFailureCategory: "request_too_large",
-      });
-      return jsonResponse({ error: "request_too_large" }, 413);
+      diagnostic.validationFailureCategory = "request_too_large";
+      return finish(
+        { error: "request_too_large" },
+        413,
+        "validation_failure",
+        "warn",
+      );
     }
     if (error instanceof UnsupportedProtocolVersionError) {
-      logProtocolDiagnostic("warn", {
-        protocolVersion: error.protocolVersion,
-        stage,
-        responseEnvelopeType: null,
-        validationFailureCategory: error.category,
-      });
-      return jsonResponse(
+      diagnostic.validationFailureCategory = error.category;
+      return finish(
         { error: "unsupported_protocol_version" },
         400,
+        "validation_failure",
+        "warn",
       );
     }
     if (error instanceof InvalidRequestError) {
-      logProtocolDiagnostic("warn", {
-        protocolVersion: error.protocolVersion,
-        stage,
-        responseEnvelopeType: null,
-        validationFailureCategory: error.category,
-      });
-      return jsonResponse({ error: "invalid_request" }, 400);
+      diagnostic.validationFailureCategory = error.category;
+      return finish(
+        { error: "invalid_request" },
+        400,
+        "validation_failure",
+        "warn",
+      );
     }
     if (error instanceof UpstreamFailureError) {
-      logProtocolDiagnostic("warn", {
-        protocolVersion: failureProtocolVersion,
-        stage,
-        responseEnvelopeType: null,
-        validationFailureCategory: null,
-        upstreamFailureCategory: error.category,
-        upstreamStatus: error.upstreamStatus,
-      });
-      return jsonResponse({ error: "upstream_failure" }, 502);
+      diagnostic.upstreamFailureCategory = error.category;
+      diagnostic.upstreamStatus = error.upstreamStatus;
+      return finish(
+        { error: "upstream_failure" },
+        502,
+        "upstream_failure",
+        "warn",
+      );
     }
 
-    logProtocolDiagnostic("warn", {
-      protocolVersion: failureProtocolVersion,
-      stage,
-      responseEnvelopeType: null,
-      validationFailureCategory: "unexpected_failure",
-    });
-    return jsonResponse({ error: "upstream_failure" }, 502);
+    diagnostic.validationFailureCategory = "unexpected_failure";
+    return finish(
+      { error: "upstream_failure" },
+      502,
+      "unexpected_failure",
+      "warn",
+    );
   }
 }
 
