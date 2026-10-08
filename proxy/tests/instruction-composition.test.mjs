@@ -234,7 +234,7 @@ test("provider-specific vocabulary does not leak across OBI and KWANT compositio
   assert.doesNotMatch(kwantV3, /broad DIY and home-improvement retail environment/i);
   assert.match(
     kwantV3,
-    /never describe a KWANT identifier as OBIK/i,
+    /do not describe a KWANT identifier as OBIK/i,
   );
 });
 
