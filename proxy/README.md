@@ -212,3 +212,12 @@ Conversation history may mention older stock or price values. The server-control
 ## Protocol v4 attachments
 
 Protocol v4 accepts `multipart/form-data` on `/start` and `/message` only, with a JSON `payload` part and exactly one `attachment` part. Supported MIME/signature pairs are JPEG, PNG, and PDF, bounded to 16 MiB. `/continue` and all v2/v3 traffic remain JSON-only.
+
+
+## Advisor structured observability
+
+Protected Advisor requests emit one privacy-safe structured `advisor_protocol` event to Cloudflare logs. START and MESSAGE create a new opaque user-turn trace and return it in `X-Taksula-Trace-Id`; CONTINUE reuses a syntactically valid inbound trace header so one tool-assisted user turn can be correlated across multiple HTTP requests. Missing or invalid CONTINUE trace headers fail soft to a new trace. An internal requestId identifies the individual Worker request and is not returned to Android.
+
+The event records observable operational metadata only: endpoint stage, protocol version, parsed provider/branch, generic input kind (text/image/pdf/tool_result), answer vs tool-request envelope, bounded local query/limit counts, final product-card count, web-search/source counts, normalized AgentUsage/cost when present, total request latency, safe HTTP/outcome/failure categories, and aggregate CONTINUE result counts/rejection category. Cloudflare structured logs are the current inspection surface; no persistent analytics store is used.
+
+The event never contains chain-of-thought, user/model text, local or web query text, product names/descriptions/IDs/OBIKs/article numbers, stock or price values, attachment filenames/bytes/content, web source URLs/titles, raw upstream bodies, responseId/callId/previousResponseId, Authorization material, app/OpenAI secrets, or other raw payload content. Observability is fail-soft and does not change Advisor JSON bodies or production behavior. Android propagation/reporting of the trace header is deferred to B2.2.
