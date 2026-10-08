@@ -523,7 +523,7 @@ export const BRANCH_AND_STOCK_REGRESSION_SCENARIOS: readonly BehaviorScenario[] 
   {
     id: "OBI_AMBIGUOUS_BRANCH",
     name: "OBI ambiguous natural branch reference",
-    userMessage: "sprawdź w OBI Kraków",
+    userMessage: "sprawdź te miski w OBI Kraków",
     webPolicy: "forbidden",
     providers: ["obi-v2"],
     semanticRubric: [
