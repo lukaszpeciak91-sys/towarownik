@@ -401,6 +401,237 @@ test("scenario D keeps OBI plumbing content and shapes KWANT to electrical clari
   }
 });
 
+test("scenario D mocks accept natural broad and variant-specific queries", async () => {
+  const obiScenario = behaviorScenarioForProvider("D", "obi-v2");
+  const obiQueries = [
+    ["perlator", ["M22", "M24"]],
+    ["aerator", ["M22", "M24"]],
+    ["końcówka do kranu", ["M22", "M24"]],
+    ["perlator M22", ["M22"]],
+    ["perlator M24", ["M24"]],
+  ];
+
+  for (const [query, expectedConnections] of obiQueries) {
+    const result = await runBehaviorTrial(
+      obiScenario,
+      1,
+      {
+        async start() {
+          return toolRequest([{ query, limit: 3 }]);
+        },
+        async continueTurn(
+          _responseId,
+          _callId,
+          _branchId,
+          mockedResult,
+        ) {
+          return answer(
+            "Jaki gwint lub typ przyłącza ma bateria? To są tylko kandydaci.",
+            verifiedRefs(mockedResult),
+          );
+        },
+      },
+      passingSemanticJudge,
+      "obi-v2",
+    );
+
+    const products =
+      result.trace.mockedToolResults[0].results[0].products;
+    assert.deepEqual(
+      products.map((product) => product.technicalFacts.find(
+        (fact) => fact.label === "Przyłącze",
+      )?.value),
+      expectedConnections,
+    );
+  }
+
+  const kwantScenario = behaviorScenarioForProvider("D", "kwant-v3");
+  const kwantQueries = [
+    ["B16", ["1", "3"]],
+    ["wyłącznik B16", ["1", "3"]],
+    ["wyłącznik nadprądowy B16", ["1", "3"]],
+    ["B16 1P", ["1"]],
+    ["B16 3P", ["3"]],
+  ];
+
+  for (const [query, expectedPoles] of kwantQueries) {
+    const result = await runBehaviorTrial(
+      kwantScenario,
+      1,
+      {
+        async start() {
+          return {
+            type: "tool_request",
+            responseId: "resp_tool",
+            tool: {
+              name: "find_products",
+              callId: "call_tool",
+              arguments: {
+                providerId: "kwant-pl",
+                branchId: "205",
+                requestedBranch: null,
+                queries: [{ query, limit: 3 }],
+              },
+            },
+            webSearchCalls: 0,
+          };
+        },
+        async continueTurn(
+          _responseId,
+          _callId,
+          _branchId,
+          mockedResult,
+        ) {
+          return answer(
+            "1P czy 3P? To są tylko kandydaci.",
+            verifiedRefs(mockedResult),
+          );
+        },
+      },
+      passingSemanticJudge,
+      "kwant-v3",
+    );
+
+    const products =
+      result.trace.mockedToolResults[0].results[0].products;
+    assert.deepEqual(
+      products.map((product) => product.technicalFacts.find(
+        (fact) => fact.label === "Liczba biegunów",
+      )?.value),
+      expectedPoles,
+    );
+  }
+});
+
+test("scenario D deterministic coverage accepts grouped variant searches and rejects one-sided browse", async () => {
+  const passingCases = [
+    {
+      provider: "obi-v2",
+      scenario: behaviorScenarioForProvider("D", "obi-v2"),
+      start() {
+        return toolRequest([
+          { query: "perlator M22", limit: 1 },
+          { query: "perlator M24", limit: 1 },
+        ]);
+      },
+    },
+    {
+      provider: "kwant-v3",
+      scenario: behaviorScenarioForProvider("D", "kwant-v3"),
+      start() {
+        return {
+          type: "tool_request",
+          responseId: "resp_tool",
+          tool: {
+            name: "find_products",
+            callId: "call_tool",
+            arguments: {
+              providerId: "kwant-pl",
+              branchId: "205",
+              requestedBranch: null,
+              queries: [
+                { query: "B16 1P", limit: 1 },
+                { query: "B16 3P", limit: 1 },
+              ],
+            },
+          },
+          webSearchCalls: 0,
+        };
+      },
+    },
+  ];
+
+  for (const item of passingCases) {
+    const result = await runBehaviorTrial(
+      item.scenario,
+      1,
+      {
+        async start() {
+          return item.start();
+        },
+        async continueTurn(
+          _responseId,
+          _callId,
+          _branchId,
+          mockedResult,
+        ) {
+          return answer(
+            item.provider === "obi-v2"
+              ? "Jaki gwint ma bateria? Poniżej kandydaci M22 i M24."
+              : "1P czy 3P? Poniżej kandydaci obu konfiguracji.",
+            verifiedRefs(mockedResult),
+          );
+        },
+      },
+      passingSemanticJudge,
+      item.provider,
+    );
+
+    assert.equal(result.status, "PASS");
+    assert.equal(result.trace.finalProductRefs.length, 2);
+  }
+
+  const failingCases = [
+    {
+      provider: "obi-v2",
+      scenario: behaviorScenarioForProvider("D", "obi-v2"),
+      query: "perlator M22",
+    },
+    {
+      provider: "kwant-v3",
+      scenario: behaviorScenarioForProvider("D", "kwant-v3"),
+      query: "B16 1P",
+    },
+  ];
+
+  for (const item of failingCases) {
+    const result = await runBehaviorTrial(
+      item.scenario,
+      1,
+      {
+        async start() {
+          return item.provider === "obi-v2"
+            ? toolRequest([{ query: item.query, limit: 1 }])
+            : {
+                type: "tool_request",
+                responseId: "resp_tool",
+                tool: {
+                  name: "find_products",
+                  callId: "call_tool",
+                  arguments: {
+                    providerId: "kwant-pl",
+                    branchId: "205",
+                    requestedBranch: null,
+                    queries: [{ query: item.query, limit: 1 }],
+                  },
+                },
+                webSearchCalls: 0,
+              };
+        },
+        async continueTurn(
+          _responseId,
+          _callId,
+          _branchId,
+          mockedResult,
+        ) {
+          return answer(
+            "Potrzebuję doprecyzowania; to tylko kandydat.",
+            verifiedRefs(mockedResult),
+          );
+        },
+      },
+      passingSemanticJudge,
+      item.provider,
+    );
+
+    assert.equal(result.status, "FAIL");
+    assert.match(
+      result.reason,
+      /did not expose both fixture ambiguity variants/i,
+    );
+  }
+});
+
 test("scenario D safe browse exposes relevant candidates without inferring the missing variant", async () => {
   const obi = await runBehaviorTrial(
     behaviorScenarioForProvider("D", "obi-v2"),
