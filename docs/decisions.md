@@ -536,3 +536,14 @@ These decisions describe the broader intended product behavior. The currently im
 - Classify failures only where their cause is known: fetch/network, upstream HTTP class, JSON parsing, Responses envelope, function-call contract, or structured final-answer contract.
 - Reuse the existing `advisor_protocol` Cloudflare log and add only the internal upstream category plus upstream HTTP status. Do not log user/model/tool/product/attachment content, identifiers, credentials, tokens, cookies, or raw upstream bodies.
 - Diagnostics are observational only: no retry, persistence, analytics provider, Android/UI change, protocol/version change, or advisor behavior change.
+
+
+## 2026-10-08 — Advisor observability B2.1
+
+- Keep Cloudflare structured logs as the only storage/inspection surface for Advisor observability in B2.1; do not add Analytics Engine, KV, D1, R2, a database, or a dashboard.
+- Keep one structured `advisor_protocol` event per protected Advisor HTTP request. The event describes only observable transport/runtime behavior: protocol/provider/branch/stage, answer vs local-tool request, bounded query/result/product counts, web-search/source counts, normalized usage/cost when present, total Worker latency, and safe validation/upstream failure categories.
+- Start a new opaque `X-Taksula-Trace-Id` for every START/MESSAGE user turn. CONTINUE reuses a syntactically valid inbound trace header and otherwise creates a new one without rejecting the request. A separate internal requestId distinguishes individual HTTP requests inside one turn trace.
+- Do not place traceId in Advisor JSON bodies and do not change any existing request/response, tool, productRef, attachment, prompt, model, reasoning, or protocol contract.
+- Logs must never contain chain-of-thought, user/model text, local or web query text, product content or identifiers, stock/price values, attachment filenames/content, response/call chain IDs, raw upstream bodies, authorization material, or secrets. ProviderId and branch/store ID are allowed operational metadata.
+- CONTINUE logs summarize the already-validated local result only through safe aggregate counts and rejection category; individual products are never logged.
+- Android trace propagation/reporting is intentionally deferred to B2.2.
