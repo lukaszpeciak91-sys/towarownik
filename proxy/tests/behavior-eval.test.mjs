@@ -632,6 +632,80 @@ test("scenario D deterministic coverage accepts grouped variant searches and rej
   }
 });
 
+test("scenario D fails when verified ambiguity candidates are not all surfaced as productRefs", async () => {
+  const cases = [
+    {
+      provider: "obi-v2",
+      scenario: behaviorScenarioForProvider("D", "obi-v2"),
+      start() {
+        return toolRequest([{ query: "perlator", limit: 3 }]);
+      },
+    },
+    {
+      provider: "kwant-v3",
+      scenario: behaviorScenarioForProvider("D", "kwant-v3"),
+      start() {
+        return {
+          type: "tool_request",
+          responseId: "resp_tool",
+          tool: {
+            name: "find_products",
+            callId: "call_tool",
+            arguments: {
+              providerId: "kwant-pl",
+              branchId: "205",
+              requestedBranch: null,
+              queries: [{ query: "B16", limit: 3 }],
+            },
+          },
+          webSearchCalls: 0,
+        };
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    for (const mode of ["none", "one"]) {
+      const result = await runBehaviorTrial(
+        item.scenario,
+        1,
+        {
+          async start() {
+            return item.start();
+          },
+          async continueTurn(
+            _responseId,
+            _callId,
+            _branchId,
+            mockedResult,
+          ) {
+            const refs = verifiedRefs(mockedResult);
+            return answer(
+              item.provider === "obi-v2"
+                ? "Jaki gwint ma bateria? Poniżej tylko kandydaci."
+                : "1P czy 3P? Poniżej tylko kandydaci.",
+              mode === "none" ? [] : refs.slice(0, 1),
+            );
+          },
+        },
+        passingSemanticJudge,
+        item.provider,
+      );
+
+      assert.equal(result.localToolCallCount, 1);
+      assert.equal(
+        result.trace.mockedToolResults[0].results[0].products.length,
+        2,
+      );
+      assert.equal(result.status, "FAIL");
+      assert.match(
+        result.reason,
+        /did not surface both expected candidate productRefs/i,
+      );
+    }
+  }
+});
+
 test("scenario D safe browse exposes relevant candidates without inferring the missing variant", async () => {
   const obi = await runBehaviorTrial(
     behaviorScenarioForProvider("D", "obi-v2"),
