@@ -731,6 +731,7 @@ test("decision-critical D variants fail on provider lookup before clarification"
                   arguments: {
                     providerId: "kwant-pl",
                     branchId: "205",
+                    requestedBranch: null,
                     queries: [{ query, limit: 3 }],
                   },
                 },
