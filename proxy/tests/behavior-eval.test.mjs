@@ -78,12 +78,6 @@ function kwantScriptedDriver(scenario) {
   const base = scriptedDriver(scenario);
   return {
     async start(...args) {
-      if (scenario.id === "D") {
-        return answer(
-          "Czy potrzebny jest wyłącznik 1P, czy inna konfiguracja biegunów i zastosowanie?",
-        );
-      }
-
       const result = await base.start(...args);
       if (result.type !== "tool_request") return result;
       const identifiers = {
@@ -102,12 +96,15 @@ function kwantScriptedDriver(scenario) {
           arguments: {
             providerId: "kwant-pl",
             branchId: "205",
+            requestedBranch: null,
             queries: result.tool.arguments.queries.map((query) => ({
               ...query,
               query:
                 scenario.id === "ONLY_IN_STOCK"
                   ? "wyłączniki nadprądowe B16 1P"
-                  : identifier ?? query.query,
+                  : scenario.id === "D"
+                    ? "wyłączniki nadprądowe B16"
+                    : identifier ?? query.query,
             })),
           },
         },
@@ -140,9 +137,9 @@ function scriptedDriver(scenario) {
             { query: "czarne trytytki", limit: 3 },
           ]);
         case "D":
-          return answer(
-            "Jaki gwint lub średnicę przyłącza ma mieć ta końcówka?",
-          );
+          return toolRequest([
+            { query: "perlator końcówka do kranu", limit: 2 },
+          ]);
         case "I":
           return answer(
             "SDS+ jest do lżejszych prac i mniejszych młotowiertarek, a SDS Max do cięższych prac i większych średnic.",
@@ -226,6 +223,17 @@ function scriptedDriver(scenario) {
         case "E":
           return answer(
             "Znalazłam m.in. kilka wariantów różniących się wymiarami.",
+            refs,
+          );
+        case "D":
+          if (refs.some((ref) => "productId" in ref)) {
+            return answer(
+              "Czy potrzebny jest B16 1P czy 3P? Poniżej są zweryfikowani kandydaci obu konfiguracji, ale bez tej informacji nie wskazuję żadnego jako właściwego.",
+              refs,
+            );
+          }
+          return answer(
+            "Jaki gwint lub typ przyłącza ma bateria? Poniżej są zweryfikowane kandydaty z kategorii perlatorów, ale bez tej informacji nie potwierdzam, że którykolwiek będzie pasował.",
             refs,
           );
         case "C":
@@ -370,13 +378,67 @@ test("scenario D keeps OBI plumbing content and shapes KWANT to electrical clari
 
   for (const result of [obiResult, kwantResult]) {
     assert.equal(result.status, "PASS");
-    assert.equal(result.localToolCallCount, 0);
-    assert.equal(result.trace.finalProductRefs.length, 0);
+    assert.equal(result.localToolCallCount, 1);
+    assert.ok(result.trace.finalProductRefs.length >= 2);
     assert.equal(
       result.trace.clarificationOrFinalAnswer.kind,
-      "clarification_candidate",
+      "final_answer",
+    );
+    assert.match(
+      result.trace.clarificationOrFinalAnswer.text,
+      /\?/,
+    );
+    assert.match(
+      result.trace.clarificationOrFinalAnswer.text,
+      /kandyd/i,
+    );
+    assert.doesNotMatch(
+      result.trace.clarificationOrFinalAnswer.text,
+      /ten (?:na pewno )?(?:pasuje|jest właściwy)|polecam ten/i,
     );
   }
+});
+
+test("scenario D safe browse exposes relevant candidates without inferring the missing variant", async () => {
+  const obi = await runBehaviorTrial(
+    behaviorScenarioForProvider("D", "obi-v2"),
+    1,
+    scriptedDriver(behaviorScenarioForProvider("D", "obi-v2")),
+    passingSemanticJudge,
+    "obi-v2",
+  );
+  const kwant = await runBehaviorTrial(
+    behaviorScenarioForProvider("D", "kwant-v3"),
+    1,
+    kwantScriptedDriver(behaviorScenarioForProvider("D", "kwant-v3")),
+    passingSemanticJudge,
+    "kwant-v3",
+  );
+
+  assert.deepEqual(
+    obi.trace.mockedToolResults[0].results[0].products.map(
+      (product) => product.technicalFacts.find(
+        (fact) => fact.label === "Przyłącze",
+      )?.value,
+    ),
+    ["M22", "M24"],
+  );
+  assert.deepEqual(
+    kwant.trace.mockedToolResults[0].results[0].products.map(
+      (product) => product.technicalFacts.find(
+        (fact) => fact.label === "Liczba biegunów",
+      )?.value,
+    ),
+    ["1", "3"],
+  );
+  assert.match(
+    obi.trace.clarificationOrFinalAnswer.text,
+    /gwint|przyłącz/i,
+  );
+  assert.match(
+    kwant.trace.clarificationOrFinalAnswer.text,
+    /1P|3P/i,
+  );
 });
 
 test("ONLY_IN_STOCK messages are explicit and provider-shaped", () => {
@@ -736,21 +798,25 @@ test("repeated trials stay configurable and summary reports pass totals", async 
   assert.match(summary, /failed scenarios: none/);
 });
 
-test("decision-critical D variants fail on provider lookup before clarification", async () => {
+test("decision-critical D variants allow safe browse but reject premature correctness claims", async () => {
   const cases = [
     {
       provider: "obi-v2",
       scenario: behaviorScenarioForProvider("D", "obi-v2"),
-      query: "końcówka do kranu",
+      query: "perlator końcówka do kranu",
+      unsafeText:
+        "Jaki masz gwint? Ten perlator na pewno będzie pasował.",
     },
     {
       provider: "kwant-v3",
       scenario: behaviorScenarioForProvider("D", "kwant-v3"),
-      query: "wyłącznik nadprądowy B16",
+      query: "wyłączniki nadprądowe B16",
+      unsafeText:
+        "1P czy 3P? Polecam ten B16 1P jako właściwy.",
     },
   ];
 
-  for (const { provider, scenario, query } of cases) {
+  for (const { provider, scenario, query, unsafeText } of cases) {
     const result = await runBehaviorTrial(
       scenario,
       1,
@@ -774,18 +840,41 @@ test("decision-critical D variants fail on provider lookup before clarification"
                 webSearchCalls: 0,
               };
         },
-        async continueTurn() {
-          return answer("Jaki dokładnie wariant jest potrzebny?");
+        async continueTurn(
+          _responseId,
+          _callId,
+          _branchId,
+          mockedResult,
+        ) {
+          return answer(
+            unsafeText,
+            verifiedRefs(mockedResult),
+          );
         },
       },
-      passingSemanticJudge,
+      {
+        async grade({ trace }) {
+          const text =
+            trace.clarificationOrFinalAnswer?.text ?? "";
+          const premature =
+            /na pewno będzie pasował|polecam ten.*właściwy/i.test(text);
+          return {
+            pass: !premature,
+            reason: premature
+              ? "candidate was presented as confirmed compatible/correct before clarification"
+              : "candidate remained conditional",
+          };
+        },
+      },
       provider,
     );
 
+    assert.equal(result.localToolCallCount, 1);
+    assert.ok(result.trace.finalProductRefs.length >= 1);
     assert.equal(result.status, "FAIL");
     assert.match(
       result.reason,
-      /local provider lookup occurred before clarification/i,
+      /confirmed compatible\/correct before clarification/i,
     );
   }
 });
