@@ -370,6 +370,51 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
   );
 });
 
+test("final advisor behavior does not change model reasoning tools or structured output", async () => {
+  const fake = fakeOpenAI(answerPayload("runtime contract"));
+  const worker = createWorker(fake.fetch);
+
+  const response = await worker.fetch(
+    jsonRequest("/v1/agent/start", {
+      message: "Sprawdź konkretny produkt",
+      storeNumber: "075",
+      protocolVersion: 2,
+    }),
+    configuredEnv,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(fake.captures.length, 1);
+
+  const body = fake.captures[0].body;
+  assert.equal(body.model, OPENAI_MODEL);
+  assert.deepEqual(body.reasoning, {
+    effort: OPENAI_REASONING_EFFORT,
+  });
+  assert.equal(body.tool_choice, "auto");
+  assert.equal(
+    body.max_tool_calls,
+    MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
+  );
+  assert.equal(body.tools.length, 2);
+  assert.equal(body.tools[0].type, "function");
+  assert.equal(body.tools[0].name, LOCAL_TOOL_NAME);
+  assert.deepEqual(body.tools[1], WEB_SEARCH_TOOL);
+  assert.deepEqual(body.text, {
+    format: FINAL_ANSWER_FORMAT,
+  });
+  assert.equal(body.text.format.type, "json_schema");
+  assert.equal(body.text.format.strict, true);
+  assert.deepEqual(
+    body.text.format.schema.required,
+    ["text", "productRefs"],
+  );
+  assert.deepEqual(
+    body.text.format.schema.properties.productRefs.items.required,
+    ["storeNumber", "obik"],
+  );
+});
+
 test("web_search is available selectively with automatic tool choice and one built-in call", async () => {
   const fake = fakeOpenAI(answerPayload("No search needed."));
   const worker = createWorker(fake.fetch);
