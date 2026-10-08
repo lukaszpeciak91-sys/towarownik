@@ -1807,16 +1807,22 @@ function indoorCableTieProductsForQuery(
   if (!isBlackCableTieQuery(query)) return [];
 
   const normalized = normalizeQuery(query);
-  const sizeMatches = [
-    ["100", INDOOR_ZIP_TIES[0]],
-    ["200", INDOOR_ZIP_TIES[1]],
-    ["300", INDOOR_ZIP_TIES[2]],
-  ].filter(([length]) =>
-    new RegExp(`(?:^|\\D)${length}(?:\\D|$)`).test(normalized),
+  const requestedLengths = ["100", "200", "300"].filter(
+    (length) =>
+      new RegExp(`(?:^|\\D)${length}(?:\\D|$)`).test(normalized),
+  );
+  const sizeMatches = requestedLengths.flatMap((length) =>
+    INDOOR_ZIP_TIES.filter((productValue) =>
+      productValue.technicalFacts.some(
+        (fact) =>
+          fact.label === "Wymiary" &&
+          normalizeQuery(fact.value).includes(length),
+      ),
+    ),
   );
 
   const matches = sizeMatches.length
-    ? sizeMatches.map(([, productValue]) => productValue)
+    ? sizeMatches
     : INDOOR_ZIP_TIES;
 
   return matches.slice(0, Math.min(limit, matches.length));
