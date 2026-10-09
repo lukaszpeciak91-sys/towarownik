@@ -221,13 +221,19 @@ class MultiMarketResearchTest(unittest.TestCase):
 
     class FakeExactButton:
         def __init__(self, *, name=None, visible=True, enabled=True,
-                     component="PdpLink"):
+                     component="PdpLink", accessible_prefix="arrow-right"):
             self.name = name
             self.visible = visible
             self.enabled = enabled
             self.component = component
+            self.accessible_name = (
+                accessible_prefix + " " + (name or "")
+            )
             self.clicks = 0
             self.scrolled = 0
+
+        def inner_text(self, timeout=0):
+            return self.name or ""
 
         def is_visible(self):
             return self.visible
@@ -245,7 +251,7 @@ class MultiMarketResearchTest(unittest.TestCase):
             self.clicks += 1
 
     @staticmethod
-    def fake_exact_button_page(*button_names):
+    def fake_exact_button_page(*buttons):
         class Locator:
             def __init__(self, matches):
                 self.matches = matches
@@ -253,31 +259,34 @@ class MultiMarketResearchTest(unittest.TestCase):
             def count(self):
                 return len(self.matches)
 
-            @property
-            def first(self):
-                return self.matches[0]
+            def nth(self, index):
+                return self.matches[index]
 
         class Page:
-            def __init__(self, buttons):
-                self.buttons = buttons
+            def __init__(self, items):
+                self.buttons = items
                 self.last_lookup = None
 
-            def get_by_role(self, role, name, exact=False):
-                self.last_lookup = (role, name, exact)
-                if not exact or role != "button":
-                    raise AssertionError("Must use the observed exact role/name")
-                return Locator([b for b in self.buttons if b.name == name])
+            def locator(self, selector):
+                self.last_lookup = selector
+                if selector != 'button[data-component="PdpLink"]':
+                    raise AssertionError("Must use observed native button selector")
+                return Locator([
+                    b for b in self.buttons if b.component == "PdpLink"
+                ])
 
             def wait_for_timeout(self, millis):
                 pass
 
-        return Page(button_names)
+        return Page(buttons)
 
     def test_observed_exact_button_selected_without_dom_index_or_recommendations(self):
         r = self.r
         for order in (("recommendation", "real"), ("real", "recommendation")):
             with self.subTest(order=order):
-                exact = self.FakeExactButton(name=r.OBSERVED_AVAILABILITY_BUTTON)
+                exact = self.FakeExactButton(
+                    name=" \nSprawdź   dostępność w innym sklepie\t"
+                )
                 recommendation = self.FakeExactButton(
                     name="Dostępność Dragon klej w innym sklepie"
                 )
@@ -292,11 +301,14 @@ class MultiMarketResearchTest(unittest.TestCase):
                     page, [{"index": 0, "label": "dostępność (recommendation)"}]
                 )
                 self.assertEqual("CLICKED", result["status"])
-                self.assertEqual(("button", r.OBSERVED_AVAILABILITY_BUTTON, True),
-                                 page.last_lookup)
+                self.assertEqual(
+                    'button[data-component="PdpLink"]', page.last_lookup
+                )
                 self.assertEqual(1, exact.clicks)
                 self.assertEqual(1, exact.scrolled)
                 self.assertEqual(0, recommendation.clicks)
+                # Live SVG title influences accessible name but never innerText.
+                self.assertIn("arrow-right", exact.accessible_name)
 
     def test_exact_availability_duplicate_missing_hidden_disabled_changed_fail_closed(self):
         r = self.r
@@ -308,8 +320,10 @@ class MultiMarketResearchTest(unittest.TestCase):
             ([exact(), exact()], "EXACT_BUTTON_AMBIGUOUS"),
             ([exact(visible=False)], "EXACT_BUTTON_HIDDEN"),
             ([exact(enabled=False)], "EXACT_BUTTON_DISABLED"),
-            ([exact(component="Checkout")], "UNEXPECTED_BUTTON_COMPONENT"),
+            ([exact(component="Checkout")], "EXACT_BUTTON_MISSING"),
             ([self.FakeExactButton(name="Sprawdź dostępność")], "EXACT_BUTTON_MISSING"),
+            ([self.FakeExactButton(name="Sprawdź dostępność w innym sklepie — kup")],
+             "EXACT_BUTTON_MISSING"),
         )
         for buttons, expected in examples:
             with self.subTest(expected=expected):
@@ -317,6 +331,15 @@ class MultiMarketResearchTest(unittest.TestCase):
                 result = r.click_safe_control(page, [])
                 self.assertEqual(expected, result["status"])
                 self.assertTrue(all(b.clicks == 0 for b in buttons))
+
+    def test_recommendation_links_with_same_words_do_not_match_native_pdp_button(self):
+        real = self.FakeExactButton(name=self.r.OBSERVED_AVAILABILITY_BUTTON)
+        other = self.FakeExactButton(
+            name=self.r.OBSERVED_AVAILABILITY_BUTTON, component="a"
+        )
+        page = self.fake_exact_button_page(other, real)
+        self.assertIs(self.r.resolve_exact_availability_opener(page)[0], real)
+        self.assertEqual(0, other.clicks)
 
     def test_observed_sp_structural_diagnostics_no_unknown_field_classification(self):
         r = self.r
