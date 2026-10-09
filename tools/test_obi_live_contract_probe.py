@@ -595,6 +595,209 @@ class MultiMarketResearchTest(unittest.TestCase):
             self.r.classify_contract([initial, post], self.stores, self.obik)["type"]
         )
 
+    def test_dom_fallback_only_after_real_playwright_click_timeout(self):
+        r = self.r
+        PlaywrightTimeout = type("TimeoutError", (Exception,), {
+            "__module__": "playwright._impl._errors"
+        })
+        class ActionabilityTimeoutButton(self.FakeExactButton):
+            def click(self, timeout=0):
+                self.clicks += 1
+                raise PlaywrightTimeout("PRIVATE actionability exception")
+
+        button = ActionabilityTimeoutButton(name=r.OBSERVED_AVAILABILITY_BUTTON)
+        page = self.fake_exact_button_page(button)
+        result = r.click_safe_control(page, [])
+        self.assertEqual("CLICK_DISPATCHED", result["status"])
+        self.assertEqual(
+            "DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT", result["interactionMode"]
+        )
+        self.assertEqual(1, button.clicks)
+        self.assertEqual(1, button.dom_clicks)
+        self.assertEqual(1, button.scrolled)
+        self.assertNotIn("PRIVATE", json.dumps(result))
+        self.assertNotIn("force=True", r.DOM_EXACT_AVAILABILITY_CLICK)
+        self.assertNotIn("elementFromPoint", r.DOM_EXACT_AVAILABILITY_CLICK)
+        self.assertIn("element.click()", r.DOM_EXACT_AVAILABILITY_CLICK)
+
+        class OtherClickFailure(self.FakeExactButton):
+            def click(self, timeout=0):
+                self.clicks += 1
+                raise RuntimeError("PRIVATE non-timeout")
+
+        bad = OtherClickFailure(name=r.OBSERVED_AVAILABILITY_BUTTON)
+        non_timeout = r.click_safe_control(self.fake_exact_button_page(bad), [])
+        self.assertEqual("CLICK_FAILED", non_timeout["status"])
+        self.assertEqual("PLAYWRIGHT_CLICK_ERROR", non_timeout["failureCategory"])
+        self.assertEqual(0, bad.dom_clicks)
+
+        class BuiltinTimeout(self.FakeExactButton):
+            def click(self, timeout=0):
+                self.clicks += 1
+                raise TimeoutError("not a Playwright timeout")
+
+        built = BuiltinTimeout(name=r.OBSERVED_AVAILABILITY_BUTTON)
+        result = r.click_safe_control(self.fake_exact_button_page(built), [])
+        self.assertEqual("CLICK_FAILED", result["status"])
+        self.assertEqual(0, built.dom_clicks)
+
+    def test_dom_fallback_revalidates_exact_same_button_and_fails_closed(self):
+        r = self.r
+        PlaywrightTimeout = type("TimeoutError", (Exception,), {
+            "__module__": "playwright._impl._errors"
+        })
+        class TimeoutButton(self.FakeExactButton):
+            def click(self, timeout=0):
+                raise PlaywrightTimeout("PRIVATE")
+
+        examples = (
+            ([], "EXACT_BUTTON_MISSING"),
+            ([self.FakeExactButton(name=r.OBSERVED_AVAILABILITY_BUTTON),
+              self.FakeExactButton(name=r.OBSERVED_AVAILABILITY_BUTTON)],
+             "EXACT_BUTTON_AMBIGUOUS"),
+            ([self.FakeExactButton(name=r.OBSERVED_AVAILABILITY_BUTTON,
+                                   visible=False)], "EXACT_BUTTON_HIDDEN"),
+            ([self.FakeExactButton(name=r.OBSERVED_AVAILABILITY_BUTTON,
+                                   enabled=False)], "EXACT_BUTTON_DISABLED"),
+            ([self.FakeExactButton(name="Sprawdź dostępność w innym sklepie kup")],
+             "EXACT_BUTTON_MISSING"),
+            ([self.FakeExactButton(name=r.OBSERVED_AVAILABILITY_BUTTON,
+                                   component="a")], "EXACT_BUTTON_MISSING"),
+        )
+        for buttons, expected in examples:
+            with self.subTest(expected=expected):
+                page = self.fake_exact_button_page(*buttons)
+                result = r.click_safe_control(page, [])
+                self.assertEqual(expected, result["status"])
+                self.assertFalse(any(x.dom_clicks for x in buttons))
+
+        class ChangingPage:
+            def __init__(self, initial, later):
+                self.initial, self.later = initial, later
+                self.calls = 0
+            def locator(self, selector):
+                self.calls += 1
+                class Locator:
+                    def __init__(self, entries):
+                        self.entries = entries
+                    def count(self):
+                        return len(self.entries)
+                    def nth(self, index):
+                        return self.entries[index]
+                return Locator(self.initial if self.calls == 1 else self.later)
+        first = TimeoutButton(name=r.OBSERVED_AVAILABILITY_BUTTON)
+        another = self.FakeExactButton(name=r.OBSERVED_AVAILABILITY_BUTTON)
+        changed = ChangingPage([first], [first, another])
+        outcome = r.click_safe_control(changed, [])
+        self.assertEqual("CLICK_FAILED", outcome["status"])
+        self.assertEqual("ACTIONABILITY_TIMEOUT", outcome["failureCategory"])
+        self.assertEqual("EXACT_BUTTON_AMBIGUOUS", outcome["fallbackResolution"])
+        self.assertEqual(0, first.dom_clicks)
+        self.assertEqual(0, another.dom_clicks)
+
+        class DomReject(TimeoutButton):
+            def evaluate(self, script, expected):
+                return False
+        reject = DomReject(name=r.OBSERVED_AVAILABILITY_BUTTON)
+        outcome = r.click_safe_control(self.fake_exact_button_page(reject), [])
+        self.assertEqual("DOM_TARGET_CHANGED", outcome["failureCategory"])
+        self.assertEqual(0, reject.dom_clicks)
+
+    def test_dom_click_requires_effect_or_stays_f_and_does_not_use_unrelated_traffic(self):
+        r = self.r
+        dispatched = {
+            "status": "CLICK_DISPATCHED",
+            "interactionMode": "DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT"
+        }
+        before = {"visibleDialogCount": 0, "candidateStoreRowsCount": 0,
+                  "storeSearchInputObserved": False}
+        after = dict(before)
+        no_effect = r.verify_open_observable_effect(
+            before, after, None, None, [], [], self.obik,
+        )
+        self.assertFalse(no_effect["effectObserved"])
+        result = r.finalize_open_control(dispatched, no_effect)
+        self.assertEqual("DOM_CLICK_NO_OBSERVABLE_EFFECT", result["status"])
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([], self.stores, self.obik)["type"])
+
+        recommendations = [{
+            "action": "availability:open", "host": "www.obi.pl",
+            "path": "/api/recommendations/3496072",
+        }]
+        ignored = r.verify_open_observable_effect(
+            before, after, None, None, recommendations, [], self.obik,
+        )
+        self.assertFalse(ignored["effectObserved"])
+        self.assertEqual(0, ignored["newRelevantRequests"])
+        self.assertEqual("DOM_CLICK_NO_OBSERVABLE_EFFECT",
+            r.finalize_open_control(dispatched, ignored)["status"])
+
+        dialog_opened = r.verify_open_observable_effect(
+            before, {**after, "visibleDialogCount": 1},
+            None, None, [], [], self.obik,
+        )
+        self.assertTrue(dialog_opened["newDialog"])
+        self.assertEqual("CLICKED",
+            r.finalize_open_control(dispatched, dialog_opened)["status"])
+        self.assertEqual("CLICKED",
+            r.finalize_open_control(
+                {"status": "CLICK_DISPATCHED", "interactionMode": "NORMAL_CLICK"},
+                dialog_opened,
+            )["status"])
+
+    def test_dom_fallback_network_phase_precedes_dispatch_and_sp_stays_separate(self):
+        r = self.r
+        PlaywrightTimeout = type("TimeoutError", (Exception,), {
+            "__module__": "playwright._impl._errors"
+        })
+        class TimeoutButton(self.FakeExactButton):
+            def click(self, timeout=0):
+                raise PlaywrightTimeout("PRIVATE")
+        phase = ["initial:page"]
+        emitted = []
+        button = TimeoutButton(name=r.OBSERVED_AVAILABILITY_BUTTON)
+        def capture_handler_request():
+            emitted.append({
+                "action": phase[0], "host": "www.obi.pl",
+                "path": "/api/pdp/v1/availability/sp/3496072",
+            })
+        button.on_dom_click = capture_handler_request
+        r.begin_availability_open_phase(phase)
+        self.assertEqual("availability:open", phase[0])
+        outcome = r.click_safe_control(self.fake_exact_button_page(button), [])
+        self.assertEqual("DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT",
+                         outcome["interactionMode"])
+        self.assertEqual("availability:open", emitted[0]["action"])
+        self.assertTrue(r.relevant_open_network_record(emitted[0], self.obik))
+        before = {"visibleDialogCount": 0, "candidateStoreRowsCount": 0}
+        evidence = r.verify_open_observable_effect(
+            before, dict(before), None, None, emitted, [], self.obik,
+        )
+        self.assertTrue(evidence["effectObserved"])
+        self.assertEqual("CLICKED",
+            r.finalize_open_control(outcome, evidence)["status"])
+        initial = self.observation(
+            {"pickupStores": []},
+            path="/api/pdp/v1/availability/sp/3496072",
+            action="initial:page",
+        )
+        post = self.observation(
+            {"pickupStores": [
+                {"storeNumber": "075", "stock": 0},
+                {"storeNumber": "003", "availability": "available"},
+            ]},
+            path="/api/pdp/v1/availability/sp/3496072",
+            action="availability:open",
+        )
+        self.assertEqual("initial:page", initial["action"])
+        self.assertEqual("availability:open", post["action"])
+        self.assertEqual(0, initial["shape"]["pickupStoresStructure"]["containerLength"])
+        self.assertEqual(2, post["shape"]["pickupStoresStructure"]["containerLength"])
+        self.assertEqual("B_ONE_SHOT_SUBSET",
+            r.classify_contract([initial, post], self.stores, self.obik)["type"])
+        self.assertNotIn("074", r.verified_rows(post, self.stores))
+
     def test_observed_sp_structural_diagnostics_no_unknown_field_classification(self):
         r = self.r
         payload = {"pickupStores": [
