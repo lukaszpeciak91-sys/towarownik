@@ -318,6 +318,31 @@ def _nuxt_resolve(root: Any, value: Any, limit: int = 5) -> Any:
     return value
 
 
+def _nuxt_materialize(root: Any, node: Any, depth: int = 0,
+                      seen: frozenset[int] = frozenset()) -> Any:
+    """Expand only a verified product-owned subtree, with cycle/depth bounds."""
+    if depth > 7:
+        return None
+    if isinstance(root, list) and type(node) is int and 0 <= node < len(root):
+        if node in seen:
+            return None
+        return _nuxt_materialize(root, root[node], depth + 1, seen | {node})
+    if isinstance(node, list):
+        if len(node) == 2 and node[0] in ("Ref", "ShallowRef") and type(node[1]) is int:
+            return _nuxt_materialize(root, node[1], depth + 1, seen)
+        return [
+            _nuxt_materialize(root, item, depth + 1, seen)
+            for item in node[:MAX_ROWS]
+        ]
+    if isinstance(node, dict):
+        return {
+            key: _nuxt_materialize(root, value, depth + 1, seen)
+            for key, value in list(node.items())[:45]
+            if safe_field_name(key) is not None
+        }
+    return node
+
+
 def inspect_initial_nuxt(html: str, obik: str, stores: dict[str, Any]) -> dict[str, Any]:
     """Only attach availability fields to an exact skuId-owning object."""
     result = {"productIdentityVerified": False, "productOwnerCount": 0,
@@ -346,8 +371,9 @@ def inspect_initial_nuxt(html: str, obik: str, stores: dict[str, Any]) -> dict[s
     owned = []
     for key, value in owner.items():
         if re.search(r"stock|store|availability|inventory|pickup|fulfillment|market", key, re.I):
-            nested = _nuxt_resolve(root, value)
-            # Only product-owned nested structure; no global app-level store directory.
+            # Nuxt's product-owned arrays/objects can contain references
+            # at each level; do not mistake raw indices for stock or IDs.
+            nested = _nuxt_materialize(root, value)
             owned.extend(candidate_rows(nested, stores))
     result["verifiedProductOwnedRows"] = owned[:MAX_ROWS]
     ids = [row.get("storeNumber") for row in owned]
@@ -384,9 +410,15 @@ def discover_controls(page: Any) -> list[dict[str, Any]]:
             if not label:
                 continue
             role = node.get_attribute("role") or node.evaluate("(e) => e.tagName.toLowerCase()")
+            try:
+                nearby = safe_control_text(
+                    node.locator("xpath=..").inner_text(timeout=350)
+                )
+            except Exception:
+                nearby = ""
             controls.append({
                 "index": index, "role": role if role in ("button", "a", "select", "link") else "other",
-                "label": label, "enabled": node.is_enabled(),
+                "label": label, "nearbyText": nearby, "enabled": node.is_enabled(),
             })
             if len(controls) >= MAX_CONTROLS:
                 break
@@ -535,7 +567,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
             nuxt = inspect_initial_nuxt(html, obik, stores)
             result["initialNuxt"] = nuxt
             result["verifiedProductPage"] = (
-                bool(re.search(r"/p/(?:[^/]*-)?"+re.escape(obik)+r"(?:/|$)", final_path))
+                bool(re.search(r"/p/(?:[a-z0-9-]+-)?"+re.escape(obik)+r"(?:[-/]|$)", final_path, re.I))
                 and nuxt.get("productIdentityVerified") is True
             )
             if not result["verifiedProductPage"]:
