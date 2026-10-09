@@ -29,11 +29,14 @@ class AdvisorUiPolishTest {
                 createdAt = 123,
                 attachments = attachments,
             ),
+            AdvisorChatMessage(
+                role = ChatMessageRole.ASSISTANT, text = "Done", createdAt = 124,
+            ),
         ))
         val restored = restoreAdvisorCase(saveAdvisorCase(state))
         assertEquals(
             attachments.map { it.localId },
-            restored.messages.single().attachments.map { it.localId },
+            restored.messages.first().attachments.map { it.localId },
         )
     }
 
