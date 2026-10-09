@@ -12,8 +12,11 @@ import pl.lukaszpeciak.towarownik.attachment.AttachmentImporter
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImportGuard
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.attachment.CameraCapture
-import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentOwnership
-import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentSaver
+import pl.lukaszpeciak.towarownik.attachment.MultiPendingAttachmentOwnership
+import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentsSaver
+import pl.lukaszpeciak.towarownik.attachment.MAX_ADVISOR_ATTACHMENTS
+import pl.lukaszpeciak.towarownik.attachment.MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+import pl.lukaszpeciak.towarownik.attachment.appendOrReplaceAttachment
 import pl.lukaszpeciak.towarownik.attachment.canSendAdvisorComposer
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -231,7 +234,7 @@ private fun TowarownikApp() {
     }
     val attachmentStorage = remember { AttachmentStorage(context) }
     val pendingAttachmentOwnership = remember {
-        PendingAttachmentOwnership(context, attachmentStorage)
+        MultiPendingAttachmentOwnership(context, attachmentStorage)
     }
     val conversationRepository = remember {
         ConversationRepository(
@@ -302,8 +305,8 @@ private fun TowarownikApp() {
     var advisorState by remember {
         mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
     }
-    var pendingAttachment by rememberSaveable(saver = PendingAttachmentSaver) {
-        mutableStateOf<AdvisorAttachment?>(null)
+    var pendingAttachments by rememberSaveable(saver = PendingAttachmentsSaver) {
+        mutableStateOf<List<AdvisorAttachment>>(emptyList())
     }
     var attachmentError by remember { mutableStateOf<AttachmentImportError?>(null) }
     var attachmentImporting by remember { mutableStateOf(false) }
@@ -326,8 +329,8 @@ private fun TowarownikApp() {
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
 
     LaunchedEffect(Unit) {
-        pendingAttachment = pendingAttachmentOwnership.reconcileAfterStartup(
-            restored = pendingAttachment,
+        pendingAttachments = pendingAttachmentOwnership.reconcileAfterStartup(
+            restored = pendingAttachments,
             isPersisted = conversationRepository::isAttachmentPersisted,
         )
     }
@@ -337,80 +340,123 @@ private fun TowarownikApp() {
         attachmentImporting = false
     }
 
-    fun acceptImportResult(
-        token: Long,
-        result: AttachmentImportResult,
-    ) {
-        if (!attachmentImportGuard.isCurrent(token)) {
-            if (result is AttachmentImportResult.Success) {
-                pendingAttachmentOwnership.discardImportedCandidate(
-                    result.attachment,
-                )
-            }
-            return
-        }
+    // Invalidated when switching cases, before an in-flight picker can return.
+    var pickerEpoch by remember { mutableStateOf(0L) }
+    var pickerLaunchedAt by remember { mutableStateOf(0L) }
+    var replacementTarget by remember { mutableStateOf<String?>(null) }
 
-        attachmentImporting = false
-        when (result) {
-            is AttachmentImportResult.Success -> {
-                val previous = pendingAttachment
-                if (
-                    pendingAttachmentOwnership.activateImportedCandidate(
-                        attachment = result.attachment,
-                        previous = previous,
-                    )
-                ) {
-                    pendingAttachment = result.attachment
-                    attachmentError = null
-                } else {
-                    attachmentError = AttachmentImportError.CANNOT_OPEN
-                }
-            }
-            is AttachmentImportResult.Failure -> attachmentError = result.error
-        }
-    }
-
-    fun importAttachment(
-        uri: Uri,
+    fun importAttachments(
+        uris: List<Uri>,
         suggestedName: String? = null,
+        replaceLocalId: String? = null,
         afterImport: () -> Unit = {},
     ) {
+        if (uris.isEmpty()) { afterImport(); return }
+        if (uris.size > MAX_ADVISOR_ATTACHMENTS ||
+            (replaceLocalId == null &&
+                pendingAttachments.size + uris.size > MAX_ADVISOR_ATTACHMENTS) ||
+            (replaceLocalId != null && uris.size != 1)
+        ) {
+            attachmentError = AttachmentImportError.TOO_MANY
+            afterImport()
+            return
+        }
         val token = attachmentImportGuard.begin()
         attachmentImporting = true
         attachmentError = null
         scope.launch {
-            val result = attachmentImportMutex.withLock {
-                withContext(Dispatchers.IO) {
-                    try {
-                        attachmentImporter.import(uri, suggestedName)
-                    } catch (_: Exception) {
-                        AttachmentImportResult.Failure(
-                            AttachmentImportError.CANNOT_OPEN,
-                        )
+            try {
+                attachmentImportMutex.withLock {
+                    for ((index, uri) in uris.withIndex()) {
+                        val result = withContext(Dispatchers.IO) {
+                            try {
+                                attachmentImporter.import(
+                                    uri, if (uris.size == 1) suggestedName else null,
+                                )
+                            } catch (_: Exception) {
+                                AttachmentImportResult.Failure(AttachmentImportError.CANNOT_OPEN)
+                            }
+                        }
+                        if (!attachmentImportGuard.isCurrent(token)) {
+                            if (result is AttachmentImportResult.Success) {
+                                pendingAttachmentOwnership.discardImportedCandidate(result.attachment)
+                            }
+                            break
+                        }
+                        when (result) {
+                            is AttachmentImportResult.Success -> {
+                                val item = result.attachment
+                                val next = appendOrReplaceAttachment(
+                                    pendingAttachments, item,
+                                    if (index == 0) replaceLocalId else null,
+                                )
+                                if (next == null) {
+                                    attachmentError = if (
+                                        replaceLocalId == null &&
+                                        pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS
+                                    ) AttachmentImportError.TOO_MANY
+                                    else AttachmentImportError.TOTAL_TOO_LARGE
+                                    pendingAttachmentOwnership.discardImportedCandidate(item)
+                                    break
+                                }
+                                val replaced = pendingAttachments.filter { old ->
+                                    next.none { it.localId == old.localId }
+                                }
+                                if (pendingAttachmentOwnership.publishSelection(next, replaced, item)) {
+                                    pendingAttachments = next
+                                    attachmentError = null
+                                } else {
+                                    pendingAttachmentOwnership.discardImportedCandidate(item)
+                                    attachmentError = AttachmentImportError.CANNOT_OPEN
+                                    break
+                                }
+                            }
+                            is AttachmentImportResult.Failure -> {
+                                attachmentError = result.error
+                                break
+                            }
+                        }
                     }
                 }
+            } finally {
+                if (attachmentImportGuard.isCurrent(token)) attachmentImporting = false
+                afterImport()
             }
-            acceptImportResult(token, result)
-            afterImport()
         }
     }
 
     val photoPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> uri?.let { importAttachment(it) } }
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_ADVISOR_ATTACHMENTS),
+    ) { uris ->
+        if (pickerEpoch == pickerLaunchedAt) importAttachments(uris)
+    }
     val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (pickerEpoch == pickerLaunchedAt) importAttachments(uris)
+    }
+    val replacePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let { importAttachment(it) } }
+    ) { uri ->
+        if (pickerEpoch == pickerLaunchedAt) {
+            uri?.let { importAttachments(listOf(it), replaceLocalId = replacementTarget) }
+        }
+        replacementTarget = null
+    }
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture(),
     ) { captured ->
         val captureFile = cameraCapture.file
         if (captured && captureFile != null) {
-            importAttachment(
-                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", captureFile),
-                "photo.jpg",
-                cameraCapture::cleanup,
-            )
+            if (pickerEpoch == pickerLaunchedAt) {
+                importAttachments(
+                    listOf(FileProvider.getUriForFile(
+                        context, "\${context.packageName}.fileprovider", captureFile,
+                    )),
+                    suggestedName = "photo.jpg",
+                    afterImport = cameraCapture::cleanup,
+                )
+            } else cameraCapture.cleanup()
         } else if (!captured) {
             cameraCapture.cleanup()
         } else {
