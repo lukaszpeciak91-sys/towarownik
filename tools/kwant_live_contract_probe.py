@@ -3558,7 +3558,12 @@ def classify_locations_contract(
         if (item.get("shape") or {}).get("verifiedDirectoryBranchCount", 0) >= 2
     ]
     if len(multi) == 1:
-        coverage = evaluate_candidate_coverage(multi[0]["shape"], directory)
+        coverage = evaluate_candidate_coverage(
+            multi[0]["shape"], directory,
+            product_scope_verified=request_bound_product_identity(
+                multi[0], expected_id
+            ),
+        )
         all_rows = multi[0]["shape"].get("branchRows", [])
         numeric_ids = {
             row["branchId"] for row in all_rows
@@ -3572,10 +3577,10 @@ def classify_locations_contract(
             and coverage["completeness"] == "ALL_DIRECTORY_BRANCHES"
         ):
             return {"type": "A_ONE_SHOT_ALL_BRANCHES",
-                    "reason": "PRODUCT_BOUND_FULL_DIRECTORY_STRUCTURAL_CANDIDATE"}
+                    "reason": "PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE"}
         if coverage["sumConfirmedObservedBranchStock"] is not None:
             if coverage["completeness"] == "ALL_DIRECTORY_BRANCHES":
-                return {"type": "A_ONE_SHOT_ALL_BRANCHES", "reason": "ONE_PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE"}
+                return {"type": "A_ONE_SHOT_ALL_BRANCHES", "reason": "PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE"}
             if coverage["completeness"] == "POSITIVE_ONLY_CANDIDATE":
                 return {"type": "B_ONE_SHOT_POSITIVE_ONLY", "reason": "CANDIDATE_ONLY_POSITIVE_SUBSET_NOT_PROOF_OF_ZERO_OMISSIONS"}
     if len(multi) > 1 and len(multi) <= 5:
