@@ -307,7 +307,8 @@ internal sealed interface AdvisorProxyCallResult {
             if (
                 httpStatus == null &&
                 proxyErrorCode == null &&
-                endpoint == null
+                endpoint == null &&
+                traceId == null
             ) {
                 null
             } else {
