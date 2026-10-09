@@ -21,6 +21,8 @@ private const val JPEG_QUALITY = 92
 internal enum class AttachmentImportError {
     UNSUPPORTED_TYPE,
     TOO_LARGE,
+    TOO_MANY,
+    TOTAL_TOO_LARGE,
     IMAGE_UNREADABLE,
     CANNOT_OPEN,
     CAMERA_FAILED,
