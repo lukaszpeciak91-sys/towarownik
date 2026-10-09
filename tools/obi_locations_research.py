@@ -701,7 +701,7 @@ OBSERVED_AVAILABILITY_BUTTON = "Sprawdź dostępność w innym sklepie"
 
 
 def normalized_inner_text(raw: str | None) -> str:
-    return re.sub(r"\\s+", " ", raw or "").strip()
+    return re.sub(r"\s+", " ", raw or "").strip()
 
 
 def resolve_exact_availability_opener(page: Any) -> tuple[Any | None, str]:
