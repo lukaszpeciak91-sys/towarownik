@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Advisor Product Contract v1 production policy**
+**Final Advisor contract validation + release readiness**
 
 Observability follow-up: Worker-side advisor upstream failures now retain the same public 502/upstream_failure response while Cloudflare logs distinguish safe structural failure categories and optional upstream HTTP status without payloads, content, identifiers, filenames, or secrets.
 
@@ -10,7 +10,7 @@ Protocol-continuity blocker follow-up: tool-assisted advisor turns now retain th
 
 Current branch/location integration follow-up: prompt behavior now follows the shared Android BranchResolver authorization model, branch selector labels retain real IDs alongside names/addresses, explicit only-confirmed-local-stock intent requires selected-branch stock > 0, and unsupported internal citation/entity tokens are removed at the proxy normalization boundary while real URL citation annotations remain authoritative.
 
-PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics relocation, user-controlled reporting, the Taksula public rename, multi-store support, usage/cost measurement, the GPT-6 Luna swap, richer verified OBI product facts, selective web search, graceful local-tool exhaustion, and multi-query OBI lookup are complete. The current iteration aligns production advisor policy with Product Contract v1: advisor-first general guidance, clarification-before-search for ambiguous selection, explicit-store-intent OBI lookup, restrained complements, and advice-first job/project handling while preserving infrastructure guards and trust boundaries.
+PR #17 established the production-shaped chat shell and bounded human manual OBI browsing. PR #18 added real local conversation state, multi-turn continuation, retention, and deletion. PR #19 added persistent app-owned verified product cards. Localization, Warm Modular Utility, Settings, PL/EN selection, diagnostics/reporting, the Taksula rename, provider-aware WorkingProfile, OBI + KWANT integration, usage/cost measurement, GPT-6 Luna, richer verified product facts, selective web search, branch routing, attachments, shared Advisor policy, behavioral evals, and B2 observability are complete. The current release gate is the final real-model behavioral run on both providers followed by final Play AAB validation.
 
 Implemented direction:
 
@@ -34,9 +34,9 @@ Implemented direction:
 - the exact 30-day cutoff remains retained and message rows cascade on deletion;
 - each history row can be deleted manually after explicit confirmation;
 - deleting the active conversation cancels its request, invalidates stale callbacks, and opens a fresh empty chat;
-- final model answers use strict structured `{text, productRefs:[{storeNumber,obik}]}` output with at most five selected verified references;
+- final model answers use strict structured `{text, productRefs}` output with at most five selected verified references; OBI v2 uses `{storeNumber,obik}` while provider-aware v3/v4 uses `{providerId,branchId,productId}`;
 - exact `LocalProduct` lookups retain local-only snapshots containing trusted URL and verification time while OpenAI still receives only OBIK/name/stock/price;
-- product selection resolves only against verified snapshots from the current USER turn, keyed by `(storeNumber, obik)` so the same OBIK in different stores remains distinct;
+- product selection resolves only against verified snapshots from the current USER turn under provider-owned composite identity; OBI retains `(storeNumber, obik)` while provider-aware paths use provider/branch/product identity;
 - Room schema v3 persists each conversation store and each message-product store; v2→v3 deterministically assigns historical rows to `075`;
 - ASSISTANT text, selected snapshots, and final response ID commit atomically;
 - historical cards reopen without network access and display their verification timestamp;
@@ -76,16 +76,15 @@ Implemented direction:
 - public-facing product branding is **Taksula** in Android resources, diagnostics/report labels, TXT headings, and current product documentation;
 - package/application ID `pl.lukaszpeciak.towarownik`, repository name, Worker/service/token identifiers, database/persisted contracts, internal theme symbols, and launcher asset filenames remain intentionally unchanged;
 - launcher icon artwork and Warm Modular Utility styling are unchanged; no binary asset is modified.
-- one canonical Android allowlist contains confirmed OBI Poland store numbers; new conversations default to `075`;
-- the advisor top bar exposes a compact conversation store selector; unsaved selection remains transient until first send;
+- one persistent WorkingProfile selects the provider + branch for new conversations (default `obi-pl / 075`), while saved conversations keep their own profile;
+- the advisor top bar exposes the provider/branch context and one-off cross-branch requests never mutate that persisted conversation profile;
 - direct OBIK and selected EAN/text candidates exact-verify against the active selected store while search discovery remains store-independent;
-- the single advisor OBI tool is now `find_obi_products(storeNumber, queries[])`: one shared store, at most five query groups, and at most five requested exact lookups in total per batch;
+- local Advisor tooling is protocol-shaped: text-only OBI uses v2 `find_obi_products(storeNumber, queries[])`; provider-aware text uses v3 `find_products(...)`; attachment turns use v4 `find_products(...)`. Grouped calls remain bounded to at most five query groups and five requested products in total;
 - customer-kit requests can verify several categories in one local call, with grouped `verified` / `not_found` / `unavailable` results and successful groups retained independently;
-- the per-USER-turn ceiling is three local OBI calls; a fourth requested batch performs zero OBI work, returns `local_tool_limit_reached`, and forces the final continuation to proceed without `find_obi_products`;
-- Android authorizes alternate tool stores only when a supported exact three-digit token occurs literally in the current USER message, with exact digit boundaries;
-- START/MESSAGE/CONTINUE carry the immutable turn-store context to the proxy, while the full allowlist remains Android-local;
-- START/MESSAGE/CONTINUE now also carry explicit advisor `protocolVersion: 2`; the Worker keeps unversioned requests pinned to grouped v2 for rolling-deployment compatibility, while explicit v1 selects only the legacy single-query contract;
-- unsupported/unauthorized store tool requests fail closed before OBI and never substitute `075`;
+- the per-USER-turn ceiling is three local provider calls; a fourth requested batch performs zero provider work, returns `local_tool_limit_reached`, and forces the final continuation to proceed without another local function call;
+- Android's shared `BranchResolver` authorizes one-off branch changes from only the CURRENT USER message against the active provider's real branch directory; exact IDs remain valid, natural metadata requires explicit branch/location intent, and ambiguous/unknown references fail closed;
+- START/MESSAGE carry the conversation provider/branch context and the initiating transport family is preserved through CONTINUE; OBI text remains v2, provider-aware text v3, attachments v4, and unversioned Worker requests remain pinned to grouped v2 compatibility;
+- unsupported/unauthorized branch or store requests fail closed before provider retrieval and never substitute a default branch;
 - verified cards/history/reports preserve their own snapshot store and changing the conversation selector never rewrites historical facts;
 - store `075` remains the deterministic regression/live-probe baseline.
 - broad advisor searches now preserve OBI's reported search-result count locally; when that count exceeds a multi-result bounded advisor subset, the assistant message can persist a deduped “Zobacz więcej (N)” action without changing the five-card/productRef boundary;
@@ -113,9 +112,9 @@ Android test version: **0.1.10 (11)**.
 - message-product snapshots/cards/reports remain unchanged; rich facts are transient model context only;
 - raw OBI HTML/Nuxt, URLs, EAN, cookies, diagnostics, and verification timestamps remain outside OpenAI tool results.
 
-- final Taksula instructions define a practical in-store home-improvement retail advisor rather than a literal product-answer bot;
-- ordinary technical/sales advice uses normal model knowledge when sufficient and does not automatically invoke OBI because a product category can be inferred;
-- ambiguous product selection asks one concise decision-critical clarification before any OBI lookup; assortment search is not used to infer the missing parameter;
+- final Taksula instructions define a practical provider-aware retail/wholesale advisor rather than a literal product-answer bot;
+- ordinary technical/sales advice uses normal model knowledge when sufficient and does not automatically invoke the provider merely because a product category can be inferred;
+- product selection uses the shared three-state model: unknown category clarifies without lookup; known category with a decision-critical variant unresolved clarifies/resolves while safely browsing plausible candidates in the same turn; sufficiently specified intent verifies immediately. Provider browsing is never used to infer the missing parameter;
 - understood job/project requests receive practical essentials-first advice without automatic OBI lookup, while explicit concrete-product or complete verified selected-market requests may use efficient multi-query verification;
 - complements are restrained and are proactively mentioned only when materially helpful for correctness, compatibility, safety, or avoiding obvious failure; direct current price/stock questions remain direct and avoid unnecessary cross-sell;
 - model-facing instructions do not expose the numerical local-tool guard; Android independently enforces three local calls per USER turn and graceful `local_tool_limit_reached`;
@@ -124,8 +123,8 @@ Android test version: **0.1.10 (11)**.
 - ordinary general technical knowledge remains allowed, specific OBI SKU/current-store claims remain under the verified tool trust hierarchy, and missing SKU-specific facts are not invented;
 - GPT-6 Luna, low reasoning, multi-query/schema/productRefs boundaries, hard tool/product limits, multi-store authorization, web search, pricing, UI, persistence, and parser remain unchanged.
 
-- current Responses `web_search` is available selectively alongside `find_obi_products`, with `tool_choice=auto` and `max_tool_calls=1` for built-ins;
-- OBI remains authoritative for current stock/price/store availability and only Android-verified current-turn snapshots may enter productRefs/cards;
+- current Responses `web_search` is available selectively alongside the protocol-appropriate local provider tool, with `tool_choice=auto` and `max_tool_calls=1` for built-ins;
+- Android local provider verification remains authoritative for current selected-branch stock/price/availability and only current-turn verified snapshots may enter productRefs/cards;
 - final answers preserve at most six normalized HTTPS sources from actual OpenAI url_citation annotations; real annotation offsets are mapped only when exact, safely mapped citations render as clickable inline markers, and unmappable sources remain in the compact fallback source list;
 - Room schema v6 keeps the v4 message-source citation relation and v5 message-search actions, and adds nullable persisted product image URLs so verified historical cards can restore their original trusted thumbnail;
 - searched pages are explicitly untrusted reference data and cannot alter role/tool/trust/privacy rules;
@@ -135,7 +134,7 @@ Android test version: **0.1.10 (11)**.
 
 ## Next implementation milestone
 
-The currently planned AI capability stage is complete after this selective web-search iteration. Context compaction and privacy-policy content remain separate future work.
+The Advisor architecture/policy/observability stage is complete. The immediate release gate is one final real-model behavioral suite across OBI and KWANT, followed by final contract review of any true regressions and a signed Play AAB. Context compaction, privacy-policy content, broader attachment formats, and other feature work remain separate future milestones.
 
 ## Not started
 
@@ -148,7 +147,6 @@ The currently planned AI capability stage is complete after this selective web-s
 - Server-side OBI implementation
 - Camera barcode scanning
 - Nearby-store fallback behavior
-- Product images
 - Final Play release polish
 
 
@@ -305,3 +303,10 @@ The currently planned AI capability stage is complete after this selective web-s
 - Successful ASSISTANT responses persist the final trace in Room schema v11 via migration 10→11. Historical pre-B2.2 messages keep null trace and conversation/history reload restores new traces normally.
 - Existing problem-report TXT output now carries the persisted assistant trace, while failure diagnostics include the known Worker/current-turn trace when available. Unrelated general reports do not receive a random previous Advisor trace.
 - No Advisor behavior, Worker implementation, JSON schema, tool contract, provider/retrieval behavior, attachment lifecycle, pricing, chat layout, telemetry database, or dashboard changed.
+
+
+## 2026-10-09 — behavioral eval fidelity cleanup
+
+- Scenario B now distinguishes a bounded factual surfaced-count statement from an actual completeness/exclusivity claim; wording such as three verified variants is not a failure unless the answer semantically claims those are the whole assortment.
+- Scenario D now evaluates the approved State-2 behavior: keep the decision-critical parameter unresolved, safely browse and surface both plausible candidates in the same turn, and prohibit premature compatibility/correctness claims. A literal question mark is not required when the answer gives a concise actionable way to establish the missing parameter.
+- Deterministic protections for local browse, both ambiguity branches, surfaced candidate refs, grounding, web policy, and premature-match rejection remain intact. No production Advisor prompt or runtime behavior changed in the eval cleanup.
