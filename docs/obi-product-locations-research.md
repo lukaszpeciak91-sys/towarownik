@@ -1,6 +1,6 @@
 # OBI product availability across markets — research
 
-**Status: F_INCONCLUSIVE — live runs #2, #3 and #4 completed (9 October 2026); post-open multi-market availability remains unverified.**
+**Status: F_INCONCLUSIVE — live runs #2–#5 completed (9 October 2026). Run #5 observed a product-bound post-open stock request, but its multi-market payload semantics are not verified.**
 Research only. There is no verified OBI all-market or subset API in this PR.
 The A–F test fixtures are synthetic and must never be interpreted as live findings.
 
@@ -133,6 +133,79 @@ trusted product/store identity and stock-state evidence.
 
 **No successful availability-opening action or multi-market OBI contract
 is claimed until a later live run actually supplies such evidence.**
+
+## CONFIRMED: live run #5 — frontend-issued stock batch request after DOM click
+
+Manual [OBI live contract probe #37999536515](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37999536515) succeeded on HEAD
+\`6b4f56e748ad59c78fcfb7c5cf0c386804fe7d88\`.
+Android checks on the same HEAD were successful. The machine correctly
+reported **F_INCONCLUSIVE**.
+
+- Exact OBIK **3496072**, current store **075** and product-owned Nuxt
+  context were verified, as in previous runs.
+- Only the exact, unambiguous, visible and enabled
+  \`button[data-component="PdpLink"]\` with exact normalized
+  \`innerText="Sprawdź dostępność w innym sklepie"\` was targeted.
+  Playwright normal click timed out; an **identity-revalidated native
+  DOM click** was successfully dispatched with mode
+  **DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT**. No force/coordinate click,
+  cart, reservation or purchase action was performed.
+- **Immediately after that action, the real browser issued**
+  \`GET /api/pdp/v1/stock/3496072?storeIds=...\` on trusted
+  \`www.obi.pl\` with action phase **availability:open**.
+  Response was **HTTP 200**, JSON root **list**. The singular exact
+  OBIK in the real request path is deterministic product identity.
+  This route was **observed**, **not guessed or manually called**.
+- The old event-effect checker did not recognize this newly observed
+  stock path and incorrectly returned \`DOM_CLICK_NO_OBSERVABLE_EFFECT\`.
+  This is a **probe false negative**: the frontend request itself proves
+  the availability-button event had an observable effect. It does not
+  establish that stock rows have been decoded.
+- The old safe sanitizer exposed the \`storeIds\` **field name** but not
+  its canonical ID values. Its response parser found no trusted rows
+  within the list. Neither request coverage nor response store IDs /
+  stock state have been semantically established. **No A/B/D/E result
+  is justified yet.**
+- Independently, initial-page
+  \`/api/pdp/v1/availability/sp/3496072\` returned
+  **\`pickupStores=[]\`**. Initial preloading and post-open stock are
+  separate observations. Initial empty list is **not zero stock** in
+  omitted markets. Initial \`/availability/hd/3496072\` retains its
+  delivery-only \`deliveryDataPerSeller\` structure.
+
+### Run #5 corrective research instrumentation — no new live result yet
+
+- Recognize **only** exact observed \`/api/pdp/v1/stock/{7-digit OBIK}\`
+  for product binding, safe response shape, availability action effect
+  and classification eligibility. Wrong ID/generic routes fail closed.
+- For **this observed stock route only**, safely parse \`storeIds\` from
+  bounded comma-separated and repeated parameter occurrences; preserve
+  canonical three-digit values (including leading zeroes), the occurrence
+  sequence and duplicates, an independent deduplicated coverage set,
+  and a flag for unknown/invalid/truncated tokens. Never emit an
+  unknown token or full query string. Other unobserved encodings
+  remain UNKNOWN, not fabricated.
+- Record a **structural-only** \`stockResponseStructure\` for the response
+  root LIST: length, representative safe field names/types, explicit
+  canonical ID scalar + owning field name, stock/quantity candidate
+  field types and strictly allowed numeric / qualitative candidates.
+  An unfamiliar store identifier field is **not** promoted to
+  \`STORE_KEYS\`; field-name similarity alone does not prove availability.
+- Correlate validated requested IDs against only trusted response rows:
+  \`requestedCanonicalIds\`, \`returnedTrustedIds\`,
+  \`missingRequestedIds\`, \`unexpectedReturnedIds\`,
+  \`returnedSubsetOfRequest\`. Every omitted requested market stays
+  UNKNOWN, not 0. A future **A** requires the request itself to cover
+  the complete canonical directory and every store to have usable
+  verified state; a future **B** requires multiple usable verified
+  requested stores without complete directory coverage.
+  Neither is claimed on run #5.
+- DOM click effect now recognizes an exact browser-generated
+  \`availability:open\` stock request without requiring a visible modal
+  to appear. Strict product/store/availability classification gates
+  remain independent of that event-effect finding.
+- This remains **research only**; no production endpoint, providers,
+  WorkProfile, Advisor, Worker, protocols or UI were modified.
 
 ## OBSERVED BUT NOT YET PRODUCTION-TRUSTED
 
@@ -316,10 +389,9 @@ real OBI evidence. No production provider, parser, Worker, Advisor,
 protocol, Room, UI, prompt, WorkingProfile or endpoint call changes
 are included in this PR.
 
-**Exit gate:** runs #2–#4 verified product/store identity, the exact
-harmless opener, two real frontend availability routes and **empty initial
-pickupStores in runs #3/#4**. Normal click timed out in run #4 and there
-is still no post-open availability evidence. Audit a live run of the
-timeout-only, strictly revalidated DOM fallback and inspect safe post-open
-UI/network evidence before deciding on any provider-neutral contract.
+**Exit gate:** run #5 confirmed a real post-open **product-bound OBI stock
+batch request** but not its canonical requested market set, returned
+store identity field, stock semantics or coverage. Audit one further
+manual live run with safe storeIds and response-list diagnostics before
+considering A/B or planning a provider-neutral implementation.
 Production remains a separate PR. **Do not merge this research PR.**
