@@ -1604,6 +1604,10 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
             "oneShotPerBranchResponseObserved=" + format_scalar(locations.get("oneShotPerBranchResponseObserved", False)),
             "candidateMultiBranchResponseObserved=" + format_scalar(locations.get("candidateMultiBranchResponseObserved", False)),
             "productPageShape=" + format_scalar(locations.get("productPageShape", {})),
+            "strongestCandidate=" + format_scalar(locations.get("strongestCandidate")),
+            "sumConfirmedObservedBranchStock=" + format_scalar(locations.get("sumConfirmedObservedBranchStock")),
+            "parsedAggregateBranchStock=" + format_scalar(locations.get("parsedAggregateBranchStock")),
+            "searchRankingEvidence=" + format_scalar(locations.get("searchRankingEvidence", {})),
             "productPageBranchListCandidate=" + format_scalar(locations.get("productPageBranchListCandidate", False)),
             "completeness=" + str(locations.get("completeness", UNKNOWN)),
             "aggregateReconciliation=" + str(locations.get("aggregateReconciliation", "NOT_EVALUATED")),
@@ -3476,24 +3480,19 @@ def research_product_locations(
     finally:
         result["observedResponses"] = list(capture.records)
         result["candidateMultiBranchResponseObserved"] = any(
-            row["shape"].get("branchDistinctIds", 0) >= 2
-            and sum(
-                int(x["branchKnownInDirectory"])
-                for x in row["shape"].get("branchRows", [])
-            ) >= 2
+            row.get("shape", {}).get("verifiedDirectoryBranchCount", 0) >= 2
             for row in capture.records
-            if row["action"].startswith("locations:")
-            and row["shape"].get("productIdentityMatches") is not False
+            if row.get("action", "").startswith("locations:")
         )
-        result["oneShotPerBranchResponseObserved"] = any(
-            row["shape"].get("branchDistinctIds", 0) >= 2
-            and row["shape"].get("productIdentityMatches") is True
-            and sum(
-                int(x["branchKnownInDirectory"])
-                for x in row["shape"].get("branchRows", [])
-            ) >= 2
-            for row in capture.records
-            if row["action"].startswith("locations:")
+        # A structural candidate never establishes a verified one-shot contract.
+        result["oneShotPerBranchResponseObserved"] = False
+        result.update(select_strongest_location_candidate(
+            capture.records,
+            capture.directory,
+            result.get("aggregateBranchStock", UNKNOWN),
+        ))
+        result["searchRankingEvidence"] = summarize_search_ranking_evidence(
+            capture.records
         )
     return result
 
