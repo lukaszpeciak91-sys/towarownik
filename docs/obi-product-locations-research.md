@@ -203,6 +203,11 @@ must be three-digit values that occur in OBI_STORES. Duplicate,
 unknown, ambiguous or conflicting store IDs invalidate trusted
 coverage. Stock 0 is known zero; null is unknown; omitted store is
 absent; qualitative states stay qualitative and never get fake numbers.
+The generic field `status` may describe store operations, while `quantity`
+may mean requested units; both can appear in structural diagnostics but do
+**not** authorize stock classification without independently observed
+availability semantics. Known product-stock/availability-specific field
+names remain separate from the exploratory candidate field list.
 
 ## Request economics: conditional, NOT OBSERVED
 
