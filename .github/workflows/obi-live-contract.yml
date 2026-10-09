@@ -11,6 +11,10 @@ on:
         description: Three-digit OBI store number
         required: true
         default: "075"
+      other_markets:
+        description: Up to two real OBI_STORES IDs, comma-separated (research only)
+        required: true
+        default: "003,074"
 
 permissions:
   contents: read
@@ -21,6 +25,7 @@ jobs:
     env:
       OBIK: ${{ inputs.obik }}
       STORE: ${{ inputs.store }}
+      OTHER_MARKETS: ${{ inputs.other_markets }}
     steps:
       - uses: actions/checkout@v4
 
@@ -88,12 +93,33 @@ jobs:
 
           python3 tools/obi_live_contract_probe.py             --html build/obi-live-contract/product.html             --obik "$OBIK"             --store "$STORE"             --status "200"             --final-url "$safe_final_url"             --out-dir build/obi-live-contract
 
+      - name: Install Chromium for manual interactive research
+        if: steps.fetch.outputs.raw_safe == 'true'
+        run: |
+          python3 -m pip install --disable-pip-version-check playwright==1.55.0
+          python3 -m playwright install --with-deps chromium
+
+      - name: Observe real OBI product availability and store UI
+        if: steps.fetch.outputs.raw_safe == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=tools python3 tools/obi_locations_research.py \
+            --obik "$OBIK" \
+            --store "$STORE" \
+            --other-markets "$OTHER_MARKETS" \
+            --out-dir build/obi-live-contract
+
       - name: Print contract summary
         if: always()
         run: |
           if [[ -f build/obi-live-contract/summary.txt ]]; then
             cat build/obi-live-contract/summary.txt
-          elif [[ -f build/obi-live-contract/transport.txt ]]; then
+          fi
+          if [[ -f build/obi-live-contract/locations-summary.txt ]]; then
+            cat build/obi-live-contract/locations-summary.txt
+          fi
+          if [[ ! -f build/obi-live-contract/summary.txt && ! -f build/obi-live-contract/locations-summary.txt ]]; then
             cat build/obi-live-contract/transport.txt
           fi
 
@@ -105,6 +131,8 @@ jobs:
           path: |
             build/obi-live-contract/summary.json
             build/obi-live-contract/summary.txt
+            build/obi-live-contract/locations-summary.json
+            build/obi-live-contract/locations-summary.txt
             build/obi-live-contract/transport.txt
           if-no-files-found: warn
           retention-days: 3
