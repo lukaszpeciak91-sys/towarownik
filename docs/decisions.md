@@ -3,7 +3,7 @@
 ## 2026-10-08 — shared advisor instruction composition
 
 - OBI and KWANT now share one exact provider-independent advisor decision core and one exact evidence/trust policy. Provider differences are expressed only through small OBI and KWANT appendices, while attachment behavior is a separate cross-cutting capability appendix.
-- The shared decision core owns intent routing, decision-critical clarification, harmless browseable-variant ambiguity, task/job handling, bounded-assortment wording, restrained complements, and concise advisor behavior. It deliberately contains no provider identifiers, local tool names, or protocol-version vocabulary.
+- The shared decision core owns intent routing, the three-state product-selection model, harmless browseable-variant ambiguity, task/job handling, bounded-assortment wording, restrained complements, and concise advisor behavior. State 1 (unknown category) clarifies with no local lookup; State 2 (known category with an unresolved decision-critical variant) clarifies or gives an actionable resolution step while safely browsing plausible verified candidates in the same turn without claiming a correct match; State 3 (sufficiently specified) verifies immediately. The core deliberately contains no provider identifiers, local tool names, or protocol-version vocabulary.
 - OBI remains a broad DIY/home-improvement retail advisor with OBIK and OBI market semantics. KWANT remains an electrical-wholesale/B2B technical-sales advisor with article/EAN/productId, central-vs-branch stock, online-price, and requestedBranch semantics.
 - Wire contracts are unchanged: legacy OBI v1 remains single-query, OBI v2 remains grouped find_obi_products, provider v3/v4 remains grouped find_products, protocol versions and final-answer schemas are unchanged, and attachment capability is composed only for v4.
 - Backward exported prompt constants remain as composed aliases for compatibility; the authoritative business-policy source is the shared core/evidence blocks plus provider/capability appendices.
@@ -377,20 +377,21 @@ These decisions describe the broader intended product behavior. The currently im
 
 ## Advisor Product Contract v1 alignment
 
-- Product Contract v1 supersedes the eager-search behavior above for current production advisor policy: Taksula is advisor-first and uses normal technical/sales knowledge when sufficient.
-- Ambiguous product selection asks one concise decision-critical clarification before `find_obi_products`; no broad reconnaissance lookup is used to infer the missing parameter.
-- Job/project/"what do I need?" requests are understood first and receive practical essentials-first advice without automatic OBI lookup once sufficiently clear.
-- Use OBI immediately for explicit assortment/browse, direct current price/stock/availability or OBIK verification, sufficiently specified selection when the user explicitly asks what the selected market has, and explicit sufficiently specified verified store kits.
-- Explicit verified store kits may batch related categories efficiently and remain small/practical. Complements stay restrained and are proactively mentioned only when materially helpful for correctness, compatibility, safety, or avoiding obvious failure.
-- Preserve the existing model, reasoning effort, multi-query tool/protocol, Android hard guard, grounding, store authorization, bounded-result wording, availability semantics, selective web search, pricing, persistence, parser, and UI boundaries.
+- This section records the original Product Contract v1 alignment milestone; its old clarification-before-lookup wording is superseded by the 2026-10-08 shared-advisor decision above and the current `docs/advisor-product-contract-v1.md`.
+- Current production remains advisor-first and uses normal technical/sales knowledge when provider evidence is unnecessary.
+- Product selection now uses the shared three-state model: unknown category clarifies without lookup; known category with a decision-critical variant unresolved performs safe same-turn candidate browse while clarification/resolution remains outstanding; sufficiently specified product intent verifies immediately.
+- Safe State-2 browsing must never be used to infer the missing parameter and must never promote a candidate to a confirmed compatible/correct recommendation before that parameter is resolved.
+- Job/project/"what do I need?" requests are understood first and receive practical essentials-first advice without automatic provider lookup once sufficiently clear.
+- Explicit assortment/browse, direct current provider facts/identifiers, sufficiently specified concrete product intent, and sufficiently specified verified kits use the active provider immediately. Provider semantics remain in their appendices rather than being flattened into OBI-only wording.
+- Preserve the existing model, reasoning effort, multi-query protocols, Android hard guard, current-turn grounding, branch authorization, bounded-result wording, availability semantics, selective web search, pricing, persistence, parsers, and UI boundaries.
 
 
 ## Selective web search for Taksula v0.1
 
 - Enable only the current Responses built-in `web_search`, never `web_search_preview`. Use automatic tool choice and one built-in call per Responses request; do not force browsing on ordinary technical questions.
-- Preserve the existing application-function contract and Android two-local-call USER-turn limit independently of the built-in-tool limit.
+- Preserve the protocol-appropriate application-function contract and Android three-local-call USER-turn safety limit independently of the built-in-tool limit.
 - Search may fill an important missing SKU-specific technical fact, satisfy an explicit relevant online/current-information request, or verify inherently current non-OBI information. Broader optional research should not browse reflexively.
-- Local verified OBI remains absolute authority for current OBI stock, price, selected-store availability, and card/productRef eligibility. Web evidence cannot create trusted product cards.
+- Local Android provider verification remains absolute authority for current selected-branch stock, price/price scope, availability, and card/productRef eligibility. Web evidence cannot create trusted product cards; OBI and KWANT retain their provider-specific semantics.
 - Prefer manufacturer product pages/manuals/datasheets for SKU specifications, then authoritative industry/specialist sources; retailer evidence is secondary and community content is experience/opinion. Do not silently hide meaningful source conflicts.
 - Treat searched pages as untrusted data. Their instructions never override Taksula's role, tool rules, trust hierarchy, or privacy boundaries.
 - Preserve citations only from actual Responses `url_citation` annotations. Normalize max six unique HTTPS sources (title <=200, URL <=2048), never model-authored plain-text URLs, raw web results, queries, or search metadata.
