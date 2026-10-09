@@ -115,6 +115,7 @@ def safe_identifier(value: Any, obik: str, stores: dict[str, Any]) -> str | None
 def safe_parameters(pairs: list[tuple[str, Any]], obik: str, stores: dict[str, Any]) -> dict[str, Any]:
     names: list[str] = []
     safe_values: dict[str, str] = {}
+    product_conflict = False
     for key, value in pairs[:80]:
         key = safe_field_name(key)
         if key is None:
@@ -122,9 +123,13 @@ def safe_parameters(pairs: list[tuple[str, Any]], obik: str, stores: dict[str, A
         if key not in names and len(names) < 40:
             names.append(key)
         ident = safe_identifier(value, obik, stores)
+        if key in PRODUCT_KEYS and type(value) in (str, int):
+            if OBIK_NUMBER.fullmatch(str(value)) and str(value) != obik:
+                product_conflict = True
         if ident is not None and key in (*STORE_KEYS, *PRODUCT_KEYS, "store", "market"):
             safe_values[key] = ident
-    return {"names": names, "safeValues": safe_values}
+    return {"names": names, "safeValues": safe_values,
+            "conflictingProductIdentifier": product_conflict}
 
 
 def safe_request_body(body: str | None, obik: str, stores: dict[str, Any]) -> dict[str, Any] | None:
@@ -217,6 +222,10 @@ def product_identity(record: dict[str, Any], obik: str) -> str:
     identity = shape.get("rootProductId")
     if identity is not None:
         return "RESPONSE_ROOT_PRODUCT" if identity == obik else "CONFLICT"
+    if any(params.get("conflictingProductIdentifier") for params in (
+            record.get("query") or {}, record.get("body") or {}
+    )):
+        return "CONFLICT"
     path = record.get("path", "")
     pieces = path.strip("/").split("/")
     if obik in pieces and any(p in {"p", "product", "products", "article", "articles", "sku", "availability"} for p in pieces):
@@ -291,15 +300,22 @@ def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any]
                     "reason": "PRODUCT_BOUND_COMPLETE_CANONICAL_STORE_RESPONSE",
                     "observedStoreCount": len(mapped)}
     for record, mapped in scoped:
-        if len(mapped) >= 2:
+        usable = [row for row in mapped.values()
+                  if row["state"] in ("known_zero", "known_positive", "qualitative")]
+        if len(usable) >= 2:
             return {"type": "B_ONE_SHOT_SUBSET",
                     "reason": "PRODUCT_BOUND_VERIFIED_SUBSET_OMISSIONS_UNKNOWN",
                     "observedStoreCount": len(mapped)}
     if 2 <= len(scoped) <= 5:
-        combined = set().union(*(set(mapped) for _, mapped in scoped))
+        usable_by_record = [
+            {store for store, row in mapped.items()
+             if row["state"] in ("known_zero", "known_positive", "qualitative")}
+            for _, mapped in scoped
+        ]
+        combined = set().union(*usable_by_record)
         if len(combined) >= 2:
             single_scoped = {
-                next(iter(mapped)) for _, mapped in scoped if len(mapped) == 1
+                next(iter(ids)) for ids in usable_by_record if len(ids) == 1
             }
             if len(single_scoped) >= 3:
                 return {"type": "E_PER_STORE_FANOUT",
@@ -553,7 +569,10 @@ def run_browser(obik: str, store: str, other_markets: list[str],
             )
             page = context.new_page()
             def record_response(response: Any) -> None:
-                if len(observations) >= MAX_RECORDS:
+                if (len(observations) >= MAX_RECORDS
+                        or (action[0] == "initial:page" and sum(
+                            r["action"] == "initial:page" for r in observations
+                        ) >= 25)):
                     return
                 try:
                     request = response.request
@@ -582,7 +601,10 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                 except Exception:
                     return
             def record_request(request: Any) -> None:
-                if len(requests) >= MAX_RECORDS:
+                if (len(requests) >= MAX_RECORDS
+                        or (action[0] == "initial:page" and sum(
+                            r["action"] == "initial:page" for r in requests
+                        ) >= 25)):
                     return
                 try:
                     if request.resource_type not in ("xhr", "fetch", "document"):
