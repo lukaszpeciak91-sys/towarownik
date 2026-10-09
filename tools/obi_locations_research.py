@@ -529,6 +529,61 @@ def observed_availability_response(record: dict[str, Any], obik: str) -> bool:
     return False
 
 
+def stock_request_coverage(
+    record: dict[str, Any], stores: dict[str, Any],
+) -> dict[str, Any]:
+    """Compare sanitized request IDs with trusted returned rows, no synthesis.
+
+    This is a diagnostic: merely observing canonical ID-like scalar fields
+    in a stock response does NOT establish authoritative store identity.
+    """
+    query = (record.get("query") or {}).get("storeIds") or {}
+    requested = query.get("canonicalIds") or []
+    trusted_rows = verified_rows(record, stores)
+    returned = list(trusted_rows)
+    valid_request = (
+        query.get("present") is True
+        and bool(requested)
+        and query.get("invalidOrUnknownPresent") is False
+        and query.get("truncated") is False
+        and query.get("duplicatesPresent") is False
+        and len(requested) == len(set(requested))
+        and all(x in stores for x in requested)
+    )
+    return {
+        "requestIdsVerified": valid_request,
+        "requestedCanonicalIds": requested[:len(stores)],
+        "requestedCount": len(requested),
+        "returnedTrustedIds": returned[:len(stores)],
+        "returnedTrustedCount": len(returned),
+        "missingRequestedIds": [x for x in requested if x not in trusted_rows][:len(stores)],
+        "unexpectedReturnedIds": [x for x in returned if x not in requested][:len(stores)],
+        "returnedSubsetOfRequest": valid_request and set(returned).issubset(requested),
+        "everyRequestedStoreHasTrustedState": (
+            valid_request and set(requested) == set(returned)
+            and all(row["state"] in ("known_zero", "known_positive", "qualitative")
+                    for row in trusted_rows.values())
+        ),
+        "omittedIsUnknown": True,
+        "structuralOnly": True,
+    }
+
+
+def product_bound_stock_rows(
+    record: dict[str, Any], stores: dict[str, Any], obik: str,
+) -> dict[str, dict[str, Any]]:
+    path = record.get("path") or ""
+    m = OBSERVED_STOCK_PATH.fullmatch(path)
+    if not m:
+        return verified_rows(record, stores)
+    if m.group(1) != obik or product_identity(record, obik) == "CONFLICT":
+        return {}
+    coverage = stock_request_coverage(record, stores)
+    if not coverage["requestIdsVerified"] or not coverage["returnedSubsetOfRequest"]:
+        return {}
+    return verified_rows(record, stores)
+
+
 def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any],
                       obik: str, initial_nuxt: dict[str, Any] | None = None) -> dict[str, Any]:
     if not stores:
@@ -550,11 +605,18 @@ def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any]
     for record in observations:
         if not observed_availability_response(record, obik):
             continue
-        mapped = verified_rows(record, stores)
+        mapped = product_bound_stock_rows(record, stores, obik)
         if mapped:
             scoped.append((record, mapped))
     for record, mapped in scoped:
-        if len(mapped) == len(stores) and set(mapped) == set(stores) and all(
+        request = (record.get("query") or {}).get("storeIds") or {}
+        stock_call = OBSERVED_STOCK_PATH.fullmatch(record.get("path") or "")
+        all_requested = (
+            not stock_call
+            or (request.get("canonicalCount") == len(stores)
+                and set(request.get("canonicalIds") or []) == set(stores))
+        )
+        if all_requested and len(mapped) == len(stores) and set(mapped) == set(stores) and all(
             row["state"] in ("known_zero", "known_positive", "qualitative")
             for row in mapped.values()
         ):
@@ -1355,10 +1417,15 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                         payload, obik, stores, safe["path"]
                     )
                     # Keep bounded shape, not raw JSON or response headers.
-                    observations.append({
+                    item = {
                         "action": phase, **safe,
                         "status": response.status, "shape": shape,
-                    })
+                    }
+                    if "stockResponseStructure" in shape:
+                        shape["stockRequestCoverage"] = stock_request_coverage(
+                            item, stores
+                        )
+                    observations.append(item)
                 except Exception:
                     return
             def record_request(request: Any) -> None:
