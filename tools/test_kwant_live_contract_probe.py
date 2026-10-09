@@ -2186,5 +2186,251 @@ class LocationsFollowupResearchTest(unittest.TestCase):
         self.assertFalse(not_proven["selectedBranchStockProven"])
 
 
+
+class AvailabilityLiveFollowupTest(unittest.TestCase):
+    DIRECTORY = {"205": "Nowy Sącz", "204": "Tarnów", "20": "Rzeszów"}
+
+    @staticmethod
+    def response(shape, *, action="locations:open-branches",
+                 path="/api/front/observed", query=None):
+        return {
+            "shape": shape, "action": action,
+            "method": "GET", "host": probe.KWANT_SERVICES_HOST,
+            "status": 200, "path": path,
+            "query": {"safeValues": query or {}},
+        }
+
+    def shape(self, rows, product_id=580):
+        return probe.research_json_shape(
+            {"product_id": product_id, "list": rows},
+            "580", self.DIRECTORY,
+        )
+
+    def test_semantic_button_selects_exact_aria_label_only(self):
+        class Button:
+            def is_visible(self): return True
+            def is_enabled(self): return True
+        class Found:
+            def count(self): return 1
+            first = Button()
+        class Page:
+            def get_by_role(self, role, name):
+                self.last_role, self.last_pattern = role, name
+                return Found()
+        page = Page()
+        self.assertIs(probe.availability_button(page), Found.first)
+        self.assertEqual("button", page.last_role)
+        self.assertIsNotNone(page.last_pattern.fullmatch(
+            "Sprawdź stan i kup towar w oddziałach Kwant"))
+        self.assertIsNone(page.last_pattern.fullmatch("Dodaj do koszyka"))
+
+    def test_no_availability_button_is_inconclusive_not_endpoint_absent(self):
+        class NotFound:
+            def count(self): return 0
+        class Page:
+            def get_by_role(self, role, name): return NotFound()
+        self.assertIsNone(probe.availability_button(Page()))
+        result = probe.classify_locations_contract([], self.DIRECTORY, "580")
+        self.assertEqual("F_INCONCLUSIVE", result["type"])
+
+    def test_product_identity_bound_by_request_or_response_not_generic(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock": 18},
+            {"department_id": 20, "stock": 7},
+        ])
+        item = self.response(shape)
+        self.assertTrue(probe.request_bound_product_identity(item, "580"))
+        item["shape"]["productIdentityMatches"] = probe.UNKNOWN
+        self.assertFalse(probe.request_bound_product_identity(item, "580"))
+        item["path"] = "/api/front/products/580/observed"
+        self.assertTrue(probe.request_bound_product_identity(item, "580"))
+        item["path"] = "/api/front/products/581/observed"
+        self.assertFalse(probe.request_bound_product_identity(item, "580"))
+
+    def test_one_shot_full_directory_preserves_zero(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock_num": 18},
+            {"departmentId": 20, "stockNum": 7},
+        ])
+        result = probe.classify_locations_contract(
+            [self.response(shape)], self.DIRECTORY, "580")
+        self.assertEqual("A_ONE_SHOT_ALL_BRANCHES", result["type"])
+        self.assertEqual(0, shape["branchRows"][0]["candidateValue"])
+
+    def test_positive_subset_does_not_invent_omitted_zero(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 5},
+            {"department_id": 204, "stock": 18},
+        ])
+        result = probe.classify_locations_contract(
+            [self.response(shape)], self.DIRECTORY, "580")
+        self.assertEqual("B_ONE_SHOT_POSITIVE_ONLY", result["type"])
+        self.assertEqual(
+            "POSITIVE_ONLY_CANDIDATE",
+            probe.evaluate_candidate_coverage(shape, self.DIRECTORY)["completeness"],
+        )
+        self.assertNotIn("20", [x["branchId"] for x in shape["branchRows"]])
+
+    def test_unbound_multi_branch_is_not_verification(self):
+        shape = probe.research_json_shape(
+            [{"department_id": 205, "stock": 2},
+             {"department_id": 204, "stock": 10}],
+            "580", self.DIRECTORY,
+        )
+        result = probe.classify_locations_contract(
+            [self.response(shape)], self.DIRECTORY, "580")
+        self.assertEqual("F_INCONCLUSIVE", result["type"])
+
+    def test_preloaded_main_product_requires_identity(self):
+        data = {"props": {"pageProps": {"product": {
+            "id": 580, "stock": 321,
+            "other": {"recommendations": [
+                {"id": 777, "stock": 999},
+            ]},
+        }}}}
+        exact = probe.extract_exact_product_central_stock(data, "580")
+        self.assertEqual(321, exact["stock"])
+        self.assertEqual("NEXT_DATA_EXACT_PRODUCT_ID", exact["source"])
+        data["props"]["pageProps"]["product"]["id"] = 581
+        self.assertIsNone(
+            probe.extract_exact_product_central_stock(data, "580")["stock"]
+        )
+        self.assertIsNone(
+            probe.extract_exact_product_central_stock(
+                {"props": {"pageProps": {"recommendations": [
+                    {"id": 580, "stock": 4444}
+                ]}}},
+                "580"
+            )["stock"]
+        )
+
+    def test_per_branch_frontend_fanout_needs_distinct_depstocks(self):
+        scoped = []
+        for depstock in ("205", "204", "20"):
+            shape = self.shape([{
+                "department_id": int(depstock), "stock": 3,
+            }])
+            scoped.append(self.response(
+                shape, path="/api/front/products/580/current",
+                query={"depstock": depstock},
+            ))
+        self.assertEqual(
+            "E_PER_BRANCH_FANOUT",
+            probe.classify_locations_contract(
+                scoped, self.DIRECTORY, "580"
+            )["type"],
+        )
+
+    def test_multi_request_bounded_directory_coverage(self):
+        items = [
+            self.response(self.shape([
+                {"department_id": 205, "stock": 1},
+                {"department_id": 204, "stock": 4},
+            ])),
+            self.response(self.shape([
+                {"department_id": 204, "stock": 4},
+                {"department_id": 20, "stock": 7},
+            ]), path="/api/front/some-other-real-observation"),
+        ]
+        result = probe.classify_locations_contract(
+            items, self.DIRECTORY, "580",
+        )
+        self.assertEqual("D_MULTI_REQUEST_BOUNDED", result["type"])
+
+    def test_available_only_filter_local_and_request_triggering(self):
+        before = {"visibleDirectoryNames": ["Nowy Sącz", "Tarnów"],
+                  "zeroLabelVisible": True}
+        after = {"visibleDirectoryNames": ["Tarnów"],
+                 "zeroLabelVisible": False}
+        local = probe.classify_availability_filter(before, after, 0, True)
+        self.assertEqual("NO_API_REQUEST_OBSERVED", local["classification"])
+        self.assertEqual(1, local["afterVisibleBranchNameCount"])
+        remote = probe.classify_availability_filter(before, after, 1, True)
+        self.assertEqual("REQUEST_TRIGGERED", remote["classification"])
+        self.assertFalse(remote["afterZeroVisible"])
+
+    def test_current_stock_diagnostic_excludes_recommendation_values(self):
+        item = self.response(probe.research_json_shape(
+            {"product_id": 580, "stock": 123,
+             "department_stock": {"department_id": 205, "stock": 424},
+             "recommendations": [{
+                 "product_id": 581,
+                 "department_stock": {"department_id": 205, "stock": 999},
+             }]},
+            "580", self.DIRECTORY,
+        ), action="product:after",
+            path="/api/front/products/580/current",
+            query={"depstock": "205"})
+        exact = probe.selected_branch_current_diagnostic(
+            [item], "580", "205"
+        )
+        self.assertEqual(424, exact["stock"])
+        self.assertEqual("CURRENT_IDENTITY_AND_DEPSTOCK_VERIFIED", exact["source"])
+        item["shape"]["productIdentityMatches"] = False
+        self.assertIsNone(
+            probe.selected_branch_current_diagnostic(
+                [item], "580", "205")["stock"]
+        )
+
+    def test_current_stock_rejects_missing_or_wrong_depstock(self):
+        shape = probe.research_json_shape({
+            "product_id": 580,
+            "department_stock": {"department_id": 205, "stock": 0},
+        }, "580", self.DIRECTORY)
+        item = self.response(shape, action="product:after",
+                             path="/api/front/products/580/current",
+                             query={"depstock": "204"})
+        self.assertIsNone(probe.selected_branch_current_diagnostic(
+            [item], "580", "205")["stock"])
+
+    def test_search_corrob_remains_control_only(self):
+        search = self.response(probe.research_json_shape({
+            "hits": [{"id": 580, "department_stock":
+                      {"department_id": 205, "stock": 424, "stock_num": 424}}]
+        }, "580", self.DIRECTORY), action="search:article",
+            path=probe.KWANT_SEARCH_API_PATH)
+        search["method"] = "POST"
+        search["body"] = {"safeValues": {"q": "MBN116E", "depstock": 205}}
+        current = self.response(probe.research_json_shape({
+            "product_id": 580,
+            "department_stock": {"department_id": 205, "stock": 424}
+        }, "580", self.DIRECTORY), action="product:after",
+            path="/api/front/products/580/current",
+            query={"depstock": "205"})
+        proof = probe.summarize_search_ranking_evidence(
+            [search, current], self.DIRECTORY, "580"
+        )
+        self.assertEqual("SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL",
+                         proof["stockScope"])
+        self.assertTrue(proof["selectedBranchStockProven"])
+        self.assertFalse(
+            probe.summarize_search_ranking_evidence(
+                [search], self.DIRECTORY, "580"
+            )["selectedBranchStockProven"]
+        )
+
+    def test_batch_product_identity_never_inferred_from_list_order(self):
+        url = "/api/front/products/prices/580,581"
+        good = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580,
+             "department_stock": {"department_id": 205, "stock": 4}},
+            {"product_id": 581,
+             "department_stock": {"department_id": 205, "stock": 999}},
+        ]}, "580")
+        self.assertEqual(2, good["identityBoundRowCount"])
+        self.assertEqual([{"branchId": "205", "stock": 4}],
+                         good["controlProductRows"])
+        self.assertTrue(good["usableBatchCandidate"])
+        bad = probe.batch_prices_stock_evidence(url, {"list": [
+            {"department_stock": {"department_id": 205, "stock": 4}},
+            {"product_id": 581,
+             "department_stock": {"department_id": 205, "stock": 999}},
+        ]}, "580")
+        self.assertEqual([], bad["controlProductRows"])
+        self.assertFalse(bad["usableBatchCandidate"])
+
+
 if __name__ == "__main__":
     unittest.main()
