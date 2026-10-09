@@ -192,5 +192,239 @@ class InputValidationTest(unittest.TestCase):
                     probe.validate_identifiers(obik, store)
 
 
+
+class MultiMarketResearchTest(unittest.TestCase):
+    """Synthetic, offline; no browser/network contact in PR CI."""
+
+    @classmethod
+    def setUpClass(cls):
+        import obi_locations_research as research
+        cls.r = research
+        root = Path(__file__).resolve().parents[1]
+        cls.stores = research.canonical_stores(
+            root / "app/src/main/java/pl/lukaszpeciak/towarownik/product/ObiStores.kt"
+        )
+        cls.obik = "3496072"
+
+    def observation(self, data, *, path="/api/products/3496072/stores",
+                    action="availability:open", status=200,
+                    query=None, body=None):
+        r = self.r
+        return {
+            "action": action, "host": "www.obi.pl", "method": "GET",
+            "path": path, "status": status,
+            "query": query or {"names": [], "safeValues": {}},
+            "body": body, "shape": r.response_shape(data, self.obik, self.stores),
+        }
+
+    def test_canonical_store_directory_is_exact_not_inferred_from_city(self):
+        self.assertGreaterEqual(len(self.stores), 50)
+        self.assertEqual("Nowy Sącz", self.stores["075"]["city"])
+        self.assertIn("Wielicka", self.stores["003"]["address"])
+        self.assertIn("Bora-Komorowskiego", self.stores["019"]["address"])
+        self.assertIn("Wieniawskiego", self.stores["074"]["address"])
+        self.assertNotEqual(self.stores["003"]["address"], self.stores["019"]["address"])
+
+    def test_product_bound_one_shot_all_canonical_stores(self):
+        data = {"list": [
+            {"storeNumber": store, "stock": 0 if i == 0 else i}
+            for i, store in enumerate(self.stores)
+        ]}
+        item = self.observation(data)
+        self.assertEqual(
+            "SINGULAR_REQUEST_PRODUCT_PATH",
+            self.r.product_identity(item, self.obik),
+        )
+        self.assertEqual(
+            len(self.stores), len(self.r.verified_rows(item, self.stores))
+        )
+        self.assertEqual(
+            "A_ONE_SHOT_ALL_STORES",
+            self.r.classify_contract([item], self.stores, self.obik)["type"]
+        )
+        self.assertEqual("known_zero", item["shape"]["storeRows"][0]["state"])
+        self.assertEqual(0, item["shape"]["storeRows"][0]["value"])
+
+    def test_wrong_product_and_generic_directory_never_product_bind(self):
+        data = {"list": [
+            {"storeNumber": "075", "stock": 3},
+            {"storeNumber": "003", "stock": 2},
+        ]}
+        for path in (
+            "/api/products/3496073/stores",
+            "/api/stores",
+            "/api/catalog/3496072",
+            "/api/products/34960721/stores",
+        ):
+            with self.subTest(path=path):
+                item = self.observation(data, path=path)
+                self.assertEqual("UNKNOWN", self.r.product_identity(item, self.obik))
+                self.assertEqual("F_INCONCLUSIVE",
+                    self.r.classify_contract([item], self.stores, self.obik)["type"])
+        conflict = self.observation(
+            {"productId": "3496073", "list": data["list"]}
+        )
+        self.assertEqual("CONFLICT", self.r.product_identity(conflict, self.obik))
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([conflict], self.stores, self.obik)["type"])
+
+    def test_safe_product_body_and_query_bind_only_exact_identifiers(self):
+        item = self.observation(
+            {"list": [{"storeNumber": "075", "stock": 4}]},
+            path="/api/availability",
+            query={"names": ["skuId"], "safeValues": {"skuId": "3496072"}},
+        )
+        self.assertEqual("EXACT_REQUEST_PRODUCT_ID",
+            self.r.product_identity(item, self.obik))
+        item["query"] = {"names": [], "safeValues": {}}
+        item["body"] = {"type": "object", "names": ["obik"],
+                        "safeValues": {"obik": "3496072"}}
+        self.assertEqual("EXACT_REQUEST_PRODUCT_ID",
+            self.r.product_identity(item, self.obik))
+        item["body"]["safeValues"]["obik"] = "3496073"
+        self.assertEqual("UNKNOWN", self.r.product_identity(item, self.obik))
+
+    def test_noncanonical_and_duplicate_store_numbers_fail(self):
+        data = {"list": [
+            {"storeNumber": "075", "stock": 4},
+            {"storeNumber": "099", "stock": 9},
+        ]}
+        item = self.observation(data)
+        self.assertEqual({}, self.r.verified_rows(item, self.stores))
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([item], self.stores, self.obik)["type"])
+        duplicate = self.observation({"list": [
+            {"storeNumber": "075", "stock": 1},
+            {"storeNumber": "075", "stock": 2},
+        ]})
+        self.assertEqual({}, self.r.verified_rows(duplicate, self.stores))
+        ambiguous = self.observation({"list": [
+            {"storeId": "003", "storeNumber": "019", "stock": 4},
+        ]})
+        self.assertEqual({}, self.r.verified_rows(ambiguous, self.stores))
+        numeric_without_leading_zero = self.observation({"list": [
+            {"storeNumber": 75, "stock": 5},
+        ]})
+        self.assertEqual({}, self.r.verified_rows(numeric_without_leading_zero, self.stores))
+
+    def test_zero_null_missing_and_qualitative_are_distinct(self):
+        item = self.observation({"list": [
+            {"storeNumber": "075", "stock": 0},
+            {"storeNumber": "003", "stock": None},
+            {"storeNumber": "074", "availability": "low"},
+            {"storeNumber": "019", "pickupAvailable": False},
+        ]})
+        rows = self.r.verified_rows(item, self.stores)
+        self.assertEqual(0, rows["075"]["value"])
+        self.assertEqual("known_zero", rows["075"]["state"])
+        self.assertEqual("unknown_null", rows["003"]["state"])
+        self.assertNotIn("value", rows["003"])
+        self.assertEqual("qualitative", rows["074"]["state"])
+        self.assertEqual("low", rows["074"]["value"])
+        self.assertEqual("qualitative", rows["019"]["state"])
+        self.assertIs(rows["019"]["value"], False)
+        self.assertNotIn("072", rows)
+
+    def test_one_shot_subset_omissions_remain_unknown(self):
+        item = self.observation({"list": [
+            {"storeNumber": "075", "stock": 0},
+            {"storeNumber": "003", "stock": 8},
+        ]})
+        result = self.r.classify_contract([item], self.stores, self.obik)
+        self.assertEqual("B_ONE_SHOT_SUBSET", result["type"])
+        self.assertEqual(2, result["observedStoreCount"])
+        self.assertNotIn("019", self.r.verified_rows(item, self.stores))
+
+    def test_bounded_fanout_and_two_request_pattern(self):
+        def single(store):
+            return self.observation(
+                {"storeNumber": store, "stock": 1},
+                path="/api/products/3496072/availability",
+                action="availability:store-" + store,
+                query={"names": ["storeNumber"],
+                       "safeValues": {"storeNumber": store}},
+            )
+        two = [single("075"), single("003")]
+        three = two + [single("074")]
+        self.assertEqual("D_MULTI_REQUEST_BOUNDED",
+            self.r.classify_contract(two, self.stores, self.obik)["type"])
+        self.assertEqual("E_PER_STORE_FANOUT",
+            self.r.classify_contract(three, self.stores, self.obik)["type"])
+
+    def test_unrelated_initial_request_and_nonproduct_traffic_ignored(self):
+        data = {"list": [
+            {"storeNumber": "075", "stock": 1},
+            {"storeNumber": "003", "stock": 1},
+        ]}
+        initial = self.observation(data, action="initial:page")
+        generic = self.observation(data, path="/api/stores")
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([initial, generic], self.stores, self.obik)["type"])
+
+    def test_nuxt_product_owned_preloaded_vs_global_store_directory(self):
+        rows = [
+            {"storeNumber": "075", "availability": "available"},
+            {"storeNumber": "003", "stock": 0},
+        ]
+        # Flattened Nuxt: skuId resolves a scalar in the shared list.
+        owned = [
+            {"data": 1, "globalStoreDirectory": rows},
+            {"skuId": 2, "storeAvailability": rows},
+            "3496072",
+        ]
+        def html(root):
+            return ('<script id="__NUXT_DATA__" type="application/json">'
+                    + json.dumps(root) + "</script>")
+        result = self.r.inspect_initial_nuxt(html(owned), self.obik, self.stores)
+        self.assertTrue(result["productIdentityVerified"])
+        self.assertEqual(2, len(result["verifiedProductOwnedRows"]))
+        self.assertEqual("C_FRONTEND_PRELOADED",
+            self.r.classify_contract([], self.stores, self.obik, result)["type"])
+        unrelated = [{"data": 1, "storeAvailability": rows},
+                     {"skuId": 2}, "3496072"]
+        result = self.r.inspect_initial_nuxt(html(unrelated), self.obik, self.stores)
+        self.assertEqual([], result["verifiedProductOwnedRows"])
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([], self.stores, self.obik, result)["type"])
+
+    def test_invalid_or_ambiguous_nuxt_product_owner_fails_closed(self):
+        html = ('<script id="__NUXT_DATA__" type="application/json">'
+                + json.dumps([{"skuId": 2}, {"skuId": 2}, "3496072"])
+                + "</script>")
+        result = self.r.inspect_initial_nuxt(html, self.obik, self.stores)
+        self.assertFalse(result["productIdentityVerified"])
+        self.assertEqual([], result["verifiedProductOwnedRows"])
+
+    def test_request_privacy_filters_sensitive_headers_tokens_urls_and_bodies(self):
+        r = self.r
+        url = ("https://www.obi.pl/api/products/3496072/stores?"
+               "storeNumber=075&token=SECRET&trackingId=123&obik=3496072"
+               "&email=person@example.com")
+        observation = r.safe_url_request("POST", url,
+            json.dumps({"obik": "3496072", "storeNumber": "075",
+                        "token": "BAD_SECRET", "userEmail": "p@x.com",
+                        "comment": "free form PRIVATE"}),
+            self.obik, self.stores)
+        data = json.dumps(observation)
+        for forbidden in ("SECRET", "PRIVATE", "p@x.com", "person@example.com",
+                          "cookie", "token", "userEmail"):
+            self.assertNotIn(forbidden, data)
+        self.assertEqual({"storeNumber": "075", "obik": "3496072"},
+                         observation["query"]["safeValues"])
+        self.assertEqual("3496072", observation["body"]["safeValues"]["obik"])
+        self.assertFalse(r.trusted_url("https://evil-obi.pl/api/abc"))
+        self.assertFalse(r.trusted_url("https://obi.pl.evil.com/api"))
+        self.assertFalse(r.trusted_url("https://user:pass@www.obi.pl/api"))
+
+    def test_control_metadata_sanitized_and_purchase_controls_excluded(self):
+        r = self.r
+        self.assertEqual("", r.safe_control_text("My account token=secret"))
+        self.assertIn("REDACTED", r.safe_control_text(
+            "Wybierz sklep kontakt hello@example.com"
+        ))
+        self.assertIsNotNone(r.UNSAFE_ACTION.search("Dodaj do koszyka"))
+        self.assertIsNone(r.UNSAFE_ACTION.search("Sprawdź dostępność w sklepie"))
+
+
 if __name__ == "__main__":
     unittest.main()
