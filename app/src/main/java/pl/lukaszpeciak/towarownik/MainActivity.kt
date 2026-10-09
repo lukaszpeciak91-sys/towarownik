@@ -2074,92 +2074,72 @@ private fun AdvisorComposer(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 ) {
                     Column {
-                        if (attachment != null || importInProgress) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                                    .padding(
-                                        start = 10.dp,
-                                        top = 8.dp,
-                                        end = 4.dp,
-                                    ),
-                                verticalAlignment = Alignment.CenterVertically,
+                        if (attachments.isNotEmpty() || importInProgress) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(start = 10.dp, end = 4.dp, top = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                val item = attachment
-                                when {
-                                    importInProgress -> {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(28.dp),
-                                            strokeWidth = 2.dp,
-                                        )
-                                    }
-                                    item?.type == AttachmentType.IMAGE -> {
-                                        AsyncImage(
-                                            model = attachmentStorage.contentUri(
-                                                context,
-                                                item.localId,
-                                            ),
-                                            contentDescription = stringResource(
-                                                R.string.attachment_image_preview,
-                                            ),
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.size(48.dp),
-                                        )
-                                    }
-                                    else -> {
-                                        PdfAttachmentBadge(
-                                            modifier = Modifier.size(40.dp),
-                                        )
-                                    }
-                                }
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(horizontal = 10.dp),
-                                ) {
-                                    Text(
-                                        text = when {
-                                            importInProgress ->
-                                                stringResource(
-                                                    R.string.attachment_importing,
-                                                )
-                                            item?.type == AttachmentType.IMAGE ->
-                                                item.displayName.ifBlank {
-                                                    stringResource(
-                                                        R.string.attachment_photo,
-                                                    )
-                                                }
-                                            else -> item?.displayName.orEmpty()
-                                        },
-                                        maxLines = 2,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    if (
-                                        !importInProgress &&
-                                        item?.type == AttachmentType.PDF
+                                attachments.forEach { item ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        Text(
-                                            text = formatAttachmentByteSize(
-                                                item.byteSize,
-                                            ),
-                                            style =
-                                                MaterialTheme.typography.bodySmall,
-                                            color =
-                                                MaterialTheme.colorScheme
-                                                    .onSurfaceVariant,
-                                        )
+                                        if (item.type == AttachmentType.IMAGE) {
+                                            AsyncImage(
+                                                model = attachmentStorage.contentUri(context, item.localId),
+                                                contentDescription = stringResource(R.string.attachment_image_preview),
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.size(40.dp),
+                                            )
+                                        } else {
+                                            PdfAttachmentBadge(modifier = Modifier.size(38.dp))
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.displayName,
+                                                maxLines = 1,
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                            Text(
+                                                text = formatAttachmentByteSize(item.byteSize),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        IconButton(onClick = { onReplaceAttachment(item.localId) },
+                                            modifier = Modifier.size(36.dp)) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_document_24),
+                                                contentDescription = stringResource(R.string.attachment_replace),
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                        IconButton(onClick = { onRemoveAttachment(item.localId) },
+                                            modifier = Modifier.size(36.dp)) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_close_24),
+                                                contentDescription = stringResource(R.string.attachment_remove),
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
                                     }
                                 }
-                                IconButton(onClick = onRemoveAttachment) {
-                                    Icon(
-                                        painter = painterResource(
-                                            R.drawable.ic_close_24,
-                                        ),
-                                        contentDescription = stringResource(
-                                            R.string.attachment_remove,
-                                        ),
-                                    )
+                                if (importInProgress) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(22.dp), strokeWidth = 2.dp,
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.attachment_importing),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
                                 }
                             }
                         }
