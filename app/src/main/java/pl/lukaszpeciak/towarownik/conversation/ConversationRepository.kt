@@ -5,6 +5,7 @@ import java.net.URI
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.agent.advisorTraceIdOrNull
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.validatedAttachmentOrNull
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
@@ -120,6 +121,7 @@ internal data class PersistedMessage(
     val text: String,
     val createdAt: Long,
     val products: List<VerifiedProductSnapshot>,
+    val advisorTraceId: String? = null,
     val sources: List<PersistedWebSource> = emptyList(),
     val searchActions: List<PersistedSearchAction> = emptyList(),
     val attachment: AdvisorAttachment? = null,
@@ -268,6 +270,7 @@ internal class ConversationRepository(
         products: List<VerifiedProductSnapshot> = emptyList(),
         sources: List<PersistedWebSource> = emptyList(),
         searchActions: List<PersistedSearchAction> = emptyList(),
+        advisorTraceId: String? = null,
     ) {
         dao.completeAssistantTurn(
             conversationId = conversationId,
@@ -277,6 +280,7 @@ internal class ConversationRepository(
             products = products,
             sources = sources,
             searchActions = searchActions,
+            advisorTraceId = advisorTraceIdOrNull(advisorTraceId),
         )
     }
 
@@ -435,6 +439,8 @@ private fun ConversationWithMessages.toPersisted(
                                     },
                             )
                         },
+                    advisorTraceId =
+                        advisorTraceIdOrNull(message.advisorTraceId),
                     sources = item.sources
                         .sortedBy { it.position }
                         .mapNotNull { source ->
