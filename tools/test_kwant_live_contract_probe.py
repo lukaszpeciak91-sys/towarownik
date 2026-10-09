@@ -2365,7 +2365,7 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
         after = {"visibleDirectoryNames": ["Tarnów"],
                  "zeroLabelVisible": False}
         local = probe.classify_availability_filter(before, after, 0, True)
-        self.assertEqual("NO_API_REQUEST_OBSERVED", local["classification"])
+        self.assertEqual("CLIENT_SIDE_FILTER_CANDIDATE", local["classification"])
         self.assertEqual(1, local["afterVisibleBranchNameCount"])
         remote = probe.classify_availability_filter(before, after, 1, True)
         self.assertEqual("REQUEST_TRIGGERED", remote["classification"])
@@ -2466,7 +2466,7 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
              "department_stock": {"department_id": 205, "stock": 999}},
         ]}, "580", depstock="205")
         self.assertEqual(2, good["identityBoundRowCount"])
-        self.assertEqual([{"branchId": "205", "stock": 4}],
+        self.assertEqual([{"branchId": "205", "stock": 4, "candidateField": "stock"}],
                          good["controlProductRows"])
         self.assertTrue(good["usableBatchCandidate"])
         bad = probe.batch_prices_stock_evidence(url, {"list": [
@@ -2499,6 +2499,22 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
                 {"department_id": 205, "stock": 7}},
         ]}, "580")
         self.assertFalse(without_depstock["usableBatchCandidate"])
+        alternate = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580, "department_stock":
+                {"department_id": 205, "stock_num": 4}},
+            {"product_id": 581, "department_stock":
+                {"department_id": 205, "stockNum": 8}},
+        ]}, "580", depstock="205")
+        self.assertTrue(alternate["usableBatchCandidate"])
+        self.assertEqual("stock_num",
+                         alternate["controlProductRows"][0]["candidateField"])
+        conflicting_fields = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580, "department_stock":
+                {"department_id": 205, "stock": 4, "stock_num": 8}},
+            {"product_id": 581, "department_stock":
+                {"department_id": 205, "stock": 8}},
+        ]}, "580", depstock="205")
+        self.assertFalse(conflicting_fields["usableBatchCandidate"])
 
 
 if __name__ == "__main__":
