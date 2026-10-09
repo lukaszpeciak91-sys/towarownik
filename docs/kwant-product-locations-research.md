@@ -166,13 +166,58 @@ public control product 580 / MBN116E/HAG / selected Nowy Sącz branch 205:
   main-product \`product.stock\` is the appropriate separate central source,
   rather than any occurrence of a \`Centrala\` label in body text.
 
-### Follow-up instrumentation (no subsequent live result yet)
+### Live run #17 — availability control DOM diagnosis (9 October 2026)
 
-- Selector: Playwright \`page.get_by_role("button", name=re.compile(
-  "^Sprawdź stan i kup towar w oddziałach Kwant$", re.I))\`
-  on the **canonicalized and verified product 580 page**, unique,
-  visible and enabled. Dedicated network action:
-  \`locations:open-branches\`. No shopping/cart button is clicked.
+The next real manual workflow
+[\`37974563999\`](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37974563999)
+completed successfully at
+\`86471d5dace4fd3c9ffab4f1f4b66eb21130b765\`, but still reported
+\`F_INCONCLUSIVE\`: the availability view was **not** activated.
+Its raw product HTML established that the markup separates the clickable
+ancestor from its labelled child:
+
+\`\`\`html
+<div role="button" tabindex="0">
+  <div aria-label="Sprawdź stan i kup towar w oddziałach Kwant">
+    424 szt. w Nowy Sącz
+  </div>
+</div>
+\`\`\`
+
+Two descendants share that \`aria-label\`; the other belongs to a
+\`Zapytaj eksperta\` row. A role/button locator searching for this
+accessible name therefore missed the real clickable element.
+The safe run also reported \`branchPageIdentifier=205\` from the
+publicly resolved branch before locations research, but
+\`locationsResearch.selectedBranchStock=UNKNOWN\` because the function
+was passed \`departmentStockId\` *before* its later cookie mapping set it
+to 205. Independent selected-branch search/current corroboration and the
+exact structured central-stock evidence remain intact.
+
+**No all-branch inventory API was identified in run #17**. The
+HTML is evidence for how to open the UI, not evidence for the API it may
+invoke.
+
+### Instrumentation after run #17 (requires another manual live probe)
+
+- **Exact selector:** Playwright
+  \`page.locator('[aria-label="Sprawdź stan i kup towar w oddziałach Kwant"]')\`
+  on the canonicalized, identity-verified product page. For **each**
+  visible descendant, resolve its closest
+  \`ancestor::*[@role='button'][1]\`; require visible, enabled, uniquely
+  matching **selected-branch inventory row** text containing the public
+  branch label (e.g. \`424 szt. w Nowy Sącz\`). Reject
+  \`Zapytaj eksperta\`, contact/purchase rows and multiple eligible matches.
+  Never select by DOM order or click the labelled child. Dedicated
+  recording action: \`locations:open-branches\`. No checkout/cart click.
+- **Early branch ID:** require confirmed deterministic branch selection,
+  numeric branch ID from its resolved public branch URL and matching
+  ID+label in the live public directory **before** invoking locations
+  research. If any element disagrees, the ID remains unknown.
+  Later cookie-constructor evidence can still populate the normal safe
+  \`departmentStockId\` report, but cannot be a prerequisite for
+  \`selectedBranchStock\`. Exact \`/current?depstock\` product and
+  department identity gates remain unchanged.
 - Sanitized \`xhr/fetch\` recordings preserve availability responses and
   reserve capacity after ordinary search traffic. A scoped visible
   availability dialog/drawer snapshot reports branch names **as display
@@ -212,9 +257,10 @@ public control product 580 / MBN116E/HAG / selected Nowy Sącz branch 205:
   independently corroborated control stock.
 
 **Next required gate:** dispatch the updated manual workflow from PR #98
-and audit the sanitized \`locationsResearch\` after the accessibility button
-opens. **The all-branches contract remains unresolved; no new run is claimed
-by this update.** No guessed live endpoints or production calls were added.
+*after these fixes* and audit sanitized \`locationsResearch\` only if the
+correct stock-row parent opens. **The all-branches contract remains
+unresolved; there is no new post-fix live finding.** No guessed endpoints
+or production network calls were added.
 
 ## Sanitized example (SYNTHETIC, not a captured KWANT response)
 
