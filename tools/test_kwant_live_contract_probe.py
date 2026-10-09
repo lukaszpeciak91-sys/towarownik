@@ -1831,6 +1831,19 @@ class LocationsResearchTest(unittest.TestCase):
         self.assertFalse(shape["productIdentityMatches"])
         self.assertEqual(1, shape["branchDistinctIds"])
 
+    def test_array_root_response_is_not_dropped(self):
+        shape = probe.research_json_shape(
+            [
+                {"department_id": 205, "stock": 0},
+                {"department_id": 204, "stock": 18},
+            ],
+            "580",
+            {"205": "Nowy Sącz", "204": "Tarnów"},
+        )
+        self.assertEqual("list", shape["rootType"])
+        self.assertEqual(probe.UNKNOWN, shape["productIdentityMatches"])
+        self.assertEqual(2, shape["branchDistinctIds"])
+
     def test_unexpected_public_host_not_inspected(self):
         class Request:
             url = "https://evil.example/api/front/products/580/current"
