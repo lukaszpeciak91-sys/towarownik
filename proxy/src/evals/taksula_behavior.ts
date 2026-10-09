@@ -437,7 +437,8 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     semanticRubric: [
       "The answer treats this as browse/assortment intent rather than asking an unnecessary selection clarification.",
       "Several materially fitting verified variants are surfaced or compared instead of silently collapsing them to one.",
-      "The answer does not imply that the mocked bounded subset is the complete assortment; wording equivalent to examples or among others is acceptable.",
+      "The answer may factually state how many verified candidates were surfaced by this bounded lookup. A bounded count such as three surfaced/found/verified variants is not by itself a claim that the provider has only those variants.",
+      "Fail anti-exhaustiveness only when the answer explicitly or semantically claims completeness/exclusivity, such as saying these are all variants, only these variants exist, or this is the complete assortment.",
     ],
   },
   {
@@ -454,7 +455,7 @@ export const BEHAVIOR_SCENARIOS: readonly BehaviorScenario[] = [
     userMessage: "Klient potrzebuje końcówki z sitkiem do kranu.",
     webPolicy: "forbidden",
     semanticRubric: [
-      "The answer understands the requested category as a faucet aerator/perlator or equivalent fitting category and asks one concise compatibility-critical clarification about the missing thread/connection size or type.",
+      "The answer understands the requested category as a faucet aerator/perlator or equivalent fitting category and explicitly keeps the missing thread/connection size or type unresolved. It may either ask one concise clarification or give a concise actionable instruction for determining that parameter before choosing a correct match.",
       "A relevant local provider browse is performed in the same turn and may surface verified candidate products or productRefs from that category.",
       "Any surfaced products are clearly candidates/examples only; the answer does not claim that a candidate is compatible, will fit, or is the correct recommendation before the missing connection/thread parameter is resolved.",
       "The provider browse is not used to infer or guess the missing compatibility-critical parameter.",
@@ -652,7 +653,7 @@ export function behaviorScenarioForProvider(
       userMessage:
         "Klient potrzebuje wyłącznika nadprądowego B16. Co mu dać?",
       semanticRubric: [
-        "The answer asks one concise clarification about the missing decision-critical B16 configuration, such as pole configuration or intended application.",
+        "The answer explicitly keeps the missing decision-critical B16 configuration unresolved, such as pole configuration or intended application. It may either ask one concise clarification or clearly tell the user that the configuration must be established before choosing the correct device.",
         "A useful local provider browse is performed in the same turn and exposes plausible verified B16 candidates such as 1P and 3P variants when available.",
         "Any surfaced products are clearly candidates/examples only; the answer does not claim that one pole configuration is correct, compatible, or recommended before the missing configuration is resolved.",
         "The provider browse is not used to infer or guess the missing decision-critical parameter.",
@@ -774,7 +775,7 @@ export function createOpenAISemanticJudge(
       const requestBody = JSON.stringify({
         model: OPENAI_MODEL,
         instructions:
-          "You are a strict behavioral-evaluation grader. Judge only the explicit rubric against the supplied observable trace. Do not require exact wording. Do not infer or request hidden reasoning. Return only the requested JSON with a boolean pass and one short diagnostic sentence.",
+          "You are a strict behavioral-evaluation grader. Judge only the explicit rubric against the supplied observable trace, by semantic meaning rather than exact wording, punctuation, or magic phrases. Provider/tool results may be bounded samples: stating the number of candidates actually surfaced does not by itself claim that the provider assortment is complete; treat anti-exhaustiveness as violated only by explicit or semantically clear completeness/exclusivity claims. When a rubric requires an unresolved parameter to be addressed, judge whether the answer clearly keeps it unresolved and gives a useful way to resolve it rather than requiring a literal interrogative sentence or question mark. Do not infer or request hidden reasoning. Return only the requested JSON with a boolean pass and one short diagnostic sentence.",
         input: JSON.stringify({
           scenario: input.scenario.id,
           userMessage: input.trace.userMessage,
