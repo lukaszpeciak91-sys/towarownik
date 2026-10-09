@@ -381,9 +381,35 @@ def _nuxt_materialize(root: Any, node: Any, depth: int = 0,
 
 
 
-def inspect_initial_nuxt(html: str, obik: str, stores: dict[str, Any]) -> dict[str, Any]:
+def product_owned_store_ids(node: Any, stores: dict[str, Any]) -> list[str]:
+    """Read only canonical explicit IDs in product-owned store subtrees."""
+    ids: set[str] = set()
+    todo = [(node, 0)]
+    inspected = 0
+    while todo and inspected < 250:
+        value, depth = todo.pop(0)
+        inspected += 1
+        if depth > 7:
+            continue
+        if isinstance(value, dict):
+            for key in STORE_KEYS:
+                ident = value.get(key)
+                if type(ident) is str and ident in stores:
+                    ids.add(ident)
+            for child in value.values():
+                if isinstance(child, (dict, list)):
+                    todo.append((child, depth + 1))
+        elif isinstance(value, list):
+            todo.extend((child, depth + 1) for child in value[:MAX_ROWS]
+                        if isinstance(child, (dict, list)))
+    return sorted(ids)
+
+
+def inspect_initial_nuxt(html: str, obik: str, stores: dict[str, Any],
+                         selected_store: str | None = None) -> dict[str, Any]:
     """Only attach availability fields to an exact skuId-owning object."""
     result = {"productIdentityVerified": False, "productOwnerCount": 0,
+              "selectedStoreVerified": False, "selectedStoreIdFromProductContext": "UNKNOWN",
               "productOwnedKeys": [], "verifiedProductOwnedRows": [],
               "preloadedClassification": "UNKNOWN"}
     try:
@@ -406,6 +432,17 @@ def inspect_initial_nuxt(html: str, obik: str, stores: dict[str, Any]) -> dict[s
     result["productOwnedKeys"] = [
         k for k in owner if safe_field_name(k) is not None
     ][:45]
+    store_context = owner.get("store", owner.get("selectedStore"))
+    if store_context is not None:
+        decoded_store = _nuxt_materialize(
+            root, store_context, flattened=type(store_context) is int
+        )
+        store_ids = product_owned_store_ids(decoded_store, stores)
+        if len(store_ids) == 1:
+            result["selectedStoreIdFromProductContext"] = store_ids[0]
+            result["selectedStoreVerified"] = (
+                selected_store is not None and store_ids[0] == selected_store
+            )
     owned = []
     for key, value in owner.items():
         if re.search(r"stock|store|availability|inventory|pickup|fulfillment|market", key, re.I):
@@ -630,16 +667,19 @@ def run_browser(obik: str, store: str, other_markets: list[str],
             page.wait_for_timeout(1700)
             final_path = urlsplit(page.url).path
             html = page.content()
-            nuxt = inspect_initial_nuxt(html, obik, stores)
+            nuxt = inspect_initial_nuxt(html, obik, stores, store)
             result["initialNuxt"] = nuxt
             result["verifiedProductPage"] = (
                 bool(re.search(r"/p/(?:[a-z0-9-]+-)?"+re.escape(obik)+r"(?:[-/]|$)", final_path, re.I))
                 and nuxt.get("productIdentityVerified") is True
             )
+            if result["verifiedProductPage"]:
+                result["visibleControls"] = discover_controls(page)
             if not result["verifiedProductPage"]:
                 result["reason"] = "EXACT_PRODUCT_PAGE_NOT_VERIFIED"
+            elif not nuxt.get("selectedStoreVerified"):
+                result["reason"] = "SELECTED_STORE_NOT_VERIFIED_IN_PRODUCT_NUXT"
             else:
-                result["visibleControls"] = discover_controls(page)
                 before = _stored_state(context, page)
                 action[0] = "availability:open"
                 control = click_safe_control(page, result["visibleControls"])
