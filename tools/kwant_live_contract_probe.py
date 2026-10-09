@@ -3094,7 +3094,7 @@ def research_json_shape(
                     ):
                         branch_id, _ = observed_branch_identity(obj)
                         value, state = candidate_quantity(child)
-                        if branch_id in directory and state in (
+                        if branch_id is not None and state in (
                             "known_zero", "known_positive"
                         ):
                             control_candidates.append({
@@ -3300,8 +3300,10 @@ def select_strongest_location_candidate(
 
 def summarize_search_ranking_evidence(
     observations: list[dict[str, Any]],
+    directory: dict[str, str],
+    expected_product_id: str,
 ) -> dict[str, Any]:
-    """Reported hit fields are not verified branch quantities by themselves."""
+    """Prove search-hit branch scope only by independent CURRENT corroboration."""
     relevant = [
         item.get("shape", {}) for item in observations
         if str(item.get("action", "")).startswith("search:")
@@ -3311,16 +3313,60 @@ def summarize_search_ranking_evidence(
         field for shape in relevant
         for field in shape.get("searchHitStockFields", [])
     })[:75]
+    # This is the existing, separately established single-branch CURRENT contract,
+    # not an inferred location endpoint or a stock field name heuristic.
+    confirmed_current: set[tuple[str, int]] = set()
+    for item in observations:
+        if (
+            item.get("method") != "GET"
+            or item.get("host") != KWANT_SERVICES_HOST
+            or item.get("path") != (
+                f"/api/front/products/{expected_product_id}/current"
+            )
+            or item.get("status") != 200
+        ):
+            continue
+        shape = item.get("shape") or {}
+        if shape.get("productIdentityMatches") is not True:
+            continue
+        depstock = (item.get("query") or {}).get("safeValues", {}).get(
+            "depstock"
+        )
+        if depstock not in directory:
+            continue
+        for row in shape.get("branchRows", []):
+            if (
+                row.get("branchId") == depstock
+                and row.get("jsonPath") == "$.department_stock"
+                and row.get("candidateField") == "stock"
+                and row.get("candidateState")
+                in ("known_zero", "known_positive")
+            ):
+                confirmed_current.add((depstock, row["candidateValue"]))
+
+    proven = any(
+        (candidate["branchId"], candidate["candidateValue"])
+        in confirmed_current
+        for shape in relevant
+        for candidate in shape.get("searchHitControlCandidates", [])
+    )
+    scope = (
+        "SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL"
+        if proven else (
+            search_stock_classification(fields) if relevant else UNKNOWN
+        )
+    )
     return {
         "observedSearchResponseCount": len(relevant),
         "searchHitStockFields": fields,
-        "selectedBranchStockProven": False,
-        "stockScope": (
-            search_stock_classification(fields) if relevant else UNKNOWN
-        ),
+        "selectedBranchStockProven": proven,
+        "stockScope": scope,
         "reason": (
-            "NO_INDEPENDENT_SEARCH_HIT_BRANCH_SCOPE_VERIFICATION"
-            if fields else "NO_STOCK_FIELDS_CONFIRMED"
+            "INDEPENDENT_CURRENT_PRODUCT_AND_BRANCH_CORROBORATION"
+            if proven else (
+                "SEARCH_FIELD_HAS_NO_MATCHING_VERIFIED_BRANCH_EVIDENCE"
+                if fields else "NO_STOCK_FIELDS_CONFIRMED"
+            )
         ),
     }
 
@@ -3492,7 +3538,7 @@ def research_product_locations(
             result.get("aggregateBranchStock", UNKNOWN),
         ))
         result["searchRankingEvidence"] = summarize_search_ranking_evidence(
-            capture.records
+            capture.records, capture.directory, product_id
         )
     return result
 
