@@ -3089,7 +3089,7 @@ def research_json_shape(
     if not isinstance(payload, (dict, list)):
         return {"rootType": type(payload).__name__, "branchRows": []}
     root = payload if isinstance(payload, dict) else {}
-    root_id = root.get("product_id", root.get("productId"))
+    root_id = root.get("product_id", root.get("productId", root.get("id")))
     identity = (
         str(root_id) == expected_product_id
         if type(root_id) in (str, int) else UNKNOWN
@@ -3410,6 +3410,20 @@ def classify_locations_contract(
     ]
     if len(multi) == 1:
         coverage = evaluate_candidate_coverage(multi[0]["shape"], directory)
+        all_rows = multi[0]["shape"].get("branchRows", [])
+        numeric_ids = {
+            row["branchId"] for row in all_rows
+            if row.get("branchKnownInDirectory")
+            and row.get("candidateState") in ("known_zero", "known_positive")
+        }
+        # For discovery, alternative candidate fields may coexist. Keep the
+        # reconciliation sum stricter, but do not miss the shape itself.
+        if (
+            numeric_ids == set(directory)
+            and coverage["completeness"] == "ALL_DIRECTORY_BRANCHES"
+        ):
+            return {"type": "A_ONE_SHOT_ALL_BRANCHES",
+                    "reason": "PRODUCT_BOUND_FULL_DIRECTORY_STRUCTURAL_CANDIDATE"}
         if coverage["sumConfirmedObservedBranchStock"] is not None:
             if coverage["completeness"] == "ALL_DIRECTORY_BRANCHES":
                 return {"type": "A_ONE_SHOT_ALL_BRANCHES", "reason": "ONE_PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE"}
