@@ -263,7 +263,11 @@ def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any]
     preloaded = nuxt.get("verifiedProductOwnedRows") or []
     if len(preloaded) >= 2 and nuxt.get("productIdentityVerified") is True:
         ids = [row.get("storeNumber") for row in preloaded]
-        if len(ids) == len(set(ids)) and all(i in stores for i in ids):
+        if (len(ids) == len(set(ids))
+                and all(i in stores for i in ids)
+                and all(row.get("state") in (
+                    "known_zero", "known_positive", "qualitative"
+                ) and not row.get("ambiguousFields") for row in preloaded)):
             return {"type": "C_FRONTEND_PRELOADED", "reason": "EXACT_PRODUCT_OWNED_NUXT_ROWS",
                     "observedStoreCount": len(ids)}
     scoped = []
@@ -319,28 +323,42 @@ def _nuxt_resolve(root: Any, value: Any, limit: int = 5) -> Any:
 
 
 def _nuxt_materialize(root: Any, node: Any, depth: int = 0,
-                      seen: frozenset[int] = frozenset()) -> Any:
-    """Expand only a verified product-owned subtree, with cycle/depth bounds."""
-    if depth > 7:
+                      seen: frozenset[int] = frozenset(),
+                      flattened: bool = False) -> Any:
+    """Expand flattened references but preserve inline literal 0 and booleans.
+
+    In Nuxt's flattened representation, fields of objects stored as top-level
+    list entries refer to indices. Inline nested JSON values are literal
+    unless reached through such a reference. Never treat a scalar *result*
+    of dereferencing as another reference.
+    """
+    if depth > 8:
         return None
-    if isinstance(root, list) and type(node) is int and 0 <= node < len(root):
-        if node in seen:
+    if flattened and isinstance(root, list) and type(node) is int:
+        if node not in range(len(root)) or node in seen:
             return None
-        return _nuxt_materialize(root, root[node], depth + 1, seen | {node})
+        value = root[node]
+        if not isinstance(value, (dict, list)):
+            return value
+        return _nuxt_materialize(root, value, depth + 1, seen | {node},
+                                 flattened=True)
     if isinstance(node, list):
-        if len(node) == 2 and node[0] in ("Ref", "ShallowRef") and type(node[1]) is int:
-            return _nuxt_materialize(root, node[1], depth + 1, seen)
+        if (len(node) == 2 and node[0] in ("Ref", "ShallowRef")
+                and type(node[1]) is int):
+            return _nuxt_materialize(root, node[1], depth + 1, seen,
+                                     flattened=True)
         return [
-            _nuxt_materialize(root, item, depth + 1, seen)
+            _nuxt_materialize(root, item, depth + 1, seen, flattened)
             for item in node[:MAX_ROWS]
         ]
     if isinstance(node, dict):
         return {
-            key: _nuxt_materialize(root, value, depth + 1, seen)
+            key: _nuxt_materialize(root, value, depth + 1, seen, flattened)
             for key, value in list(node.items())[:45]
             if safe_field_name(key) is not None
         }
     return node
+
 
 
 def inspect_initial_nuxt(html: str, obik: str, stores: dict[str, Any]) -> dict[str, Any]:
@@ -373,11 +391,15 @@ def inspect_initial_nuxt(html: str, obik: str, stores: dict[str, Any]) -> dict[s
         if re.search(r"stock|store|availability|inventory|pickup|fulfillment|market", key, re.I):
             # Nuxt's product-owned arrays/objects can contain references
             # at each level; do not mistake raw indices for stock or IDs.
-            nested = _nuxt_materialize(root, value)
+            nested = _nuxt_materialize(root, value, flattened=type(value) is int)
             owned.extend(candidate_rows(nested, stores))
     result["verifiedProductOwnedRows"] = owned[:MAX_ROWS]
     ids = [row.get("storeNumber") for row in owned]
-    if len(owned) >= 2 and len(ids) == len(set(ids)) and all(i in stores for i in ids):
+    if (len(owned) >= 2 and len(ids) == len(set(ids))
+            and all(i in stores for i in ids)
+            and all(row.get("state") in (
+                "known_zero", "known_positive", "qualitative"
+            ) and not row.get("ambiguousFields") for row in owned)):
         result["preloadedClassification"] = "PRODUCT_OWNED_MULTI_STORE_CANDIDATE"
     elif owned:
         result["preloadedClassification"] = "EXACT_PRODUCT_SINGLE_OR_AMBIGUOUS"
