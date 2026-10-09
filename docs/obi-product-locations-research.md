@@ -143,8 +143,10 @@ Manual browser behavior:
 1. Navigate using the already known public store-switch route to the
    configured exact product and verify OBIK from the final product path
    and exactly one product-owned flattened Nuxt skuId.
-2. Inspect bounded, visible/enabled accessible control metadata and the
-   exact run-2 observed button. Resolve by **exact role/name**, not DOM index.
+2. Inspect bounded, visible/enabled control metadata and the exact
+   opener confirmed in run #3. Resolve native `button[data-component="PdpLink"]`
+   by **exact normalized innerText**, not SVG-influenced accessible name,
+   generic substring or DOM index.
 3. Inspect `pickupStores` and `deliveryDataPerSeller` **separately**,
    recording container types, bounded object/nesting field names, canonical
    store ID candidate fields and availability field scalar types. These are
