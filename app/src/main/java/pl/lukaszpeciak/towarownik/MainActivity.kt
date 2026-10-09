@@ -451,7 +451,7 @@ private fun TowarownikApp() {
             if (pickerEpoch == pickerLaunchedAt) {
                 importAttachments(
                     listOf(FileProvider.getUriForFile(
-                        context, "\${context.packageName}.fileprovider", captureFile,
+                        context, "${context.packageName}.fileprovider", captureFile,
                     )),
                     suggestedName = "photo.jpg",
                     afterImport = cameraCapture::cleanup,
