@@ -2456,6 +2456,10 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
         recorder.set_action("locations:open-branches")
         capture.on_request(Request())
         self.assertEqual(1, len(capture.request_records))
+        Request.url = "https://kwant.net.pl/api/front/visible"
+        capture.on_request(Request())
+        self.assertEqual(2, len(capture.request_records))
+        self.assertEqual("kwant.net.pl", capture.request_records[-1]["host"])
 
     def test_batch_product_identity_never_inferred_from_list_order(self):
         url = "/api/front/products/prices/580,581"
