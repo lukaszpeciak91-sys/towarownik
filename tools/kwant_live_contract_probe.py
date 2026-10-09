@@ -3488,22 +3488,43 @@ def selected_branch_current_diagnostic(
     return unknown
 
 
+def product_identity_evidence(
+    observation: dict[str, Any], expected_id: str,
+) -> str:
+    """Bound a response to exactly one product; no timing or batch inference."""
+    if observation.get("host") not in {KWANT_SERVICES_HOST, KWANT_HOST}:
+        return "UNKNOWN"
+    if observation.get("status") != 200:
+        return "UNKNOWN"
+    shape = observation.get("shape") or {}
+    # Explicit conflicting response identity is not overridden by the URL.
+    if shape.get("productIdentityMatches") is False:
+        return "UNKNOWN"
+    if shape.get("productIdentityMatches") is True:
+        return "RESPONSE_PRODUCT_ID"
+    path = observation.get("path", "")
+    # Match a singular product ID path segment, not a substring or a
+    # multi-product /products/prices/<id>,<id> endpoint.
+    if re.fullmatch(
+        r"/api/front/products/" + re.escape(expected_id) + r"(?:/[^?]*)?",
+        path,
+    ):
+        return "SINGULAR_REQUEST_PRODUCT_PATH"
+    if BATCH_PRICES_PATH.fullmatch(path):
+        return "UNKNOWN"
+    body = (observation.get("body") or {}).get("safeValues") or {}
+    if (
+        str(body.get("product_id", "")) == expected_id
+        or str(body.get("productId", "")) == expected_id
+    ):
+        return "EXACT_REQUEST_BODY_PRODUCT_ID"
+    return "UNKNOWN"
+
+
 def request_bound_product_identity(
     observation: dict[str, Any], expected_id: str,
 ) -> bool:
-    """Path/body may bind one product; prices/multi IDs are not such binding."""
-    shape = observation.get("shape") or {}
-    if shape.get("productIdentityMatches") is True:
-        return True
-    path = observation.get("path", "")
-    # Only a singular observed /products/<id>/... path qualifies.
-    if re.search(r"/api/front/products/" + re.escape(expected_id) + r"(?:/|$)", path):
-        return True
-    body = (observation.get("body") or {}).get("safeValues") or {}
-    return (
-        str(body.get("product_id", "")) == expected_id
-        or str(body.get("productId", "")) == expected_id
-    )
+    return product_identity_evidence(observation, expected_id) != "UNKNOWN"
 
 
 def classify_locations_contract(
