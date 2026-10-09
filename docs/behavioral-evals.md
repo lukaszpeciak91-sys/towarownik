@@ -45,7 +45,7 @@ The A–I behavioral scenario set contains:
 - **A** — broad black cable-tie product intent: search the current provider and surface several verified variants without pretending one unspecified size is definitively correct;
 - **B** — browse black cable ties: request multiple results and avoid exhaustive-assortment wording;
 - **C** — specified 4.2 x 380 mm indoor cable ties: proceed to verification; the search phrase may omit literal indoor wording when the returned verified product itself confirms indoor suitability;
-- **D** — ambiguous faucet aerator: clarify connection/thread information;
+- **D** — known faucet-aerator category with unresolved connection/thread variant: clarify or give an actionable way to determine the parameter, safely browse both plausible verified candidates in the same turn, surface both expected productRefs, and never claim a correct fit before resolution;
 - **E** — three fitting verified variants: surface alternatives or justify one selection;
 - **F** — direct current stock + price for one provider-specific identifier (OBIK on OBI, article number on KWANT);
 - **G_ZERO** — confirmed stock zero;
@@ -71,7 +71,7 @@ Each trial records only observable data:
 - user message;
 - normalized model outputs;
 - the clarification candidate or final answer text;
-- `find_obi_products` requests in order;
+- local provider-tool requests in order (`find_obi_products` on OBI v2 or `find_products` on KWANT v3);
 - tool arguments;
 - deterministic mocked tool results;
 - completed web-search count;
@@ -79,7 +79,7 @@ Each trial records only observable data:
 
 No chain-of-thought, hidden reasoning item, raw OpenAI response, API key, bearer token, cookie, or live OBI payload is stored by the harness.
 
-Each scenario also declares an explicit web-use policy: `forbidden`, `allowed`, or `required`. The initial A–I suite uses `forbidden` because it targets clarification, local OBI behavior, stable availability semantics, batching, and stable general technical knowledge rather than external research. The production `web_search` tool remains available to the advisor exactly as in production; if the model nevertheless uses it in a forbidden scenario, deterministic grading fails the trial.
+Each scenario also declares an explicit web-use policy: `forbidden`, `allowed`, or `required`. The initial A–I suite uses `forbidden` because it targets clarification/three-state selection, local provider behavior, stable availability semantics, batching, and stable general technical knowledge rather than external research. The production `web_search` tool remains available to the advisor exactly as in production; if the model nevertheless uses it in a forbidden scenario, deterministic grading fails the trial.
 
 Deterministic assertions are preferred for:
 
@@ -90,9 +90,9 @@ Deterministic assertions are preferred for:
 - unnecessary web usage;
 - exact duplicate searches after normalization;
 - current-turn `productRef` grounding;
-- clarification-before-lookup cases.
+- State-1 clarification-only behavior and State-2 safe-browse/candidate-surfacing protections.
 
-Semantic grading is used only for behaviors that require meaning rather than exact wording, such as whether a clarification is relevant, whether alternatives were genuinely surfaced, or whether the four availability states were described distinctly. The semantic grader still returns only a short structured `{ pass, reason }` judgment.
+Semantic grading is used only for behaviors that require meaning rather than exact wording, such as whether a missing decision-critical parameter is clearly kept unresolved, whether a concise question or actionable resolution step is useful, whether alternatives were genuinely surfaced, whether bounded-result wording falsely claims completeness, or whether the four availability states were described distinctly. A literal question mark or a bounded factual count is never a magic pass/fail token. The semantic grader still returns only a short structured `{ pass, reason }` judgment.
 
 Trial status is separate from that grader shape:
 
