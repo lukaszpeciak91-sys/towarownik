@@ -2526,6 +2526,47 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
             )["completeness"]
         )
 
+    def test_one_shot_rejects_duplicate_and_invalid_branch_quantity(self):
+        directory = {
+            "205": "Nowy Sącz", "204": "Tarnów", "20": "Rzeszów"
+        }
+        problematic = (
+            [
+                {"department_id": 205, "stock": 0, "stock_num": 10},
+                {"department_id": 204, "stock": 7},
+                {"department_id": 20, "stock": 3},
+            ],
+            [
+                {"department_id": 205, "stock": None},
+                {"department_id": 204, "stock": 7},
+                {"department_id": 20, "stock": 3},
+            ],
+            [
+                {"department_id": 205, "stock": "0"},
+                {"department_id": 204, "stock": 7},
+                {"department_id": 20, "stock": 3},
+            ],
+        )
+        for rows in problematic:
+            with self.subTest(rows=rows):
+                shape = probe.research_json_shape(
+                    {"list": rows}, "580", directory
+                )
+                obs = self.response(
+                    shape, path="/api/front/products/580/departments"
+                )
+                self.assertEqual(
+                    "F_INCONCLUSIVE",
+                    probe.classify_locations_contract(
+                        [obs], directory, "580"
+                    )["type"],
+                )
+                self.assertIsNone(
+                    probe.evaluate_candidate_coverage(
+                        shape, directory, product_scope_verified=True
+                    )["sumConfirmedObservedBranchStock"]
+                )
+
     def test_product_identity_from_exact_request_body_not_click_timing(self):
         shape = probe.research_json_shape(
             {"list": [{"department_id": 205, "stock": 1}]},
