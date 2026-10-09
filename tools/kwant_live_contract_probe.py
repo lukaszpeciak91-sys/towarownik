@@ -3225,11 +3225,16 @@ def availability_button(page: Any) -> Any | None:
     pattern = re.compile(r"^Sprawdź stan i kup towar w oddziałach Kwant$", re.I)
     try:
         button = page.get_by_role("button", name=pattern)
-        if button.count() != 1:
+        count = button.count()
+        if not 1 <= count <= 10:
             return None
-        target = button.first
-        if target.is_visible() and target.is_enabled():
-            return target
+        eligible = []
+        for index in range(count):
+            target = button.first if index == 0 else button.nth(index)
+            if target.is_visible() and target.is_enabled():
+                eligible.append(target)
+        if len(eligible) == 1:
+            return eligible[0]
     except Exception:
         return None
     return None
