@@ -362,7 +362,18 @@ def response_shape(data: Any, obik: str, stores: dict[str, Any],
         root_id = ids[0] if len(set(ids)) == 1 else ("CONFLICT" if ids else None)
     else:
         root_names, root_id = [], None
-    rows = candidate_rows(data, stores)
+    # Availability payloads must derive rows solely from their exact named
+    # product-owned container, not a stray recommendation/global subtree.
+    row_owner = data
+    if isinstance(data, dict) and OBSERVED_SP_PATH.fullmatch(request_path):
+        row_owner = data.get("pickupStores") if (
+            OBSERVED_SP_PATH.fullmatch(request_path).group(1) == obik
+        ) else None
+    elif isinstance(data, dict) and OBSERVED_HD_PATH.fullmatch(request_path):
+        row_owner = data.get("deliveryDataPerSeller") if (
+            OBSERVED_HD_PATH.fullmatch(request_path).group(1) == obik
+        ) else None
+    rows = candidate_rows(row_owner, stores) if row_owner is not None else []
     result = {"rootType": type(data).__name__, "rootFields": root_names,
               "rootProductId": root_id, "storeRows": rows[:MAX_ROWS],
               "storeRowCount": len(rows)}
@@ -400,6 +411,36 @@ def verified_rows(record: dict[str, Any], stores: dict[str, Any]) -> dict[str, d
     return by_id
 
 
+def observed_availability_response(record: dict[str, Any], obik: str) -> bool:
+    """Frontend availability evidence is valid BEFORE or AFTER a UI click.
+
+    Exact observed sp/hd paths may be initial-page prefetches. Other traffic
+    needs a real availability-action phase AND an availability-specific
+    product route. This is not inferred from click timing alone: the
+    independent product_identity gate still applies to every response.
+    """
+    if product_identity(record, obik) in ("UNKNOWN", "CONFLICT"):
+        return False
+    path = record.get("path") or ""
+    sp = OBSERVED_SP_PATH.fullmatch(path)
+    hd = OBSERVED_HD_PATH.fullmatch(path)
+    if (sp or hd) and (sp or hd).group(1) == obik:
+        return True
+    if not (record.get("action") or "").startswith("availability:"):
+        return False
+    # Keep existing synthetic discovery coverage of explicitly product-bound
+    # availability and store-list routes; generic/CMS/teasers never qualify.
+    if re.fullmatch(
+        r"/api/products/" + re.escape(obik)
+        + r"/(?:stores|availability|stock|pickup)(?:/[^/]*)?",
+        path,
+    ):
+        return True
+    # Other newly observed response paths remain research-inconclusive until
+    # a later verified run adds precise route semantics.
+    return False
+
+
 def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any],
                       obik: str, initial_nuxt: dict[str, Any] | None = None) -> dict[str, Any]:
     if not stores:
@@ -417,8 +458,7 @@ def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any]
                     "observedStoreCount": len(ids)}
     scoped = []
     for record in observations:
-        if (not record.get("action", "").startswith("availability:")
-                or product_identity(record, obik) in ("UNKNOWN", "CONFLICT")):
+        if not observed_availability_response(record, obik):
             continue
         mapped = verified_rows(record, stores)
         if mapped:
