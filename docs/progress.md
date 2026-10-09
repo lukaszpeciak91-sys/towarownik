@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Multi-attachment transport phase 1: opt-in provider protocol v5 supports 1–3 JPEG/PNG/PDF parts for START/MESSAGE, with per-file and aggregate bounds, stable Responses input order, Android transport list overloads, and unchanged JSON-only continuation. Existing single-file UI/v4, v2/v3, Room and ownership remain unchanged; UI multi-selection is deliberately deferred.
+Multi-attachment transport phase 1: opt-in provider protocol v5 supports 1–3 JPEG/PNG/PDF parts for START/MESSAGE, with a 16 MiB per-file bound and 24 MiB aggregate raw-file ceiling (plus 16 KiB multipart overhead), stable Responses input order, Android transport list overloads, and unchanged JSON-only continuation. Existing single-file UI/v4, v2/v3, Room and ownership remain unchanged; UI multi-selection is deliberately deferred.
 
 
 **Final Advisor contract validation + release readiness**
