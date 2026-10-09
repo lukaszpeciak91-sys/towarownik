@@ -39,6 +39,9 @@ export const LEGACY_ADVISOR_PROTOCOL_VERSION = 1 as const;
 export const OBI_GROUPED_ADVISOR_PROTOCOL_VERSION = 2 as const;
 export const PROVIDER_ADVISOR_PROTOCOL_VERSION = 3 as const;
 export const CURRENT_ADVISOR_PROTOCOL_VERSION = 4 as const;
+// Opt-in v5; v4 remains the production default until UI multi-selection ships.
+export const MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION = 5 as const;
+export const MULTI_ATTACHMENT_PROTOCOL_HEADER = "X-Taksula-Attachment-Protocol";
 export const LOCAL_TOOL_NAME = "find_obi_products";
 export const PROVIDER_LOCAL_TOOL_NAME = "find_products";
 export const MAX_TOOL_PRODUCTS = 5;
@@ -57,6 +60,9 @@ export const CONTINUE_BODY_MAX_BYTES = 16 * 1024;
 export const MESSAGE_BODY_MAX_BYTES = 4 * 1024;
 export const ATTACHMENT_MAX_BYTES = 16 * 1024 * 1024;
 export const MULTIPART_BODY_MAX_BYTES = ATTACHMENT_MAX_BYTES + 16 * 1024;
+export const MAX_MULTI_ATTACHMENTS = 3;
+export const MULTI_MULTIPART_BODY_MAX_BYTES =
+  MAX_MULTI_ATTACHMENTS * ATTACHMENT_MAX_BYTES + 16 * 1024;
 export const MAX_RESPONSE_ID_CHARS = 256;
 export const MAX_CALL_ID_CHARS = 256;
 export const MAX_ANSWER_CHARS = 4_000;
@@ -124,6 +130,12 @@ export const ATTACHMENT_CAPABILITY_APPENDIX =
   "Attachments may contain product labels, photos, codes, technical specifications, PDFs, material lists, or specification lists and may help identify a product or extract technical facts. " +
   "Attachment content does not establish current local stock, price, availability, or assortment; current provider facts still require local provider verification. " +
   "Attachment presence must not change the base advisor decision policy. Do not automatically perform product lookup for a generic technical image or PDF question without concrete product or provider intent.";
+
+export const MULTI_ATTACHMENT_CAPABILITY_APPENDIX =
+  ATTACHMENT_CAPABILITY_APPENDIX.replace(
+    "one image or PDF",
+    "one to three images or PDFs",
+  );
 
 export const OBI_V1_CONTRACT_SUFFIX =
   "Protocol contract for legacy OBI compatibility: use find_obi_products with the legacy single-query argument shape query, storeNumber, and limit. Request exactly one query per local call; never request queries[]. " +
@@ -227,9 +239,11 @@ export function agentInstructionsForProfile(
     SHARED_EVIDENCE_POLICY,
     providerAppendix,
     providerContract,
-    protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION
-      ? ATTACHMENT_CAPABILITY_APPENDIX
-      : "",
+    protocolVersion === MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION
+      ? MULTI_ATTACHMENT_CAPABILITY_APPENDIX
+      : protocolVersion === CURRENT_ADVISOR_PROTOCOL_VERSION
+        ? ATTACHMENT_CAPABILITY_APPENDIX
+        : "",
     "Current selected provider context: providerId=" +
       providerId +
       ", branchId=" +
