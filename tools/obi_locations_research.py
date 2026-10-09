@@ -667,6 +667,7 @@ def safe_control_text(raw: str | None) -> str:
 
 
 def discover_controls(page: Any) -> list[dict[str, Any]]:
+    """Bounded control metadata; arbitrary product copy/addresses stay private."""
     controls = []
     try:
         nodes = page.locator("button,[role='button'],a[href],select")
@@ -675,19 +676,26 @@ def discover_controls(page: Any) -> list[dict[str, Any]]:
             if not node.is_visible():
                 continue
             raw = node.get_attribute("aria-label") or node.inner_text(timeout=400)
-            label = safe_control_text(raw)
-            if not label:
+            hint = safe_modal_label(raw)
+            if hint is None:
                 continue
-            role = node.get_attribute("role") or node.evaluate("(e) => e.tagName.toLowerCase()")
+            role = node.get_attribute("role") or node.evaluate(
+                "(e) => e.tagName.toLowerCase()"
+            )
             try:
-                nearby = safe_control_text(
+                nearby = safe_modal_label(
                     node.locator("xpath=..").inner_text(timeout=350)
                 )
             except Exception:
-                nearby = ""
+                nearby = None
             controls.append({
-                "index": index, "role": role if role in ("button", "a", "select", "link") else "other",
-                "label": label, "nearbyText": nearby,
+                "index": index,
+                "role": role if role in ("button", "a", "select", "link") else "other",
+                "label": (OBSERVED_AVAILABILITY_BUTTON if
+                          normalized_inner_text(raw) == OBSERVED_AVAILABILITY_BUTTON
+                          else None),
+                "labelKeywords": hint["keywordTags"],
+                "nearbyKeywords": nearby["keywordTags"] if nearby else [],
                 "visible": True, "enabled": node.is_enabled(),
             })
             if len(controls) >= MAX_CONTROLS:
@@ -695,7 +703,6 @@ def discover_controls(page: Any) -> list[dict[str, Any]]:
     except Exception:
         pass
     return controls
-
 
 OBSERVED_AVAILABILITY_BUTTON = "Sprawdź dostępność w innym sklepie"
 
