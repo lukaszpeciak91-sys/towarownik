@@ -282,7 +282,7 @@ internal class AdvisorController(
         var turnTraceId: String? = null
         var proxyResult = when (initialCall) {
             is AdvisorProxyCallResult.Success -> {
-                turnTraceId = initialCall.traceId
+                turnTraceId = advisorTraceIdOrNull(initialCall.traceId)
                 observeUsageSafely(
                     usage = initialCall.result.usageOrNull(),
                     webSearchCalls =
@@ -359,7 +359,7 @@ internal class AdvisorController(
                         ) {
                             is AdvisorProxyCallResult.Success -> {
                                 turnTraceId =
-                                    continued.traceId ?: turnTraceId
+                                    advisorTraceIdOrNull(continued.traceId) ?: turnTraceId
                                 observeUsageSafely(
                                     usage =
                                         continued.result.usageOrNull(),
