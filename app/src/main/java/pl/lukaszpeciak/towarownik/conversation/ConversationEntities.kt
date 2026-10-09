@@ -139,10 +139,10 @@ internal data class MessageSearchActionEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
+    primaryKeys = ["messageId", "position"],
     indices = [Index("messageId"), Index(value = ["localId"], unique = true)],
 )
 internal data class MessageAttachmentEntity(
-    @PrimaryKey
     val messageId: Long,
     val type: String,
     val displayName: String,
@@ -152,6 +152,7 @@ internal data class MessageAttachmentEntity(
     val width: Int?,
     val height: Int?,
     val createdAt: Long,
+    val position: Int = 0,
 )
 
 internal data class MessageWithProducts(
