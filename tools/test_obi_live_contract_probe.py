@@ -427,6 +427,41 @@ class MultiMarketResearchTest(unittest.TestCase):
         self.assertFalse(result["productIdentityVerified"])
         self.assertEqual([], result["verifiedProductOwnedRows"])
 
+    def test_conflicting_safe_query_product_id_is_rejected_without_leaking_value(self):
+        raw = self.r.safe_url_request(
+            "GET",
+            "https://www.obi.pl/api/products/3496072/stores"
+            "?productId=3496073&storeNumber=075",
+            None, self.obik, self.stores,
+        )
+        self.assertTrue(raw["query"]["conflictingProductIdentifier"])
+        self.assertNotIn("3496073", json.dumps(raw))
+        record = self.observation(
+            {"list": [{"storeNumber": "075", "stock": 4}]},
+        )
+        record.update(raw)
+        self.assertEqual(
+            "CONFLICT", self.r.product_identity(record, self.obik)
+        )
+
+    def test_qualitative_subset_requires_usable_state_not_null_only(self):
+        unknown = self.observation({"list": [
+            {"storeNumber": "075", "stock": None},
+            {"storeNumber": "003", "stock": None},
+        ]})
+        self.assertEqual(
+            "F_INCONCLUSIVE",
+            self.r.classify_contract([unknown], self.stores, self.obik)["type"],
+        )
+        qualitative = self.observation({"list": [
+            {"storeNumber": "075", "availability": "low"},
+            {"storeNumber": "003", "pickupAvailable": False},
+        ]})
+        self.assertEqual(
+            "B_ONE_SHOT_SUBSET",
+            self.r.classify_contract([qualitative], self.stores, self.obik)["type"],
+        )
+
     def test_request_privacy_filters_sensitive_headers_tokens_urls_and_bodies(self):
         r = self.r
         url = ("https://www.obi.pl/api/products/3496072/stores?"
