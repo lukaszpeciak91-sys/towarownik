@@ -1,9 +1,7 @@
 # KWANT: product availability across locations — live-contract research
 
-Status: **INCONCLUSIVE — first live run confirmed selected-branch search stock, but no per-branch all-locations endpoint has been verified** (9 October 2026).
-This document separates existing repository-backed live evidence from questions still requiring a
-new **manual** Playwright network observation. Do not use this document as permission
-to implement a production stock endpoint or to invent branch quantities.
+Status: **CONFIRMED PUBLIC ONE-SHOT ALL-BRANCH INVENTORY CONTRACT FOR CONTROL PRODUCT 580** — live run #18, 9 October 2026.
+A public frontend request returned 21/21 directory branches including explicit zero-stock rows. This is sufficient research evidence to design a future `find_product_locations` integration, **not** evidence that Taksula already implements it. Exact-product binding, zero-vs-null and central-vs-branch separation remain mandatory in production.
 
 ## Evidence and reproduction
 
@@ -16,14 +14,15 @@ The repository already records live-tested frontend paths (see
 | Canonical product | `GET https://kwant.net.pl/produkt/580` -> canonical `/produkt/<slug>-580` | Product `id=580` must match; product-level `stock` is **central** stock |
 | Selected branch | `GET https://services.kwant.net.pl/api/front/products/580/current?depstock=205` | Root `product_id=580`; nested `department_stock.department_id=205`; nested `stock` is selected-branch quantity |
 | Branch directory | Public `/lista-hurtowni-elektrycznych` Next pageProps `departments.list[]` | `department_id` is `ProviderBranch.branchId`; `name/postcode/street` are display metadata |
+| **All branch stock — run #18** | **`GET https://services.kwant.net.pl/api/front/products/580/departments` with observed query-name `extended`** | Identity bound by singular request path; 21/21 directory IDs, one numeric `stock` each, explicit zeros, 205 = 424. Query value/semantics were not inferred |
 | Branch aggregate | Public product/listing UI `W oddziałach: N szt.` | **Not** a breakdown; historical aggregate; no guarantee that its scope equals the directory |
 
 The exact-product page's central stock must never be added to local or aggregate
 stock. The `/current?depstock` response is scoped to **one** department, not to all
-departments. No discovered live evidence currently proves endpoints of types
-A–D (one-shot list, existing all-branch response, page structured payload, modal
-API), nor rules out type E (one call per department). In particular, **do not infer**
-an all-departments endpoint by removing `depstock` or guessing new paths.
+departments. The separately observed `/products/580/departments` response is
+a **one-shot complete directory stock list for product 580**. Do not infer other
+product availability, optional query-parameter semantics, authentication
+requirements or any guessed URLs from this control-product observation.
 
 ### New browser evidence capture
 
@@ -59,9 +58,11 @@ or missing field values never imply zero.
 exact product identity, at least two verified directory IDs, numeric candidate
 fields, availability-UI trigger and broader directory coverage. The source
 endpoint name/URL never supplies a confidence score. A missing exact product ID
-is **not** equivalent to verified identity. `oneShotPerBranchResponseObserved`
-remains false: a structural candidate is not confirmation of a production
-all-branch endpoint.
+is **not** equivalent to verified identity. `oneShotPerBranchResponseObserved` is true only when the research classifier
+establishes a product-bound one-shot response. Run #18's initial `F_INCONCLUSIVE`
+was caused by incorrectly requiring the response itself to repeat `product_id`
+despite the singular, verified request path. The fix preserves separate identity
+evidence without trusting generic, batch or unrelated click-timing requests.
 
 For an identity-verified structural candidate, `completeness` reports
 `ALL_DIRECTORY_BRANCHES` (all live directory IDs represented),
@@ -72,13 +73,13 @@ candidate quantities), `PARTIAL` (other incomplete subset), or
 verified logistics semantics. Omitted branches are never classified as zero.
 `sumConfirmedObservedBranchStock` is a diagnostic candidate-value sum
 only when *every* observed row uniquely maps to a directory ID and has one
-valid, nonnegative numeric candidate field, with matching product identity;
-it may be a **partial** subtotal. Duplicate fields, unknown/null/invalid
+valid, nonnegative numeric candidate field, with matching product identity **or independently verified one-product request
+scope**; it may be a **partial** subtotal. Duplicate fields, unknown/null/invalid
 quantities, extra unknown branch IDs or unverified product identity block it.
 
 `aggregateReconciliation` is `MATCH` or `MISMATCH`
 only for all-directory-branches coverage, unambiguous numeric candidate
-quantities, exact product identity and a strictly parsed public
+quantities, verified product scope and a strictly parsed public
 `W oddziałach: N szt.` aggregate. Other identity-verified but
 incomparable cases become `NOT_COMPARABLE`; without a
 credible candidate they remain `NOT_EVALUATED`. Neither state
@@ -96,40 +97,19 @@ control product, branch and quantity. Even then this proves only the observed
 control, not all search hits. Stock-like fields alone never justify local
 stock-first ranking. The search classification is not an Advisor authorization.
 
-An unrecognized JSON shape is **unknown**, not an all-branch contract. A browser
-navigation/click error is not proof that no public endpoint exists. No fresh
-live workflow has been executed for this research follow-up.
+An unrecognized JSON shape is **unknown**, not an all-branch contract.
+Run #18 supplies the specific positive evidence described below; no subsequent
+manual live run of the corrected classifier is claimed.
 
-### Evidence checklist still open
+### Evidence status after run #18
 
-- **A/B/C/D vs E:** no one-shot all-branch request verified; frontend modal
-  response method/host/path/body/stock field remain unconfirmed.
-- **Branch IDs/names:** `department_id` → `BranchId` is verified for directory
-  metadata, with historical examples Nowy Sącz `205`, Tarnów `204`,
-  Rzeszów `20`, Kraków `210`. All new availability response IDs must be
-  joined **only** to the live directory, not inferred from display text.
-- **Zero/missing semantics:** confirmed `0` from the existing selected-branch
-  endpoint is real zero; missing, null, mismatched ID, failed request, or
-  malformed stock is **unknown**. A future all-branch result requires its own
-  zero-vs-omitted-branch validation. The observer never interprets omission as zero.
-- **Central:** structured product `product.stock` is a separate central value.
-  It is not a branch, even if a future API includes it in the same body.
-- **Aggregate consistency:** no same-time complete per-branch list captured;
-  therefore the new candidate-value diagnostic comparison remains unevaluated
-  against real data. Only synthetic tests exercise MATCH/MISMATCH/NOT_COMPARABLE.
-  Do not reconcile with synthetic values. Potential exclusions, reservations,
-  update latency, and scope differences are hypotheses, not findings.
-- **Scope/auth:** public unauthenticated product and selected-branch queries are
-  already used by Android. The new all-branch workflow is not verified for
-  authentication, cookies, selected WorkingProfile or changed branch context.
-- **Full vs positive-stock-only:** not verified. An absent directory branch
-  must remain unknown, not zero.
-- **Search payload:** Android consumes `hits[].id/slug/code/name`; whether raw
-  search hits expose reliable selected-branch stock, central/aggregate fields,
-  or a batch inventory service has **not** been live-confirmed. Captured
-  `searchHitFields`, `searchHitStockFields` and `searchRankingEvidence`
-  distinguish fields from independently corroborated stock scope.
-
+- **Confirmed:** product-bound one-shot `GET /api/front/products/580/departments`, response with 21 distinct numeric `department_id` values matching the live 21-branch directory, 21 numeric `stock` values, zero-stock rows, and local branch 205 = 424.
+- **Confirmed:** available-only UI filter changed displayed directory branches from 21 to 18, hid zero-stock rows and generated **no additional API request**. The browser filtered the already-loaded complete list client-side in this run.
+- **Confirmed separately:** selected-branch search `POST /api/front/search-engine/page` with `depstock:205`, corroborated against identity-matched `GET /api/front/products/580/current?depstock=205` for the control product.
+- **Unknown:** whether `extended` changes the returned scope/fields, other products' behavior, cross-session auth/cookie/branch-context independence, or freshness/stock reservations. Do not generalize beyond the observed public frontend contract.
+- **Unreconciled:** no safely bound `W oddziałach` aggregate from the control product to compare with the full response; aggregate mismatch or match must not be fabricated.
+- **Rejected:** generic/related-product quantities and UI-timing-only evidence cannot identify the control product. A missing branch is **unknown**, never zero.
+- **Unproven alternative:** `GET /api/front/products/prices/<ids>?depstock=205` has batch-shaped research evidence but is not needed for the simplest manual-search path.
 
 ## First live run — verified observation and unresolved availability (9 October 2026)
 
@@ -262,6 +242,26 @@ correct stock-row parent opens. **The all-branches contract remains
 unresolved; there is no new post-fix live finding.** No guessed endpoints
 or production network calls were added.
 
+## Live run #18 — confirmed public frontend contract (9 October 2026)
+
+Manual [KWANT live contract probe #37978509979](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37978509979) **succeeded**, head `c0a861a10ef651b8407baa58e43367923ebb1920`. After clicking the verified exact-product availability row for **580 / MBN116E/HAG**, the frontend issued:
+
+```http
+GET https://services.kwant.net.pl/api/front/products/580/departments?extended
+```
+
+The safe network observer recorded the query field name **`extended`**; no semantics or value are invented. Response top-level fields were `list`, `total_stock`, `unit`. The `list` contained **21 rows**, with **21/21 distinct numeric `department_id` values present in the public branch directory**, and one numeric `stock` per row. Several rows contained **literal `0`**, rather than null or omission. **Nowy Sącz / `department_id=205` had `stock=424`**, matching the previously independently verified selected-branch current response. The product identity is fixed by the **singular request path** `/products/580/departments`, even though response top-level `product_id` is omitted.
+
+The availability UI displayed **all 21** directory names. Toggling **„Pokaż tylko oddziały w których produkt jest dostępny”** changed the visible set to **18**, removed zero-stock rows and issued **no new API request**: client-side filtering over the already-fetched full list was observed.
+
+**Contract verdict: `A_ONE_SHOT_ALL_BRANCHES` / `PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE`.** The original run's `F_INCONCLUSIVE` was a probe **identity-propagation false negative**, not missing frontend evidence. Research-only fix passes independently verified request product scope to completeness evaluation and candidate ranking without changing response-internal identity handling. No subsequent live run of that fix has been performed.
+
+This public frontend contract is a credible foundation for a **separate future production `find_product_locations` PR**; provider interface, Android client, Worker, Advisor and UI remain untouched here. Retain a required production gate for exact product ID, trusted URL/host, numeric directory ID, explicit zero/null/missing semantics, bounded single-product lookup and separate central stock.
+
+### Separate manual-search conclusion
+
+Run #18 also preserved `searchRequestDepstockObserved=true` and `SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL`: `POST /api/front/search-engine/page` with selected `depstock=205` provided a product-580 local-stock field independently corroborated by `/products/580/current?depstock=205`. **The future simplest manual search is search with selected `depstock`, then relevance-bounded local-stock ranking, then exact verification of surfaced cards.** This does not require calling the all-branch endpoint for every search hit. Batch `/products/prices/<ids>?depstock=205` remains optional structural research only.
+
 ## Sanitized example (SYNTHETIC, not a captured KWANT response)
 
 The test fixture below describes the **observer's** safe output shape.
@@ -294,10 +294,11 @@ Do not mistake it for a public endpoint schema or real stock quantities.
 one search POST for candidate identities; each independently exact-verified
 KWANT product costs a canonical product-page GET plus one `/current?depstock`
 GET, with shared public directory metadata acquired once per lookup scope.
-A stock-only probe for one *known* product and known branch costs **one** current
-GET; for `B` departments it costs **B** GETs unless another contract is proven.
-For product 580, requesting all directory branches by this fallback would mean
-`B` requests, not a bounded one-shot call. Do not implement unbounded fan-out.
+A stock-only probe for one *known* product and branch costs **one** current
+GET. Previously checking `B` branches via that fallback would mean `B`
+requests; **run #18 instead demonstrated one bounded frontend `/departments`
+GET covering 21/21 branches for product 580**. Do not implement
+per-branch fan-out for multi-location inventory.
 
 **Manual-search recommendation (conditional):**
 
@@ -317,10 +318,11 @@ For product 580, requesting all directory branches by this fallback would mean
    identity-matched branch stock; avoid claiming the entire catalogue has been
    stock-sorted. No production changes in this PR.
 
-A future proven one-product/all-branches API would be roughly **one** request
-per known product (plus identity lookup if needed); absent that, the cost is
-`B` requests per product. This is an estimate, not a measured performance
-benchmark. Search-hit stock or batch stock benefits must be validated before use.
+The **observed** `/departments` lookup costs one frontend request for the
+verified control product and returns its 21-branch breakdown; product identity
+discovery may cost additional requests. Manual-search selected-branch evidence
+comes directly from search with `depstock`; no need to fan out or call
+`/departments` for every hit. No latency benchmark is claimed.
 
 ## Proposed future provider contract (not implemented)
 
@@ -350,8 +352,9 @@ line, hiding zeros vs showing unknowns, and pagination/limits belong above
 provider transport. No synthesized combined total or fabricated branches.
 
 **Advisor recommendation:** introduce a distinct provider-neutral
-`find_product_locations` tool, initially implemented only by KWANT once the
-endpoint is verified and bounded. OBI returns explicit `unsupported_provider`
+`find_product_locations` tool, initially implemented only by KWANT in a
+**separate production PR** using the verified, bounded public
+`/products/{productId}/departments` contract. OBI returns explicit `unsupported_provider`
 until a separate OBI contract is proven. Do **not** overload normal
 `find_products` discovery: only explicit multi-location logistics intent for
 a **verified exact product identity** should permit this lookup. Android keeps
@@ -363,9 +366,9 @@ silently switch WorkingProfile.
 ## Non-goals and acceptance gate
 
 No Android app changes, Worker code, model prompts, protocols, Room, UI,
-or production network calls in this PR. Before a production PR: obtain the
-actual sanitized Playwright evidence, verify the one-shot response against
-the live directory including zero/unknown and completeness, compare a
-same-time full sum to public aggregate without forcing equality, and test
-branch-context/cookie independence and unauthenticated access. If the one-shot
-contract is absent, explicitly reject an unbounded per-branch implementation.
+or production network calls in this PR. The required one-shot observation,
+21/21 live directory mapping and explicit zeros were obtained in run #18.
+Before production: independently validate stable scope across more products
+and branch contexts, bound request/response costs, confirm public access,
+treat missing/null/mismatch as unknown, and reconcile any safely attributed
+aggregate without forcing equality. Reject unbounded branch fan-out.
