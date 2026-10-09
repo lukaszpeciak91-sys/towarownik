@@ -510,6 +510,47 @@ class MultiMarketResearchTest(unittest.TestCase):
         )
         self.assertEqual(0, search.clicks)
 
+    def test_generic_visible_control_inspection_never_logs_arbitrary_addresses(self):
+        r = self.r
+        class Parent:
+            def inner_text(self, timeout=0):
+                return "Dostępność w sklepie Kraków ul. PRIVACY_SECRET 99"
+        class Control:
+            def __init__(self, text):
+                self.text = text
+            def is_visible(self):
+                return True
+            def is_enabled(self):
+                return True
+            def get_attribute(self, name):
+                return "button" if name == "role" else None
+            def inner_text(self, timeout=0):
+                return self.text
+            def locator(self, selector):
+                self.parent_selector = selector
+                return Parent()
+        class Nodes:
+            def __init__(self, nodes):
+                self.nodes = nodes
+            def count(self):
+                return len(self.nodes)
+            def nth(self, index):
+                return self.nodes[index]
+        class Page:
+            def locator(self, selector):
+                return Nodes([
+                    Control("Sprawdź dostępność w innym sklepie"),
+                    Control("Dostępność Kraków ul. PRIVACY_SECRET 99"),
+                ])
+        controls = r.discover_controls(Page())
+        safe = json.dumps(controls, ensure_ascii=False)
+        self.assertIn(r.OBSERVED_AVAILABILITY_BUTTON, safe)
+        self.assertNotIn("Kraków", safe)
+        self.assertNotIn("PRIVACY_SECRET", safe)
+        self.assertNotIn("ul.", safe)
+        self.assertEqual("Sprawdź dostępność w innym sklepie", controls[0]["label"])
+        self.assertIsNone(controls[1]["label"])
+
     def test_initial_empty_sp_and_post_open_rows_are_distinct_action_evidence(self):
         path = "/api/pdp/v1/availability/sp/3496072"
         initial = self.observation(
