@@ -2917,7 +2917,7 @@ def strip_private_search_fields(
 
 # Locations research is deliberately diagnostic only. No endpoint is guessed or
 # requested directly: all API evidence below comes from observed browser traffic.
-LOCATIONS_RESEARCH_MAX_RESPONSES = 35
+LOCATIONS_RESEARCH_MAX_RESPONSES = 85
 LOCATIONS_RESEARCH_MAX_BODY_BYTES = 1_500_000
 LOCATIONS_RESEARCH_MAX_BRANCH_ROWS = 60
 
@@ -3169,6 +3169,280 @@ def research_json_shape(
     return summary
 
 
+
+AVAILABILITY_ARIA_LABEL = "Sprawdź stan i kup towar w oddziałach Kwant"
+AVAILABLE_ONLY_LABEL_RE = re.compile(
+    r"Pokaż\s+tylko\s+oddziały\s+w\s+których\s+produkt\s+jest\s+dostępny",
+    re.I,
+)
+CURRENT_STOCK_PATH = re.compile(r"/api/front/products/([0-9]+)/current\Z")
+BATCH_PRICES_PATH = re.compile(
+    r"/api/front/products/prices/([0-9]+(?:,[0-9]+){1,99})\Z"
+)
+
+
+def availability_button(page: Any) -> Any | None:
+    """Target the proven accessible action, never generic purchase buttons."""
+    pattern = re.compile(r"^Sprawdź stan i kup towar w oddziałach Kwant$", re.I)
+    try:
+        button = page.get_by_role("button", name=pattern)
+        if button.count() != 1:
+            return None
+        target = button.first
+        if target.is_visible() and target.is_enabled():
+            return target
+    except Exception:
+        return None
+    return None
+
+
+def inspect_availability_dom(
+    page: Any,
+    directory: dict[str, str],
+) -> dict[str, Any]:
+    """Bounded UI-only evidence. A visible name never proves a department ID."""
+    result: dict[str, Any] = {
+        "scopedListFound": False, "visibleDirectoryNames": [],
+        "explicitBranchIds": [], "zeroLabelVisible": False,
+        "quantityTextVisible": False, "centralLabelVisible": False,
+        "filterVisible": False,
+    }
+    try:
+        dialogs = page.locator('[role="dialog"],[aria-modal="true"]')
+        scope = None
+        for i in range(min(dialogs.count(), 5)):
+            if dialogs.nth(i).is_visible():
+                scope = dialogs.nth(i)
+                break
+        if scope is None:
+            # The filter is a unique availability-only landmark; avoid body text
+            # or recommendations when a modal has no dialog role.
+            filter_text = page.get_by_text(AVAILABLE_ONLY_LABEL_RE)
+            if filter_text.count() == 1 and filter_text.first.is_visible():
+                scope = filter_text.first.locator("xpath=../..")
+        if scope is None:
+            return result
+        result["scopedListFound"] = True
+        bounded_text = scope.inner_text(timeout=2000)[:16000]
+        result["visibleDirectoryNames"] = [
+            name for name in directory.values()
+            if re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)",
+                         bounded_text, re.I)
+        ][:60]
+        result["zeroLabelVisible"] = bool(
+            re.search(r"\b(?:0\s*szt\.?|brak\s+na\s+stanie)\b",
+                      bounded_text, re.I)
+        )
+        result["quantityTextVisible"] = bool(
+            re.search(r"\b\d{1,8}\s*szt\.?", bounded_text, re.I)
+        )
+        result["centralLabelVisible"] = bool(
+            re.search(r"\bCentrala\b", bounded_text, re.I)
+        )
+        result["filterVisible"] = bool(
+            AVAILABLE_ONLY_LABEL_RE.search(bounded_text)
+        )
+        attrs = scope.locator("[data-department-id],[data-branch-id],[data-depstock]")
+        identifiers: set[str] = set()
+        for i in range(min(attrs.count(), 90)):
+            node = attrs.nth(i)
+            for attr in ("data-department-id", "data-branch-id", "data-depstock"):
+                bid = numeric_branch_id(node.get_attribute(attr))
+                if bid in directory:
+                    identifiers.add(bid)
+        result["explicitBranchIds"] = sorted(identifiers)[:60]
+    except Exception:
+        result["inspectionFailed"] = True
+    return result
+
+
+def classify_availability_filter(
+    before: dict[str, Any], after: dict[str, Any],
+    new_requests: int, toggled: bool,
+) -> dict[str, Any]:
+    state = "NOT_TOGGLED"
+    if toggled:
+        state = "REQUEST_TRIGGERED" if new_requests > 0 else "NO_API_REQUEST_OBSERVED"
+    return {
+        "classification": state,
+        "newObservedApiResponses": max(0, new_requests),
+        "beforeVisibleBranchNameCount": len(before.get("visibleDirectoryNames", [])),
+        "afterVisibleBranchNameCount": len(after.get("visibleDirectoryNames", [])),
+        "beforeZeroVisible": before.get("zeroLabelVisible", False),
+        "afterZeroVisible": after.get("zeroLabelVisible", False),
+    }
+
+
+def extract_exact_product_central_stock(
+    next_payload: Any, expected_id: str,
+) -> dict[str, Any]:
+    """Only main product in structured Next pageProps, never recommendations."""
+    unknown = {"stock": None, "source": "UNKNOWN"}
+    if not isinstance(next_payload, dict):
+        return unknown
+    props = next_payload.get("props")
+    page_props = props.get("pageProps") if isinstance(props, dict) else None
+    product = page_props.get("product") if isinstance(page_props, dict) else None
+    if not isinstance(product, dict):
+        return unknown
+    if str(product.get("id")) != expected_id:
+        return unknown
+    value, state = candidate_quantity(product.get("stock"))
+    if state not in ("known_zero", "known_positive"):
+        return unknown
+    return {
+        "stock": value, "source": "NEXT_DATA_EXACT_PRODUCT_ID",
+        "productIdVerified": True,
+    }
+
+
+def selected_branch_current_diagnostic(
+    observations: list[dict[str, Any]],
+    expected_id: str,
+    branch_id: str,
+) -> dict[str, Any]:
+    """Authorize one quantity only after exact CURRENT root+department match."""
+    unknown = {"stock": None, "source": "UNKNOWN"}
+    for item in reversed(observations):
+        if (
+            item.get("host") != KWANT_SERVICES_HOST
+            or item.get("method") != "GET" or item.get("status") != 200
+            or item.get("path") != f"/api/front/products/{expected_id}/current"
+            or str((item.get("query") or {}).get("safeValues", {}).get("depstock")) != branch_id
+        ):
+            continue
+        shape = item.get("shape", {})
+        if shape.get("productIdentityMatches") is not True:
+            continue
+        valid = [
+            r for r in shape.get("branchRows", [])
+            if r.get("jsonPath") == "$.department_stock"
+            and r.get("branchId") == branch_id
+            and r.get("candidateField") == "stock"
+            and r.get("candidateState") in ("known_zero", "known_positive")
+        ]
+        if len(valid) == 1:
+            return {
+                "stock": valid[0]["candidateValue"],
+                "source": "CURRENT_IDENTITY_AND_DEPSTOCK_VERIFIED",
+            }
+    return unknown
+
+
+def request_bound_product_identity(
+    observation: dict[str, Any], expected_id: str,
+) -> bool:
+    """Path/body may bind one product; prices/multi IDs are not such binding."""
+    shape = observation.get("shape") or {}
+    if shape.get("productIdentityMatches") is True:
+        return True
+    path = observation.get("path", "")
+    # Only a singular observed /products/<id>/... path qualifies.
+    if re.search(r"/api/front/products/" + re.escape(expected_id) + r"(?:/|$)", path):
+        return True
+    body = (observation.get("body") or {}).get("safeValues") or {}
+    return (
+        str(body.get("product_id", "")) == expected_id
+        or str(body.get("productId", "")) == expected_id
+    )
+
+
+def classify_locations_contract(
+    observations: list[dict[str, Any]],
+    directory: dict[str, str], expected_id: str,
+    product_page_shape: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preliminary A-F classification; no automatic production validation."""
+    outcome = {"type": "F_INCONCLUSIVE", "reason": "INSUFFICIENT_PRODUCT_BOUND_EVIDENCE"}
+    if not directory:
+        return outcome
+    page_shape = product_page_shape or {}
+    if (
+        page_shape.get("productIdentityMatches") is True
+        and evaluate_candidate_coverage(page_shape, directory)["completeness"]
+        == "ALL_DIRECTORY_BRANCHES"
+    ):
+        return {"type": "C_FRONTEND_PRELOADED", "reason": "VERIFIED_PAGE_PRODUCT_AND_DIRECTORY_ROWS"}
+    scoped = [
+        item for item in observations
+        if item.get("action", "").startswith("locations:")
+        and request_bound_product_identity(item, expected_id)
+    ]
+    multi = [
+        item for item in scoped
+        if (item.get("shape") or {}).get("verifiedDirectoryBranchCount", 0) >= 2
+    ]
+    if len(multi) == 1:
+        coverage = evaluate_candidate_coverage(multi[0]["shape"], directory)
+        if coverage["sumConfirmedObservedBranchStock"] is not None:
+            if coverage["completeness"] == "ALL_DIRECTORY_BRANCHES":
+                return {"type": "A_ONE_SHOT_ALL_BRANCHES", "reason": "ONE_PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE"}
+            if coverage["completeness"] == "POSITIVE_ONLY_CANDIDATE":
+                return {"type": "B_ONE_SHOT_POSITIVE_ONLY", "reason": "CANDIDATE_ONLY_POSITIVE_SUBSET_NOT_PROOF_OF_ZERO_OMISSIONS"}
+    if len(multi) > 1 and len(multi) <= 5:
+        combined_ids = set()
+        for item in multi:
+            for row in item["shape"].get("branchRows", []):
+                if row.get("branchKnownInDirectory"):
+                    combined_ids.add(row["branchId"])
+        if combined_ids == set(directory):
+            return {"type": "D_MULTI_REQUEST_BOUNDED", "reason": "MULTIPLE_PRODUCT_BOUND_RESPONSES_COVER_DIRECTORY"}
+    depstocks: set[str] = set()
+    for item in scoped:
+        match = CURRENT_STOCK_PATH.fullmatch(item.get("path", ""))
+        depstock = str((item.get("query") or {}).get("safeValues", {}).get("depstock"))
+        if match and match.group(1) == expected_id and depstock in directory:
+            depstocks.add(depstock)
+    if len(depstocks) >= 3:
+        return {"type": "E_PER_BRANCH_FANOUT", "reason": "THREE_OR_MORE_DISTINCT_BRANCH_SCOPED_REQUESTS",
+                "distinctBranchRequestCount": len(depstocks)}
+    return outcome
+
+
+def batch_prices_stock_evidence(
+    path: str, data: Any, expected_id: str,
+) -> dict[str, Any] | None:
+    """Observe only confirmed per-row product identity, never infer joins by index."""
+    match = BATCH_PRICES_PATH.fullmatch(path)
+    if not match:
+        return None
+    ids = match.group(1).split(",")
+    payload = data.get("list") if isinstance(data, dict) else data
+    rows = payload if isinstance(payload, list) else []
+    control_rows = []
+    identity_rows = 0
+    scoped_rows = 0
+    for entry in rows[:120]:
+        if not isinstance(entry, dict):
+            continue
+        identity = entry.get("product_id", entry.get("id"))
+        if type(identity) not in (int, str) or not str(identity).isdigit():
+            continue
+        identity_rows += 1
+        department = entry.get("department_stock")
+        if isinstance(department, dict):
+            bid, _ = observed_branch_identity(department)
+            quantity, state = candidate_quantity(
+                department.get("stock")
+            )
+            if bid is not None and state in ("known_zero", "known_positive"):
+                scoped_rows += 1
+                if str(identity) == expected_id:
+                    control_rows.append({"branchId": bid, "stock": quantity})
+    return {
+        "requestedProductIdCount": len(ids),
+        "responseRowCount": len(rows),
+        "identityBoundRowCount": identity_rows,
+        "departmentStockRowCount": scoped_rows,
+        "controlProductRows": control_rows[:3],
+        "usableBatchCandidate": (
+            bool(rows) and identity_rows == len(rows)
+            and scoped_rows == len(rows)
+        ),
+        "status": "STRUCTURAL_CANDIDATE_NOT_PRODUCTION_VERIFIED",
+    }
+
+
 def parse_public_aggregate_quantity(value: Any) -> int | None:
     if not isinstance(value, str):
         return None
@@ -3381,9 +3655,19 @@ class ObservedLocationsResponses:
         self.records: list[dict[str, Any]] = []
 
     def on_response(self, response: Any) -> None:
+        action = self.recorder.action
+        # Reserve response capacity for the availability action; page startup
+        # calls must not exhaust the diagnostic budget before the UI click.
         if len(self.records) >= LOCATIONS_RESEARCH_MAX_RESPONSES:
             return
-        action = self.recorder.action
+        if (
+            not action.startswith("locations:")
+            and (
+                sum(not r["action"].startswith("locations:")
+                    for r in self.records) >= 35
+            )
+        ):
+            return
         if not (
             action.startswith("search:")
             or action.startswith("product:")
@@ -3397,6 +3681,13 @@ class ObservedLocationsResponses:
         if not ok:
             return
         parsed = urlsplit(safe)
+        if (
+            not action.startswith("locations:")
+            and parsed.path != KWANT_SEARCH_API_PATH
+            and not CURRENT_STOCK_PATH.fullmatch(parsed.path)
+            and not BATCH_PRICES_PATH.fullmatch(parsed.path)
+        ):
+            return
         # The observer records existing service calls, never probes invented URLs.
         if (
             parsed.hostname != KWANT_SERVICES_HOST
@@ -3421,6 +3712,9 @@ class ObservedLocationsResponses:
             # A failed browser response read must not break the whole probe.
             return
         summary = research_json_shape(data, self.product_id, self.directory)
+        batch_evidence = batch_prices_stock_evidence(
+            parsed.path, data, self.product_id
+        )
         method = str(getattr(request, "method", "")).upper()
         req_headers = getattr(request, "headers", {}) or {}
         self.records.append({
@@ -3436,6 +3730,7 @@ class ObservedLocationsResponses:
                 action=action,
             ),
             "shape": summary,
+            **({"batchPrices": batch_evidence} if batch_evidence else {}),
         })
 
 
