@@ -62,9 +62,13 @@ def canonical_stores(kotlin_path: Path) -> dict[str, dict[str, str]]:
     """Read exactly the production OBI_STORES declarations, never own IDs."""
     source = kotlin_path.read_text(encoding="utf-8")
     entries = re.findall(
-        r'ObiStoreMetadata\(\s*"(\d{3})"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"',
+        r'ObiStoreMetadata\(\s*"(\d{3})"\s*,\s*"((?:\\.|[^"\\])*)"\s*,\s*"((?:\\.|[^"\\])*)"',
         source,
     )
+    entries = [
+        (number, city.replace('\\"', '"'), address.replace('\\"', '"'))
+        for number, city, address in entries
+    ]
     if len(entries) < 50 or len({number for number, _, _ in entries}) != len(entries):
         raise ValueError("Canonical OBI_STORES missing, truncated or duplicated")
     return {number: {"city": city, "address": address} for number, city, address in entries}
