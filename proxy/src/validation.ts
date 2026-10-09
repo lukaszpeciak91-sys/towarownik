@@ -20,6 +20,10 @@ import {
   START_MESSAGE_MAX_CHARS,
   ATTACHMENT_MAX_BYTES,
   MULTIPART_BODY_MAX_BYTES,
+  MULTI_MULTIPART_BODY_MAX_BYTES,
+  MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION,
+  MULTI_ATTACHMENT_PROTOCOL_HEADER,
+  MAX_MULTI_ATTACHMENTS,
 } from "./config.js";
 import type {
   AdvisorProtocolVersion,
@@ -71,6 +75,7 @@ export interface StartRequest {
   branchId: string;
   storeNumber: string;
   attachment?: AdvisorAttachment;
+  attachments?: AdvisorAttachment[];
 }
 
 export interface MessageRequest extends StartRequest {
@@ -121,6 +126,9 @@ export async function parseStartRequest(
   const value = await readJsonBody(request, START_BODY_MAX_BYTES);
   const record = requireRecord(value);
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
+  if (protocolVersion === MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION) {
+    throw new InvalidRequestError(protocolVersion);
+  }
 
   return withProtocolContext(protocolVersion, () => {
     if (protocolVersion >= PROVIDER_ADVISOR_PROTOCOL_VERSION) {
@@ -165,6 +173,9 @@ export async function parseMessageRequest(
   const value = await readJsonBody(request, MESSAGE_BODY_MAX_BYTES);
   const record = requireRecord(value);
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
+  if (protocolVersion === MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION) {
+    throw new InvalidRequestError(protocolVersion);
+  }
 
   return withProtocolContext(protocolVersion, () => {
     if (protocolVersion >= PROVIDER_ADVISOR_PROTOCOL_VERSION) {
@@ -697,7 +708,8 @@ function validateProtocolVersion(
     value === LEGACY_ADVISOR_PROTOCOL_VERSION ||
     value === OBI_GROUPED_ADVISOR_PROTOCOL_VERSION ||
     value === PROVIDER_ADVISOR_PROTOCOL_VERSION ||
-    value === CURRENT_ADVISOR_PROTOCOL_VERSION
+    value === CURRENT_ADVISOR_PROTOCOL_VERSION ||
+    value === MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION
   ) {
     return value;
   }
