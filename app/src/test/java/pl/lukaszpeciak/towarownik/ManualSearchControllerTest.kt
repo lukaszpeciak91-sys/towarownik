@@ -936,8 +936,10 @@ class ManualSearchControllerTest {
         branchId: String,
         quantities: Map<String, Pair<Int?, Int?>>,
     ): ManualSearchController {
+        val expectedProviderId = providerId
+        val expectedBranchId = branchId
         val provider = object : ProductProvider {
-            override val providerId: ProviderId = providerId
+            override val providerId: ProviderId = expectedProviderId
 
             override fun branches(): ProviderBranchResult =
                 ProviderBranchResult.Available(
@@ -965,7 +967,7 @@ class ManualSearchControllerTest {
                 )
 
             override fun lookup(ref: ProductRef, branchId: BranchId): ProviderLookupResult {
-                if (ref.providerId != providerId || branchId.value != branchId) {
+                if (ref.providerId != providerId || branchId.value != expectedBranchId) {
                     return ProviderLookupResult.WrongProvider(ref)
                 }
                 val (local, central) = quantities.getValue(ref.productId)
