@@ -42,13 +42,63 @@ workflow selecting **this research branch** and the defaults `580`, `MBN116E`,
 cookies, secret-bearing URLs, or account data. The existing raw HTML artifacts
 are short-lived (1 day). This research does **not** make CI contact live KWANT.
 
-The observer exposes `productIdentityMatches`, `branchRows[]`, directory-ID
-membership, confirmed `known_zero` / `known_positive` / `unknown_null` /
-`invalid` field distinctions and search-hit field names. An unrecognized JSON
-shape is **unknown**, not an all-branch contract. An observed response containing
-multiple different directory IDs is only a *candidate* until product identity,
-branch scope, and completeness are proven. A browser navigation/click error is
-not proof that no public endpoint exists.
+The observer exposes `productIdentityMatches`, `branchRows[]`, live-directory ID
+membership and **candidate** `candidateField` / `candidateValue` /
+`candidateState` for `known_zero`, `known_positive`,
+`unknown_null` and `invalid`. The explicit bounded diagnostic field
+vocabulary accepts `stock`, `stock_num`, `stockNum` and other
+clearly stock-shaped spellings, not arbitrary quantity or account fields.
+The identity probe also accepts `department_id`, `department_stock_id`,
+`departmentId` and `departmentStockId`. Numeric IDs are joined **only**
+to the verified public directory. Field names and numeric values are hypotheses
+about inventory, not production-authoritative stock facts. Unknown/omitted IDs
+or missing field values never imply zero.
+
+`observedResponses[]` preserves all bounded sanitized frontend responses;
+`strongestCandidate` is a separate deterministic diagnostic ranking by:
+exact product identity, at least two verified directory IDs, numeric candidate
+fields, availability-UI trigger and broader directory coverage. The source
+endpoint name/URL never supplies a confidence score. A missing exact product ID
+is **not** equivalent to verified identity. `oneShotPerBranchResponseObserved`
+remains false: a structural candidate is not confirmation of a production
+all-branch endpoint.
+
+For an identity-verified structural candidate, `completeness` reports
+`ALL_DIRECTORY_BRANCHES` (all live directory IDs represented),
+`POSITIVE_ONLY_CANDIDATE` (proper subset, only numeric positive
+candidate quantities), `PARTIAL` (other incomplete subset), or
+`UNKNOWN` (insufficient product/branch evidence). This is a
+**directory-ID coverage diagnostic**, not a statement that a stock field has
+verified logistics semantics. Omitted branches are never classified as zero.
+`sumConfirmedObservedBranchStock` is a diagnostic candidate-value sum
+only when *every* observed row uniquely maps to a directory ID and has one
+valid, nonnegative numeric candidate field, with matching product identity;
+it may be a **partial** subtotal. Duplicate fields, unknown/null/invalid
+quantities, extra unknown branch IDs or unverified product identity block it.
+
+`aggregateReconciliation` is `MATCH` or `MISMATCH`
+only for all-directory-branches coverage, unambiguous numeric candidate
+quantities, exact product identity and a strictly parsed public
+`W oddziałach: N szt.` aggregate. Other identity-verified but
+incomparable cases become `NOT_COMPARABLE`; without a
+credible candidate they remain `NOT_EVALUATED`. Neither state
+proves that a candidate field corresponds to the storefront's actual
+per-branch sellable stock; matching an aggregate is diagnostic, not a contract.
+Never force equality or invent the reason for a mismatch.
+
+`searchRankingEvidence` distinguishes `NO_STOCK_FIELD_OBSERVED`,
+`CENTRAL_OR_AGGREGATE_LOOKING_ONLY`,
+`STOCK_SHAPED_SCOPE_UNKNOWN` and
+`SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL`. The last classification
+requires an exact product-and-branch hit candidate **corroborated by an
+independently observed existing `/current?depstock` response** for the same
+control product, branch and quantity. Even then this proves only the observed
+control, not all search hits. Stock-like fields alone never justify local
+stock-first ranking. The search classification is not an Advisor authorization.
+
+An unrecognized JSON shape is **unknown**, not an all-branch contract. A browser
+navigation/click error is not proof that no public endpoint exists. No fresh
+live workflow has been executed for this research follow-up.
 
 ### Evidence checklist still open
 
@@ -65,7 +115,8 @@ not proof that no public endpoint exists.
 - **Central:** structured product `product.stock` is a separate central value.
   It is not a branch, even if a future API includes it in the same body.
 - **Aggregate consistency:** no same-time complete per-branch list captured;
-  therefore `sum(confirmed branch stocks)` vs `W oddziałach` cannot be evaluated.
+  therefore the new candidate-value diagnostic comparison remains unevaluated
+  against real data. Only synthetic tests exercise MATCH/MISMATCH/NOT_COMPARABLE.
   Do not reconcile with synthetic values. Potential exclusions, reservations,
   update latency, and scope differences are hypotheses, not findings.
 - **Scope/auth:** public unauthenticated product and selected-branch queries are
@@ -76,7 +127,8 @@ not proof that no public endpoint exists.
 - **Search payload:** Android consumes `hits[].id/slug/code/name`; whether raw
   search hits expose reliable selected-branch stock, central/aggregate fields,
   or a batch inventory service has **not** been live-confirmed. Captured
-  `searchHitFields` and `searchHitStockFields` are intended to settle this.
+  `searchHitFields`, `searchHitStockFields` and `searchRankingEvidence`
+  distinguish fields from independently corroborated stock scope.
 
 ## Sanitized example (SYNTHETIC, not a captured KWANT response)
 
@@ -91,10 +143,14 @@ Do not mistake it for a public endpoint schema or real stock quantities.
   "shape": {
     "productIdentityMatches": true,
     "branchRows": [
-      {"branchId": "205", "branchNameFromDirectory": "Nowy Sącz",
-       "branchKnownInDirectory": true, "stock": 0, "stockState": "known_zero"},
-      {"branchId": "204", "branchNameFromDirectory": "Tarnów",
-       "branchKnownInDirectory": true, "stock": 18, "stockState": "known_positive"}
+      {"branchId": "205", "branchIdField": "department_id",
+       "branchNameFromDirectory": "Nowy Sącz", "branchKnownInDirectory": true,
+       "jsonPath": "$.branches[]", "candidateField": "stock_num",
+       "candidateValue": 0, "candidateState": "known_zero"},
+      {"branchId": "204", "branchIdField": "departmentId",
+       "branchNameFromDirectory": "Tarnów", "branchKnownInDirectory": true,
+       "jsonPath": "$.branches[]", "candidateField": "stockNum",
+       "candidateValue": 18, "candidateState": "known_positive"}
     ]
   }
 }
