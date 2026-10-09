@@ -752,6 +752,29 @@ class MultiMarketResearchTest(unittest.TestCase):
             self.r.classify_contract([qualitative], self.stores, self.obik)["type"],
         )
 
+    def test_safe_path_redacts_short_session_or_tracking_identifiers(self):
+        url = (
+            "https://www.obi.pl/api/session/abc12def34"
+            "/availability/sp/3496072?storeNumber=075"
+        )
+        safe = self.r.safe_url_request(
+            "GET", url, None, self.obik, self.stores
+        )
+        self.assertIsNotNone(safe)
+        self.assertNotIn("abc12def34", json.dumps(safe))
+        self.assertNotIn("/session/", safe["path"])
+        self.assertIn("/availability/sp/3496072", safe["path"])
+        real_sp = self.r.safe_url_request(
+            "GET",
+            "https://www.obi.pl/api/pdp/v1/availability/sp/3496072"
+            "?postalCode=SECRET&quantity=1",
+            None, self.obik, self.stores,
+        )
+        self.assertEqual(
+            "/api/pdp/v1/availability/sp/3496072", real_sp["path"]
+        )
+        self.assertNotIn("SECRET", json.dumps(real_sp))
+
     def test_request_privacy_filters_sensitive_headers_tokens_urls_and_bodies(self):
         r = self.r
         url = ("https://www.obi.pl/api/products/3496072/stores?"
