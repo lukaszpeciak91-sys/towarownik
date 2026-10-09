@@ -1815,7 +1815,7 @@ class LocationsResearchTest(unittest.TestCase):
             ["known_zero", "known_positive", "unknown_null", "invalid"],
             [r["stockState"] for r in rows],
         )
-        self.assertEqual([0, 18, None, None], [r["stock"] for r in rows])
+        self.assertEqual([0, 18, None, None], [r["candidateValue"] for r in rows])
         self.assertEqual([True, True, False, False],
                          [r["branchKnownInDirectory"] for r in rows])
         self.assertNotIn("name", str(shape))
@@ -1876,6 +1876,315 @@ class LocationsResearchTest(unittest.TestCase):
         }, "580", {"205": "Nowy Sącz"})
         self.assertNotIn(secret, json.dumps(shape, ensure_ascii=False))
         self.assertNotIn("sessionToken", shape["rootFields"])
+
+
+class LocationsFollowupResearchTest(unittest.TestCase):
+    DIRECTORY = {"205": "Nowy Sącz", "204": "Tarnów", "20": "Rzeszów"}
+
+    def shape(self, rows, *, product_id=580):
+        return probe.research_json_shape(
+            {"product_id": product_id, "branches": rows},
+            "580",
+            self.DIRECTORY,
+        )
+
+    @staticmethod
+    def observation(shape, *, action="locations:availability", path="/observed"):
+        return {
+            "action": action,
+            "host": probe.KWANT_SERVICES_HOST,
+            "path": path,
+            "method": "GET",
+            "status": 200,
+            "shape": shape,
+        }
+
+    def test_snake_case_stock_stays_diagnostic(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_stock_id": 204, "stock": 18},
+        ])
+        self.assertEqual(["stock", "stock"],
+                         [x["candidateField"] for x in shape["branchRows"]])
+        self.assertEqual(
+            ["department_id", "department_stock_id"],
+            [x["branchIdField"] for x in shape["branchRows"]],
+        )
+        self.assertEqual([0, 18],
+                         [x["candidateValue"] for x in shape["branchRows"]])
+        self.assertEqual(
+            ["known_zero", "known_positive"],
+            [x["candidateState"] for x in shape["branchRows"]],
+        )
+
+    def test_alternative_quantity_and_camel_case(self):
+        shape = self.shape([
+            {"department_id": 205, "stock_num": 0},
+            {"departmentId": 204, "stockNum": 18},
+            {"departmentStockId": 20, "availableStock": 5},
+        ])
+        self.assertEqual(
+            ["stock_num", "stockNum", "availableStock"],
+            [row["candidateField"] for row in shape["branchRows"]],
+        )
+        self.assertEqual(
+            ["205", "204", "20"],
+            [row["branchId"] for row in shape["branchRows"]],
+        )
+        self.assertTrue(all(row["branchKnownInDirectory"]
+                            for row in shape["branchRows"]))
+
+    def test_null_and_invalid_quantities_never_coerce(self):
+        shape = self.shape([
+            {"department_id": 205, "stock_num": None},
+            {"departmentId": 204, "stockNum": "12"},
+            {"departmentId": 20, "stockNum": True},
+        ])
+        self.assertEqual(
+            ["unknown_null", "invalid", "invalid"],
+            [row["candidateState"] for row in shape["branchRows"]],
+        )
+        self.assertEqual(
+            [None, None, None],
+            [row["candidateValue"] for row in shape["branchRows"]],
+        )
+
+    def test_unknown_and_conflicting_identity_does_not_map_by_name(self):
+        shape = self.shape([
+            {"departmentId": 999, "name": "Nowy Sącz", "stock": 7},
+            {"department_id": 205, "departmentId": 204, "stock": 12},
+            {"name": "Nowy Sącz", "stock": 3},
+        ])
+        self.assertEqual(1, shape["branchRowCountCaptured"])
+        self.assertEqual("999", shape["branchRows"][0]["branchId"])
+        self.assertFalse(shape["branchRows"][0]["branchKnownInDirectory"])
+
+    def test_candidate_names_paths_and_values_are_privacy_safe(self):
+        secret = "PRIVATE_EMAIL_SUPER_SECRET"
+        shape = self.shape([{
+            "department_id": 205, "stock_num": 4,
+            "authToken": secret,
+            "access_token": secret,
+            "stock@private": secret,
+            "clientEmail": secret,
+            "password": secret,
+        }])
+        rendered = json.dumps(shape, ensure_ascii=False)
+        self.assertNotIn(secret, rendered)
+        self.assertNotIn("authToken", rendered)
+        self.assertNotIn("stock@private", rendered)
+        self.assertNotIn("password", rendered)
+        self.assertEqual(1, len(shape["branchRows"]))
+
+    def test_complete_directory_coverage_with_zero(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock_num": 18},
+            {"departmentId": 20, "stockNum": 7},
+        ])
+        coverage = probe.evaluate_candidate_coverage(shape, self.DIRECTORY)
+        self.assertEqual("ALL_DIRECTORY_BRANCHES", coverage["completeness"])
+        self.assertEqual(25, coverage["sumConfirmedObservedBranchStock"])
+
+    def test_positive_only_is_candidate_not_proven_omitted_zeros(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 4},
+            {"department_id": 204, "stock": 18},
+        ])
+        coverage = probe.evaluate_candidate_coverage(shape, self.DIRECTORY)
+        self.assertEqual("POSITIVE_ONLY_CANDIDATE", coverage["completeness"])
+        self.assertEqual(22, coverage["sumConfirmedObservedBranchStock"])
+
+    def test_partial_zero_and_unverified_product_scope(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"departmentId": 204, "stock": 18},
+        ])
+        self.assertEqual(
+            "PARTIAL",
+            probe.evaluate_candidate_coverage(shape, self.DIRECTORY)["completeness"],
+        )
+        wrong = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"departmentId": 204, "stock": 18},
+            {"departmentId": 20, "stock": 7},
+        ], product_id=581)
+        self.assertEqual(
+            probe.UNKNOWN,
+            probe.evaluate_candidate_coverage(wrong, self.DIRECTORY)["completeness"],
+        )
+        unknown = probe.research_json_shape(
+            [{"department_id": 205, "stock": 0},
+             {"department_id": 204, "stock": 18},
+             {"department_id": 20, "stock": 7}],
+            "580",
+            self.DIRECTORY,
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            probe.evaluate_candidate_coverage(unknown, self.DIRECTORY)["completeness"],
+        )
+
+    def test_match_and_mismatch_are_observations_not_failure(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock_num": 18},
+            {"departmentId": 20, "stockNum": 7},
+        ])
+        result = probe.select_strongest_location_candidate(
+            [self.observation(shape)], self.DIRECTORY, "25 szt."
+        )
+        self.assertEqual("MATCH", result["aggregateReconciliation"])
+        self.assertEqual(25, result["parsedAggregateBranchStock"])
+        self.assertEqual(25, result["sumConfirmedObservedBranchStock"])
+        mismatch = probe.select_strongest_location_candidate(
+            [self.observation(shape)], self.DIRECTORY, "26 szt."
+        )
+        self.assertEqual("MISMATCH", mismatch["aggregateReconciliation"])
+        self.assertEqual(25, mismatch["sumConfirmedObservedBranchStock"])
+        self.assertEqual(26, mismatch["parsedAggregateBranchStock"])
+
+    def test_missing_null_and_duplicate_quantity_prevent_reconciliation(self):
+        for rows in (
+            [{"department_id": 205, "stock": 0},
+             {"department_id": 204, "stock_num": None},
+             {"department_id": 20, "stock": 7}],
+            [{"department_id": 205, "stock": 0, "stock_num": 0},
+             {"department_id": 204, "stock": 18},
+             {"department_id": 20, "stock": 7}],
+            [{"department_id": 205, "stock": 0},
+             {"department_id": 204, "stock": "18"},
+             {"department_id": 20, "stock": 7}],
+        ):
+            with self.subTest(rows=rows):
+                shape = self.shape(rows)
+                result = probe.select_strongest_location_candidate(
+                    [self.observation(shape)], self.DIRECTORY, "25 szt."
+                )
+                self.assertEqual("NOT_COMPARABLE",
+                                 result["aggregateReconciliation"])
+                self.assertIsNone(result["sumConfirmedObservedBranchStock"])
+        partial = self.shape([
+            {"department_id": 205, "stock": 4},
+            {"department_id": 204, "stock": 18},
+        ])
+        result = probe.select_strongest_location_candidate(
+            [self.observation(partial)], self.DIRECTORY, "22 szt."
+        )
+        self.assertEqual("NOT_COMPARABLE", result["aggregateReconciliation"])
+        self.assertEqual(22, result["sumConfirmedObservedBranchStock"])
+
+    def test_invalid_aggregate_and_no_response_stay_not_comparable_or_evaluated(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock": 18},
+            {"department_id": 20, "stock": 7},
+        ])
+        result = probe.select_strongest_location_candidate(
+            [self.observation(shape)], self.DIRECTORY, "1,5 szt."
+        )
+        self.assertEqual("NOT_COMPARABLE", result["aggregateReconciliation"])
+        self.assertIsNone(result["parsedAggregateBranchStock"])
+        absent = probe.select_strongest_location_candidate(
+            [], self.DIRECTORY, "25 szt."
+        )
+        self.assertEqual("NOT_EVALUATED", absent["aggregateReconciliation"])
+        self.assertIsNone(absent["strongestCandidate"])
+
+    def test_strongest_candidate_identity_then_quantity_then_ui_then_coverage(self):
+        weak = self.shape([
+            {"department_id": 205, "stock": 4},
+            {"department_id": 204, "stock": 18},
+            {"department_id": 20, "stock": 7},
+        ], product_id=581)
+        strong = self.shape([
+            {"department_id": 205, "stock_num": 4},
+            {"departmentId": 204, "stockNum": 18},
+        ])
+        observations = [
+            self.observation(weak, action="locations:availability",
+                             path="/looks-strong-but-is-wrong"),
+            self.observation(strong, action="locations:page",
+                             path="/random-A"),
+            self.observation(strong, action="locations:availability",
+                             path="/random-Z"),
+        ]
+        best = probe.select_strongest_location_candidate(
+            observations, self.DIRECTORY, "22 szt."
+        )
+        self.assertEqual(2, best["strongestCandidate"]["observationIndex"])
+        self.assertTrue(best["strongestCandidate"]["productIdentityVerified"])
+        self.assertTrue(best["strongestCandidate"]["uiTriggered"])
+        self.assertEqual(
+            "POSITIVE_ONLY_CANDIDATE", best["completeness"]
+        )
+        self.assertEqual("NOT_COMPARABLE", best["aggregateReconciliation"])
+        tied = probe.select_strongest_location_candidate(
+            [
+                self.observation(strong, path="/z"),
+                self.observation(strong, path="/a"),
+            ], self.DIRECTORY, "22 szt."
+        )
+        self.assertEqual(0, tied["strongestCandidate"]["observationIndex"])
+
+    def test_search_stock_conclusions_are_scope_conservative(self):
+        def search(fields):
+            return self.observation(
+                probe.research_json_shape(
+                    {"hits": [{"id": 580, **fields}]}, "580", self.DIRECTORY,
+                ),
+                action="search:article",
+            )
+        for fields, expected in (
+            ({}, "NO_STOCK_FIELD_OBSERVED"),
+            ({"central_stock": 4, "aggregateBranchStock": 100},
+             "CENTRAL_OR_AGGREGATE_LOOKING_ONLY"),
+            ({"stock_num": 4}, "STOCK_SHAPED_SCOPE_UNKNOWN"),
+        ):
+            with self.subTest(fields=fields):
+                evidence = probe.summarize_search_ranking_evidence(
+                    [search(fields)], self.DIRECTORY, "580"
+                )
+                self.assertFalse(evidence["selectedBranchStockProven"])
+                self.assertEqual(expected, evidence["stockScope"])
+
+    def test_selected_branch_proof_requires_independent_current_corrob(self):
+        search_shape = probe.research_json_shape(
+            {"hits": [{"id": 580, "departmentId": 205, "stockNum": 4}]},
+            "580", {},
+        )
+        search = self.observation(search_shape, action="search:article")
+        current_shape = self.shape([
+            {"department_id": 205, "stock": 4},
+        ])
+        # CURRENT JSON is rooted at department_stock, not a branch list.
+        current_shape = probe.research_json_shape(
+            {"product_id": 580, "department_stock": {
+                "department_id": 205, "stock": 4,
+            }},
+            "580", self.DIRECTORY,
+        )
+        current = self.observation(current_shape, action="product:after",
+                                   path="/api/front/products/580/current")
+        current["query"] = {"safeValues": {"depstock": "205"}}
+        unknown = probe.summarize_search_ranking_evidence(
+            [search], self.DIRECTORY, "580"
+        )
+        self.assertEqual("STOCK_SHAPED_SCOPE_UNKNOWN", unknown["stockScope"])
+        corroborated = probe.summarize_search_ranking_evidence(
+            [search, current], self.DIRECTORY, "580"
+        )
+        self.assertTrue(corroborated["selectedBranchStockProven"])
+        self.assertEqual(
+            "SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL",
+            corroborated["stockScope"],
+        )
+        current["query"] = {"safeValues": {"depstock": "204"}}
+        not_proven = probe.summarize_search_ranking_evidence(
+            [search, current], self.DIRECTORY, "580"
+        )
+        self.assertFalse(not_proven["selectedBranchStockProven"])
+
 
 if __name__ == "__main__":
     unittest.main()
