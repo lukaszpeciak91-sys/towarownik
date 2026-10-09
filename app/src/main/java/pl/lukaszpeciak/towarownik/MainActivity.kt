@@ -1196,9 +1196,13 @@ private fun TowarownikApp() {
                             conversationId = reportConversationId,
                             reportedMessageId = reportMessageId,
                             advisorFailureDiagnostic =
-                                (advisorState as? AdvisorUiState.Error)
-                                    ?.diagnostic
-                                    ?.reportValue(),
+                                advisorFailureDiagnosticForReport(
+                                    type = reportType,
+                                    currentFailureDiagnostic =
+                                        (advisorState as? AdvisorUiState.Error)
+                                            ?.diagnostic
+                                            ?.reportValue(),
+                                ),
                         )
                         val result = createProblemReportSharePayload(
                             context = uiContext,
