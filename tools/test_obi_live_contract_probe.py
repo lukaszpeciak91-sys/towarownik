@@ -387,6 +387,38 @@ class MultiMarketResearchTest(unittest.TestCase):
         self.assertEqual("F_INCONCLUSIVE",
             self.r.classify_contract([], self.stores, self.obik, result)["type"])
 
+    def test_flattened_nuxt_product_owned_references_preserve_real_zero(self):
+        # Here the sku, list, two rows, ID and stock values are all
+        # referenced from flattened Nuxt entries; zero is a VALUE, not
+        # the next top-level index to follow.
+        root = [
+            {"data": 1},
+            {"skuId": 2, "storeAvailability": 3},
+            "3496072",
+            [4, 5],
+            {"storeNumber": 6, "stock": 7},
+            {"storeNumber": 8, "availability": 9},
+            "075",
+            0,
+            "003",
+            "available",
+        ]
+        html = (
+            '<script id="__NUXT_DATA__" type="application/json">'
+            + json.dumps(root) + "</script>"
+        )
+        result = self.r.inspect_initial_nuxt(html, self.obik, self.stores)
+        self.assertTrue(result["productIdentityVerified"])
+        self.assertEqual(2, len(result["verifiedProductOwnedRows"]))
+        first = result["verifiedProductOwnedRows"][0]
+        self.assertEqual("075", first["storeNumber"])
+        self.assertEqual("known_zero", first["state"])
+        self.assertEqual(0, first["value"])
+        self.assertEqual(
+            "C_FRONTEND_PRELOADED",
+            self.r.classify_contract([], self.stores, self.obik, result)["type"]
+        )
+
     def test_invalid_or_ambiguous_nuxt_product_owner_fails_closed(self):
         html = ('<script id="__NUXT_DATA__" type="application/json">'
                 + json.dumps([{"skuId": 2}, {"skuId": 2}, "3496072"])
