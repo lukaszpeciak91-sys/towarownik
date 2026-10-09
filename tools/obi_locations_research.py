@@ -35,7 +35,9 @@ STATUS_WORDS = {
 }
 PRIVATE_FIELD = re.compile(
     r"token|secret|pass|auth|cookie|session|bearer|email|phone|"
-    r"address|account|user|device|fingerprint|tracking|visitor|ipaddr",
+    r"address|account|user|device|fingerprint|tracking|visitor|ipaddr|"
+    r"postal|postcode|zip|coordinate|latitude|longitude|geoloc|"
+    r"(?:^|_)lat(?:$|_)|(?:^|_)lng(?:$|_)|(?:^|_)lon(?:$|_)",
     re.I,
 )
 SAFE_FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,45}\Z")
@@ -237,7 +239,122 @@ def product_identity(record: dict[str, Any], obik: str) -> str:
     return "UNKNOWN"
 
 
-def response_shape(data: Any, obik: str, stores: dict[str, Any]) -> dict[str, Any]:
+STRUCTURAL_AVAILABILITY_KEY = re.compile(
+    r"availab|stock|invent|quantity|qty|pickup|fulfil|state|status",
+    re.I,
+)
+QUANTITY_KEY = re.compile(
+    r"stock|quantity|qty|inventory|inventor", re.I,
+)
+OBSERVED_SP_PATH = re.compile(
+    r"/api/pdp/v1/availability/sp/(\d{7})\Z"
+)
+OBSERVED_HD_PATH = re.compile(
+    r"/api/pdp/v1/availability/hd/(\d{7})\Z"
+)
+
+
+def scalar_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if type(value) is int:
+        return "integer"
+    if type(value) is float:
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "list"
+    return "other"
+
+
+def structural_availability_container(
+    node: Any, stores: dict[str, Any],
+) -> dict[str, Any]:
+    """Bounded, non-authoritative schema discovery for run-2 live containers.
+
+    Only explicit canonical three-digit ID strings, genuine numeric
+    quantities with recognized quantity key names and allowlisted
+    qualitative enums can ever be exposed as VALUES. This diagnostic
+    does NOT establish any store's availability or class A-E.
+    """
+    info: dict[str, Any] = {
+        "containerType": scalar_type(node),
+        "containerLength": len(node) if isinstance(node, list) else None,
+        "containerKeys": [
+            key for key in list(node)[:40] if safe_field_name(key) is not None
+        ] if isinstance(node, dict) else [],
+        "nestingShape": [],
+        "representativeObjectKeys": [],
+        "canonicalStoreIdFields": [],
+        "availabilityCandidateFields": [],
+        "structuralOnly": True,
+    }
+    queue: list[tuple[Any, int]] = [(node, 0)]
+    visited = 0
+    seen_ids: set[tuple[str, str]] = set()
+    seen_fields: set[tuple[str, str]] = set()
+    while queue and visited < 180:
+        value, depth = queue.pop(0)
+        visited += 1
+        if depth > 7:
+            continue
+        if isinstance(value, list):
+            if len(info["nestingShape"]) < 12:
+                info["nestingShape"].append({
+                    "depth": depth, "type": "list", "length": min(len(value), MAX_ROWS),
+                })
+            queue.extend((child, depth + 1) for child in value[:35]
+                         if isinstance(child, (list, dict)))
+        elif isinstance(value, dict):
+            keys = [
+                key for key in list(value)[:45] if safe_field_name(key) is not None
+            ]
+            if len(info["nestingShape"]) < 12:
+                info["nestingShape"].append({
+                    "depth": depth, "type": "object",
+                    "keys": keys[:16],
+                })
+            if len(info["representativeObjectKeys"]) < 6:
+                info["representativeObjectKeys"].append(keys[:30])
+            for key in keys:
+                child = value[key]
+                if isinstance(child, (dict, list)):
+                    queue.append((child, depth + 1))
+                    continue
+                if type(child) is str and child in stores and STORE_NUMBER.fullmatch(child):
+                    identity = (key, child)
+                    if identity not in seen_ids and len(info["canonicalStoreIdFields"]) < 25:
+                        seen_ids.add(identity)
+                        info["canonicalStoreIdFields"].append({
+                            "field": key, "storeNumber": child,
+                        })
+                if STRUCTURAL_AVAILABILITY_KEY.search(key):
+                    kind = scalar_type(child)
+                    field_key = (key, kind)
+                    if field_key in seen_fields or len(info["availabilityCandidateFields"]) >= 28:
+                        continue
+                    seen_fields.add(field_key)
+                    evidence: dict[str, Any] = {
+                        "field": key, "scalarType": kind,
+                    }
+                    if (QUANTITY_KEY.search(key) and
+                            type(child) is int and 0 <= child <= 10_000_000):
+                        evidence["numericCandidate"] = child
+                    elif isinstance(child, (bool, str)):
+                        typed = stock_state(child)
+                        if typed["state"] == "qualitative":
+                            evidence["qualitativeCandidate"] = typed["value"]
+                    info["availabilityCandidateFields"].append(evidence)
+    return info
+
+
+def response_shape(data: Any, obik: str, stores: dict[str, Any],
+                   request_path: str = "") -> dict[str, Any]:
     if isinstance(data, dict):
         root_names = [key for key in data if safe_field_name(key) is not None][:35]
         ids = [str(data[key]) for key in PRODUCT_KEYS if key in data
@@ -246,9 +363,24 @@ def response_shape(data: Any, obik: str, stores: dict[str, Any]) -> dict[str, An
     else:
         root_names, root_id = [], None
     rows = candidate_rows(data, stores)
-    return {"rootType": type(data).__name__, "rootFields": root_names,
-            "rootProductId": root_id, "storeRows": rows[:MAX_ROWS],
-            "storeRowCount": len(rows)}
+    result = {"rootType": type(data).__name__, "rootFields": root_names,
+              "rootProductId": root_id, "storeRows": rows[:MAX_ROWS],
+              "storeRowCount": len(rows)}
+    # Distinct observed frontend routes: pickup and delivery are not merged.
+    if isinstance(data, dict):
+        if (OBSERVED_SP_PATH.fullmatch(request_path) and
+                OBSERVED_SP_PATH.fullmatch(request_path).group(1) == obik and
+                "pickupStores" in data):
+            result["pickupStoresStructure"] = structural_availability_container(
+                data["pickupStores"], stores
+            )
+        if (OBSERVED_HD_PATH.fullmatch(request_path) and
+                OBSERVED_HD_PATH.fullmatch(request_path).group(1) == obik and
+                "deliveryDataPerSeller" in data):
+            result["deliveryDataPerSellerStructure"] = structural_availability_container(
+                data["deliveryDataPerSeller"], stores
+            )
+    return result
 
 
 def verified_rows(record: dict[str, Any], stores: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -665,7 +797,9 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                     if len(body) > MAX_JSON_BYTES:
                         return
                     payload = json.loads(body)
-                    shape = response_shape(payload, obik, stores)
+                    shape = response_shape(
+                        payload, obik, stores, safe["path"]
+                    )
                     # Keep bounded shape, not raw JSON or response headers.
                     observations.append({
                         "action": action[0], **safe,
