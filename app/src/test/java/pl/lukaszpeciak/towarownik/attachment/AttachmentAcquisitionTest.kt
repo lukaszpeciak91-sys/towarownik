@@ -119,6 +119,35 @@ class AttachmentAcquisitionTest {
     }
 
     @Test
+    fun staleMultiImportNeverOverwritesAnotherConversationSelection() {
+        val owner = MultiPendingAttachmentOwnership(storage, pendingPreferences())
+        val original = storedPdf("original.pdf")
+        assertTrue(owner.publishSelection(listOf(original), emptyList()))
+        val bytes = "%PDF-stale".toByteArray()
+        val tokenGuard = AttachmentImportGuard()
+        val token = tokenGuard.begin()
+        val candidate = storage.importValidated(
+            AttachmentType.PDF, "stale.pdf", "application/pdf", bytes.size.toLong(),
+            source = { ByteArrayInputStream(bytes) },
+            beforePublish = owner::stageImportedCandidate,
+        )
+        // Navigating to another conversation invalidates the import generation.
+        tokenGuard.invalidate()
+        if (tokenGuard.isCurrent(token)) {
+            owner.publishSelection(listOf(candidate), listOf(original), candidate)
+        } else {
+            owner.discardImportedCandidate(candidate)
+        }
+        assertTrue(storage.exists(original.localId))
+        assertFalse(storage.exists(candidate.localId))
+        val reconciled = runBlocking {
+            MultiPendingAttachmentOwnership(storage, pendingPreferences())
+                .reconcileAfterStartup(listOf(original)) { false }
+        }
+        assertEquals(listOf(original), reconciled)
+    }
+
+    @Test
     fun multiOwnershipDoesNotDeletePersistedFileDuringStartupReconciliation() = runBlocking {
         val owner = MultiPendingAttachmentOwnership(storage, pendingPreferences())
         val persisted = storedPdf("room-owns-me.pdf")
