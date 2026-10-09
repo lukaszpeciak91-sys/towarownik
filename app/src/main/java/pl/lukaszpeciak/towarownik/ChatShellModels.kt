@@ -675,8 +675,8 @@ private fun attachmentJson(item: AdvisorAttachment): JsonObject = buildJsonObjec
     put("createdAt", item.createdAt)
 }
 
-private fun advisorAttachmentFromJson(value: JsonObject): AdvisorAttachment? =
-    validatedAttachmentOrNull(
+private fun advisorAttachmentFromJson(value: JsonObject): AdvisorAttachment? {
+    return validatedAttachmentOrNull(
         type = value["type"]?.jsonPrimitive?.contentOrNull ?: return null,
         displayName = value["displayName"]?.jsonPrimitive?.contentOrNull ?: return null,
         mimeType = value["mimeType"]?.jsonPrimitive?.contentOrNull ?: return null,
@@ -686,3 +686,4 @@ private fun advisorAttachmentFromJson(value: JsonObject): AdvisorAttachment? =
         height = value["height"]?.jsonPrimitive?.intOrNull,
         createdAt = value["createdAt"]?.jsonPrimitive?.longOrNull ?: return null,
     )
+}
