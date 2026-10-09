@@ -31,7 +31,7 @@ The existing manual-only workflow `KWANT live contract probe` now also navigates
 to the *known* `/produkt/580` route, checks canonical product identity, and
 attempts harmless clicks on visible `W oddziałach`, pickup, and availability
 labels. It records only actually observed public `xhr/fetch` JSON responses on
-the exact trusted `services.kwant.net.pl` host, together with sanitized method,
+the exact trusted `services.kwant.net.pl` and `kwant.net.pl` hosts, together with sanitized method,
 path, query/body field names and safe values, status, response top-level field
 names, and bounded stock-shaped department rows. No guessed endpoint calls.
 
