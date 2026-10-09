@@ -286,7 +286,7 @@ internal data class AdvisorFailureDiagnostic(
             httpStatus?.let { add("http=$it") }
             proxyErrorCode?.let { add("proxy=$it") }
             endpoint?.let { add("endpoint=$it") }
-            traceId?.let { add("trace=$it") }
+            advisorTraceIdOrNull(traceId)?.let { add("trace=$it") }
         }.joinToString(" ")
 }
 
