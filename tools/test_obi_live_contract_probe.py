@@ -231,6 +231,8 @@ class MultiMarketResearchTest(unittest.TestCase):
             )
             self.clicks = 0
             self.scrolled = 0
+            self.dom_clicks = 0
+            self.on_dom_click = None
 
         def inner_text(self, timeout=0):
             return self.name or ""
@@ -249,6 +251,20 @@ class MultiMarketResearchTest(unittest.TestCase):
 
         def click(self, timeout=0):
             self.clicks += 1
+
+        def evaluate(self, script, expected):
+            assert "element.click()" in script
+            assert "force" not in script
+            assert "coordinates" not in script
+            assert "getAttribute('data-component')" in script
+            if (self.component != "PdpLink"
+                    or not self.visible or not self.enabled
+                    or " ".join((self.name or "").split()) != expected):
+                return False
+            self.dom_clicks += 1
+            if self.on_dom_click is not None:
+                self.on_dom_click()
+            return True
 
     @staticmethod
     def fake_exact_button_page(*buttons):
@@ -300,7 +316,9 @@ class MultiMarketResearchTest(unittest.TestCase):
                 result = r.click_safe_control(
                     page, [{"index": 0, "label": "dostępność (recommendation)"}]
                 )
-                self.assertEqual("CLICKED", result["status"])
+                self.assertEqual("CLICK_DISPATCHED", result["status"])
+                self.assertEqual("NORMAL_CLICK", result["interactionMode"])
+                self.assertEqual(0, exact.dom_clicks)
                 self.assertEqual(
                     'button[data-component="PdpLink"]', page.last_lookup
                 )
