@@ -43,6 +43,96 @@ class AttachmentAcquisitionTest {
     }
 
     @Test
+    fun multiComposerAddsReplacesAndRemovesWithoutDeletingSiblings() {
+        val owner = MultiPendingAttachmentOwnership(storage, pendingPreferences())
+        val first = storedPdf("first.pdf")
+        assertTrue(owner.publishSelection(listOf(first), emptyList()))
+        val second = storedPdf("second.pdf")
+        assertTrue(owner.publishSelection(listOf(first, second), emptyList()))
+        val third = storedPdf("third.pdf")
+        assertTrue(owner.publishSelection(listOf(first, second, third), emptyList()))
+        assertNull(appendOrReplaceAttachment(listOf(first, second, third),
+            storedPdf("fourth.pdf")))
+        val replacement = storedPdf("replacement.pdf")
+        assertEquals(
+            listOf(replacement, second, third),
+            appendOrReplaceAttachment(listOf(first, second, third), replacement, first.localId),
+        )
+        assertTrue(owner.publishSelection(listOf(replacement, second, third), listOf(first)))
+        assertFalse(storage.exists(first.localId))
+        assertTrue(storage.exists(second.localId))
+        assertTrue(storage.exists(third.localId))
+        assertTrue(owner.publishSelection(listOf(replacement, third), listOf(second)))
+        assertFalse(storage.exists(second.localId))
+        assertTrue(storage.exists(replacement.localId))
+        assertTrue(owner.clearPending(listOf(replacement, third)))
+        assertFalse(storage.exists(replacement.localId))
+        assertFalse(storage.exists(third.localId))
+    }
+
+    @Test
+    fun multiComposerRejectsTwentyFourMiBOverflowBeforePublishing() {
+        val first = storedPdf("first.pdf").copy(byteSize = 16L * 1024 * 1024)
+        val second = storedPdf("second.pdf").copy(byteSize = 8L * 1024 * 1024)
+        val third = storedPdf("third.pdf")
+        assertEquals(listOf(first, second),
+            appendOrReplaceAttachment(listOf(first), second))
+        assertNull(appendOrReplaceAttachment(listOf(first, second), third))
+        assertTrue(canSendAdvisorComposer(
+            enabled = true, importInProgress = false, text = "", attachments = listOf(first, second),
+        ))
+        assertFalse(canSendAdvisorComposer(
+            enabled = true, importInProgress = false, text = "",
+            attachments = listOf(first, second, third),
+        ))
+        assertTrue(canSendAdvisorComposer(
+            enabled = true, importInProgress = false, text = "text", attachments = emptyList(),
+        ))
+    }
+
+    @Test
+    fun multiOwnershipStartupPreservesRestoredPendingAndCleansStaleCandidate() = runBlocking {
+        val owner = MultiPendingAttachmentOwnership(storage, pendingPreferences())
+        val first = storedPdf("safe-first.pdf")
+        val second = storedPdf("safe-second.pdf")
+        assertTrue(owner.publishSelection(listOf(first, second), emptyList()))
+
+        val bytes = "%PDF-stale".toByteArray()
+        val stale = storage.importValidated(
+            AttachmentType.PDF, "stale.pdf", "application/pdf", bytes.size.toLong(),
+            source = { ByteArrayInputStream(bytes) },
+            beforePublish = owner::stageImportedCandidate,
+        )
+        val guard = AttachmentImportGuard()
+        val staleToken = guard.begin()
+        guard.invalidate()
+        assertFalse(guard.isCurrent(staleToken))
+        val afterRestart = MultiPendingAttachmentOwnership(storage, pendingPreferences())
+        val restored = afterRestart.reconcileAfterStartup(
+            restored = listOf(first, second),
+            isPersisted = { false },
+        )
+        assertEquals(listOf(first, second), restored)
+        assertTrue(storage.exists(first.localId))
+        assertTrue(storage.exists(second.localId))
+        assertFalse(storage.exists(stale.localId))
+    }
+
+    @Test
+    fun multiOwnershipDoesNotDeletePersistedFileDuringStartupReconciliation() = runBlocking {
+        val owner = MultiPendingAttachmentOwnership(storage, pendingPreferences())
+        val persisted = storedPdf("room-owns-me.pdf")
+        assertTrue(owner.publishSelection(listOf(persisted), emptyList()))
+        val startup = MultiPendingAttachmentOwnership(storage, pendingPreferences())
+        val restored = startup.reconcileAfterStartup(
+            restored = listOf(persisted),
+            isPersisted = { id -> id == persisted.localId },
+        )
+        assertTrue(restored.isEmpty())
+        assertTrue(storage.exists(persisted.localId))
+    }
+
+    @Test
     fun `replacement ownership is staged before durable publish and then switched`() {
         val previous = storedPdf("previous.pdf")
         val ownership = PendingAttachmentOwnership(
