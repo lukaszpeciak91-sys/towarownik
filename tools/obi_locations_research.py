@@ -64,7 +64,8 @@ UNSAFE_ACTION = re.compile(
 SELECT_ACTION = re.compile(r"sklep|market|lokaliz|store|dostęp|odbiór", re.I)
 SELECT_VERB = re.compile(r"sprawdź|wybierz|zmień|pokaż|znajdź|select|change|check|find|show", re.I)
 ALLOWED_HOST = re.compile(r"(?:[a-z0-9-]+\.)?obi\.pl\Z", re.I)
-PATH_WORD = re.compile(r"[a-z][a-z0-9_-]{0,29}\Z")
+PATH_WORD = re.compile(r"[a-z][a-z_-]{0,29}\Z")
+SAFE_VERSION_PATH_SEGMENTS = {"v1", "v2", "v3", "v4", "v5"}
 ALL_RESEARCH_STATES = {"known_zero", "known_positive", "qualitative", "unknown_null", "unknown_missing", "invalid"}
 
 
@@ -108,9 +109,13 @@ def safe_path(url: str, obik: str, stores: dict[str, Any]) -> str:
     path = urlsplit(url).path
     safe = []
     for part in path.split("/")[:20]:
-        if part in {obik, *stores} or (PATH_WORD.fullmatch(part) and not re.search(r"\d{5,}", part)):
+        if part in {obik, *stores} or part in SAFE_VERSION_PATH_SEGMENTS:
+            safe.append(part)
+        elif PATH_WORD.fullmatch(part) and not PRIVATE_FIELD.search(part):
             safe.append(part)
         else:
+            # Unknown IDs, hashes, token/session path components and SKU
+            # fragments are redacted rather than treated as arbitrary text.
             safe.append("REDACTED" if part else "")
     return "/".join(safe)[:240]
 
