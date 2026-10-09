@@ -29,6 +29,139 @@ import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
 
 @RunWith(RobolectricTestRunner::class)
 class AdvisorAttachmentTransportTest {
+    private fun importPart(
+        storage: AttachmentStorage, name: String, type: AttachmentType,
+    ): pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment {
+        val bytes = if (type == AttachmentType.PDF) {
+            byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2d)
+        } else {
+            byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe0.toByte())
+        }
+        return storage.importValidated(
+            type = type, displayName = name,
+            mimeType = if (type == AttachmentType.PDF) "application/pdf" else "image/jpeg",
+            byteSize = bytes.size.toLong(),
+            width = if (type == AttachmentType.IMAGE) 1 else null,
+            height = if (type == AttachmentType.IMAGE) 1 else null,
+            source = { ByteArrayInputStream(bytes) },
+        )
+    }
+
+    private fun multiAnswer() = MockResponse()
+        .setHeader("Content-Type", "application/json")
+        .setBody("""{"type":"answer","responseId":"resp_multi","text":"ok","productRefs":[]}""")
+
+    @Test
+    fun v5ListTransportsOneTwoAndThreeOrderedMixedFiles() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        val first = importPart(storage, "one.pdf", AttachmentType.PDF)
+        val second = importPart(storage, "two.jpg", AttachmentType.IMAGE)
+        val third = importPart(storage, "three.pdf", AttachmentType.PDF)
+        MockWebServer().use { server ->
+            repeat(3) { server.enqueue(multiAnswer()) }
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            for (files in listOf(listOf(first), listOf(first, second), listOf(first, second, third))) {
+                val result = client.start(
+                    message = "", providerId = "kwant-pl", branchId = "205", attachments = files,
+                )
+                assertTrue(result is AdvisorProxyCallResult.Success)
+                val request = server.takeRequest()
+                assertEquals("/v1/agent/start", request.path)
+                assertEquals("5", request.getHeader("X-Taksula-Attachment-Protocol"))
+                assertEquals(null, request.getHeader(ADVISOR_TRACE_HEADER))
+                val body = request.body.readUtf8()
+                assertTrue(body.contains("\"protocolVersion\":5"))
+                assertEquals(files.size, Regex("name=\"attachment\"; filename=").findAll(body).count())
+                var offset = -1
+                for (file in files) {
+                    val next = body.indexOf(file.displayName)
+                    assertTrue(next > offset)
+                    offset = next
+                }
+                assertTrue(body.contains("%PDF-"))
+            }
+        }
+    }
+
+    @Test
+    fun v5MessageIncludesTextFilesAndPreviousResponse() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        val files = listOf(
+            importPart(storage, "image.jpg", AttachmentType.IMAGE),
+            importPart(storage, "material.pdf", AttachmentType.PDF),
+        )
+        MockWebServer().use { server ->
+            server.enqueue(multiAnswer())
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            val result = client.message(
+                previousResponseId = "resp_before", message = "porównaj dane",
+                providerId = "kwant-pl", branchId = "205", attachments = files,
+            )
+            assertTrue(result is AdvisorProxyCallResult.Success)
+            val request = server.takeRequest()
+            assertEquals("/v1/agent/message", request.path)
+            assertEquals("5", request.getHeader("X-Taksula-Attachment-Protocol"))
+            val body = request.body.readUtf8()
+            assertTrue(body.contains("\"previousResponseId\":\"resp_before\""))
+            assertTrue(body.contains("\"message\":\"porównaj dane\""))
+            assertEquals(2, Regex("name=\"attachment\"; filename=").findAll(body).count())
+        }
+    }
+
+    @Test
+    fun v5RejectsInvalidCountAndMetadataBeforeNetwork() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        val file = importPart(storage, "one.pdf", AttachmentType.PDF)
+        val image = importPart(storage, "two.jpg", AttachmentType.IMAGE)
+        MockWebServer().use { server ->
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            val variants = listOf(
+                emptyList(),
+                listOf(file, image, file, image),
+                listOf(file, image.copy(mimeType = "application/pdf")),
+                listOf(file, image.copy(byteSize = 16L * 1024 * 1024 + 1)),
+            )
+            for (files in variants) {
+                assertEquals(
+                    AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL),
+                    client.start("", "kwant-pl", "205", files),
+                )
+            }
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun v5ContinuationRemainsProviderJsonOnly() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(multiAnswer())
+            val client = AdvisorProxyClient(appToken = "token", baseUrl = server.url("/"))
+            val response = client.continueTurn(
+                responseId = "resp_tool", callId = "call_tool",
+                providerId = "kwant-pl", branchId = "205",
+                continuation = AdvisorToolContinuation.LocalToolLimitReached(
+                    queries = listOf(AdvisorToolQuery("MBN116E", 1)),
+                    storeNumber = "205", providerId = "kwant-pl",
+                ),
+                protocolVersion = MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION,
+            )
+            assertTrue(response is AdvisorProxyCallResult.Success)
+            val request = server.takeRequest()
+            assertEquals("/v1/agent/continue", request.path)
+            assertTrue(request.getHeader("Content-Type")!!.startsWith("application/json"))
+            assertEquals(null, request.getHeader("X-Taksula-Attachment-Protocol"))
+            val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+            assertEquals(5, body["protocolVersion"]?.jsonPrimitive?.intOrNull)
+            assertEquals(FIND_PRODUCTS, body["tool"]?.jsonPrimitive?.content)
+        }
+    }
+
     @Test
     fun `truncated private attachment fails locally instead of sending mismatched bytes`() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
