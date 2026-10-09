@@ -271,6 +271,7 @@ internal data class AdvisorFailureDiagnostic(
     val httpStatus: Int? = null,
     val proxyErrorCode: String? = null,
     val endpoint: String? = null,
+    val traceId: String? = null,
 ) {
     fun userCode(): String? =
         listOfNotNull(
@@ -285,17 +286,22 @@ internal data class AdvisorFailureDiagnostic(
             httpStatus?.let { add("http=$it") }
             proxyErrorCode?.let { add("proxy=$it") }
             endpoint?.let { add("endpoint=$it") }
+            traceId?.let { add("trace=$it") }
         }.joinToString(" ")
 }
 
 internal sealed interface AdvisorProxyCallResult {
-    data class Success(val result: AdvisorProxyResult) : AdvisorProxyCallResult
+    data class Success(
+        val result: AdvisorProxyResult,
+        val traceId: String? = null,
+    ) : AdvisorProxyCallResult
 
     data class Failure(
         val kind: AdvisorProxyFailureKind,
         val httpStatus: Int? = null,
         val proxyErrorCode: String? = null,
         val endpoint: String? = null,
+        val traceId: String? = null,
     ) : AdvisorProxyCallResult {
         fun diagnosticOrNull(): AdvisorFailureDiagnostic? =
             if (
@@ -310,6 +316,7 @@ internal sealed interface AdvisorProxyCallResult {
                     httpStatus = httpStatus,
                     proxyErrorCode = proxyErrorCode,
                     endpoint = endpoint,
+                    traceId = advisorTraceIdOrNull(traceId),
                 )
             }
     }
