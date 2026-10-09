@@ -151,7 +151,7 @@ async function handleProtectedAgentRequest(
       diagnostic.protocolVersion = input.protocolVersion;
       diagnostic.providerId = input.providerId;
       diagnostic.branchId = input.branchId;
-      diagnostic.inputKind = inputKindForAttachment(input.attachment);
+      diagnostic.inputKind = inputKindForAttachment(input.attachment ?? input.attachments?.[0]);
       result = await startAgent(
         input.message,
         input.providerId,
@@ -159,7 +159,7 @@ async function handleProtectedAgentRequest(
         apiKey,
         upstreamFetch,
         input.protocolVersion,
-        input.attachment,
+        input.attachment ?? input.attachments,
       );
     } else if (endpoint === "message") {
       const input = await parseMessageRequest(request);
@@ -167,7 +167,7 @@ async function handleProtectedAgentRequest(
       diagnostic.protocolVersion = input.protocolVersion;
       diagnostic.providerId = input.providerId;
       diagnostic.branchId = input.branchId;
-      diagnostic.inputKind = inputKindForAttachment(input.attachment);
+      diagnostic.inputKind = inputKindForAttachment(input.attachment ?? input.attachments?.[0]);
       result = await messageAgent(
         input.previousResponseId,
         input.message,
@@ -176,7 +176,7 @@ async function handleProtectedAgentRequest(
         apiKey,
         upstreamFetch,
         input.protocolVersion,
-        input.attachment,
+        input.attachment ?? input.attachments,
       );
     } else {
       const input = await parseContinueRequest(request);

@@ -211,7 +211,15 @@ Conversation history may mention older stock or price values. The server-control
 
 ## Protocol v4 attachments
 
-Protocol v4 accepts `multipart/form-data` on `/start` and `/message` only, with a JSON `payload` part and exactly one `attachment` part. Supported MIME/signature pairs are JPEG, PNG, and PDF, bounded to 16 MiB. `/continue` and all v2/v3 traffic remain JSON-only.
+Protocol v4 accepts `multipart/form-data` on `/start` and `/message` only, with a JSON `payload` part and exactly one `attachment` part. Supported MIME/signature pairs are JPEG, PNG, and PDF, bounded to 16 MiB. Its Content-Length maximum is 16 MiB + 16 KiB, checked before multipart parsing. `/continue` and all v2/v3 traffic remain JSON-only.
+
+## Opt-in protocol v5: multi-attachment transport
+
+For START/MESSAGE with 1–3 attachments, send multipart `payload` (JSON with `protocolVersion: 5`, providerId, branchId, message and, on MESSAGE, previousResponseId) followed by **1–3 repeated `attachment` file parts** in user-selected order. Send the request header `X-Taksula-Attachment-Protocol: 5` to opt into the v5 pre-parse size bound; missing or conflicting header/payload markers fail closed. The existing v4 single-part behavior needs no new header and is not changed. V5 JSON START/MESSAGE without attachments is rejected; use existing v3 for provider text-only traffic.
+
+Allowed MIME/signatures: `image/jpeg`, `image/png`, `application/pdf`. Each file must be 1 byte–16 MiB; the raw attachment sizes must total at most **24 MiB** across up to three files, and the declared multipart Content-Length must be at most **24 MiB + 16 KiB**, including framing. Missing/invalid/oversized declared length is rejected before formData parsing; all count, signature and MIME checks occur before any upstream forwarding. The Worker emits a single Responses USER input with optional `input_text` first, followed by all files in original order (`input_image`, `detail=high` for images; `input_file` for PDFs). No persistent proxy file storage or new formats are introduced. `/continue` remains JSON-only with provider-aware `find_products` and matching v5 version throughout a tool-assisted turn.
+
+Android `AdvisorProxyClient` accepts the explicit `attachments: List<AdvisorAttachment>` overload for v5; the existing nullable `attachment` overload and UI remain v4. No multi-picker, Room/attachment ownership, or rendered history change is included.
 
 
 ## Advisor structured observability

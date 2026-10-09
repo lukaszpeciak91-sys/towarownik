@@ -107,7 +107,28 @@ internal class AdvisorProxyClient(
         return if (attachment == null) execute(
             endpoint = "v1/agent/start",
             body = body,
-        ) else executeMultipart("v1/agent/start", body, attachment)
+        ) else executeMultipart("v1/agent/start", body, listOf(attachment))
+    }
+
+    // Explicit list overload opts into v5; existing nullable single-attachment
+    // overload continues to send v4, including today's one-file composer.
+    suspend fun start(
+        message: String,
+        providerId: String,
+        branchId: String,
+        attachments: List<AdvisorAttachment>,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.NOT_CONFIGURED)
+        if (!isValidProfile(providerId, branchId)) {
+            return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
+        }
+        val body = buildJsonObject {
+            put("protocolVersion", MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION)
+            put("message", message)
+            put("providerId", providerId)
+            put("branchId", branchId)
+        }
+        return executeMultipart("v1/agent/start", body, attachments)
     }
 
     suspend fun message(
@@ -168,7 +189,28 @@ internal class AdvisorProxyClient(
         return if (attachment == null) execute(
             endpoint = "v1/agent/message",
             body = body,
-        ) else executeMultipart("v1/agent/message", body, attachment)
+        ) else executeMultipart("v1/agent/message", body, listOf(attachment))
+    }
+
+    suspend fun message(
+        previousResponseId: String,
+        message: String,
+        providerId: String,
+        branchId: String,
+        attachments: List<AdvisorAttachment>,
+    ): AdvisorProxyCallResult {
+        if (!isConfigured()) return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.NOT_CONFIGURED)
+        if (!isValidProfile(providerId, branchId)) {
+            return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
+        }
+        val body = buildJsonObject {
+            put("protocolVersion", MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION)
+            put("previousResponseId", previousResponseId)
+            put("message", message)
+            put("providerId", providerId)
+            put("branchId", branchId)
+        }
+        return executeMultipart("v1/agent/message", body, attachments)
     }
 
     suspend fun continueTurn(
@@ -256,6 +298,7 @@ internal class AdvisorProxyClient(
             protocolVersion !in setOf(
                 ADVISOR_PROTOCOL_VERSION,
                 MULTIMODAL_ADVISOR_PROTOCOL_VERSION,
+                MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION,
             )
         ) {
             return AdvisorProxyCallResult.Failure(
@@ -371,56 +414,76 @@ internal class AdvisorProxyClient(
     private suspend fun executeMultipart(
         endpoint: String,
         payload: JsonObject,
-        attachment: AdvisorAttachment,
+        attachments: List<AdvisorAttachment>,
     ): AdvisorProxyCallResult {
+        val isMulti = payload["protocolVersion"]?.jsonPrimitive?.intOrNull ==
+            MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION
+        val maxCount = if (isMulti) 3 else 1
+        val maxPerFileBytes = 16L * 1024 * 1024
+        val maxTotalBytes = if (isMulti) 24L * 1024 * 1024 else maxPerFileBytes
+        val maxBodyBytes = maxTotalBytes + 16L * 1024
+        if (
+            attachments.size !in 1..maxCount ||
+            attachments.any {
+                it.byteSize < 1L || it.byteSize > maxPerFileBytes ||
+                    (it.type == pl.lukaszpeciak.towarownik.attachment.AttachmentType.IMAGE &&
+                        it.mimeType !in setOf("image/jpeg", "image/png")) ||
+                    (it.type == pl.lukaszpeciak.towarownik.attachment.AttachmentType.PDF &&
+                        it.mimeType != "application/pdf")
+            } ||
+            attachments.sumOf { it.byteSize } > maxTotalBytes
+        ) {
+            return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
+        }
         val storage = attachmentStorage ?: return AdvisorProxyCallResult.Failure(
             AdvisorProxyFailureKind.PROTOCOL,
         )
-        if (!storage.exists(attachment.localId)) {
-            return AdvisorProxyCallResult.Failure(
-                AdvisorProxyFailureKind.PROTOCOL,
-            )
+        if (attachments.any { !storage.exists(it.localId) }) {
+            return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
         }
-        val fileBody = object : RequestBody() {
-            override fun contentType() = attachment.mimeType.toMediaType()
-            override fun contentLength() = attachment.byteSize
-            override fun writeTo(sink: BufferedSink) {
-                val input = storage.open(attachment.localId)
-                    ?: throw AttachmentByteCountMismatchException()
-                input.use { source ->
-                    val buffer = ByteArray(8 * 1024)
-                    var written = 0L
-
-                    while (written < attachment.byteSize) {
-                        val remaining = attachment.byteSize - written
-                        val read = source.read(
-                            buffer,
-                            0,
-                            minOf(buffer.size.toLong(), remaining).toInt(),
-                        )
-                        if (read < 0) {
+        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("payload", payload.toString())
+        for (attachment in attachments) {
+            val fileBody = object : RequestBody() {
+                override fun contentType() = attachment.mimeType.toMediaType()
+                override fun contentLength() = attachment.byteSize
+                override fun writeTo(sink: BufferedSink) {
+                    val input = storage.open(attachment.localId)
+                        ?: throw AttachmentByteCountMismatchException()
+                    input.use { source ->
+                        val buffer = ByteArray(8 * 1024)
+                        var written = 0L
+                        while (written < attachment.byteSize) {
+                            val remaining = attachment.byteSize - written
+                            val read = source.read(
+                                buffer,
+                                0,
+                                minOf(buffer.size.toLong(), remaining).toInt(),
+                            )
+                            if (read < 0) throw AttachmentByteCountMismatchException()
+                            sink.write(buffer, 0, read)
+                            written += read
+                        }
+                        if (written != attachment.byteSize || source.read() != -1) {
                             throw AttachmentByteCountMismatchException()
                         }
-                        sink.write(buffer, 0, read)
-                        written += read
-                    }
-
-                    if (written != attachment.byteSize || source.read() != -1) {
-                        throw AttachmentByteCountMismatchException()
                     }
                 }
             }
+            builder.addFormDataPart("attachment", attachment.displayName, fileBody)
         }
-        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
-            .addFormDataPart("payload", payload.toString())
-            .addFormDataPart("attachment", attachment.displayName, fileBody)
-            .build()
-        val request = Request.Builder()
+        val multipart = builder.build()
+        if (multipart.contentLength() > maxBodyBytes) {
+            return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
+        }
+        val requestBuilder = Request.Builder()
             .url(baseUrl.newBuilder().addPathSegments(endpoint).build())
             .post(multipart)
             .header("Authorization", "Bearer $appToken")
-            .build()
-        return executeRequest(request, endpoint)
+        if (isMulti) {
+            requestBuilder.header("X-Taksula-Attachment-Protocol", "5")
+        }
+        return executeRequest(requestBuilder.build(), endpoint)
     }
 
     private suspend fun executeRequest(request: Request, endpoint: String): AdvisorProxyCallResult =

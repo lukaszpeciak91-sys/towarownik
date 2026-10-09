@@ -61,7 +61,7 @@ export async function startAgent(
   upstreamFetch: UpstreamFetch,
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
-  attachment?: AdvisorAttachment,
+  attachment?: AdvisorAttachment | AdvisorAttachment[],
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
@@ -102,7 +102,7 @@ export async function messageAgent(
   upstreamFetch: UpstreamFetch,
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
-  attachment?: AdvisorAttachment,
+  attachment?: AdvisorAttachment | AdvisorAttachment[],
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
@@ -135,18 +135,20 @@ export async function messageAgent(
   );
 }
 
-function modelInput(message: string, attachment?: AdvisorAttachment): unknown {
+function modelInput(
+  message: string,
+  attachment?: AdvisorAttachment | AdvisorAttachment[],
+): unknown {
   if (!attachment) return message;
-  const dataUrl = `data:${attachment.mimeType};base64,${bytesToBase64(attachment.bytes)}`;
+  const attachments = Array.isArray(attachment) ? attachment : [attachment];
   const content: Record<string, unknown>[] = [];
   if (message) content.push({ type: "input_text", text: message });
-  content.push(attachment.mimeType === "application/pdf"
-    ? {
-        type: "input_file",
-        filename: attachment.filename,
-        file_data: dataUrl,
-      }
-    : { type: "input_image", image_url: dataUrl, detail: "high" });
+  for (const part of attachments) {
+    const dataUrl = `data:${part.mimeType};base64,${bytesToBase64(part.bytes)}`;
+    content.push(part.mimeType === "application/pdf"
+      ? { type: "input_file", filename: part.filename, file_data: dataUrl }
+      : { type: "input_image", image_url: dataUrl, detail: "high" });
+  }
   return [{ role: "user", content }];
 }
 
