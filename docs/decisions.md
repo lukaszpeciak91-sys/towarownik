@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-10-09 — opt-in multi-attachment transport v5
+
+- Preserve the deployed v4 single-attachment multipart contract and its early 16 MiB + 16 KiB Content-Length rejection; opt-in v5 requires an explicit `X-Taksula-Attachment-Protocol: 5` header matching `protocolVersion: 5` in the JSON payload.
+- V5 accepts 1–3 ordered `attachment` parts on START/MESSAGE, bounded to 16 MiB per file and 48 MiB + 16 KiB total multipart envelope, with existing JPEG/PNG/PDF MIME and signature validation. All parts must pass before one Responses USER input is constructed.
+- Android adds a list-taking transport overload, while the existing composer, single-file methods, Room schema, and file ownership remain on v4. Continuation stays JSON-only under the initiating provider-aware contract; local stock/price authority and Advisor decision core are unchanged.
+
+
 ## 2026-10-08 — shared advisor instruction composition
 
 - OBI and KWANT now share one exact provider-independent advisor decision core and one exact evidence/trust policy. Provider differences are expressed only through small OBI and KWANT appendices, while attachment behavior is a separate cross-cutting capability appendix.
