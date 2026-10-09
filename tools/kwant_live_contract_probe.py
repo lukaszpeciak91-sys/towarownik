@@ -3668,8 +3668,15 @@ def parse_public_aggregate_quantity(value: Any) -> int | None:
 def evaluate_candidate_coverage(
     shape: dict[str, Any],
     directory: dict[str, str],
+    *,
+    product_scope_verified: bool = False,
 ) -> dict[str, Any]:
-    """Compare observed directory IDs only, never deduce absent stock is zero."""
+    """Compare real branch IDs with explicitly proven response/request scope.
+
+    The shape-only default preserves conservative behavior. Callers may supply
+    an independent, verified one-product request binding. Unknown/mismatched
+    response identity is never silently upgraded to trusted stock.
+    """
     rows = shape.get("branchRows", [])
     known = [row for row in rows if row.get("branchKnownInDirectory")]
     represented = {row["branchId"] for row in known}
@@ -3677,7 +3684,10 @@ def evaluate_candidate_coverage(
         row for row in known
         if row.get("candidateState") in ("known_zero", "known_positive")
     ]
-    identity_verified = shape.get("productIdentityMatches") is True
+    identity_verified = (
+        shape.get("productIdentityMatches") is True
+        or (product_scope_verified and shape.get("productIdentityMatches") is not False)
+    )
     result: dict[str, Any] = {
         "completeness": UNKNOWN,
         "verifiedDirectoryBranchCount": len(represented),
