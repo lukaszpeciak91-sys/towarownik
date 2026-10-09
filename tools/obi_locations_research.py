@@ -1373,8 +1373,9 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                                 "action": "availability:other-stores",
                                 "status": "SKIPPED_COMPLETE_PRODUCT_CONTRACT",
                             })
-                        elif (result["postOpenUi"]["storeSearchInputObserved"]
-                              and not result["postOpenUi"]["candidateStoreRowsCount"]):
+                        elif result["postOpenUi"]["storeSearchInputObserved"]:
+                            # Run #5 learns input structure only; never type
+                            # guesses or click market rows in a search UI.
                             result["uiActions"].append({
                                 "action": "availability:other-stores",
                                 "status": "SEARCH_INPUT_OBSERVED_NO_GUESSED_INPUT",
