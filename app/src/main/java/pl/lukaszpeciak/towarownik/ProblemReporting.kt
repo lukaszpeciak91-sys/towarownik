@@ -291,6 +291,11 @@ internal object ProblemReportFormatter {
             appendLine("Conversation ID: ${evidence.conversationId}")
             appendLine("Reported message ID: ${evidence.reportedMessage?.id}")
             appendLine(
+                "Advisor trace: " +
+                    (evidence.reportedMessage?.advisorTraceId
+                        ?: "unavailable"),
+            )
+            appendLine(
                 "Reported message timestamp: " +
                     evidence.reportedMessage
                         ?.createdAt
