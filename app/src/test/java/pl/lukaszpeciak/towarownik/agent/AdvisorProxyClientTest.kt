@@ -1308,7 +1308,10 @@ class AdvisorProxyClientTest {
         MockWebServer().use { server ->
             val trace = "22222222-2222-4222-8222-222222222222"
             server.enqueue(
-                answerResponse().setHeader(ADVISOR_TRACE_HEADER, trace),
+                answerResponse().setHeader(
+                    "x-taksula-trace-id",
+                    trace,
+                ),
             )
 
             val result = client(server, FAKE_TOKEN).message(
