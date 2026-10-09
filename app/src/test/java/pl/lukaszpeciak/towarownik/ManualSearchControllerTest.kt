@@ -13,6 +13,21 @@ import pl.lukaszpeciak.towarownik.product.ManualProductSearchResult
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
 import pl.lukaszpeciak.towarownik.product.toVerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.BranchId
+import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.ProductProvider
+import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
+import pl.lukaszpeciak.towarownik.product.provider.ProductRef
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
+import pl.lukaszpeciak.towarownik.product.provider.ProviderId
+import pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult
+import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
+import pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
+import pl.lukaszpeciak.towarownik.product.provider.ProviderProductCandidate
+import pl.lukaszpeciak.towarownik.product.provider.ProviderSearchResult
+import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 
 class ManualSearchControllerTest {
     @Test
@@ -799,6 +814,183 @@ class ManualSearchControllerTest {
         assertEquals(
             R.string.product_price,
             priceStringRes(BigDecimal("14.99")),
+        )
+    }
+
+    @Test
+    fun `KWANT manual direct product keeps separate branch and central quantities`() = runBlocking {
+        val profile = WorkingProfile(KWANT_PROVIDER_ID, BranchId("205"))
+        val cases: List<Pair<Int?, Int?>> = listOf(
+            4 to 100,
+            0 to 100,
+            0 to null,
+            null to 100,
+        )
+        for ((branchStock, centralStock) in cases) {
+            val controller = manualProviderController(
+                providerId = KWANT_PROVIDER_ID,
+                branchId = "205",
+                quantities = linkedMapOf("580" to (branchStock to centralStock)),
+            )
+            val states = mutableListOf<ManualSearchUiState>()
+            controller.select(
+                item = ManualSearchResultItem(
+                    ref = ProductRef(KWANT_PROVIDER_ID, "580"),
+                    name = "Synthetic KWANT product",
+                    branchId = profile.branchId,
+                    branchLabel = "Nowy Sącz",
+                ),
+                workingProfile = profile,
+            ) { states += it }
+
+            val ui = (states.last() as ManualSearchUiState.Product).item
+            assertEquals("kwant-pl", ui.providerId)
+            assertEquals("205", ui.branchId)
+            assertEquals("Nowy Sącz", ui.branchLabel)
+            assertEquals(branchStock, ui.stock)
+            assertEquals(centralStock, ui.centralStock)
+        }
+    }
+
+    @Test
+    fun `KWANT manual search and show more retain central stock but sort by selected branch`() = runBlocking {
+        val quantities: LinkedHashMap<String, Pair<Int?, Int?>> = linkedMapOf(
+            "580" to (0 to 1000),
+            "581" to (3 to 1),
+            "582" to (1 to 100),
+            "583" to (2 to 50),
+            "584" to (null to 999),
+            "585" to (4 to 2),
+            "586" to (0 to 1500),
+        )
+        val controller = manualProviderController(
+            providerId = KWANT_PROVIDER_ID,
+            branchId = "205",
+            quantities = quantities,
+        )
+        val profile = WorkingProfile(KWANT_PROVIDER_ID, BranchId("205"))
+        val states = mutableListOf<ManualSearchUiState>()
+
+        controller.submit(
+            input = "wyłącznik nadprądowy",
+            workingProfile = profile,
+            branchLabel = "Nowy Sącz",
+        ) { states += it }
+
+        val initial = states.last() as ManualSearchUiState.SearchResults
+        assertEquals(
+            listOf("581", "583", "582", "580", "584"),
+            initial.visibleItems.map { it.ref.productId },
+        )
+        assertTrue(initial.canShowMore)
+        val zero = initial.visibleItems.single { it.ref.productId == "580" }
+            .enrichment as ManualResultEnrichment.Verified
+        assertEquals(0, zero.product.stock)
+        assertEquals(1000, zero.product.centralStock)
+        assertEquals(3, (
+            initial.visibleItems.first().enrichment as ManualResultEnrichment.Verified
+        ).product.stock)
+        assertEquals(1, (
+            initial.visibleItems.first().enrichment as ManualResultEnrichment.Verified
+        ).product.centralStock)
+
+        val moreStates = mutableListOf<ManualSearchUiState>()
+        controller.showMore(
+            current = initial,
+            workingProfile = profile,
+        ) { moreStates += it }
+        val expanded = moreStates.last() as ManualSearchUiState.SearchResults
+        assertEquals(
+            listOf("585", "581", "583", "582", "580", "586", "584"),
+            expanded.visibleItems.map { it.ref.productId },
+        )
+        for (item in expanded.visibleItems) {
+            val verified = item.enrichment as ManualResultEnrichment.Verified
+            val expected = quantities.getValue(item.ref.productId)
+            assertEquals(expected.first, verified.product.stock)
+            assertEquals(expected.second, verified.product.centralStock)
+        }
+    }
+
+    @Test
+    fun `OBI manual direct lookup retains null central stock`() = runBlocking {
+        val controller = manualProviderController(
+            providerId = OBI_PROVIDER_ID,
+            branchId = "075",
+            quantities = linkedMapOf("7313810" to (6 to null)),
+        )
+        val states = mutableListOf<ManualSearchUiState>()
+        controller.submit(
+            input = "7313810",
+            workingProfile = WorkingProfile(OBI_PROVIDER_ID, BranchId("075")),
+        ) { states += it }
+
+        val ui = (states.last() as ManualSearchUiState.Product).item
+        assertEquals(OBI_PROVIDER_ID.value, ui.providerId)
+        assertEquals(6, ui.stock)
+        assertEquals(null, ui.centralStock)
+    }
+
+    private fun manualProviderController(
+        providerId: ProviderId,
+        branchId: String,
+        quantities: Map<String, Pair<Int?, Int?>>,
+    ): ManualSearchController {
+        val provider = object : ProductProvider {
+            override val providerId: ProviderId = providerId
+
+            override fun branches(): ProviderBranchResult =
+                ProviderBranchResult.Available(
+                    listOf(
+                        ProviderBranch(
+                            branchId = BranchId(branchId),
+                            name = if (providerId == KWANT_PROVIDER_ID) {
+                                "Nowy Sącz"
+                            } else {
+                                "OBI"
+                            },
+                        ),
+                    ),
+                )
+
+            override fun search(query: String, maxResults: Int): ProviderSearchResult =
+                ProviderSearchResult.Candidates(
+                    items = quantities.keys.take(maxResults).map { productId ->
+                        ProviderProductCandidate(
+                            ref = ProductRef(providerId, productId),
+                            name = "Synthetic product $productId",
+                        )
+                    },
+                    reportedTotalCount = quantities.size,
+                )
+
+            override fun lookup(ref: ProductRef, branchId: BranchId): ProviderLookupResult {
+                if (ref.providerId != providerId || branchId.value != branchId) {
+                    return ProviderLookupResult.WrongProvider(ref)
+                }
+                val (local, central) = quantities.getValue(ref.productId)
+                return ProviderLookupResult.Found(
+                    ProviderProduct(
+                        ref = ref,
+                        branchId = branchId,
+                        name = "Verified product ${ref.productId}",
+                        stock = local,
+                        centralStock = central,
+                        grossPrice = BigDecimal("14.55"),
+                        priceScope = if (providerId == KWANT_PROVIDER_ID) {
+                            ProviderPriceScope.ONLINE
+                        } else {
+                            ProviderPriceScope.BRANCH
+                        },
+                        productUrl = "https://example.invalid/product/${ref.productId}",
+                        ean = null,
+                    ),
+                )
+            }
+        }
+        return ManualSearchController(
+            providers = ProductProviderRegistry(listOf(provider)),
+            ioDispatcher = Dispatchers.Unconfined,
         )
     }
 
