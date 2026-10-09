@@ -3671,8 +3671,14 @@ def summarize_search_ranking_evidence(
     proven = any(
         (candidate["branchId"], candidate["candidateValue"])
         in confirmed_current
-        for shape in relevant
+        for item in observations
+        if item.get("path") == KWANT_SEARCH_API_PATH
+        and item.get("method") == "POST"
+        for shape in [item.get("shape") or {}]
         for candidate in shape.get("searchHitControlCandidates", [])
+        if str((item.get("body") or {}).get("safeValues", {}).get(
+            "depstock", ""
+        )) == candidate["branchId"]
     )
     scope = (
         "SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL"
