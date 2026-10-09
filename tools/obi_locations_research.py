@@ -765,6 +765,216 @@ def click_safe_control(page: Any, controls: list[dict[str, Any]]) -> dict[str, A
 
 
 
+# Only these repository-driven keywords/known public phrases may be
+# reflected in a safe structural summary. Never report arbitrary DOM text.
+POST_OPEN_KEYWORDS = {
+    "store": re.compile(r"sklep|market|store", re.I),
+    "location": re.compile(r"lokaliz|miast|location|kod pocztow", re.I),
+    "availability": re.compile(r"dostęp|availability|stock|stan", re.I),
+    "pickup": re.compile(r"odbiór|pickup|rezerw", re.I),
+    "search": re.compile(r"szukaj|wyszuk|wpisz|search|find", re.I),
+}
+SAFE_MODAL_PHRASES = {
+    "sprawdź dostępność w innym sklepie",
+    "wybierz sklep",
+    "zmień sklep",
+    "znajdź sklep",
+    "wyszukaj sklep",
+    "szukaj sklepu",
+    "dostępność w sklepach",
+    "wybierz lokalizację",
+    "wpisz miasto",
+    "wpisz kod pocztowy",
+    "miasto lub kod pocztowy",
+}
+DATA_STORE_ATTRIBUTE_NAMES = (
+    "data-store-number", "data-store-id", "data-market-id",
+    "data-market-number", "data-branch-id",
+)
+DATA_STORE_ATTRIBUTE_RE = re.compile(
+    r"data-[a-z0-9-]{1,46}\Z"
+)
+
+
+def safe_modal_label(text: str | None) -> dict[str, Any] | None:
+    """Whitelist semantic tags, never arbitrary location/customer strings."""
+    normalized = normalized_inner_text(text)
+    if len(normalized) > 250:
+        normalized = normalized[:250]
+    tags = [tag for tag, pattern in POST_OPEN_KEYWORDS.items()
+            if pattern.search(normalized)]
+    if not tags:
+        return None
+    safe: dict[str, Any] = {"keywordTags": tags, "length": len(normalized)}
+    if normalized.casefold() in SAFE_MODAL_PHRASES:
+        safe["knownPhrase"] = normalized.casefold()
+    return safe
+
+
+def safe_store_attribute_names(names: list[str]) -> list[str]:
+    return [
+        name for name in names[:45]
+        if isinstance(name, str)
+        and DATA_STORE_ATTRIBUTE_RE.fullmatch(name)
+        and re.search(r"store|market|branch|location", name, re.I)
+        and not PRIVATE_FIELD.search(name)
+    ][:12]
+
+
+def normalized_public_directory_text(raw: str) -> str:
+    return normalized_inner_text(raw).casefold()
+
+
+def identify_canonical_dom_store(
+    raw_text: str, data_values: dict[str, str | None],
+    stores: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    """Pure fail-closed identity, no city-only inference or raw text output."""
+    text = normalized_public_directory_text(raw_text[:550])
+    matches: set[str] = set()
+    source: set[str] = set()
+    for key, value in data_values.items():
+        if key in DATA_STORE_ATTRIBUTE_NAMES and type(value) is str and value in stores:
+            matches.add(value)
+            source.add("EXPLICIT_CANONICAL_DATA_ID")
+    for market_id, meta in stores.items():
+        city = normalized_public_directory_text(meta["city"])
+        address = normalized_public_directory_text(meta["address"])
+        # Both required; city alone is ambiguous (Kraków, Łódź, etc.).
+        if city and address and city in text and address in text:
+            matches.add(market_id)
+            source.add("EXACT_CANONICAL_DIRECTORY_ADDRESS")
+    if len(matches) == 1:
+        return {
+            "storeNumber": next(iter(matches)),
+            "identityStatus": "VERIFIED",
+            "identityEvidence": sorted(source),
+        }
+    return {
+        "storeNumber": None,
+        "identityStatus": "AMBIGUOUS" if matches else "UNKNOWN",
+    }
+
+
+def visible_modal_scopes(page: Any) -> list[Any]:
+    scopes = []
+    try:
+        nodes = page.locator('dialog,[role="dialog"],[aria-modal="true"]')
+        for i in range(min(nodes.count(), 20)):
+            node = nodes.nth(i)
+            if node.is_visible():
+                scopes.append(node)
+    except Exception:
+        return []
+    return scopes
+
+
+def inspect_post_open_ui(
+    page: Any, stores: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    """Visible scoped DOM structure, with only allowlisted public identifiers.
+
+    A single visible dialog creates a safe market-row interaction boundary.
+    Without one, inspect bounded page structure but do NOT authorize clicks.
+    Neither arbitrary modal text nor addresses/coordinates are persisted.
+    """
+    dialogs = visible_modal_scopes(page)
+    diagnostic: dict[str, Any] = {
+        "visibleDialogCount": len(dialogs),
+        "visibleRegionCount": 0,
+        "scope": "ONE_VISIBLE_DIALOG" if len(dialogs) == 1 else "UNSCOPED_PAGE",
+        "storeClickScopeVerified": len(dialogs) == 1,
+        "dialogRoles": [],
+        "headings": [],
+        "visibleInputCount": 0,
+        "inputs": [],
+        "visibleCandidateControlCount": 0,
+        "canonicalStoreCandidates": [],
+        "candidateStoreRowsCount": 0,
+        "dataAttributeNames": [],
+        "storeSearchInputObserved": False,
+        "structuralOnly": True,
+    }
+    try:
+        for dialog in dialogs[:8]:
+            role = dialog.get_attribute("role")
+            diagnostic["dialogRoles"].append(
+                role if role in ("dialog", "region") else "dialog"
+            )
+        regions = page.locator('[role="region"]')
+        diagnostic["visibleRegionCount"] = sum(
+            bool(regions.nth(i).is_visible())
+            for i in range(min(regions.count(), 35))
+        )
+        scope = dialogs[0] if len(dialogs) == 1 else page
+        headings = scope.locator('h1,h2,h3,h4,[role="heading"],label')
+        for i in range(min(headings.count(), 50)):
+            item = headings.nth(i)
+            if not item.is_visible():
+                continue
+            summary = safe_modal_label(item.inner_text(timeout=350))
+            if summary is not None and len(diagnostic["headings"]) < 16:
+                role = item.get_attribute("role") or "heading/label"
+                diagnostic["headings"].append({
+                    "role": role if role in ("heading", "label") else "heading/label",
+                    **summary,
+                })
+        inputs = scope.locator('input,textarea,[role="combobox"],[role="searchbox"]')
+        for i in range(min(inputs.count(), 60)):
+            item = inputs.nth(i)
+            if not item.is_visible():
+                continue
+            diagnostic["visibleInputCount"] += 1
+            kind = item.get_attribute("type") or "text"
+            kind = kind if kind in (
+                "text", "search", "number", "tel", "email", "hidden",
+            ) else "other"
+            hint = safe_modal_label(
+                (item.get_attribute("placeholder") or "") + " "
+                + (item.get_attribute("aria-label") or "")
+            )
+            info = {"type": kind, "storeLocationHint": hint}
+            if hint is not None and any(t in hint["keywordTags"]
+                                        for t in ("store", "location", "search")):
+                diagnostic["storeSearchInputObserved"] = True
+            if len(diagnostic["inputs"]) < 16:
+                diagnostic["inputs"].append(info)
+        nodes = scope.locator(
+            'button,[role="button"],[role="option"],a[href],'
+            '[data-store-number],[data-store-id],[data-market-id]'
+        )
+        unique = set()
+        attribute_names = set()
+        for i in range(min(nodes.count(), 160)):
+            item = nodes.nth(i)
+            if not item.is_visible():
+                continue
+            diagnostic["visibleCandidateControlCount"] += 1
+            names = item.evaluate(
+                "(e) => Array.from(e.attributes).map(a => a.name).slice(0,45)"
+            )
+            attribute_names.update(safe_store_attribute_names(names))
+            data_values = {
+                name: item.get_attribute(name) for name in DATA_STORE_ATTRIBUTE_NAMES
+            }
+            identity = identify_canonical_dom_store(
+                item.inner_text(timeout=400), data_values, stores
+            )
+            if identity["identityStatus"] == "VERIFIED":
+                unique.add(identity["storeNumber"])
+                if len(diagnostic["canonicalStoreCandidates"]) < 25:
+                    diagnostic["canonicalStoreCandidates"].append({
+                        **identity,
+                        "dataAttributeNames": safe_store_attribute_names(names),
+                        "enabled": item.is_enabled(),
+                    })
+        diagnostic["candidateStoreRowsCount"] = len(unique)
+        diagnostic["dataAttributeNames"] = sorted(attribute_names)[:15]
+    except Exception:
+        diagnostic["inspectionIncomplete"] = True
+    return diagnostic
+
+
 def _stored_state(context: Any, page: Any) -> tuple[Any, Any]:
     """In-memory ephemeral comparison only. NEVER serialize the returned values."""
     try:
