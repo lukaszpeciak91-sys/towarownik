@@ -700,32 +700,43 @@ def discover_controls(page: Any) -> list[dict[str, Any]]:
 OBSERVED_AVAILABILITY_BUTTON = "Sprawdź dostępność w innym sklepie"
 
 
-def resolve_exact_availability_opener(page: Any) -> tuple[Any | None, str]:
-    """Run #2: real PDP button[data-component=PdpLink], exact accessible name.
+def normalized_inner_text(raw: str | None) -> str:
+    return re.sub(r"\\s+", " ", raw or "").strip()
 
-    Deliberately never fall back to index, substring, nearby text or
-    recommendation matches. A hidden/disabled/duplicate button is not usable.
+
+def resolve_exact_availability_opener(page: Any) -> tuple[Any | None, str]:
+    """Run #3: observed native button[PdpLink] with EXACT visible innerText.
+
+    SVG <title>arrow-right</title> can change the accessible name, so
+    role/name lookups are not an exact representation of the live DOM.
+    Candidate order/position, recommendation text and generic matches are
+    never used to authorize a click.
     """
     try:
-        locator = page.get_by_role(
-            "button", name=OBSERVED_AVAILABILITY_BUTTON, exact=True,
-        )
-        count = locator.count()
-        if count == 0:
+        candidates = page.locator('button[data-component="PdpLink"]')
+        count = candidates.count()
+        if count > 180:
+            return None, "BUTTON_CANDIDATE_LIMIT_EXCEEDED"
+        matching = []
+        for index in range(count):
+            button = candidates.nth(index)
+            # This selector requires native button; don't relax to role.
+            if normalized_inner_text(button.inner_text(timeout=400)) != OBSERVED_AVAILABILITY_BUTTON:
+                continue
+            matching.append(button)
+        if not matching:
             return None, "EXACT_BUTTON_MISSING"
-        if count != 1:
+        if len(matching) != 1:
             return None, "EXACT_BUTTON_AMBIGUOUS"
-        button = locator.first
+        button = matching[0]
         if not button.is_visible():
             return None, "EXACT_BUTTON_HIDDEN"
         if not button.is_enabled():
             return None, "EXACT_BUTTON_DISABLED"
-        component = button.get_attribute("data-component")
-        if component not in (None, "PdpLink"):
-            return None, "UNEXPECTED_BUTTON_COMPONENT"
         return button, "EXACT_BUTTON_RESOLVED"
     except Exception:
         return None, "BUTTON_RESOLUTION_FAILED"
+
 
 
 def click_safe_control(page: Any, controls: list[dict[str, Any]]) -> dict[str, Any]:
@@ -740,7 +751,7 @@ def click_safe_control(page: Any, controls: list[dict[str, Any]]) -> dict[str, A
         page.wait_for_timeout(1500)
         return {
             "status": "CLICKED", "label": OBSERVED_AVAILABILITY_BUTTON,
-            "role": "button", "selectorEvidence": "EXACT_OBSERVED_ROLE_AND_NAME",
+            "role": "button", "selectorEvidence": "EXACT_OBSERVED_PDP_LINK_INNER_TEXT",
         }
     except Exception as exc:
         # Never print raw Playwright exceptions (may contain page content/URLs).
