@@ -6,6 +6,8 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.product.LocalProduct
 import pl.lukaszpeciak.towarownik.product.ProductLookupResult
 import pl.lukaszpeciak.towarownik.product.ProductSearchCandidate
@@ -49,6 +51,64 @@ class AdvisorControllerTest {
                 hasAttachment = true,
             ),
         )
+    }
+
+    @Test
+    fun attachmentListsSelectV5WhilePlainTextUsesExistingTransport() = runBlocking {
+        val calls = mutableListOf<String>()
+        val controller = AdvisorController(
+            isConfigured = { true },
+            startAgent = { _, _, _ ->
+                calls += "v3-text"
+                successAnswer("resp_text", "Plain response")
+            },
+            messageAgent = { _, _, _, _ -> error("Unexpected v3 message") },
+            continueAgent = { _, _, _, _, _, _ -> error("No tool expected") },
+            executeObiTool = { error("No OBI tool") },
+            executeProviderTool = { error("No KWANT tool") },
+            branchDirectory = ::testBranchDirectory,
+            startAgentWithAttachments = { _, _, _, parts ->
+                calls += "v5-start-\${parts.size}"
+                successAnswer("resp_start", "Attached response")
+            },
+            messageAgentWithAttachments = { responseId, _, _, _, parts ->
+                assertEquals("resp_start", responseId)
+                calls += "v5-message-\${parts.size}"
+                successAnswer("resp_message", "More attached response")
+            },
+        )
+        fun part(id: String) = AdvisorAttachment(
+            type = AttachmentType.PDF, mimeType = "application/pdf",
+            displayName = "\$id.pdf", localId = id.repeat(32), byteSize = 5, createdAt = 0,
+        )
+        val plain = controller.runTurn(
+            input = "Hello", previousResponseId = null,
+            conversationProviderId = "kwant-pl", conversationStoreNumber = "205",
+        ) { }
+        assertTrue(plain is AdvisorUiState.Success)
+        val one = controller.runTurn(
+            input = "", previousResponseId = null,
+            conversationProviderId = "kwant-pl", conversationStoreNumber = "205",
+            attachments = listOf(part("a")),
+        ) { }
+        assertTrue(one is AdvisorUiState.Success)
+        val mixed = controller.runTurn(
+            input = "Compare", previousResponseId = "resp_start",
+            conversationProviderId = "kwant-pl", conversationStoreNumber = "205",
+            attachments = listOf(part("a"), part("b"), part("c")),
+        ) { }
+        assertTrue(mixed is AdvisorUiState.Success)
+        assertEquals(listOf("v3-text", "v5-start-1", "v5-message-3"), calls)
+        val overLimit = controller.runTurn(
+            input = "Oversize", previousResponseId = null,
+            conversationProviderId = "kwant-pl", conversationStoreNumber = "205",
+            attachments = listOf(
+                part("a").copy(byteSize = 16L * 1024 * 1024),
+                part("b").copy(byteSize = 8L * 1024 * 1024 + 1),
+            ),
+        ) { }
+        assertEquals(AdvisorUiState.Error(AdvisorError.INPUT), overLimit)
+        assertEquals(3, calls.size)
     }
 
     @Test
