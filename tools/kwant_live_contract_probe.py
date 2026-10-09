@@ -2951,91 +2951,374 @@ def public_branch_directory_from_html(html: str) -> dict[str, str]:
     return directory
 
 
+# Explicit research hypotheses, NOT established inventory semantics.
+BRANCH_ID_CANDIDATE_FIELDS = (
+    "department_id", "department_stock_id", "departmentId", "departmentStockId",
+)
+STOCK_QUANTITY_CANDIDATE_KEYS = frozenset({
+    "stock", "stocknum", "stockqty", "stockquantity",
+    "available", "availablestock", "availablestocknum",
+    "availablestockquantity", "availabilityquantity",
+    "availabilityqty", "quantityinstock", "quantityavailable",
+    "physicalstock", "branchstock", "departmentstock",
+})
+SEARCH_CENTRAL_OR_AGGREGATE_KEYS = frozenset({
+    "centralstock", "centralstocknum", "aggregatestock",
+    "aggregatebranchstock", "totalstock", "totalbranchstock",
+    "stocktotal", "stockaggregate",
+})
+SAFE_JSON_FIELD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,55}\Z")
+
+
+def safe_json_field(key: Any) -> bool:
+    return (
+        isinstance(key, str)
+        and SAFE_JSON_FIELD_RE.fullmatch(key) is not None
+        and SECRET_KEY_RE.search(key) is None
+    )
+
+
+def normalized_quantity_key(key: str) -> str:
+    return key.replace("_", "").lower()
+
+
+def is_stock_candidate_field(key: str) -> bool:
+    return (
+        safe_json_field(key)
+        and normalized_quantity_key(key) in STOCK_QUANTITY_CANDIDATE_KEYS
+    )
+
+
+def is_search_stock_field(key: str) -> bool:
+    return (
+        is_stock_candidate_field(key)
+        or (
+            safe_json_field(key)
+            and normalized_quantity_key(key) in SEARCH_CENTRAL_OR_AGGREGATE_KEYS
+        )
+    )
+
+
+def numeric_branch_id(value: Any) -> str | None:
+    if type(value) is int and 0 <= value <= 99999999:
+        return str(value)
+    if isinstance(value, str) and re.fullmatch(r"[0-9]{1,8}", value):
+        return value
+    return None
+
+
+def observed_branch_identity(
+    value: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    matches = [
+        (key, numeric_branch_id(value[key]))
+        for key in BRANCH_ID_CANDIDATE_FIELDS
+        if key in value and numeric_branch_id(value[key]) is not None
+    ]
+    if not matches or len({match[1] for match in matches}) != 1:
+        return None, None
+    return matches[0][1], matches[0][0]
+
+
+def candidate_quantity(value: Any) -> tuple[int | None, str]:
+    if value is None:
+        return None, "unknown_null"
+    if type(value) is not int or not (0 <= value <= 1_000_000_000):
+        return None, "invalid"
+    return value, "known_zero" if value == 0 else "known_positive"
+
+
+def search_stock_classification(fields: list[str]) -> str:
+    if not fields:
+        return "NO_STOCK_FIELD_OBSERVED"
+    if all(
+        normalized_quantity_key(name.rsplit(".", 1)[-1])
+        in SEARCH_CENTRAL_OR_AGGREGATE_KEYS
+        for name in fields
+    ):
+        return "CENTRAL_OR_AGGREGATE_LOOKING_ONLY"
+    return "STOCK_SHAPED_SCOPE_UNKNOWN"
+
+
 def research_json_shape(
     payload: Any,
     expected_product_id: str,
     directory: dict[str, str],
 ) -> dict[str, Any]:
-    """Summarize public stock-shaped JSON; never return source objects/bodies."""
-    # Some public APIs return an array directly, not a root object.
+    """Bounded, privacy-filtered structural observations, never trusted stock."""
     if not isinstance(payload, (dict, list)):
         return {"rootType": type(payload).__name__, "branchRows": []}
     root = payload if isinstance(payload, dict) else {}
     root_id = root.get("product_id", root.get("productId"))
     identity = (
         str(root_id) == expected_product_id
-        if isinstance(root_id, (str, int)) and not isinstance(root_id, bool)
-        else UNKNOWN
+        if type(root_id) in (str, int) else UNKNOWN
     )
     hits = root.get("hits")
     summary: dict[str, Any] = {
         "rootType": type(payload).__name__,
-        "rootFields": sorted(
-            str(k)[:60] for k in root if not SECRET_KEY_RE.search(str(k))
-        )[:65],
+        "rootFields": sorted(k for k in root if safe_json_field(k))[:65],
         "productIdentityMatches": identity,
         "branchRows": [],
+        "searchStockEvidence": "NOT_A_SEARCH_RESPONSE",
     }
     if isinstance(hits, list):
+        first = next((h for h in hits[:30] if isinstance(h, dict)), {})
         summary["searchHitCount"] = len(hits)
-        first = next((h for h in hits if isinstance(h, dict)), {})
         summary["searchHitFields"] = sorted(
-            str(k)[:60] for k in first if not SECRET_KEY_RE.search(str(k))
+            k for k in first if safe_json_field(k)
         )[:75]
-        # Field names prove availability (or absence) more safely than copying
-        # candidate data, which can include product and account information.
-        summary["searchHitStockFields"] = [
-            key for key in summary["searchHitFields"]
-            if re.search(r"stock|magazyn|central|availability|department", key, re.I)
-        ]
+        stock_fields: set[str] = set()
+        control_candidates: list[dict[str, Any]] = []
+        for hit in hits[:30]:
+            if not isinstance(hit, dict):
+                continue
+            hit_id = hit.get("id")
+            is_control = type(hit_id) in (str, int) and (
+                str(hit_id) == expected_product_id
+            )
+            def inspect_hit(obj: dict[str, Any], prefix: str) -> None:
+                for key, child in list(obj.items())[:100]:
+                    if not safe_json_field(key):
+                        continue
+                    field_path = (prefix + "." if prefix else "") + key
+                    if is_search_stock_field(key):
+                        stock_fields.add(field_path)
+                    if (
+                        is_control and is_stock_candidate_field(key)
+                        and len(control_candidates) < 10
+                    ):
+                        branch_id, _ = observed_branch_identity(obj)
+                        value, state = candidate_quantity(child)
+                        if branch_id in directory and state in (
+                            "known_zero", "known_positive"
+                        ):
+                            control_candidates.append({
+                                "branchId": branch_id,
+                                "candidateField": field_path,
+                                "candidateValue": value,
+                            })
+                    if (
+                        isinstance(child, dict) and not prefix
+                        and len(stock_fields) < 75
+                    ):
+                        inspect_hit(child, field_path)
+            inspect_hit(hit, "")
+        summary["searchHitStockFields"] = sorted(stock_fields)[:75]
+        summary["searchStockEvidence"] = search_stock_classification(
+            summary["searchHitStockFields"]
+        )
+        summary["searchHitControlCandidates"] = control_candidates
 
     candidate_rows: list[dict[str, Any]] = []
     inspected = 0
+
     def visit(node: Any, path: str, depth: int) -> None:
         nonlocal inspected
         if inspected >= 5000 or depth > 7:
             return
         inspected += 1
         if isinstance(node, dict):
-            branch_id = node.get("department_id", node.get("department_stock_id"))
-            if (
-                isinstance(branch_id, (int, str))
-                and not isinstance(branch_id, bool)
-                and str(branch_id).isdigit()
-                and "stock" in node
-                and len(candidate_rows) < LOCATIONS_RESEARCH_MAX_BRANCH_ROWS
-            ):
-                stock = node["stock"]
-                valid_stock = (
-                    type(stock) is int and stock >= 0
-                )
-                candidate_rows.append({
-                    "jsonPath": path,
-                    "branchId": str(branch_id)[:12],
-                    "branchKnownInDirectory": str(branch_id) in directory,
-                    "branchNameFromDirectory": directory.get(str(branch_id)),
-                    "stockFieldPresent": True,
-                    "stock": stock if valid_stock else None,
-                    "stockState": (
-                        "known_zero" if valid_stock and stock == 0
-                        else "known_positive" if valid_stock
-                        else "unknown_null" if stock is None
-                        else "invalid"
-                    ),
-                })
+            branch_id, branch_field = observed_branch_identity(node)
+            if branch_id is not None:
+                for key, value in list(node.items())[:120]:
+                    if (
+                        len(candidate_rows) >= LOCATIONS_RESEARCH_MAX_BRANCH_ROWS
+                        or not is_stock_candidate_field(key)
+                    ):
+                        continue
+                    stock, state = candidate_quantity(value)
+                    candidate_rows.append({
+                        "jsonPath": path,
+                        "branchId": branch_id,
+                        "branchIdField": branch_field,
+                        "branchKnownInDirectory": branch_id in directory,
+                        "branchNameFromDirectory": directory.get(branch_id),
+                        "candidateField": key,
+                        "candidateValue": stock,
+                        "candidateState": state,
+                        # Backward-compatible diagnostic alias; still unverified.
+                        "stockState": state,
+                    })
             for key, value in list(node.items())[:120]:
-                if not SECRET_KEY_RE.search(str(key)):
-                    visit(value, path + "." + str(key)[:55], depth + 1)
+                if safe_json_field(key):
+                    visit(value, path + "." + key, depth + 1)
         elif isinstance(node, list):
             for element in node[:120]:
                 visit(element, path + "[]", depth + 1)
+
     visit(payload, "$", 0)
     summary["branchRows"] = candidate_rows
     summary["branchRowCountCaptured"] = len(candidate_rows)
     summary["branchDistinctIds"] = len({
         row["branchId"] for row in candidate_rows
     })
+    summary["verifiedDirectoryBranchCount"] = len({
+        row["branchId"] for row in candidate_rows
+        if row["branchKnownInDirectory"]
+    })
+    summary["numericCandidateCount"] = sum(
+        row["candidateState"] in ("known_zero", "known_positive")
+        and row["branchKnownInDirectory"]
+        for row in candidate_rows
+    )
     return summary
+
+
+def parse_public_aggregate_quantity(value: Any) -> int | None:
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(
+        r"\s*([0-9]{1,3}(?:[ \u00a0][0-9]{3})*|[0-9]+)\s*szt\.?\s*",
+        value, re.IGNORECASE,
+    )
+    if not match:
+        return None
+    result = int(re.sub(r"\s", "", match.group(1)))
+    return result if result <= 1_000_000_000 else None
+
+
+def evaluate_candidate_coverage(
+    shape: dict[str, Any],
+    directory: dict[str, str],
+) -> dict[str, Any]:
+    """Compare observed directory IDs only, never deduce absent stock is zero."""
+    rows = shape.get("branchRows", [])
+    known = [row for row in rows if row.get("branchKnownInDirectory")]
+    represented = {row["branchId"] for row in known}
+    numeric = [
+        row for row in known
+        if row.get("candidateState") in ("known_zero", "known_positive")
+    ]
+    identity_verified = shape.get("productIdentityMatches") is True
+    result: dict[str, Any] = {
+        "completeness": UNKNOWN,
+        "verifiedDirectoryBranchCount": len(represented),
+        "directoryBranchCount": len(directory),
+        "sumConfirmedObservedBranchStock": None,
+    }
+    # More than one row per branch (including different stock-shaped fields)
+    # prevents an unambiguous quantity mapping; do not choose a favorite field.
+    unique = (
+        len(known) == len(represented)
+        and len(known) == len(numeric)
+        and all(row["candidateValue"] is not None for row in numeric)
+    )
+    if identity_verified and len(represented) >= 2 and directory:
+        all_ids = represented == set(directory) and all(
+            row["branchKnownInDirectory"] for row in rows
+        )
+        if all_ids:
+            result["completeness"] = "ALL_DIRECTORY_BRANCHES"
+        elif (
+            unique and len(rows) == len(known)
+            and all(row["candidateValue"] > 0 for row in numeric)
+        ):
+            result["completeness"] = "POSITIVE_ONLY_CANDIDATE"
+        else:
+            result["completeness"] = "PARTIAL"
+        if unique and len(rows) == len(known):
+            result["sumConfirmedObservedBranchStock"] = sum(
+                row["candidateValue"] for row in numeric
+            )
+    return result
+
+
+def select_strongest_location_candidate(
+    observations: list[dict[str, Any]],
+    directory: dict[str, str],
+    aggregate: Any,
+) -> dict[str, Any]:
+    """Diagnostic ranking solely by observed identity, coverage, quantities and UI."""
+    aggregate_quantity = parse_public_aggregate_quantity(aggregate)
+    scored: list[tuple[tuple[int, ...], int, dict[str, Any], dict[str, Any]]] = []
+    for index, observation in enumerate(observations):
+        if not str(observation.get("action", "")).startswith("locations:"):
+            continue
+        shape = observation.get("shape") or {}
+        if not isinstance(shape, dict):
+            continue
+        count = shape.get("verifiedDirectoryBranchCount", 0)
+        if count < 2:
+            continue
+        coverage = evaluate_candidate_coverage(shape, directory)
+        triggered_ui = observation.get("action") not in (
+            "locations:page",
+        )
+        score = (
+            int(shape.get("productIdentityMatches") is True),
+            int(count >= 2),
+            int(shape.get("numericCandidateCount", 0) > 0),
+            int(triggered_ui),
+            count,
+            int(shape.get("numericCandidateCount", 0)),
+        )
+        scored.append((score, index, shape, coverage))
+
+    if not scored:
+        return {
+            "strongestCandidate": None,
+            "completeness": UNKNOWN,
+            "aggregateReconciliation": "NOT_EVALUATED",
+            "sumConfirmedObservedBranchStock": None,
+            "parsedAggregateBranchStock": aggregate_quantity,
+        }
+
+    score, index, shape, coverage = max(
+        scored, key=lambda item: (item[0], -item[1])
+    )
+    scope_verified = shape.get("productIdentityMatches") is True
+    total = coverage["sumConfirmedObservedBranchStock"]
+    complete = coverage["completeness"] == "ALL_DIRECTORY_BRANCHES"
+    if not scope_verified:
+        reconciliation = "NOT_EVALUATED"
+    elif not complete or total is None or aggregate_quantity is None:
+        reconciliation = "NOT_COMPARABLE"
+    else:
+        reconciliation = (
+            "MATCH" if total == aggregate_quantity else "MISMATCH"
+        )
+    return {
+        "strongestCandidate": {
+            "observationIndex": index,
+            "productIdentityVerified": scope_verified,
+            "uiTriggered": score[3] == 1,
+            "verifiedDirectoryBranchCount": coverage["verifiedDirectoryBranchCount"],
+            "numericCandidateCount": shape.get("numericCandidateCount", 0),
+            "reason": "STRUCTURAL_CANDIDATE_ONLY_NOT_PRODUCTION_CONTRACT",
+        },
+        "completeness": coverage["completeness"],
+        "aggregateReconciliation": reconciliation,
+        "sumConfirmedObservedBranchStock": total,
+        "parsedAggregateBranchStock": aggregate_quantity,
+    }
+
+
+def summarize_search_ranking_evidence(
+    observations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Reported hit fields are not verified branch quantities by themselves."""
+    relevant = [
+        item.get("shape", {}) for item in observations
+        if str(item.get("action", "")).startswith("search:")
+        and "searchHitFields" in item.get("shape", {})
+    ]
+    fields = sorted({
+        field for shape in relevant
+        for field in shape.get("searchHitStockFields", [])
+    })[:75]
+    return {
+        "observedSearchResponseCount": len(relevant),
+        "searchHitStockFields": fields,
+        "selectedBranchStockProven": False,
+        "stockScope": (
+            search_stock_classification(fields) if relevant else UNKNOWN
+        ),
+        "reason": (
+            "NO_INDEPENDENT_SEARCH_HIT_BRANCH_SCOPE_VERIFICATION"
+            if fields else "NO_STOCK_FIELDS_CONFIRMED"
+        ),
+    }
 
 
 class ObservedLocationsResponses:
