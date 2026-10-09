@@ -1595,6 +1595,40 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
             )
         )
 
+    locations = summary.get("locationsResearch")
+    if isinstance(locations, dict):
+        lines.extend([
+            "", "PRODUCT LOCATIONS RESEARCH",
+            "verifiedProductPage=" + format_scalar(locations.get("verifiedProductPage", False)),
+            "directoryBranchCount=" + str(locations.get("directoryBranchCount", 0)),
+            "oneShotPerBranchResponseObserved=" + format_scalar(locations.get("oneShotPerBranchResponseObserved", False)),
+            "candidateMultiBranchResponseObserved=" + format_scalar(locations.get("candidateMultiBranchResponseObserved", False)),
+            "productPageShape=" + format_scalar(locations.get("productPageShape", {})),
+            "strongestCandidate=" + format_scalar(locations.get("strongestCandidate")),
+            "sumConfirmedObservedBranchStock=" + format_scalar(locations.get("sumConfirmedObservedBranchStock")),
+            "parsedAggregateBranchStock=" + format_scalar(locations.get("parsedAggregateBranchStock")),
+            "searchRankingEvidence=" + format_scalar(locations.get("searchRankingEvidence", {})),
+            "productPageBranchListCandidate=" + format_scalar(locations.get("productPageBranchListCandidate", False)),
+            "completeness=" + str(locations.get("completeness", UNKNOWN)),
+            "aggregateReconciliation=" + str(locations.get("aggregateReconciliation", "NOT_EVALUATED")),
+            "uiActions=" + format_scalar(locations.get("uiActions", [])),
+            "availabilitySelector=" + str(locations.get("availabilitySelector", UNKNOWN)),
+            "availabilityControlFound=" + format_scalar(locations.get("availabilityControlFound", False)),
+            "contractClassification=" + format_scalar(locations.get("contractClassification", {})),
+            "availabilityUi=" + format_scalar(locations.get("availabilityUi", {})),
+            "filterResearch=" + format_scalar(locations.get("filterResearch", {})),
+            "searchRequestDepstockObserved=" + format_scalar(locations.get("searchRequestDepstockObserved", False)),
+            "batchPricesResearch=" + format_scalar(locations.get("batchPricesResearch", [])),
+            "selectedBranchStock=" + format_scalar(locations.get("selectedBranchStock")),
+            "selectedBranchStockSource=" + str(locations.get("selectedBranchStockSource", UNKNOWN)),
+            "centralStock=" + format_scalar(locations.get("centralStock")),
+            "centralStockSource=" + str(locations.get("centralStockSource", UNKNOWN)),
+            "aggregateBranchStockSource=" + str(locations.get("aggregateBranchStockSource", UNKNOWN)),
+        ])
+        for observed in locations.get("observedResponses", []):
+            lines.append("observed=" + format_scalar(observed))
+        for request in locations.get("observedRequests", []):
+            lines.append("availabilityRequest=" + format_scalar(request))
     (out_dir / "summary.txt").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
@@ -2581,6 +2615,7 @@ def run_live_probe(
     raw_dir = out_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     recorder = NetworkRecorder()
+    locations_capture = ObservedLocationsResponses(recorder, numeric_product_id)
     numeric_product_route = probe_numeric_product_route_http(
         numeric_product_id
     )
@@ -2599,6 +2634,8 @@ def run_live_probe(
         page = context.new_page()
         page.on("request", recorder.on_request)
         page.on("response", recorder.on_response)
+        page.on("response", locations_capture.on_response)
+        page.on("request", locations_capture.on_request)
 
         recorder.set_action("baseline")
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
@@ -2761,6 +2798,27 @@ def run_live_probe(
             raw_dir=raw_dir,
         )
 
+        # Resolve the selected branch before locations research. The later
+        # departmentStockId cookie mapping is deliberately not yet available.
+        trusted_selected_branch_id = resolved_public_selected_branch_id(
+            branch_page_url=branch_page_url,
+            branch_html=branch_before_html,
+            selected_branch_label=branch_label,
+            selection_confirmed=(
+                target_branch_resolved and selection_observed is True
+            ),
+        )
+        locations_research = research_product_locations(
+            page, recorder, locations_capture,
+            product_id=numeric_product_id,
+            branch_html=branch_before_html,
+            selected_branch_id=(
+                trusted_selected_branch_id
+                if trusted_selected_branch_id != UNKNOWN else ""
+            ),
+            selected_branch_label=branch_label,
+        )
+        recorder.set_action("home:after-locations")
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
         frontend_clues = collect_frontend_clues(page, context)
         department_cookie_research = (
@@ -2868,6 +2926,30 @@ def run_live_probe(
             department_cookie_research=department_cookie_research,
             numeric_product_route=numeric_product_route,
         )
+        # Generic full-page regexes can read recommended-product stock.
+        # Replace *all* displayed stock scopes with exact-product evidence.
+        for candidate in (
+            summary["product"],
+            summary["product"].get("beforeBranchSelection", {}),
+            summary["product"].get("afterBranchSelection", {}),
+        ):
+            if isinstance(candidate, dict):
+                for field in (
+                    "selectedBranchStock", "centralStock", "aggregateBranchStock"
+                ):
+                    candidate[field] = UNKNOWN
+        for field, loc_key in (
+            ("selectedBranchStock", "selectedBranchStock"),
+            ("centralStock", "centralStock"),
+            ("aggregateBranchStock", "aggregateBranchStock"),
+        ):
+            quantity = locations_research.get(loc_key)
+            if quantity not in (None, UNKNOWN):
+                summary["product"][field] = quantity
+            summary["product"][field + "Source"] = locations_research.get(
+                loc_key + "Source", "UNKNOWN"
+            )
+        summary["locationsResearch"] = locations_research
         browser.close()
         return summary
 
@@ -2880,6 +2962,1279 @@ def strip_private_search_fields(
         for key, child in value.items()
         if not key.startswith("_")
     }
+
+
+
+# Locations research is deliberately diagnostic only. No endpoint is guessed or
+# requested directly: all API evidence below comes from observed browser traffic.
+LOCATIONS_RESEARCH_MAX_RESPONSES = 85
+LOCATIONS_RESEARCH_MAX_BODY_BYTES = 1_500_000
+LOCATIONS_RESEARCH_MAX_BRANCH_ROWS = 60
+
+
+def public_branch_directory_from_html(html: str) -> dict[str, str]:
+    """Use only verified public department IDs/names from the branch directory."""
+    match = re.search(
+        r"""<script[^>]+id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>""",
+        html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return {}
+    try:
+        payload = json.loads(match.group(1))
+        rows = payload["props"]["pageProps"]["departments"]["list"]
+    except (ValueError, KeyError, TypeError):
+        return {}
+    directory: dict[str, str] = {}
+    if not isinstance(rows, list):
+        return directory
+    for item in rows[:150]:
+        if not isinstance(item, dict):
+            continue
+        branch_id, name = item.get("department_id"), item.get("name")
+        if (
+            type(branch_id) is int
+            and 0 <= branch_id <= 99999999
+            and isinstance(name, str)
+            and 0 < len(name) <= 120
+            and not SECRET_KEY_RE.search(name)
+            and is_safe_public_value(name)
+        ):
+            directory[str(branch_id)] = name
+    return directory
+
+
+def resolved_public_selected_branch_id(
+    *,
+    branch_page_url: str,
+    branch_html: str,
+    selected_branch_label: str,
+    selection_confirmed: bool,
+) -> str:
+    """Cross-check the resolved selected branch page against live directory.
+
+    This is available BEFORE later cookie-constructor research sets the
+    final summary departmentStockId. Names only corroborate a numeric ID
+    already established by the public branch page and directory.
+    """
+    if not selection_confirmed:
+        return UNKNOWN
+    page_id = extract_branch_page_identifier(branch_page_url)
+    directory = public_branch_directory_from_html(branch_html)
+    if (
+        page_id == UNKNOWN
+        or page_id not in directory
+        or not branch_label_matches(
+            selected_branch_label, link_text=directory[page_id]
+        )
+    ):
+        return UNKNOWN
+    return page_id
+
+
+# Explicit research hypotheses, NOT established inventory semantics.
+BRANCH_ID_CANDIDATE_FIELDS = (
+    "department_id", "department_stock_id", "departmentId", "departmentStockId",
+)
+STOCK_QUANTITY_CANDIDATE_KEYS = frozenset({
+    "stock", "stocknum", "stockqty", "stockquantity",
+    "available", "availablestock", "availablestocknum",
+    "availablestockquantity", "availabilityquantity",
+    "availabilityqty", "quantityinstock", "quantityavailable",
+    "physicalstock", "branchstock", "departmentstock",
+})
+SEARCH_CENTRAL_OR_AGGREGATE_KEYS = frozenset({
+    "centralstock", "centralstocknum", "aggregatestock",
+    "aggregatebranchstock", "totalstock", "totalbranchstock",
+    "stocktotal", "stockaggregate",
+})
+SAFE_JSON_FIELD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,55}\Z")
+
+
+def safe_json_field(key: Any) -> bool:
+    return (
+        isinstance(key, str)
+        and SAFE_JSON_FIELD_RE.fullmatch(key) is not None
+        and SECRET_KEY_RE.search(key) is None
+    )
+
+
+def normalized_quantity_key(key: str) -> str:
+    return key.replace("_", "").lower()
+
+
+def is_stock_candidate_field(key: str) -> bool:
+    return (
+        safe_json_field(key)
+        and normalized_quantity_key(key) in STOCK_QUANTITY_CANDIDATE_KEYS
+    )
+
+
+def is_search_stock_field(key: str) -> bool:
+    return (
+        is_stock_candidate_field(key)
+        or (
+            safe_json_field(key)
+            and normalized_quantity_key(key) in SEARCH_CENTRAL_OR_AGGREGATE_KEYS
+        )
+    )
+
+
+def numeric_branch_id(value: Any) -> str | None:
+    if type(value) is int and 0 <= value <= 99999999:
+        return str(value)
+    if isinstance(value, str) and re.fullmatch(r"[0-9]{1,8}", value):
+        return value
+    return None
+
+
+def observed_branch_identity(
+    value: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    matches = [
+        (key, numeric_branch_id(value[key]))
+        for key in BRANCH_ID_CANDIDATE_FIELDS
+        if key in value and numeric_branch_id(value[key]) is not None
+    ]
+    if not matches or len({match[1] for match in matches}) != 1:
+        return None, None
+    return matches[0][1], matches[0][0]
+
+
+def candidate_quantity(value: Any) -> tuple[int | None, str]:
+    if value is None:
+        return None, "unknown_null"
+    if type(value) is not int or not (0 <= value <= 1_000_000_000):
+        return None, "invalid"
+    return value, "known_zero" if value == 0 else "known_positive"
+
+
+def search_stock_classification(fields: list[str]) -> str:
+    if not fields:
+        return "NO_STOCK_FIELD_OBSERVED"
+    if all(
+        normalized_quantity_key(name.rsplit(".", 1)[-1])
+        in SEARCH_CENTRAL_OR_AGGREGATE_KEYS
+        for name in fields
+    ):
+        return "CENTRAL_OR_AGGREGATE_LOOKING_ONLY"
+    return "STOCK_SHAPED_SCOPE_UNKNOWN"
+
+
+def research_json_shape(
+    payload: Any,
+    expected_product_id: str,
+    directory: dict[str, str],
+) -> dict[str, Any]:
+    """Bounded, privacy-filtered structural observations, never trusted stock."""
+    if not isinstance(payload, (dict, list)):
+        return {"rootType": type(payload).__name__, "branchRows": []}
+    root = payload if isinstance(payload, dict) else {}
+    root_id = root.get("product_id", root.get("productId", root.get("id")))
+    identity = (
+        str(root_id) == expected_product_id
+        if type(root_id) in (str, int) else UNKNOWN
+    )
+    hits = root.get("hits")
+    summary: dict[str, Any] = {
+        "rootType": type(payload).__name__,
+        "rootFields": sorted(k for k in root if safe_json_field(k))[:65],
+        "productIdentityMatches": identity,
+        "branchRows": [],
+        "searchStockEvidence": "NOT_A_SEARCH_RESPONSE",
+    }
+    if isinstance(hits, list):
+        first = next((h for h in hits[:30] if isinstance(h, dict)), {})
+        summary["searchHitCount"] = len(hits)
+        summary["searchHitFields"] = sorted(
+            k for k in first if safe_json_field(k)
+        )[:75]
+        stock_fields: set[str] = set()
+        control_candidates: list[dict[str, Any]] = []
+        for hit in hits[:30]:
+            if not isinstance(hit, dict):
+                continue
+            hit_id = hit.get("id")
+            is_control = type(hit_id) in (str, int) and (
+                str(hit_id) == expected_product_id
+            )
+            def inspect_hit(obj: dict[str, Any], prefix: str) -> None:
+                for key, child in list(obj.items())[:100]:
+                    if not safe_json_field(key):
+                        continue
+                    field_path = (prefix + "." if prefix else "") + key
+                    if is_search_stock_field(key):
+                        stock_fields.add(field_path)
+                    if (
+                        is_control and is_stock_candidate_field(key)
+                        and len(control_candidates) < 10
+                    ):
+                        branch_id, _ = observed_branch_identity(obj)
+                        value, state = candidate_quantity(child)
+                        if branch_id is not None and state in (
+                            "known_zero", "known_positive"
+                        ):
+                            control_candidates.append({
+                                "branchId": branch_id,
+                                "candidateField": field_path,
+                                "candidateValue": value,
+                            })
+                    if (
+                        isinstance(child, dict) and not prefix
+                        and len(stock_fields) < 75
+                    ):
+                        inspect_hit(child, field_path)
+            inspect_hit(hit, "")
+        summary["searchHitStockFields"] = sorted(stock_fields)[:75]
+        summary["searchStockEvidence"] = search_stock_classification(
+            summary["searchHitStockFields"]
+        )
+        summary["searchHitControlCandidates"] = control_candidates
+
+    candidate_rows: list[dict[str, Any]] = []
+    inspected = 0
+
+    def visit(node: Any, path: str, depth: int) -> None:
+        nonlocal inspected
+        if inspected >= 5000 or depth > 7:
+            return
+        inspected += 1
+        if isinstance(node, dict):
+            branch_id, branch_field = observed_branch_identity(node)
+            if branch_id is not None:
+                for key, value in list(node.items())[:120]:
+                    if (
+                        len(candidate_rows) >= LOCATIONS_RESEARCH_MAX_BRANCH_ROWS
+                        or not is_stock_candidate_field(key)
+                    ):
+                        continue
+                    stock, state = candidate_quantity(value)
+                    candidate_rows.append({
+                        "jsonPath": path,
+                        "branchId": branch_id,
+                        "branchIdField": branch_field,
+                        "branchKnownInDirectory": branch_id in directory,
+                        "branchNameFromDirectory": directory.get(branch_id),
+                        "candidateField": key,
+                        "candidateValue": stock,
+                        "candidateState": state,
+                        # Backward-compatible diagnostic alias; still unverified.
+                        "stockState": state,
+                    })
+            for key, value in list(node.items())[:120]:
+                if safe_json_field(key):
+                    visit(value, path + "." + key, depth + 1)
+        elif isinstance(node, list):
+            for element in node[:120]:
+                visit(element, path + "[]", depth + 1)
+
+    visit(payload, "$", 0)
+    summary["branchRows"] = candidate_rows
+    summary["branchRowCountCaptured"] = len(candidate_rows)
+    summary["branchDistinctIds"] = len({
+        row["branchId"] for row in candidate_rows
+    })
+    summary["verifiedDirectoryBranchCount"] = len({
+        row["branchId"] for row in candidate_rows
+        if row["branchKnownInDirectory"]
+    })
+    summary["numericCandidateCount"] = sum(
+        row["candidateState"] in ("known_zero", "known_positive")
+        and row["branchKnownInDirectory"]
+        for row in candidate_rows
+    )
+    return summary
+
+
+
+AVAILABILITY_ARIA_LABEL = "Sprawdź stan i kup towar w oddziałach Kwant"
+AVAILABLE_ONLY_LABEL_RE = re.compile(
+    r"Pokaż\s+tylko\s+oddziały\s+w\s+których\s+produkt\s+jest\s+dostępny",
+    re.I,
+)
+CURRENT_STOCK_PATH = re.compile(r"/api/front/products/([0-9]+)/current\Z")
+BATCH_PRICES_PATH = re.compile(
+    r"/api/front/products/prices/([0-9]+(?:,[0-9]+){1,99})\Z"
+)
+
+
+AVAILABILITY_CHILD_SELECTOR = (
+    '[aria-label="Sprawdź stan i kup towar w oddziałach Kwant"]'
+)
+AVAILABILITY_PARENT_SELECTOR = "xpath=ancestor::*[@role='button'][1]"
+AVAILABILITY_STOCK_ROW_RE = re.compile(
+    r"\b(?:[0-9]{1,9}\s*szt\.?|brak|niedostepn\w*|dostepn\w*|stan)\b",
+    re.I,
+)
+AVAILABILITY_EXCLUDED_ROW_RE = re.compile(
+    r"\b(?:zapytaj\s+eksperta|kontakt\s+z\s+ekspertem|"
+    r"dodaj\s+do\s+koszyka|kup\s+teraz|zadzwo[nń]|telefon)\b",
+    re.I,
+)
+
+
+def is_selected_branch_stock_row(
+    parent_text: str, selected_branch_label: str,
+) -> bool:
+    """Screen exact inventory row text; name alone is never sufficient."""
+    if not isinstance(parent_text, str) or len(parent_text) > 360:
+        return False
+    normalized = normalize_branch_identity(parent_text)
+    branch = normalize_branch_identity(selected_branch_label)
+    if not normalized or not branch or len(branch) > 100:
+        return False
+    if not re.search(rf"(?<!\w){re.escape(branch)}(?!\w)", normalized):
+        return False
+    return (
+        AVAILABILITY_STOCK_ROW_RE.search(normalized) is not None
+        and AVAILABILITY_EXCLUDED_ROW_RE.search(normalized) is None
+    )
+
+
+def availability_button(
+    page: Any, selected_branch_label: str,
+) -> Any | None:
+    """Resolve actual clickable ancestor, never the duplicate expert row.
+
+    Run #17: aria-label is on a child, role=button on its parent. Require
+    precisely one eligible visible, enabled stock-row parent for the publicly
+    verified selected branch; do not rely on DOM order.
+    """
+    if not normalize_branch_identity(selected_branch_label):
+        return None
+    try:
+        descendants = page.locator(AVAILABILITY_CHILD_SELECTOR)
+        count = descendants.count()
+        if not 1 <= count <= 12:
+            return None
+        matches: list[Any] = []
+        for index in range(count):
+            child = descendants.nth(index)
+            if not child.is_visible():
+                continue
+            parent = child.locator(AVAILABILITY_PARENT_SELECTOR)
+            if parent.count() != 1:
+                continue
+            button = parent.first
+            if (
+                button.get_attribute("role") != "button"
+                or not button.is_visible()
+                or not button.is_enabled()
+            ):
+                continue
+            text = button.inner_text(timeout=1200)[:361]
+            if is_selected_branch_stock_row(text, selected_branch_label):
+                matches.append(button)
+        return matches[0] if len(matches) == 1 else None
+    except Exception:
+        return None
+
+
+def inspect_availability_dom(
+    page: Any,
+    directory: dict[str, str],
+) -> dict[str, Any]:
+    """Bounded UI-only evidence. A visible name never proves a department ID."""
+    result: dict[str, Any] = {
+        "scopedListFound": False, "visibleDirectoryNames": [],
+        "explicitBranchIds": [], "explicitBranchLinkIds": [],
+        "zeroLabelVisible": False,
+        "quantityTextVisible": False, "centralLabelVisible": False,
+        "filterVisible": False,
+    }
+    try:
+        dialogs = page.locator('[role="dialog"],[aria-modal="true"]')
+        scope = None
+        for i in range(min(dialogs.count(), 5)):
+            if dialogs.nth(i).is_visible():
+                scope = dialogs.nth(i)
+                break
+        if scope is None:
+            # The filter is a unique availability-only landmark; avoid body text
+            # or recommendations when a modal has no dialog role.
+            filter_text = page.get_by_text(AVAILABLE_ONLY_LABEL_RE)
+            if filter_text.count() == 1 and filter_text.first.is_visible():
+                scope = filter_text.first.locator("xpath=../..")
+        if scope is None:
+            return result
+        result["scopedListFound"] = True
+        bounded_text = scope.inner_text(timeout=2000)[:16000]
+        result["visibleDirectoryNames"] = [
+            name for name in directory.values()
+            if re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)",
+                         bounded_text, re.I)
+        ][:60]
+        result["zeroLabelVisible"] = bool(
+            re.search(r"\b(?:0\s*szt\.?|brak\s+na\s+stanie)\b",
+                      bounded_text, re.I)
+        )
+        result["quantityTextVisible"] = bool(
+            re.search(r"\b\d{1,8}\s*szt\.?", bounded_text, re.I)
+        )
+        result["centralLabelVisible"] = bool(
+            re.search(r"\bCentrala\b", bounded_text, re.I)
+        )
+        result["filterVisible"] = bool(
+            AVAILABLE_ONLY_LABEL_RE.search(bounded_text)
+        )
+        attrs = scope.locator("[data-department-id],[data-branch-id],[data-depstock]")
+        identifiers: set[str] = set()
+        for i in range(min(attrs.count(), 90)):
+            node = attrs.nth(i)
+            for attr in ("data-department-id", "data-branch-id", "data-depstock"):
+                bid = numeric_branch_id(node.get_attribute(attr))
+                if bid in directory:
+                    identifiers.add(bid)
+        result["explicitBranchIds"] = sorted(identifiers)[:60]
+        links = scope.locator("a[href*='lista-hurtowni-elektrycznych']")
+        link_ids: set[str] = set()
+        for index in range(min(links.count(), 70)):
+            href = links.nth(index).get_attribute("href") or ""
+            absolute = urljoin(KWANT_ORIGIN, href)
+            safe, _ = sanitize_kwant_url(absolute)
+            if not safe:
+                continue
+            bid = extract_branch_page_identifier(absolute)
+            if bid in directory:
+                link_ids.add(bid)
+        result["explicitBranchLinkIds"] = sorted(link_ids)[:60]
+    except Exception:
+        result["inspectionFailed"] = True
+    return result
+
+
+def classify_availability_filter(
+    before: dict[str, Any], after: dict[str, Any],
+    new_requests: int, toggled: bool,
+) -> dict[str, Any]:
+    state = "NOT_TOGGLED"
+    if toggled:
+        if new_requests > 0:
+            state = "REQUEST_TRIGGERED"
+        elif (
+            before.get("visibleDirectoryNames", [])
+            != after.get("visibleDirectoryNames", [])
+            or before.get("zeroLabelVisible") != after.get("zeroLabelVisible")
+        ):
+            state = "CLIENT_SIDE_FILTER_CANDIDATE"
+        else:
+            state = "NO_API_REQUEST_OBSERVED"
+    return {
+        "classification": state,
+        "newObservedApiResponses": max(0, new_requests),
+        "beforeVisibleBranchNameCount": len(before.get("visibleDirectoryNames", [])),
+        "afterVisibleBranchNameCount": len(after.get("visibleDirectoryNames", [])),
+        "beforeZeroVisible": before.get("zeroLabelVisible", False),
+        "afterZeroVisible": after.get("zeroLabelVisible", False),
+        "quantityLabelsStillVisible": after.get("quantityTextVisible", False),
+        "requestEvidenceOnly": new_requests > 0,
+    }
+
+
+def extract_exact_product_central_stock(
+    next_payload: Any, expected_id: str,
+) -> dict[str, Any]:
+    """Only main product in structured Next pageProps, never recommendations."""
+    unknown = {"stock": None, "source": "UNKNOWN"}
+    if not isinstance(next_payload, dict):
+        return unknown
+    props = next_payload.get("props")
+    page_props = props.get("pageProps") if isinstance(props, dict) else None
+    product = page_props.get("product") if isinstance(page_props, dict) else None
+    if not isinstance(product, dict):
+        return unknown
+    if str(product.get("id")) != expected_id:
+        return unknown
+    value, state = candidate_quantity(product.get("stock"))
+    if state not in ("known_zero", "known_positive"):
+        return unknown
+    return {
+        "stock": value, "source": "NEXT_DATA_EXACT_PRODUCT_ID",
+        "productIdVerified": True,
+    }
+
+
+def selected_branch_current_diagnostic(
+    observations: list[dict[str, Any]],
+    expected_id: str,
+    branch_id: str,
+) -> dict[str, Any]:
+    """Authorize one quantity only after exact CURRENT root+department match."""
+    unknown = {"stock": None, "source": "UNKNOWN"}
+    for item in reversed(observations):
+        if (
+            item.get("host") != KWANT_SERVICES_HOST
+            or item.get("method") != "GET" or item.get("status") != 200
+            or item.get("path") != f"/api/front/products/{expected_id}/current"
+            or str((item.get("query") or {}).get("safeValues", {}).get("depstock")) != branch_id
+        ):
+            continue
+        shape = item.get("shape", {})
+        if shape.get("productIdentityMatches") is not True:
+            continue
+        valid = [
+            r for r in shape.get("branchRows", [])
+            if r.get("jsonPath") == "$.department_stock"
+            and r.get("branchId") == branch_id
+            and r.get("candidateField") == "stock"
+            and r.get("candidateState") in ("known_zero", "known_positive")
+        ]
+        if len(valid) == 1:
+            return {
+                "stock": valid[0]["candidateValue"],
+                "source": "CURRENT_IDENTITY_AND_DEPSTOCK_VERIFIED",
+            }
+    return unknown
+
+
+def product_identity_evidence(
+    observation: dict[str, Any], expected_id: str,
+) -> str:
+    """Bound a response to exactly one product; no timing or batch inference."""
+    if observation.get("host") not in {KWANT_SERVICES_HOST, KWANT_HOST}:
+        return "UNKNOWN"
+    if observation.get("status") != 200:
+        return "UNKNOWN"
+    shape = observation.get("shape") or {}
+    # Explicit conflicting response identity is not overridden by the URL.
+    if shape.get("productIdentityMatches") is False:
+        return "UNKNOWN"
+    if shape.get("productIdentityMatches") is True:
+        return "RESPONSE_PRODUCT_ID"
+    path = observation.get("path", "")
+    # Match a singular product ID path segment, not a substring or a
+    # multi-product /products/prices/<id>,<id> endpoint.
+    if re.fullmatch(
+        r"/api/front/products/" + re.escape(expected_id) + r"(?:/[^?]*)?",
+        path,
+    ):
+        return "SINGULAR_REQUEST_PRODUCT_PATH"
+    if BATCH_PRICES_PATH.fullmatch(path):
+        return "UNKNOWN"
+    body = (observation.get("body") or {}).get("safeValues") or {}
+    if (
+        str(body.get("product_id", "")) == expected_id
+        or str(body.get("productId", "")) == expected_id
+    ):
+        return "EXACT_REQUEST_BODY_PRODUCT_ID"
+    return "UNKNOWN"
+
+
+def request_bound_product_identity(
+    observation: dict[str, Any], expected_id: str,
+) -> bool:
+    return product_identity_evidence(observation, expected_id) != "UNKNOWN"
+
+
+def classify_locations_contract(
+    observations: list[dict[str, Any]],
+    directory: dict[str, str], expected_id: str,
+    product_page_shape: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Preliminary A-F classification; no automatic production validation."""
+    outcome = {"type": "F_INCONCLUSIVE", "reason": "INSUFFICIENT_PRODUCT_BOUND_EVIDENCE"}
+    if not directory:
+        return outcome
+    page_shape = product_page_shape or {}
+    if (
+        page_shape.get("productIdentityMatches") is True
+        and evaluate_candidate_coverage(page_shape, directory)["completeness"]
+        == "ALL_DIRECTORY_BRANCHES"
+        and {
+            row["branchId"] for row in page_shape.get("branchRows", [])
+            if row.get("branchKnownInDirectory")
+            and row.get("candidateState") in ("known_zero", "known_positive")
+        } == set(directory)
+    ):
+        return {"type": "C_FRONTEND_PRELOADED", "reason": "VERIFIED_PAGE_PRODUCT_AND_DIRECTORY_ROWS"}
+    scoped = [
+        item for item in observations
+        if item.get("action", "").startswith("locations:")
+        and request_bound_product_identity(item, expected_id)
+    ]
+    multi = [
+        item for item in scoped
+        if (item.get("shape") or {}).get("verifiedDirectoryBranchCount", 0) >= 2
+    ]
+    if len(multi) == 1:
+        coverage = evaluate_candidate_coverage(
+            multi[0]["shape"], directory,
+            product_scope_verified=request_bound_product_identity(
+                multi[0], expected_id
+            ),
+        )
+        # A requires 1 unambiguous, valid numeric row for EACH public branch.
+        # Duplicate candidate fields or null/invalid rows never silently
+        # become authoritative stock, even with full directory ID coverage.
+        if coverage["sumConfirmedObservedBranchStock"] is not None:
+            if coverage["completeness"] == "ALL_DIRECTORY_BRANCHES":
+                return {
+                    "type": "A_ONE_SHOT_ALL_BRANCHES",
+                    "reason": "PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE",
+                }
+            if coverage["completeness"] == "POSITIVE_ONLY_CANDIDATE":
+                return {
+                    "type": "B_ONE_SHOT_POSITIVE_ONLY",
+                    "reason": "CANDIDATE_ONLY_POSITIVE_SUBSET_NOT_PROOF_OF_ZERO_OMISSIONS",
+                }
+    if len(multi) > 1 and len(multi) <= 5:
+        combined_ids = set()
+        for item in multi:
+            for row in item["shape"].get("branchRows", []):
+                if (
+                    row.get("branchKnownInDirectory")
+                    and row.get("candidateState") in ("known_zero", "known_positive")
+                ):
+                    combined_ids.add(row["branchId"])
+        if combined_ids == set(directory):
+            return {"type": "D_MULTI_REQUEST_BOUNDED", "reason": "MULTIPLE_PRODUCT_BOUND_RESPONSES_COVER_DIRECTORY"}
+    depstocks: set[str] = set()
+    for item in scoped:
+        match = CURRENT_STOCK_PATH.fullmatch(item.get("path", ""))
+        depstock = str((item.get("query") or {}).get("safeValues", {}).get("depstock"))
+        if match and match.group(1) == expected_id and depstock in directory:
+            depstocks.add(depstock)
+    if len(depstocks) >= 3:
+        return {"type": "E_PER_BRANCH_FANOUT", "reason": "THREE_OR_MORE_DISTINCT_BRANCH_SCOPED_REQUESTS",
+                "distinctBranchRequestCount": len(depstocks)}
+    return outcome
+
+
+def batch_prices_stock_evidence(
+    path: str, data: Any, expected_id: str, depstock: str | None = None,
+) -> dict[str, Any] | None:
+    """Observe only confirmed per-row product identity, never infer joins by index."""
+    match = BATCH_PRICES_PATH.fullmatch(path)
+    if not match:
+        return None
+    ids = match.group(1).split(",")
+    payload = data.get("list") if isinstance(data, dict) else data
+    rows = payload if isinstance(payload, list) else []
+    control_rows = []
+    identity_rows = 0
+    scoped_rows = 0
+    requested_id_rows = 0
+    selected_branch_rows = 0
+    for entry in rows[:120]:
+        if not isinstance(entry, dict):
+            continue
+        identity = entry.get("product_id", entry.get("id"))
+        if type(identity) not in (int, str) or not str(identity).isdigit():
+            continue
+        identity_rows += 1
+        if str(identity) in ids:
+            requested_id_rows += 1
+        department = entry.get("department_stock")
+        if isinstance(department, dict):
+            bid, _ = observed_branch_identity(department)
+            candidate_fields = [
+                field for field in ("stock", "stock_num", "stockNum")
+                if field in department
+            ]
+            candidate_values = [
+                (field, *candidate_quantity(department[field]))
+                for field in candidate_fields
+            ]
+            valid_values = [
+                (field, quantity) for field, quantity, state in candidate_values
+                if state in ("known_zero", "known_positive")
+            ]
+            if (
+                bid is not None and valid_values
+                and len({value for _, value in valid_values}) == 1
+                and len(valid_values) == len(candidate_fields)
+            ):
+                scoped_rows += 1
+                if depstock is not None and bid == depstock:
+                    selected_branch_rows += 1
+                if str(identity) == expected_id and str(identity) in ids:
+                    control_rows.append({
+                        "branchId": bid,
+                        "stock": valid_values[0][1],
+                        "candidateField": valid_values[0][0],
+                    })
+    return {
+        "requestedProductIdCount": len(ids),
+        "responseRowCount": len(rows),
+        "identityBoundRowCount": identity_rows,
+        "requestedProductIdentityRowCount": requested_id_rows,
+        "selectedBranchRowCount": selected_branch_rows,
+        "departmentStockRowCount": scoped_rows,
+        "controlProductRows": control_rows[:3],
+        "usableBatchCandidate": (
+            bool(rows) and identity_rows == len(rows)
+            and requested_id_rows == len(rows)
+            and scoped_rows == len(rows)
+            and depstock is not None
+            and selected_branch_rows == len(rows)
+        ),
+        "status": "STRUCTURAL_CANDIDATE_NOT_PRODUCTION_VERIFIED",
+    }
+
+
+def parse_public_aggregate_quantity(value: Any) -> int | None:
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(
+        r"\s*([0-9]{1,3}(?:[ \u00a0][0-9]{3})*|[0-9]+)\s*szt\.?\s*",
+        value, re.IGNORECASE,
+    )
+    if not match:
+        return None
+    result = int(re.sub(r"\s", "", match.group(1)))
+    return result if result <= 1_000_000_000 else None
+
+
+def evaluate_candidate_coverage(
+    shape: dict[str, Any],
+    directory: dict[str, str],
+    *,
+    product_scope_verified: bool = False,
+) -> dict[str, Any]:
+    """Compare real branch IDs with explicitly proven response/request scope.
+
+    The shape-only default preserves conservative behavior. Callers may supply
+    an independent, verified one-product request binding. Unknown/mismatched
+    response identity is never silently upgraded to trusted stock.
+    """
+    rows = shape.get("branchRows", [])
+    known = [row for row in rows if row.get("branchKnownInDirectory")]
+    represented = {row["branchId"] for row in known}
+    numeric = [
+        row for row in known
+        if row.get("candidateState") in ("known_zero", "known_positive")
+    ]
+    identity_verified = (
+        shape.get("productIdentityMatches") is True
+        or (product_scope_verified and shape.get("productIdentityMatches") is not False)
+    )
+    result: dict[str, Any] = {
+        "completeness": UNKNOWN,
+        "verifiedDirectoryBranchCount": len(represented),
+        "directoryBranchCount": len(directory),
+        "sumConfirmedObservedBranchStock": None,
+    }
+    # More than one row per branch (including different stock-shaped fields)
+    # prevents an unambiguous quantity mapping; do not choose a favorite field.
+    unique = (
+        len(known) == len(represented)
+        and len(known) == len(numeric)
+        and all(row["candidateValue"] is not None for row in numeric)
+    )
+    if identity_verified and len(represented) >= 2 and directory:
+        all_ids = represented == set(directory) and all(
+            row["branchKnownInDirectory"] for row in rows
+        )
+        if all_ids:
+            result["completeness"] = "ALL_DIRECTORY_BRANCHES"
+        elif (
+            unique and len(rows) == len(known)
+            and all(row["candidateValue"] > 0 for row in numeric)
+        ):
+            result["completeness"] = "POSITIVE_ONLY_CANDIDATE"
+        else:
+            result["completeness"] = "PARTIAL"
+        if unique and len(rows) == len(known):
+            result["sumConfirmedObservedBranchStock"] = sum(
+                row["candidateValue"] for row in numeric
+            )
+    return result
+
+
+def select_strongest_location_candidate(
+    observations: list[dict[str, Any]],
+    directory: dict[str, str],
+    aggregate: Any,
+    expected_product_id: str | None = None,
+) -> dict[str, Any]:
+    """Diagnostic ranking solely by observed identity, coverage, quantities and UI."""
+    aggregate_quantity = parse_public_aggregate_quantity(aggregate)
+    scored: list[tuple[tuple[int, ...], int, dict[str, Any], dict[str, Any], str]] = []
+    for index, observation in enumerate(observations):
+        if not str(observation.get("action", "")).startswith("locations:"):
+            continue
+        shape = observation.get("shape") or {}
+        if not isinstance(shape, dict):
+            continue
+        count = shape.get("verifiedDirectoryBranchCount", 0)
+        if count < 2:
+            continue
+        identity_source = (
+            product_identity_evidence(observation, expected_product_id)
+            if expected_product_id is not None
+            else (
+                "RESPONSE_PRODUCT_ID"
+                if shape.get("productIdentityMatches") is True
+                else "UNKNOWN"
+            )
+        )
+        coverage = evaluate_candidate_coverage(
+            shape, directory,
+            product_scope_verified=identity_source != "UNKNOWN",
+        )
+        triggered_ui = observation.get("action") not in (
+            "locations:page",
+        )
+        score = (
+            int(identity_source != "UNKNOWN"),
+            int(count >= 2),
+            int(shape.get("numericCandidateCount", 0) > 0),
+            int(triggered_ui),
+            count,
+            int(shape.get("numericCandidateCount", 0)),
+        )
+        scored.append((score, index, shape, coverage, identity_source))
+
+    if not scored:
+        return {
+            "strongestCandidate": None,
+            "completeness": UNKNOWN,
+            "aggregateReconciliation": "NOT_EVALUATED",
+            "sumConfirmedObservedBranchStock": None,
+            "parsedAggregateBranchStock": aggregate_quantity,
+        }
+
+    score, index, shape, coverage, identity_source = max(
+        scored, key=lambda item: (item[0], -item[1])
+    )
+    scope_verified = identity_source != "UNKNOWN"
+    total = coverage["sumConfirmedObservedBranchStock"]
+    complete = coverage["completeness"] == "ALL_DIRECTORY_BRANCHES"
+    if not scope_verified:
+        reconciliation = "NOT_EVALUATED"
+    elif not complete or total is None or aggregate_quantity is None:
+        reconciliation = "NOT_COMPARABLE"
+    else:
+        reconciliation = (
+            "MATCH" if total == aggregate_quantity else "MISMATCH"
+        )
+    return {
+        "strongestCandidate": {
+            "observationIndex": index,
+            "productIdentityVerified": scope_verified,
+            "productIdentityEvidence": identity_source,
+            "uiTriggered": score[3] == 1,
+            "verifiedDirectoryBranchCount": coverage["verifiedDirectoryBranchCount"],
+            "numericCandidateCount": shape.get("numericCandidateCount", 0),
+            "reason": "STRUCTURAL_CANDIDATE_ONLY_NOT_PRODUCTION_CONTRACT",
+        },
+        "completeness": coverage["completeness"],
+        "aggregateReconciliation": reconciliation,
+        "sumConfirmedObservedBranchStock": total,
+        "parsedAggregateBranchStock": aggregate_quantity,
+    }
+
+
+def summarize_search_ranking_evidence(
+    observations: list[dict[str, Any]],
+    directory: dict[str, str],
+    expected_product_id: str,
+) -> dict[str, Any]:
+    """Prove search-hit branch scope only by independent CURRENT corroboration."""
+    relevant = [
+        item.get("shape", {}) for item in observations
+        if str(item.get("action", "")).startswith("search:")
+        and "searchHitFields" in item.get("shape", {})
+    ]
+    fields = sorted({
+        field for shape in relevant
+        for field in shape.get("searchHitStockFields", [])
+    })[:75]
+    # This is the existing, separately established single-branch CURRENT contract,
+    # not an inferred location endpoint or a stock field name heuristic.
+    confirmed_current: set[tuple[str, int]] = set()
+    for item in observations:
+        if (
+            item.get("method") != "GET"
+            or item.get("host") != KWANT_SERVICES_HOST
+            or item.get("path") != (
+                f"/api/front/products/{expected_product_id}/current"
+            )
+            or item.get("status") != 200
+        ):
+            continue
+        shape = item.get("shape") or {}
+        if shape.get("productIdentityMatches") is not True:
+            continue
+        depstock = (item.get("query") or {}).get("safeValues", {}).get(
+            "depstock"
+        )
+        if depstock not in directory:
+            continue
+        for row in shape.get("branchRows", []):
+            if (
+                row.get("branchId") == depstock
+                and row.get("jsonPath") == "$.department_stock"
+                and row.get("candidateField") == "stock"
+                and row.get("candidateState")
+                in ("known_zero", "known_positive")
+            ):
+                confirmed_current.add((depstock, row["candidateValue"]))
+
+    proven = any(
+        (candidate["branchId"], candidate["candidateValue"])
+        in confirmed_current
+        for item in observations
+        if item.get("path") == KWANT_SEARCH_API_PATH
+        and item.get("method") == "POST"
+        for shape in [item.get("shape") or {}]
+        for candidate in shape.get("searchHitControlCandidates", [])
+        if str((item.get("body") or {}).get("safeValues", {}).get(
+            "depstock", ""
+        )) == candidate["branchId"]
+    )
+    scope = (
+        "SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL"
+        if proven else (
+            search_stock_classification(fields) if relevant else UNKNOWN
+        )
+    )
+    return {
+        "observedSearchResponseCount": len(relevant),
+        "searchHitStockFields": fields,
+        "selectedBranchStockProven": proven,
+        "stockScope": scope,
+        "reason": (
+            "INDEPENDENT_CURRENT_PRODUCT_AND_BRANCH_CORROBORATION"
+            if proven else (
+                "SEARCH_FIELD_HAS_NO_MATCHING_VERIFIED_BRANCH_EVIDENCE"
+                if fields else "NO_STOCK_FIELDS_CONFIRMED"
+            )
+        ),
+    }
+
+
+class ObservedLocationsResponses:
+    """Conservative, bounded observer for *real* frontend JSON responses."""
+
+    def __init__(self, recorder: NetworkRecorder, product_id: str) -> None:
+        self.recorder = recorder
+        self.product_id = product_id
+        self.directory: dict[str, str] = {}
+        self.records: list[dict[str, Any]] = []
+        self.request_records: list[dict[str, Any]] = []
+
+    def on_request(self, request: Any) -> None:
+        """Record availability requests separately from page-wide recorder cap."""
+        action = self.recorder.action
+        if not action.startswith("locations:") or len(self.request_records) >= 60:
+            return
+        if getattr(request, "resource_type", None) not in {"xhr", "fetch"}:
+            return
+        ok, safe = sanitize_kwant_network_url(getattr(request, "url", ""))
+        if not ok:
+            return
+        parsed = urlsplit(safe)
+        if (
+            parsed.hostname not in {KWANT_HOST, KWANT_SERVICES_HOST}
+            or not parsed.path.startswith("/api/")
+        ):
+            return
+        headers = getattr(request, "headers", {}) or {}
+        self.request_records.append({
+            "action": action,
+            "method": str(getattr(request, "method", "")).upper(),
+            "host": parsed.hostname,
+            "path": parsed.path,
+            "query": sanitized_query(getattr(request, "url", "")),
+            "body": sanitize_body_shape(
+                getattr(request, "post_data", None),
+                content_type=str(headers.get("content-type", "")),
+            ),
+        })
+
+    def on_response(self, response: Any) -> None:
+        action = self.recorder.action
+        # Reserve response capacity for the availability action; page startup
+        # calls must not exhaust the diagnostic budget before the UI click.
+        if len(self.records) >= LOCATIONS_RESEARCH_MAX_RESPONSES:
+            return
+        if (
+            not action.startswith("locations:")
+            and (
+                sum(not r["action"].startswith("locations:")
+                    for r in self.records) >= 35
+            )
+        ):
+            return
+        if not (
+            action.startswith("search:")
+            or action.startswith("product:")
+            or action.startswith("locations:")
+        ):
+            return
+        request = getattr(response, "request", None)
+        if not request or getattr(request, "resource_type", None) not in {"xhr", "fetch"}:
+            return
+        ok, safe = sanitize_kwant_network_url(getattr(response, "url", ""))
+        if not ok:
+            return
+        parsed = urlsplit(safe)
+        if (
+            not action.startswith("locations:")
+            and parsed.hostname != KWANT_SERVICES_HOST
+        ):
+            return
+        if (
+            not action.startswith("locations:")
+            and parsed.path != KWANT_SEARCH_API_PATH
+            and not CURRENT_STOCK_PATH.fullmatch(parsed.path)
+            and not BATCH_PRICES_PATH.fullmatch(parsed.path)
+        ):
+            return
+        # The observer records existing service calls, never probes invented URLs.
+        if (
+            parsed.hostname not in {KWANT_HOST, KWANT_SERVICES_HOST}
+            or not parsed.path.startswith("/api/")
+        ):
+            return
+        headers = getattr(response, "headers", {}) or {}
+        if "json" not in str(headers.get("content-type", "")).lower():
+            return
+        try:
+            length = int(headers.get("content-length", "0"))
+        except (ValueError, TypeError):
+            return
+        if length > LOCATIONS_RESEARCH_MAX_BODY_BYTES:
+            return
+        try:
+            body = response.body()
+            if len(body) > LOCATIONS_RESEARCH_MAX_BODY_BYTES:
+                return
+            data = json.loads(body)
+        except Exception:
+            # A failed browser response read must not break the whole probe.
+            return
+        summary = research_json_shape(data, self.product_id, self.directory)
+        batch_evidence = batch_prices_stock_evidence(
+            parsed.path, data, self.product_id,
+            depstock=sanitized_query(
+                getattr(request, "url", ""), action=action
+            )["safeValues"].get("depstock"),
+        )
+        method = str(getattr(request, "method", "")).upper()
+        req_headers = getattr(request, "headers", {}) or {}
+        self.records.append({
+            "action": action,
+            "host": parsed.hostname,
+            "path": parsed.path,
+            "method": method,
+            "status": getattr(response, "status", None),
+            "query": sanitized_query(getattr(request, "url", ""), action=action),
+            "body": sanitize_body_shape(
+                getattr(request, "post_data", None),
+                content_type=str(req_headers.get("content-type", "")),
+                action=action,
+            ),
+            "shape": summary,
+            **({"batchPrices": batch_evidence} if batch_evidence else {}),
+        })
+
+
+def research_product_locations(
+    page: Any,
+    recorder: NetworkRecorder,
+    capture: ObservedLocationsResponses,
+    *,
+    product_id: str,
+    branch_html: str,
+    selected_branch_id: str,
+    selected_branch_label: str,
+) -> dict[str, Any]:
+    """Inspect exact-product availability control; never submit a cart action."""
+    capture.directory = public_branch_directory_from_html(branch_html)
+    result: dict[str, Any] = {
+        "productId": product_id,
+        "directoryBranchCount": len(capture.directory),
+        "verifiedProductPage": False,
+        "availabilitySelector": (
+            "child " + AVAILABILITY_CHILD_SELECTOR
+            + " -> closest parent [role=button]; selected-branch stock-row"
+        ),
+        "selectedBranchIdForResearch": selected_branch_id or UNKNOWN,
+        "selectedBranchIdSource": (
+            "RESOLVED_PUBLIC_BRANCH_PAGE_AND_LIVE_DIRECTORY"
+            if selected_branch_id else "UNKNOWN"
+        ),
+        "availabilityControlFound": False,
+        "productPageShape": {},
+        "productPageBranchListCandidate": False,
+        "uiActions": [],
+        "availabilityUi": {},
+        "filterResearch": {"classification": "NOT_TOGGLED"},
+        "observedResponses": [],
+        "observedRequests": [],
+        "oneShotPerBranchResponseObserved": False,
+        "candidateMultiBranchResponseObserved": False,
+        "completeness": UNKNOWN,
+        "aggregateReconciliation": "NOT_EVALUATED",
+        "aggregateBranchStock": UNKNOWN,
+        "aggregateBranchStockSource": "UNKNOWN",
+        "selectedBranchStock": None,
+        "selectedBranchStockSource": "UNKNOWN",
+        "centralStock": None,
+        "centralStockSource": "UNKNOWN",
+        "contractClassification": {"type": "F_INCONCLUSIVE"},
+    }
+    try:
+        recorder.set_action("locations:page")
+        page.goto(
+            f"{KWANT_ORIGIN}/produkt/{product_id}",
+            wait_until="domcontentloaded",
+            timeout=45000,
+        )
+        page.wait_for_timeout(1000)
+        if product_page_identifier(page.url) != product_id:
+            result["reason"] = "PRODUCT_ID_NOT_VERIFIED"
+            return result
+        result["verifiedProductPage"] = True
+        try:
+            next_json = page.locator("script#__NEXT_DATA__").first.text_content(
+                timeout=1500
+            )
+            page_data = json.loads(next_json or "{}")
+            props = page_data.get("props", {}).get("pageProps", {})
+            exact_product = props.get("product") if isinstance(props, dict) else None
+            # Research the exact product subtree only; Next root includes
+            # unrelated recommendation and storefront data.
+            result["productPageShape"] = research_json_shape(
+                exact_product, product_id, capture.directory
+            )
+            central = extract_exact_product_central_stock(
+                page_data, product_id
+            )
+            result["centralStock"] = central["stock"]
+            result["centralStockSource"] = central["source"]
+            result["productPageBranchListCandidate"] = (
+                result["productPageShape"].get("verifiedDirectoryBranchCount", 0) >= 2
+            )
+        except Exception:
+            result["productPageShape"] = {"status": "UNKNOWN"}
+
+        target = availability_button(page, selected_branch_label)
+        if target is None:
+            result["reason"] = "ACCESSIBLE_AVAILABILITY_BUTTON_NOT_FOUND"
+            return result
+        result["availabilityControlFound"] = True
+        # This text is scoped to the exact availability button, not to full
+        # page body/recommendations. Only a literal aggregate is accepted.
+        try:
+            control_text = target.inner_text(timeout=1200)
+            match = re.search(
+                r"W\s+oddzia[lł]ach\s*:\s*(\d[\d \u00a0]*)\s*szt\.?",
+                control_text, re.I,
+            )
+            if match and parse_public_aggregate_quantity(
+                match.group(1) + " szt."
+            ) is not None:
+                result["aggregateBranchStock"] = match.group(1).strip() + " szt."
+                result["aggregateBranchStockSource"] = "EXACT_AVAILABILITY_BUTTON"
+        except Exception:
+            pass
+
+        recorder.set_action("locations:open-branches")
+        before = len(capture.records)
+        before_requests = len(capture.request_records)
+        try:
+            target.click(timeout=5000)
+            page.wait_for_timeout(1800)
+            opened = inspect_availability_dom(page, capture.directory)
+            result["availabilityUi"] = opened
+            result["uiActions"].append({
+                "target": "exact-availability-aria-button",
+                "found": True, "clicked": True,
+                "newApiResponses": len(capture.records) - before,
+                "newApiRequests": len(capture.request_records) - before_requests,
+            })
+        except Exception:
+            result["uiActions"].append({
+                "target": "exact-availability-aria-button",
+                "found": True, "clicked": False,
+            })
+            result["reason"] = "AVAILABILITY_CLICK_FAILED"
+            return result
+
+        # Optional harmless filter. Never click controls representing cart,
+        # purchase, reservation or pickup submission.
+        filter_control = None
+        try:
+            checkbox = page.get_by_role(
+                "checkbox", name=AVAILABLE_ONLY_LABEL_RE
+            )
+            if checkbox.count() == 1 and checkbox.first.is_visible():
+                filter_control = checkbox.first
+            else:
+                label = page.get_by_text(AVAILABLE_ONLY_LABEL_RE)
+                if label.count() == 1 and label.first.is_visible():
+                    filter_control = label.first
+        except Exception:
+            filter_control = None
+        if filter_control is not None:
+            recorder.set_action("locations:available-only-filter")
+            before_filter = len(capture.request_records)
+            try:
+                filter_control.click(timeout=3000)
+                page.wait_for_timeout(1300)
+                filtered = inspect_availability_dom(page, capture.directory)
+                result["filterResearch"] = classify_availability_filter(
+                    opened, filtered,
+                    len(capture.request_records) - before_filter, True,
+                )
+                result["availabilityUiAfterFilter"] = filtered
+            except Exception:
+                result["filterResearch"] = classify_availability_filter(
+                    opened, opened, 0, False,
+                )
+                result["filterResearch"]["reason"] = "FILTER_CLICK_FAILED"
+    except Exception:
+        result["reason"] = "PUBLIC_PAGE_UNAVAILABLE"
+    finally:
+        result["observedResponses"] = list(capture.records)
+        result["observedRequests"] = list(capture.request_records)
+        result["candidateMultiBranchResponseObserved"] = any(
+            row.get("shape", {}).get("verifiedDirectoryBranchCount", 0) >= 2
+            for row in capture.records
+            if row.get("action", "").startswith("locations:")
+        )
+        strongest = select_strongest_location_candidate(
+            capture.records, capture.directory,
+            result.get("aggregateBranchStock", UNKNOWN),
+            product_id,
+        )
+        result.update(strongest)
+        result["contractClassification"] = classify_locations_contract(
+            capture.records, capture.directory, product_id,
+            result.get("productPageShape"),
+        )
+        # A structural classification still needs a manual live review.
+        result["oneShotPerBranchResponseObserved"] = (
+            result["contractClassification"]["type"] in (
+                "A_ONE_SHOT_ALL_BRANCHES", "B_ONE_SHOT_POSITIVE_ONLY"
+            )
+        )
+        selected = selected_branch_current_diagnostic(
+            capture.records, product_id, selected_branch_id
+        )
+        result["selectedBranchStock"] = selected["stock"]
+        result["selectedBranchStockSource"] = selected["source"]
+        result["searchRankingEvidence"] = summarize_search_ranking_evidence(
+            capture.records, capture.directory, product_id
+        )
+        result["searchRequestDepstockObserved"] = any(
+            item.get("path") == KWANT_SEARCH_API_PATH
+            and item.get("method") == "POST"
+            and str((item.get("body") or {}).get("safeValues", {}).get(
+                "depstock", ""
+            )) == selected_branch_id
+            for item in capture.records
+        )
+        result["batchPricesResearch"] = [
+            item["batchPrices"]
+            for item in capture.records
+            if "batchPrices" in item
+        ][:8]
+    return result
 
 
 def main() -> int:

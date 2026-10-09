@@ -1764,5 +1764,1140 @@ class ReportWriterTest(unittest.TestCase):
         )
 
 
+
+class LocationsResearchTest(unittest.TestCase):
+    def test_public_directory_maps_numeric_department_id_to_public_name(self):
+        html = (
+            '<script id="__NEXT_DATA__" type="application/json">'
+            + json.dumps({"props": {"pageProps": {"departments": {"list": [
+                {"department_id": 205, "name": "Nowy Sącz"},
+                {"department_id": 204, "name": "Tarnów"},
+                {"department_id": "BAD", "name": "Unknown"},
+                {"department_id": 300, "name": "token=SECRET"},
+            ]}}}})
+            + "</script>"
+        )
+        self.assertEqual(
+            {"205": "Nowy Sącz", "204": "Tarnów"},
+            probe.public_branch_directory_from_html(html),
+        )
+        self.assertEqual({}, probe.public_branch_directory_from_html(""))
+
+    def test_search_fields_do_not_claim_selected_branch_stock(self):
+        shape = probe.research_json_shape(
+            {"hits": [
+                {"id": 580, "name": "control", "code": "MBN116E/HAG",
+                 "stock": 999, "central_stock": 345},
+            ]},
+            "580",
+            {"205": "Nowy Sącz"},
+        )
+        self.assertEqual(1, shape["searchHitCount"])
+        self.assertEqual(["central_stock", "stock"], shape["searchHitStockFields"])
+        self.assertEqual([], shape["branchRows"])
+        self.assertEqual(probe.UNKNOWN, shape["productIdentityMatches"])
+
+    def test_per_branch_stock_zero_positive_null_and_directory_mapping(self):
+        shape = probe.research_json_shape(
+            {"product_id": 580, "branches": [
+                {"department_id": 205, "stock": 0},
+                {"department_id": 204, "stock": 18},
+                {"department_id": 999, "stock": None},
+                {"department_id": 20, "stock": "?"}
+            ]},
+            "580",
+            {"205": "Nowy Sącz", "204": "Tarnów"},
+        )
+        self.assertTrue(shape["productIdentityMatches"])
+        self.assertEqual(4, shape["branchDistinctIds"])
+        rows = shape["branchRows"]
+        self.assertEqual(
+            ["known_zero", "known_positive", "unknown_null", "invalid"],
+            [r["stockState"] for r in rows],
+        )
+        self.assertEqual([0, 18, None, None], [r["candidateValue"] for r in rows])
+        self.assertEqual([True, True, False, False],
+                         [r["branchKnownInDirectory"] for r in rows])
+        self.assertNotIn("name", str(shape))
+        self.assertEqual("Tarnów", rows[1]["branchNameFromDirectory"])
+
+    def test_mismatched_product_identity_remains_mismatched(self):
+        shape = probe.research_json_shape(
+            {"product_id": 581, "department_stock": {
+                "department_id": 205, "stock": 3,
+            }},
+            "580", {"205": "Nowy Sącz"},
+        )
+        self.assertFalse(shape["productIdentityMatches"])
+        self.assertEqual(1, shape["branchDistinctIds"])
+
+    def test_array_root_response_is_not_dropped(self):
+        shape = probe.research_json_shape(
+            [
+                {"department_id": 205, "stock": 0},
+                {"department_id": 204, "stock": 18},
+            ],
+            "580",
+            {"205": "Nowy Sącz", "204": "Tarnów"},
+        )
+        self.assertEqual("list", shape["rootType"])
+        self.assertEqual(probe.UNKNOWN, shape["productIdentityMatches"])
+        self.assertEqual(2, shape["branchDistinctIds"])
+
+    def test_unexpected_public_host_not_inspected(self):
+        class Request:
+            url = "https://evil.example/api/front/products/580/current"
+            method = "GET"
+            resource_type = "fetch"
+
+        class Response:
+            request = Request()
+            url = Request.url
+            headers = {"content-type": "application/json"}
+            status = 200
+
+            def body(self):
+                raise AssertionError("should never read external response bodies")
+
+        network = probe.NetworkRecorder(action="locations:page")
+        capture = probe.ObservedLocationsResponses(network, "580")
+        capture.on_response(Response())
+        self.assertEqual([], capture.records)
+
+    def test_research_schema_contains_no_secret_source_values(self):
+        secret = "SENSITIVE_ACCOUNT_TOKEN"
+        shape = probe.research_json_shape({
+            "product_id": 580,
+            "sessionToken": secret,
+            "departments": [
+                {"department_id": 205, "stock": 4,
+                 "account": secret, "cookie": secret}
+            ],
+        }, "580", {"205": "Nowy Sącz"})
+        self.assertNotIn(secret, json.dumps(shape, ensure_ascii=False))
+        self.assertNotIn("sessionToken", shape["rootFields"])
+
+
+class LocationsFollowupResearchTest(unittest.TestCase):
+    DIRECTORY = {"205": "Nowy Sącz", "204": "Tarnów", "20": "Rzeszów"}
+
+    def shape(self, rows, *, product_id=580):
+        return probe.research_json_shape(
+            {"product_id": product_id, "branches": rows},
+            "580",
+            self.DIRECTORY,
+        )
+
+    @staticmethod
+    def observation(shape, *, action="locations:availability", path="/observed"):
+        return {
+            "action": action,
+            "host": probe.KWANT_SERVICES_HOST,
+            "path": path,
+            "method": "GET",
+            "status": 200,
+            "shape": shape,
+        }
+
+    def test_snake_case_stock_stays_diagnostic(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_stock_id": 204, "stock": 18},
+        ])
+        self.assertEqual(["stock", "stock"],
+                         [x["candidateField"] for x in shape["branchRows"]])
+        self.assertEqual(
+            ["department_id", "department_stock_id"],
+            [x["branchIdField"] for x in shape["branchRows"]],
+        )
+        self.assertEqual([0, 18],
+                         [x["candidateValue"] for x in shape["branchRows"]])
+        self.assertEqual(
+            ["known_zero", "known_positive"],
+            [x["candidateState"] for x in shape["branchRows"]],
+        )
+
+    def test_alternative_quantity_and_camel_case(self):
+        shape = self.shape([
+            {"department_id": 205, "stock_num": 0},
+            {"departmentId": 204, "stockNum": 18},
+            {"departmentStockId": 20, "availableStock": 5},
+        ])
+        self.assertEqual(
+            ["stock_num", "stockNum", "availableStock"],
+            [row["candidateField"] for row in shape["branchRows"]],
+        )
+        self.assertEqual(
+            ["205", "204", "20"],
+            [row["branchId"] for row in shape["branchRows"]],
+        )
+        self.assertTrue(all(row["branchKnownInDirectory"]
+                            for row in shape["branchRows"]))
+
+    def test_null_and_invalid_quantities_never_coerce(self):
+        shape = self.shape([
+            {"department_id": 205, "stock_num": None},
+            {"departmentId": 204, "stockNum": "12"},
+            {"departmentId": 20, "stockNum": True},
+        ])
+        self.assertEqual(
+            ["unknown_null", "invalid", "invalid"],
+            [row["candidateState"] for row in shape["branchRows"]],
+        )
+        self.assertEqual(
+            [None, None, None],
+            [row["candidateValue"] for row in shape["branchRows"]],
+        )
+
+    def test_unknown_and_conflicting_identity_does_not_map_by_name(self):
+        shape = self.shape([
+            {"departmentId": 999, "name": "Nowy Sącz", "stock": 7},
+            {"department_id": 205, "departmentId": 204, "stock": 12},
+            {"name": "Nowy Sącz", "stock": 3},
+        ])
+        self.assertEqual(1, shape["branchRowCountCaptured"])
+        self.assertEqual("999", shape["branchRows"][0]["branchId"])
+        self.assertFalse(shape["branchRows"][0]["branchKnownInDirectory"])
+
+    def test_candidate_names_paths_and_values_are_privacy_safe(self):
+        secret = "PRIVATE_EMAIL_SUPER_SECRET"
+        shape = self.shape([{
+            "department_id": 205, "stock_num": 4,
+            "authToken": secret,
+            "access_token": secret,
+            "stock@private": secret,
+            "clientEmail": secret,
+            "password": secret,
+        }])
+        rendered = json.dumps(shape, ensure_ascii=False)
+        self.assertNotIn(secret, rendered)
+        self.assertNotIn("authToken", rendered)
+        self.assertNotIn("stock@private", rendered)
+        self.assertNotIn("password", rendered)
+        self.assertEqual(1, len(shape["branchRows"]))
+
+    def test_complete_directory_coverage_with_zero(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock_num": 18},
+            {"departmentId": 20, "stockNum": 7},
+        ])
+        coverage = probe.evaluate_candidate_coverage(shape, self.DIRECTORY)
+        self.assertEqual("ALL_DIRECTORY_BRANCHES", coverage["completeness"])
+        self.assertEqual(25, coverage["sumConfirmedObservedBranchStock"])
+
+    def test_positive_only_is_candidate_not_proven_omitted_zeros(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 4},
+            {"department_id": 204, "stock": 18},
+        ])
+        coverage = probe.evaluate_candidate_coverage(shape, self.DIRECTORY)
+        self.assertEqual("POSITIVE_ONLY_CANDIDATE", coverage["completeness"])
+        self.assertEqual(22, coverage["sumConfirmedObservedBranchStock"])
+
+    def test_partial_zero_and_unverified_product_scope(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"departmentId": 204, "stock": 18},
+        ])
+        self.assertEqual(
+            "PARTIAL",
+            probe.evaluate_candidate_coverage(shape, self.DIRECTORY)["completeness"],
+        )
+        wrong = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"departmentId": 204, "stock": 18},
+            {"departmentId": 20, "stock": 7},
+        ], product_id=581)
+        self.assertEqual(
+            probe.UNKNOWN,
+            probe.evaluate_candidate_coverage(wrong, self.DIRECTORY)["completeness"],
+        )
+        unknown = probe.research_json_shape(
+            [{"department_id": 205, "stock": 0},
+             {"department_id": 204, "stock": 18},
+             {"department_id": 20, "stock": 7}],
+            "580",
+            self.DIRECTORY,
+        )
+        self.assertEqual(
+            probe.UNKNOWN,
+            probe.evaluate_candidate_coverage(unknown, self.DIRECTORY)["completeness"],
+        )
+
+    def test_match_and_mismatch_are_observations_not_failure(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock_num": 18},
+            {"departmentId": 20, "stockNum": 7},
+        ])
+        result = probe.select_strongest_location_candidate(
+            [self.observation(shape)], self.DIRECTORY, "25 szt."
+        )
+        self.assertEqual("MATCH", result["aggregateReconciliation"])
+        self.assertEqual(25, result["parsedAggregateBranchStock"])
+        self.assertEqual(25, result["sumConfirmedObservedBranchStock"])
+        mismatch = probe.select_strongest_location_candidate(
+            [self.observation(shape)], self.DIRECTORY, "26 szt."
+        )
+        self.assertEqual("MISMATCH", mismatch["aggregateReconciliation"])
+        self.assertEqual(25, mismatch["sumConfirmedObservedBranchStock"])
+        self.assertEqual(26, mismatch["parsedAggregateBranchStock"])
+
+    def test_missing_null_and_duplicate_quantity_prevent_reconciliation(self):
+        for rows in (
+            [{"department_id": 205, "stock": 0},
+             {"department_id": 204, "stock_num": None},
+             {"department_id": 20, "stock": 7}],
+            [{"department_id": 205, "stock": 0, "stock_num": 0},
+             {"department_id": 204, "stock": 18},
+             {"department_id": 20, "stock": 7}],
+            [{"department_id": 205, "stock": 0},
+             {"department_id": 204, "stock": "18"},
+             {"department_id": 20, "stock": 7}],
+        ):
+            with self.subTest(rows=rows):
+                shape = self.shape(rows)
+                result = probe.select_strongest_location_candidate(
+                    [self.observation(shape)], self.DIRECTORY, "25 szt."
+                )
+                self.assertEqual("NOT_COMPARABLE",
+                                 result["aggregateReconciliation"])
+                self.assertIsNone(result["sumConfirmedObservedBranchStock"])
+        partial = self.shape([
+            {"department_id": 205, "stock": 4},
+            {"department_id": 204, "stock": 18},
+        ])
+        result = probe.select_strongest_location_candidate(
+            [self.observation(partial)], self.DIRECTORY, "22 szt."
+        )
+        self.assertEqual("NOT_COMPARABLE", result["aggregateReconciliation"])
+        self.assertEqual(22, result["sumConfirmedObservedBranchStock"])
+
+    def test_invalid_aggregate_and_no_response_stay_not_comparable_or_evaluated(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock": 18},
+            {"department_id": 20, "stock": 7},
+        ])
+        result = probe.select_strongest_location_candidate(
+            [self.observation(shape)], self.DIRECTORY, "1,5 szt."
+        )
+        self.assertEqual("NOT_COMPARABLE", result["aggregateReconciliation"])
+        self.assertIsNone(result["parsedAggregateBranchStock"])
+        absent = probe.select_strongest_location_candidate(
+            [], self.DIRECTORY, "25 szt."
+        )
+        self.assertEqual("NOT_EVALUATED", absent["aggregateReconciliation"])
+        self.assertIsNone(absent["strongestCandidate"])
+
+    def test_strongest_candidate_identity_then_quantity_then_ui_then_coverage(self):
+        weak = self.shape([
+            {"department_id": 205, "stock": 4},
+            {"department_id": 204, "stock": 18},
+            {"department_id": 20, "stock": 7},
+        ], product_id=581)
+        strong = self.shape([
+            {"department_id": 205, "stock_num": 4},
+            {"departmentId": 204, "stockNum": 18},
+        ])
+        observations = [
+            self.observation(weak, action="locations:availability",
+                             path="/looks-strong-but-is-wrong"),
+            self.observation(strong, action="locations:page",
+                             path="/random-A"),
+            self.observation(strong, action="locations:availability",
+                             path="/random-Z"),
+        ]
+        best = probe.select_strongest_location_candidate(
+            observations, self.DIRECTORY, "22 szt."
+        )
+        self.assertEqual(2, best["strongestCandidate"]["observationIndex"])
+        self.assertTrue(best["strongestCandidate"]["productIdentityVerified"])
+        self.assertTrue(best["strongestCandidate"]["uiTriggered"])
+        self.assertEqual(
+            "POSITIVE_ONLY_CANDIDATE", best["completeness"]
+        )
+        self.assertEqual("NOT_COMPARABLE", best["aggregateReconciliation"])
+        tied = probe.select_strongest_location_candidate(
+            [
+                self.observation(strong, path="/z"),
+                self.observation(strong, path="/a"),
+            ], self.DIRECTORY, "22 szt."
+        )
+        self.assertEqual(0, tied["strongestCandidate"]["observationIndex"])
+
+    def test_search_stock_conclusions_are_scope_conservative(self):
+        def search(fields):
+            return self.observation(
+                probe.research_json_shape(
+                    {"hits": [{"id": 580, **fields}]}, "580", self.DIRECTORY,
+                ),
+                action="search:article",
+            )
+        for fields, expected in (
+            ({}, "NO_STOCK_FIELD_OBSERVED"),
+            ({"central_stock": 4, "aggregateBranchStock": 100},
+             "CENTRAL_OR_AGGREGATE_LOOKING_ONLY"),
+            ({"stock_num": 4}, "STOCK_SHAPED_SCOPE_UNKNOWN"),
+        ):
+            with self.subTest(fields=fields):
+                evidence = probe.summarize_search_ranking_evidence(
+                    [search(fields)], self.DIRECTORY, "580"
+                )
+                self.assertFalse(evidence["selectedBranchStockProven"])
+                self.assertEqual(expected, evidence["stockScope"])
+
+    def test_selected_branch_proof_requires_independent_current_corrob(self):
+        search_shape = probe.research_json_shape(
+            {"hits": [{"id": 580, "departmentId": 205, "stockNum": 4}]},
+            "580", {},
+        )
+        search = self.observation(search_shape, action="search:article",
+                                  path=probe.KWANT_SEARCH_API_PATH)
+        search["method"] = "POST"
+        search["body"] = {"safeValues": {"depstock": 205}}
+        current_shape = self.shape([
+            {"department_id": 205, "stock": 4},
+        ])
+        # CURRENT JSON is rooted at department_stock, not a branch list.
+        current_shape = probe.research_json_shape(
+            {"product_id": 580, "department_stock": {
+                "department_id": 205, "stock": 4,
+            }},
+            "580", self.DIRECTORY,
+        )
+        current = self.observation(current_shape, action="product:after",
+                                   path="/api/front/products/580/current")
+        current["query"] = {"safeValues": {"depstock": "205"}}
+        unknown = probe.summarize_search_ranking_evidence(
+            [search], self.DIRECTORY, "580"
+        )
+        self.assertEqual("STOCK_SHAPED_SCOPE_UNKNOWN", unknown["stockScope"])
+        corroborated = probe.summarize_search_ranking_evidence(
+            [search, current], self.DIRECTORY, "580"
+        )
+        self.assertTrue(corroborated["selectedBranchStockProven"])
+        self.assertEqual(
+            "SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL",
+            corroborated["stockScope"],
+        )
+        current["query"] = {"safeValues": {"depstock": "204"}}
+        not_proven = probe.summarize_search_ranking_evidence(
+            [search, current], self.DIRECTORY, "580"
+        )
+        self.assertFalse(not_proven["selectedBranchStockProven"])
+
+
+
+class AvailabilityLiveFollowupTest(unittest.TestCase):
+    DIRECTORY = {"205": "Nowy Sącz", "204": "Tarnów", "20": "Rzeszów"}
+
+    @staticmethod
+    def response(shape, *, action="locations:open-branches",
+                 path="/api/front/observed", query=None):
+        return {
+            "shape": shape, "action": action,
+            "method": "GET", "host": probe.KWANT_SERVICES_HOST,
+            "status": 200, "path": path,
+            "query": {"safeValues": query or {}},
+        }
+
+    def shape(self, rows, product_id=580):
+        return probe.research_json_shape(
+            {"product_id": product_id, "list": rows},
+            "580", self.DIRECTORY,
+        )
+
+    class FakeClickableParent:
+        def __init__(self, text, *, visible=True, enabled=True, role="button"):
+            self.text = text
+            self.visible = visible
+            self.enabled = enabled
+            self.role = role
+            self.clicks = 0
+
+        def get_attribute(self, attr):
+            return self.role if attr == "role" else None
+
+        def inner_text(self, timeout=1200):
+            return self.text
+
+        def is_visible(self):
+            return self.visible
+
+        def is_enabled(self):
+            return self.enabled
+
+        def click(self):
+            self.clicks += 1
+
+    @staticmethod
+    def fake_availability_page(parents):
+        """Use the observed DOM split: labelled child, clickable ancestor."""
+        class Ancestor:
+            def __init__(self, parent):
+                self.parent = parent
+
+            def count(self):
+                return 1
+
+            @property
+            def first(self):
+                return self.parent
+
+        class Child:
+            def __init__(self, parent):
+                self.parent = parent
+
+            def is_visible(self):
+                return self.parent.is_visible()
+
+            def locator(self, selector):
+                assert selector == probe.AVAILABILITY_PARENT_SELECTOR
+                return Ancestor(self.parent)
+
+        class Descendants:
+            def __init__(self, parents):
+                self.children = [Child(p) for p in parents]
+
+            def count(self):
+                return len(self.children)
+
+            def nth(self, index):
+                return self.children[index]
+
+        class Page:
+            def __init__(self, parents):
+                self.children = Descendants(parents)
+                self.last_selector = None
+
+            def locator(self, selector):
+                self.last_selector = selector
+                return self.children
+
+        return Page(parents)
+
+    def test_aria_child_clickable_parent_and_duplicate_expert_row(self):
+        stock = self.FakeClickableParent("424 szt. w Nowy Sącz")
+        expert = self.FakeClickableParent("Zapytaj eksperta")
+        for order in ((expert, stock), (stock, expert)):
+            with self.subTest(first=order[0].text):
+                page = self.fake_availability_page(order)
+                target = probe.availability_button(page, "Nowy Sącz")
+                self.assertIs(target, stock)
+                self.assertEqual(
+                    probe.AVAILABILITY_CHILD_SELECTOR, page.last_selector
+                )
+                self.assertNotEqual(target, expert)
+        chosen = probe.availability_button(
+            self.fake_availability_page([expert, stock]), "Nowy Sącz"
+        )
+        chosen.click()
+        self.assertEqual(1, stock.clicks)
+        self.assertEqual(0, expert.clicks)
+
+    def test_zero_and_unavailable_stock_row_still_resolve(self):
+        expert = self.FakeClickableParent("Zapytaj eksperta")
+        for phrase in (
+            "0 szt. w Nowy Sącz",
+            "Brak w Nowy Sącz",
+            "Niedostępny w Nowy Sącz",
+        ):
+            with self.subTest(phrase=phrase):
+                target = self.FakeClickableParent(phrase)
+                page = self.fake_availability_page([expert, target])
+                self.assertIs(
+                    probe.availability_button(page, "Nowy Sącz"), target
+                )
+
+    def test_selected_branch_missing_expert_or_other_branch_not_clicked(self):
+        expert = self.FakeClickableParent("Zapytaj eksperta")
+        other = self.FakeClickableParent("424 szt. w Tarnów")
+        page = self.fake_availability_page([expert, other])
+        self.assertIsNone(probe.availability_button(page, "Nowy Sącz"))
+        self.assertEqual(0, expert.clicks)
+        self.assertEqual(0, other.clicks)
+        self.assertEqual(
+            "F_INCONCLUSIVE",
+            probe.classify_locations_contract(
+                [], self.DIRECTORY, "580"
+            )["type"],
+        )
+
+    def test_multiple_stock_rows_or_disabled_stock_row_fail_closed(self):
+        first = self.FakeClickableParent("424 szt. w Nowy Sącz")
+        second = self.FakeClickableParent("0 szt. w Nowy Sącz")
+        self.assertIsNone(probe.availability_button(
+            self.fake_availability_page([first, second]), "Nowy Sącz"
+        ))
+        disabled = self.FakeClickableParent(
+            "424 szt. w Nowy Sącz", enabled=False
+        )
+        self.assertIsNone(probe.availability_button(
+            self.fake_availability_page([disabled]), "Nowy Sącz"
+        ))
+        hidden = self.FakeClickableParent(
+            "424 szt. w Nowy Sącz", visible=False
+        )
+        self.assertIsNone(probe.availability_button(
+            self.fake_availability_page([hidden]), "Nowy Sącz"
+        ))
+        self.assertIsNone(probe.availability_button(
+            self.fake_availability_page([first]), ""
+        ))
+
+    def test_no_availability_button_is_inconclusive_not_endpoint_absent(self):
+        self.assertIsNone(
+            probe.availability_button(
+                self.fake_availability_page([]), "Nowy Sącz"
+            )
+        )
+        result = probe.classify_locations_contract([], self.DIRECTORY, "580")
+        self.assertEqual("F_INCONCLUSIVE", result["type"])
+
+    def test_product_identity_bound_by_request_or_response_not_generic(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock": 18},
+            {"department_id": 20, "stock": 7},
+        ])
+        item = self.response(shape)
+        self.assertTrue(probe.request_bound_product_identity(item, "580"))
+        item["shape"]["productIdentityMatches"] = probe.UNKNOWN
+        self.assertFalse(probe.request_bound_product_identity(item, "580"))
+        item["path"] = "/api/front/products/580/observed"
+        self.assertTrue(probe.request_bound_product_identity(item, "580"))
+        item["path"] = "/api/front/products/581/observed"
+        self.assertFalse(probe.request_bound_product_identity(item, "580"))
+
+    def test_run18_exact_product_path_binds_full_directory(self):
+        directory = {
+            str(200 + index): f"Oddział {index}"
+            for index in range(21)
+        }
+        directory["205"] = "Nowy Sącz"
+        rows = [
+            {"department_id": int(branch_id),
+             "stock": (424 if branch_id == "205"
+                       else 0 if index in (0, 6, 20)
+                       else index + 1)}
+            for index, branch_id in enumerate(directory)
+        ]
+        shape = probe.research_json_shape(
+            {"list": rows, "unit": "szt.", "total_stock": 1800},
+            "580", directory,
+        )
+        self.assertEqual(probe.UNKNOWN, shape["productIdentityMatches"])
+        self.assertEqual(21, shape["verifiedDirectoryBranchCount"])
+        self.assertEqual(21, shape["numericCandidateCount"])
+        self.assertEqual("UNKNOWN",
+            probe.evaluate_candidate_coverage(
+                shape, directory
+            )["completeness"]
+        )
+        observation = self.response(
+            shape, path="/api/front/products/580/departments"
+        )
+        observation["query"] = {
+            "names": ["extended"], "safeValues": {}
+        }
+        self.assertEqual(
+            "SINGULAR_REQUEST_PRODUCT_PATH",
+            probe.product_identity_evidence(observation, "580"),
+        )
+        self.assertTrue(
+            probe.request_bound_product_identity(observation, "580")
+        )
+        coverage = probe.evaluate_candidate_coverage(
+            shape, directory, product_scope_verified=True
+        )
+        self.assertEqual("ALL_DIRECTORY_BRANCHES",
+                         coverage["completeness"])
+        self.assertEqual(21, coverage["verifiedDirectoryBranchCount"])
+        self.assertEqual(0, shape["branchRows"][0]["candidateValue"])
+        self.assertEqual(424, next(
+            row["candidateValue"] for row in shape["branchRows"]
+            if row["branchId"] == "205"
+        ))
+        result = probe.classify_locations_contract(
+            [observation], directory, "580"
+        )
+        self.assertEqual("A_ONE_SHOT_ALL_BRANCHES", result["type"])
+        self.assertEqual(
+            "PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE", result["reason"]
+        )
+        best = probe.select_strongest_location_candidate(
+            [observation], directory, probe.UNKNOWN, "580"
+        )
+        self.assertTrue(best["strongestCandidate"]["productIdentityVerified"])
+        self.assertEqual(
+            "SINGULAR_REQUEST_PRODUCT_PATH",
+            best["strongestCandidate"]["productIdentityEvidence"]
+        )
+        self.assertEqual("ALL_DIRECTORY_BRANCHES", best["completeness"])
+        self.assertEqual(
+            "NOT_COMPARABLE", best["aggregateReconciliation"]
+        )
+        self.assertEqual(
+            sum(row["stock"] for row in rows),
+            best["sumConfirmedObservedBranchStock"]
+        )
+
+    def test_run18_wrong_product_generic_and_batch_paths_never_bind(self):
+        directory = {"205": "Nowy Sącz", "204": "Tarnów"}
+        shape = probe.research_json_shape(
+            {"list": [
+                {"department_id": 205, "stock": 0},
+                {"department_id": 204, "stock": 7},
+            ]}, "580", directory
+        )
+        for path in (
+            "/api/front/products/581/departments",
+            "/api/front/misc/departments",
+            "/api/front/products/prices/580,581",
+            "/api/front/products/prices/580",
+            "/api/front/products/580x/departments",
+        ):
+            with self.subTest(path=path):
+                observation = self.response(shape, path=path)
+                self.assertEqual(
+                    "UNKNOWN",
+                    probe.product_identity_evidence(observation, "580"),
+                )
+                self.assertEqual(
+                    "F_INCONCLUSIVE",
+                    probe.classify_locations_contract(
+                        [observation], directory, "580"
+                    )["type"],
+                )
+        conflicting = self.response(
+            {**shape, "productIdentityMatches": False},
+            path="/api/front/products/580/departments",
+        )
+        self.assertFalse(
+            probe.request_bound_product_identity(conflicting, "580")
+        )
+        untrusted = self.response(
+            shape, path="/api/front/products/580/departments"
+        )
+        untrusted["host"] = "other.example"
+        self.assertFalse(
+            probe.request_bound_product_identity(untrusted, "580")
+        )
+
+    def test_run18_subset_missing_is_not_zero_and_positive_only_candidate(self):
+        directory = {
+            "205": "Nowy Sącz", "204": "Tarnów", "20": "Rzeszów"
+        }
+        positive = probe.research_json_shape(
+            {"list": [
+                {"department_id": 205, "stock": 424},
+                {"department_id": 204, "stock": 12},
+            ]}, "580", directory
+        )
+        observation = self.response(
+            positive, path="/api/front/products/580/departments"
+        )
+        result = probe.classify_locations_contract(
+            [observation], directory, "580"
+        )
+        self.assertEqual("B_ONE_SHOT_POSITIVE_ONLY", result["type"])
+        self.assertNotIn(
+            "20", {row["branchId"] for row in positive["branchRows"]}
+        )
+        partial = probe.research_json_shape(
+            {"list": [
+                {"department_id": 205, "stock": 0},
+                {"department_id": 204, "stock": 12},
+            ]}, "580", directory
+        )
+        result = probe.classify_locations_contract([
+            self.response(
+                partial, path="/api/front/products/580/departments"
+            )
+        ], directory, "580")
+        self.assertEqual("F_INCONCLUSIVE", result["type"])
+        self.assertEqual(0, partial["branchRows"][0]["candidateValue"])
+        self.assertEqual(
+            "PARTIAL",
+            probe.evaluate_candidate_coverage(
+                partial, directory, product_scope_verified=True
+            )["completeness"]
+        )
+
+    def test_one_shot_rejects_duplicate_and_invalid_branch_quantity(self):
+        directory = {
+            "205": "Nowy Sącz", "204": "Tarnów", "20": "Rzeszów"
+        }
+        problematic = (
+            [
+                {"department_id": 205, "stock": 0, "stock_num": 10},
+                {"department_id": 204, "stock": 7},
+                {"department_id": 20, "stock": 3},
+            ],
+            [
+                {"department_id": 205, "stock": None},
+                {"department_id": 204, "stock": 7},
+                {"department_id": 20, "stock": 3},
+            ],
+            [
+                {"department_id": 205, "stock": "0"},
+                {"department_id": 204, "stock": 7},
+                {"department_id": 20, "stock": 3},
+            ],
+        )
+        for rows in problematic:
+            with self.subTest(rows=rows):
+                shape = probe.research_json_shape(
+                    {"list": rows}, "580", directory
+                )
+                obs = self.response(
+                    shape, path="/api/front/products/580/departments"
+                )
+                self.assertEqual(
+                    "F_INCONCLUSIVE",
+                    probe.classify_locations_contract(
+                        [obs], directory, "580"
+                    )["type"],
+                )
+                self.assertIsNone(
+                    probe.evaluate_candidate_coverage(
+                        shape, directory, product_scope_verified=True
+                    )["sumConfirmedObservedBranchStock"]
+                )
+
+    def test_product_identity_from_exact_request_body_not_click_timing(self):
+        shape = probe.research_json_shape(
+            {"list": [{"department_id": 205, "stock": 1}]},
+            "580", self.DIRECTORY
+        )
+        observation = self.response(shape, path="/api/front/misc/inventory")
+        observation["body"] = {"safeValues": {"product_id": 580}}
+        self.assertEqual(
+            "EXACT_REQUEST_BODY_PRODUCT_ID",
+            probe.product_identity_evidence(observation, "580")
+        )
+        observation["body"] = {"safeValues": {"product_id": 581}}
+        self.assertFalse(
+            probe.request_bound_product_identity(observation, "580")
+        )
+
+    def test_one_shot_full_directory_preserves_zero(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 0},
+            {"department_id": 204, "stock_num": 18},
+            {"departmentId": 20, "stockNum": 7},
+        ])
+        result = probe.classify_locations_contract(
+            [self.response(shape)], self.DIRECTORY, "580")
+        self.assertEqual("A_ONE_SHOT_ALL_BRANCHES", result["type"])
+        self.assertEqual(0, shape["branchRows"][0]["candidateValue"])
+
+    def test_positive_subset_does_not_invent_omitted_zero(self):
+        shape = self.shape([
+            {"department_id": 205, "stock": 5},
+            {"department_id": 204, "stock": 18},
+        ])
+        result = probe.classify_locations_contract(
+            [self.response(shape)], self.DIRECTORY, "580")
+        self.assertEqual("B_ONE_SHOT_POSITIVE_ONLY", result["type"])
+        self.assertEqual(
+            "POSITIVE_ONLY_CANDIDATE",
+            probe.evaluate_candidate_coverage(shape, self.DIRECTORY)["completeness"],
+        )
+        self.assertNotIn("20", [x["branchId"] for x in shape["branchRows"]])
+
+    def test_unbound_multi_branch_is_not_verification(self):
+        shape = probe.research_json_shape(
+            [{"department_id": 205, "stock": 2},
+             {"department_id": 204, "stock": 10}],
+            "580", self.DIRECTORY,
+        )
+        result = probe.classify_locations_contract(
+            [self.response(shape)], self.DIRECTORY, "580")
+        self.assertEqual("F_INCONCLUSIVE", result["type"])
+
+    def test_preloaded_main_product_requires_identity(self):
+        data = {"props": {"pageProps": {"product": {
+            "id": 580, "stock": 321,
+            "other": {"recommendations": [
+                {"id": 777, "stock": 999},
+            ]},
+        }}}}
+        exact = probe.extract_exact_product_central_stock(data, "580")
+        self.assertEqual(321, exact["stock"])
+        self.assertEqual("NEXT_DATA_EXACT_PRODUCT_ID", exact["source"])
+        data["props"]["pageProps"]["product"]["id"] = 581
+        self.assertIsNone(
+            probe.extract_exact_product_central_stock(data, "580")["stock"]
+        )
+        self.assertIsNone(
+            probe.extract_exact_product_central_stock(
+                {"props": {"pageProps": {"recommendations": [
+                    {"id": 580, "stock": 4444}
+                ]}}},
+                "580"
+            )["stock"]
+        )
+
+    def test_per_branch_frontend_fanout_needs_distinct_depstocks(self):
+        scoped = []
+        for depstock in ("205", "204", "20"):
+            shape = self.shape([{
+                "department_id": int(depstock), "stock": 3,
+            }])
+            scoped.append(self.response(
+                shape, path="/api/front/products/580/current",
+                query={"depstock": depstock},
+            ))
+        self.assertEqual(
+            "E_PER_BRANCH_FANOUT",
+            probe.classify_locations_contract(
+                scoped, self.DIRECTORY, "580"
+            )["type"],
+        )
+
+    def test_multi_request_bounded_directory_coverage(self):
+        items = [
+            self.response(self.shape([
+                {"department_id": 205, "stock": 1},
+                {"department_id": 204, "stock": 4},
+            ])),
+            self.response(self.shape([
+                {"department_id": 204, "stock": 4},
+                {"department_id": 20, "stock": 7},
+            ]), path="/api/front/some-other-real-observation"),
+        ]
+        result = probe.classify_locations_contract(
+            items, self.DIRECTORY, "580",
+        )
+        self.assertEqual("D_MULTI_REQUEST_BOUNDED", result["type"])
+
+    def test_available_only_filter_local_and_request_triggering(self):
+        before = {"visibleDirectoryNames": ["Nowy Sącz", "Tarnów"],
+                  "zeroLabelVisible": True}
+        after = {"visibleDirectoryNames": ["Tarnów"],
+                 "zeroLabelVisible": False}
+        local = probe.classify_availability_filter(before, after, 0, True)
+        self.assertEqual("CLIENT_SIDE_FILTER_CANDIDATE", local["classification"])
+        self.assertEqual(1, local["afterVisibleBranchNameCount"])
+        remote = probe.classify_availability_filter(before, after, 1, True)
+        self.assertEqual("REQUEST_TRIGGERED", remote["classification"])
+        self.assertFalse(remote["afterZeroVisible"])
+
+
+    def test_early_selected_branch_id_and_exact_current_quantity(self):
+        html = (
+            '<script id="__NEXT_DATA__" type="application/json">'
+            + json.dumps({"props": {"pageProps": {"departments": {"list": [
+                {"department_id": 205, "name": "Nowy Sącz"},
+                {"department_id": 204, "name": "Tarnów"},
+            ]}}}})
+            + "</script>"
+        )
+        url = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-nowy%20sacz/205"
+        )
+        def branch_id(**changes):
+            args = dict(
+                branch_page_url=url,
+                branch_html=html,
+                selected_branch_label="Nowy Sącz",
+                selection_confirmed=True,
+            )
+            args.update(changes)
+            return probe.resolved_public_selected_branch_id(**args)
+
+        self.assertEqual("205", branch_id())
+        self.assertEqual(probe.UNKNOWN, branch_id(selection_confirmed=False))
+        self.assertEqual(probe.UNKNOWN, branch_id(selected_branch_label="Tarnów"))
+        self.assertEqual(probe.UNKNOWN, branch_id(branch_page_url=url[:-3] + "999"))
+        self.assertEqual(probe.UNKNOWN, branch_id(branch_html="<html></html>"))
+
+        payload = {
+            "product_id": 580,
+            "department_stock": {"department_id": 205, "stock": 424},
+        }
+        observation = self.response(
+            probe.research_json_shape(payload, "580", self.DIRECTORY),
+            action="product:after",
+            path="/api/front/products/580/current",
+            query={"depstock": "205"},
+        )
+        exact = probe.selected_branch_current_diagnostic(
+            [observation], "580", branch_id()
+        )
+        self.assertEqual(424, exact["stock"])
+        self.assertEqual(
+            "CURRENT_IDENTITY_AND_DEPSTOCK_VERIFIED", exact["source"]
+        )
+        wrong_branch = {**observation, "query": {
+            "safeValues": {"depstock": "204"}
+        }}
+        wrong_product = {**observation, "shape": probe.research_json_shape(
+            {"product_id": 581, "department_stock": {
+                "department_id": 205, "stock": 424,
+            }},
+            "580", self.DIRECTORY,
+        )}
+        for invalid in (wrong_branch, wrong_product):
+            self.assertIsNone(
+                probe.selected_branch_current_diagnostic(
+                    [invalid], "580", branch_id()
+                )["stock"]
+            )
+
+    def test_current_stock_diagnostic_excludes_recommendation_values(self):
+        item = self.response(probe.research_json_shape(
+            {"product_id": 580, "stock": 123,
+             "department_stock": {"department_id": 205, "stock": 424},
+             "recommendations": [{
+                 "product_id": 581,
+                 "department_stock": {"department_id": 205, "stock": 999},
+             }]},
+            "580", self.DIRECTORY,
+        ), action="product:after",
+            path="/api/front/products/580/current",
+            query={"depstock": "205"})
+        exact = probe.selected_branch_current_diagnostic(
+            [item], "580", "205"
+        )
+        self.assertEqual(424, exact["stock"])
+        self.assertEqual("CURRENT_IDENTITY_AND_DEPSTOCK_VERIFIED", exact["source"])
+        item["shape"]["productIdentityMatches"] = False
+        self.assertIsNone(
+            probe.selected_branch_current_diagnostic(
+                [item], "580", "205")["stock"]
+        )
+
+    def test_current_stock_rejects_missing_or_wrong_depstock(self):
+        shape = probe.research_json_shape({
+            "product_id": 580,
+            "department_stock": {"department_id": 205, "stock": 0},
+        }, "580", self.DIRECTORY)
+        item = self.response(shape, action="product:after",
+                             path="/api/front/products/580/current",
+                             query={"depstock": "204"})
+        self.assertIsNone(probe.selected_branch_current_diagnostic(
+            [item], "580", "205")["stock"])
+
+    def test_search_corrob_remains_control_only(self):
+        search = self.response(probe.research_json_shape({
+            "hits": [{"id": 580, "department_stock":
+                      {"department_id": 205, "stock": 424, "stock_num": 424}}]
+        }, "580", self.DIRECTORY), action="search:article",
+            path=probe.KWANT_SEARCH_API_PATH)
+        search["method"] = "POST"
+        search["body"] = {"safeValues": {"q": "MBN116E", "depstock": 205}}
+        current = self.response(probe.research_json_shape({
+            "product_id": 580,
+            "department_stock": {"department_id": 205, "stock": 424}
+        }, "580", self.DIRECTORY), action="product:after",
+            path="/api/front/products/580/current",
+            query={"depstock": "205"})
+        proof = probe.summarize_search_ranking_evidence(
+            [search, current], self.DIRECTORY, "580"
+        )
+        self.assertEqual("SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL",
+                         proof["stockScope"])
+        self.assertTrue(proof["selectedBranchStockProven"])
+        self.assertFalse(
+            probe.summarize_search_ranking_evidence(
+                [search], self.DIRECTORY, "580"
+            )["selectedBranchStockProven"]
+        )
+
+    def test_availability_request_capture_is_bounded_and_sanitized(self):
+        class Request:
+            resource_type = "xhr"
+            url = ("https://services.kwant.net.pl/api/front/seen"
+                   "?depstock=205&sessionToken=SECRET_VALUE")
+            method = "GET"
+            post_data = None
+            headers = {}
+        recorder = probe.NetworkRecorder(action="locations:open-branches")
+        capture = probe.ObservedLocationsResponses(recorder, "580")
+        capture.on_request(Request())
+        self.assertEqual(1, len(capture.request_records))
+        self.assertEqual(
+            "205", capture.request_records[0]["query"]["safeValues"]["depstock"]
+        )
+        self.assertNotIn(
+            "SECRET_VALUE", json.dumps(capture.request_records)
+        )
+        recorder.set_action("product:after")
+        capture.on_request(Request())
+        self.assertEqual(1, len(capture.request_records))
+        Request.url = "https://untrusted.invalid/api/front/seen"
+        recorder.set_action("locations:open-branches")
+        capture.on_request(Request())
+        self.assertEqual(1, len(capture.request_records))
+        Request.url = "https://kwant.net.pl/api/front/visible"
+        capture.on_request(Request())
+        self.assertEqual(2, len(capture.request_records))
+        self.assertEqual("kwant.net.pl", capture.request_records[-1]["host"])
+
+    def test_batch_product_identity_never_inferred_from_list_order(self):
+        url = "/api/front/products/prices/580,581"
+        good = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580,
+             "department_stock": {"department_id": 205, "stock": 4}},
+            {"product_id": 581,
+             "department_stock": {"department_id": 205, "stock": 999}},
+        ]}, "580", depstock="205")
+        self.assertEqual(2, good["identityBoundRowCount"])
+        self.assertEqual([{"branchId": "205", "stock": 4, "candidateField": "stock"}],
+                         good["controlProductRows"])
+        self.assertTrue(good["usableBatchCandidate"])
+        bad = probe.batch_prices_stock_evidence(url, {"list": [
+            {"department_stock": {"department_id": 205, "stock": 4}},
+            {"product_id": 581,
+             "department_stock": {"department_id": 205, "stock": 999}},
+        ]}, "580", depstock="205")
+        self.assertEqual([], bad["controlProductRows"])
+        self.assertFalse(bad["usableBatchCandidate"])
+        wrong_requested_id = probe.batch_prices_stock_evidence(url, {
+            "list": [
+                {"product_id": 580, "department_stock":
+                    {"department_id": 205, "stock": 4}},
+                {"product_id": 582, "department_stock":
+                    {"department_id": 205, "stock": 7}},
+            ],
+        }, "580", depstock="205")
+        self.assertFalse(wrong_requested_id["usableBatchCandidate"])
+        wrong_branch = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580, "department_stock":
+                {"department_id": 204, "stock": 4}},
+            {"product_id": 581, "department_stock":
+                {"department_id": 205, "stock": 7}},
+        ]}, "580", depstock="205")
+        self.assertFalse(wrong_branch["usableBatchCandidate"])
+        without_depstock = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580, "department_stock":
+                {"department_id": 205, "stock": 4}},
+            {"product_id": 581, "department_stock":
+                {"department_id": 205, "stock": 7}},
+        ]}, "580")
+        self.assertFalse(without_depstock["usableBatchCandidate"])
+        alternate = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580, "department_stock":
+                {"department_id": 205, "stock_num": 4}},
+            {"product_id": 581, "department_stock":
+                {"department_id": 205, "stockNum": 8}},
+        ]}, "580", depstock="205")
+        self.assertTrue(alternate["usableBatchCandidate"])
+        self.assertEqual("stock_num",
+                         alternate["controlProductRows"][0]["candidateField"])
+        conflicting_fields = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580, "department_stock":
+                {"department_id": 205, "stock": 4, "stock_num": 8}},
+            {"product_id": 581, "department_stock":
+                {"department_id": 205, "stock": 8}},
+        ]}, "580", depstock="205")
+        self.assertFalse(conflicting_fields["usableBatchCandidate"])
+
+
 if __name__ == "__main__":
     unittest.main()
