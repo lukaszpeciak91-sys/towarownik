@@ -1604,6 +1604,7 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
             "oneShotPerBranchResponseObserved=" + format_scalar(locations.get("oneShotPerBranchResponseObserved", False)),
             "candidateMultiBranchResponseObserved=" + format_scalar(locations.get("candidateMultiBranchResponseObserved", False)),
             "productPageShape=" + format_scalar(locations.get("productPageShape", {})),
+            "productPageBranchListCandidate=" + format_scalar(locations.get("productPageBranchListCandidate", False)),
             "completeness=" + str(locations.get("completeness", UNKNOWN)),
             "aggregateReconciliation=" + str(locations.get("aggregateReconciliation", "NOT_EVALUATED")),
             "uiActions=" + format_scalar(locations.get("uiActions", [])),
@@ -2956,18 +2957,21 @@ def research_json_shape(
     directory: dict[str, str],
 ) -> dict[str, Any]:
     """Summarize public stock-shaped JSON; never return source objects/bodies."""
-    if not isinstance(payload, dict):
+    # Some public APIs return an array directly, not a root object.
+    if not isinstance(payload, (dict, list)):
         return {"rootType": type(payload).__name__, "branchRows": []}
-    root_id = payload.get("product_id", payload.get("productId"))
+    root = payload if isinstance(payload, dict) else {}
+    root_id = root.get("product_id", root.get("productId"))
     identity = (
         str(root_id) == expected_product_id
         if isinstance(root_id, (str, int)) and not isinstance(root_id, bool)
         else UNKNOWN
     )
-    hits = payload.get("hits")
+    hits = root.get("hits")
     summary: dict[str, Any] = {
+        "rootType": type(payload).__name__,
         "rootFields": sorted(
-            str(k)[:60] for k in payload if not SECRET_KEY_RE.search(str(k))
+            str(k)[:60] for k in root if not SECRET_KEY_RE.search(str(k))
         )[:65],
         "productIdentityMatches": identity,
         "branchRows": [],
@@ -3117,6 +3121,7 @@ def research_product_locations(
         "directoryBranchCount": len(capture.directory),
         "verifiedProductPage": False,
         "productPageShape": {},
+        "productPageBranchListCandidate": False,
         "uiActions": [],
         "observedResponses": [],
         "oneShotPerBranchResponseObserved": False,
@@ -3143,6 +3148,9 @@ def research_product_locations(
             page_data = json.loads(page_json or "{}")
             result["productPageShape"] = research_json_shape(
                 page_data, product_id, capture.directory
+            )
+            result["productPageBranchListCandidate"] = (
+                result["productPageShape"].get("branchDistinctIds", 0) >= 2
             )
         except Exception:
             result["productPageShape"] = {"status": "UNKNOWN"}
