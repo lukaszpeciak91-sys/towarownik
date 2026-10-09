@@ -419,6 +419,33 @@ class MultiMarketResearchTest(unittest.TestCase):
             self.r.classify_contract([], self.stores, self.obik, result)["type"]
         )
 
+    def test_product_owned_store_context_proves_selected_market_before_click(self):
+        root = [
+            {"data": 1, "globalStoreDirectory": [
+                {"storeId": "003"}, {"storeId": "019"},
+            ]},
+            {"skuId": 2, "store": 3},
+            "3496072",
+            {"information": 4},
+            {"storeId": 5},
+            "075",
+        ]
+        html = (
+            '<script id="__NUXT_DATA__" type="application/json">'
+            + json.dumps(root) + "</script>"
+        )
+        correct = self.r.inspect_initial_nuxt(
+            html, self.obik, self.stores, selected_store="075"
+        )
+        self.assertTrue(correct["productIdentityVerified"])
+        self.assertEqual("075", correct["selectedStoreIdFromProductContext"])
+        self.assertTrue(correct["selectedStoreVerified"])
+        other = self.r.inspect_initial_nuxt(
+            html, self.obik, self.stores, selected_store="003"
+        )
+        self.assertFalse(other["selectedStoreVerified"])
+        self.assertEqual([], other["verifiedProductOwnedRows"])
+
     def test_invalid_or_ambiguous_nuxt_product_owner_fails_closed(self):
         html = ('<script id="__NUXT_DATA__" type="application/json">'
                 + json.dumps([{"skuId": 2}, {"skuId": 2}, "3496072"])
