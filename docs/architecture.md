@@ -352,3 +352,10 @@ Persisted USER attachment metadata remains the pointer to the existing app-priva
 Attachment acquisition remains a one-file pipeline. Composer imports are serialized and each selection receives a UI generation token. A newer selection, explicit removal, new conversation, or conversation switch invalidates older generations; a late successful import is discarded with its staged private file instead of replacing the current pending attachment. While the current import/preprocessing generation is active, the composer shows a compact loading row and the dedicated send action is disabled. The existing pending-to-Room ownership handoff and protocol v4 transport are unchanged.
 
 Image preprocessing keeps the existing 4096 px output bound and now chooses decode sampling against that bound directly, reducing peak bitmap memory for very large source images before the existing EXIF/orientation/scale/re-encode steps.
+
+
+## Android Advisor trace correlation
+
+The Worker-provided `X-Taksula-Trace-Id` is optional transport metadata and is not part of Advisor JSON. Android accepts only UUID-form values. START/MESSAGE begin a fresh USER turn and send no previous trace; once a valid trace is returned, the controller propagates it on CONTINUE requests until the turn finishes. A later valid continuation trace replaces the current value, while a missing/invalid one does not erase existing correlation.
+
+The final successful trace is stored only on the persisted ASSISTANT message as nullable `advisorTraceId`; Room schema v11 adds this column with a non-destructive 10→11 migration. Historical rows therefore remain null. The existing problem-report path uses that persisted value for old assistant responses after restart, and proxy failure diagnostics may carry the best known turn trace. The trace is not rendered in chat and no separate telemetry storage or diagnostics UI is introduced.
