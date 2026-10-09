@@ -28,6 +28,14 @@ PRODUCT_KEYS = ("obik", "skuId", "sku", "productId", "product_id",
 STATE_KEYS = ("stock", "availableStock", "storeStock", "stockQuantity",
               "quantity", "availability", "availabilityStatus",
               "inStock", "isAvailable", "pickupAvailable", "status")
+# Generic status may refer to store opening/operational state, and quantity
+# may be requested basket quantity. Neither proves product availability.
+# Keep both visible as shape candidates, but do not classify from them.
+RESEARCH_TRUSTED_AVAILABILITY_FIELDS = {
+    "stock", "availableStock", "storeStock", "stockQuantity",
+    "availability", "availabilityStatus", "inStock",
+    "isAvailable", "pickupAvailable",
+}
 STATUS_WORDS = {
     "available", "in_stock", "low", "low_stock", "unavailable",
     "not_available", "out_of_stock", "limited", "unknown",
@@ -403,6 +411,7 @@ def verified_rows(record: dict[str, Any], stores: dict[str, Any]) -> dict[str, d
         ident = row.get("storeNumber")
         if (ident not in stores or ident in by_id
                 or row.get("ambiguousFields") or row.get("ambiguousIdentity")
+                or row.get("candidateField") not in RESEARCH_TRUSTED_AVAILABILITY_FIELDS
                 or row.get("state") not in (
                     "known_zero", "known_positive", "qualitative", "unknown_null"
                 )):
@@ -453,7 +462,9 @@ def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any]
                 and all(i in stores for i in ids)
                 and all(row.get("state") in (
                     "known_zero", "known_positive", "qualitative"
-                ) and not row.get("ambiguousFields") for row in preloaded)):
+                ) and not row.get("ambiguousFields")
+                and row.get("candidateField") in RESEARCH_TRUSTED_AVAILABILITY_FIELDS
+                for row in preloaded)):
             return {"type": "C_FRONTEND_PRELOADED", "reason": "EXACT_PRODUCT_OWNED_NUXT_ROWS",
                     "observedStoreCount": len(ids)}
     scoped = []
@@ -628,7 +639,9 @@ def inspect_initial_nuxt(html: str, obik: str, stores: dict[str, Any],
             and all(i in stores for i in ids)
             and all(row.get("state") in (
                 "known_zero", "known_positive", "qualitative"
-            ) and not row.get("ambiguousFields") for row in owned)):
+            ) and not row.get("ambiguousFields")
+            and row.get("candidateField") in RESEARCH_TRUSTED_AVAILABILITY_FIELDS
+            for row in owned)):
         result["preloadedClassification"] = "PRODUCT_OWNED_MULTI_STORE_CANDIDATE"
     elif owned:
         result["preloadedClassification"] = "EXACT_PRODUCT_SINGLE_OR_AMBIGUOUS"
