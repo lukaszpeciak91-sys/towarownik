@@ -2153,7 +2153,10 @@ class LocationsFollowupResearchTest(unittest.TestCase):
             {"hits": [{"id": 580, "departmentId": 205, "stockNum": 4}]},
             "580", {},
         )
-        search = self.observation(search_shape, action="search:article")
+        search = self.observation(search_shape, action="search:article",
+                                  path=probe.KWANT_SEARCH_API_PATH)
+        search["method"] = "POST"
+        search["body"] = {"safeValues": {"depstock": 205}}
         current_shape = self.shape([
             {"department_id": 205, "stock": 4},
         ])
