@@ -12,6 +12,7 @@ internal const val ADVISOR_PROXY_BASE_URL =
 internal const val ADVISOR_PROTOCOL_VERSION = 3
 internal const val OBI_ADVISOR_PROTOCOL_VERSION = 2
 internal const val MULTIMODAL_ADVISOR_PROTOCOL_VERSION = 4
+internal const val MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION = 5
 internal const val FIND_OBI_PRODUCTS = "find_obi_products"
 internal const val FIND_PRODUCTS = "find_products"
 
@@ -29,6 +30,10 @@ internal enum class AdvisorTransportContract(
     ),
     PROVIDER_V4(
         protocolVersion = MULTIMODAL_ADVISOR_PROTOCOL_VERSION,
+        toolName = FIND_PRODUCTS,
+    ),
+    PROVIDER_V5(
+        protocolVersion = MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION,
         toolName = FIND_PRODUCTS,
     ),
 }
