@@ -1099,23 +1099,43 @@ private fun TowarownikApp() {
                     state = advisorState,
                     onDraftChange = ::updateAdvisorDraft,
                     onSubmit = ::submitAdvisorTurn,
-                    pendingAttachment = pendingAttachment,
+                    pendingAttachments = pendingAttachments,
                     attachmentError = attachmentError,
                     attachmentImporting = attachmentImporting,
                     attachmentStorage = attachmentStorage,
-                    onRemoveAttachment = ::clearPendingAttachment,
+                    onRemoveAttachment = ::removePendingAttachment,
+                    onReplaceAttachment = { localId ->
+                        replacementTarget = localId
+                        pickerLaunchedAt = pickerEpoch
+                        replacePicker.launch(arrayOf("application/pdf", "image/*"))
+                    },
                     onOpenCamera = {
-                        runCatching { cameraCapture.createUri() }
+                        if (pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS) {
+                            attachmentError = AttachmentImportError.TOO_MANY
+                        } else {
+                            pickerLaunchedAt = pickerEpoch
+                            runCatching { cameraCapture.createUri() }
                             .onSuccess(cameraLauncher::launch)
                             .onFailure { attachmentError = AttachmentImportError.CAMERA_FAILED }
+                        }
                     },
                     onOpenPhotos = {
-                        photoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
+                        if (pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS) {
+                            attachmentError = AttachmentImportError.TOO_MANY
+                        } else {
+                            pickerLaunchedAt = pickerEpoch
+                            photoPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        }
                     },
                     onOpenFile = {
-                        filePicker.launch(arrayOf("application/pdf", "image/*"))
+                        if (pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS) {
+                            attachmentError = AttachmentImportError.TOO_MANY
+                        } else {
+                            pickerLaunchedAt = pickerEpoch
+                            filePicker.launch(arrayOf("application/pdf", "image/*"))
+                        }
                     },
                     onOpenProfileSelector = { profileMenuRequest++ },
                     onOpenDrawer = {
@@ -1631,11 +1651,12 @@ private fun AdvisorChatScreen(
     state: AdvisorUiState,
     onDraftChange: (String) -> Unit,
     onSubmit: () -> Unit,
-    pendingAttachment: AdvisorAttachment?,
+    pendingAttachments: List<AdvisorAttachment>,
     attachmentError: AttachmentImportError?,
     attachmentImporting: Boolean,
     attachmentStorage: AttachmentStorage,
-    onRemoveAttachment: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    onReplaceAttachment: (String) -> Unit,
     onOpenCamera: () -> Unit,
     onOpenPhotos: () -> Unit,
     onOpenFile: () -> Unit,
@@ -1678,7 +1699,7 @@ private fun AdvisorChatScreen(
             AdvisorComposer(
                 value = advisorCase.draft,
                 enabled = composerEnabled,
-                attachment = pendingAttachment,
+                attachments = pendingAttachments,
                 attachmentError = attachmentError,
                 importInProgress = attachmentImporting,
                 attachmentStorage = attachmentStorage,
@@ -1692,6 +1713,7 @@ private fun AdvisorChatScreen(
                 onValueChange = onDraftChange,
                 onSend = onSubmit,
                 onRemoveAttachment = onRemoveAttachment,
+                onReplaceAttachment = onReplaceAttachment,
                 onOpenCamera = onOpenCamera,
                 onOpenPhotos = onOpenPhotos,
                 onOpenFile = onOpenFile,
@@ -1999,7 +2021,7 @@ private fun WorkingProfileSelector(
 private fun AdvisorComposer(
     value: String,
     enabled: Boolean,
-    attachment: AdvisorAttachment?,
+    attachments: List<AdvisorAttachment>,
     attachmentError: AttachmentImportError?,
     importInProgress: Boolean,
     attachmentStorage: AttachmentStorage,
@@ -2008,7 +2030,8 @@ private fun AdvisorComposer(
     profileSwitchEnabled: Boolean,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
-    onRemoveAttachment: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    onReplaceAttachment: (String) -> Unit,
     onOpenCamera: () -> Unit,
     onOpenPhotos: () -> Unit,
     onOpenFile: () -> Unit,
@@ -2233,7 +2256,7 @@ private fun AdvisorComposer(
                         enabled = enabled,
                         importInProgress = importInProgress,
                         text = value,
-                        attachment = attachment,
+                        attachments = attachments,
                     ),
                     modifier = Modifier.size(48.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
@@ -2268,6 +2291,8 @@ private fun attachmentErrorText(error: AttachmentImportError): String = stringRe
     when (error) {
         AttachmentImportError.UNSUPPORTED_TYPE -> R.string.attachment_error_unsupported
         AttachmentImportError.TOO_LARGE -> R.string.attachment_error_too_large
+        AttachmentImportError.TOO_MANY -> R.string.attachment_error_too_many
+        AttachmentImportError.TOTAL_TOO_LARGE -> R.string.attachment_error_total_too_large
         AttachmentImportError.IMAGE_UNREADABLE -> R.string.attachment_error_image
         AttachmentImportError.CANNOT_OPEN -> R.string.attachment_error_open
         AttachmentImportError.CAMERA_FAILED -> R.string.attachment_error_camera
@@ -3467,11 +3492,12 @@ private fun AdvisorChatPreview() {
             state = AdvisorUiState.Idle,
             onDraftChange = {},
             onSubmit = {},
-            pendingAttachment = null,
+            pendingAttachments = emptyList(),
             attachmentError = null,
             attachmentImporting = false,
             attachmentStorage = previewAttachmentStorage,
             onRemoveAttachment = {},
+            onReplaceAttachment = {},
             onOpenCamera = {},
             onOpenPhotos = {},
             onOpenFile = {},
