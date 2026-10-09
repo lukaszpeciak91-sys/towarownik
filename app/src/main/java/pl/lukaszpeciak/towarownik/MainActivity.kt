@@ -753,6 +753,7 @@ private fun TowarownikApp() {
                         finalResponseId = finalState.responseId,
                         products = finalState.products,
                         sources = display.sources,
+                        advisorTraceId = finalState.traceId,
                         searchActions = finalState.searchActions.map { action ->
                             PersistedSearchAction(
                                 query = action.query,
