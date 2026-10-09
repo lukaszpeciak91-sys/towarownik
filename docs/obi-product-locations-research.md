@@ -1,6 +1,6 @@
 # OBI product availability across markets — research
 
-**Status: F_INCONCLUSIVE — live runs #2 and #3 completed (9 October 2026); no post-open multi-market stock contract verified.**
+**Status: F_INCONCLUSIVE — live runs #2, #3 and #4 completed (9 October 2026); post-open multi-market availability remains unverified.**
 Research only. There is no verified OBI all-market or subset API in this PR.
 The A–F test fixtures are synthetic and must never be interpreted as live findings.
 
@@ -73,6 +73,67 @@ Manual **OBI live contract probe** [run #37994385878](https://github.com/lukaszp
 - A store search input alone is **observation only**, never permission to type guessed text. Market 003/074 selection is attempted only for one uniquely identified enabled row inside one visible dialog. No city-only match or page-wide recommendation click.
 - Browser requests are attributed to the action during which they **began**. Initial \`pickupStores=[]\` stays \`initial:page\`; if the frontend later issues a new product-bound request and returns non-empty \`pickupStores\`, that is a **separate \`availability:open\` observation**. Existing strict product identity, canonical store ID, typed usable state, zero/null/missing distinctions and A–F gates are unchanged. A complete proven initial response would make additional market clicks unnecessary; no such response has yet been observed.
 
+## CONFIRMED: live run #4 — exact opener resolved, Playwright actionability timeout
+
+Manual [OBI live contract probe #37997658969](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37997658969)
+completed successfully on HEAD
+\`7ac03a23a6787740ec8f477aac5e0fe542544561\`.
+The research classification remained **\`F_INCONCLUSIVE\`**.
+
+- The exact native \`button[data-component="PdpLink"]\` was identified
+  **uniquely**, visible, enabled, with normalized \`innerText\` exactly
+  **"Sprawdź dostępność w innym sklepie"**. It is not a recommendation,
+  cart, purchase, or reservation control. Do **not** broaden its selector.
+- Normal Playwright \`button.click(timeout=5000)\` failed with a bounded
+  \`CLICK_FAILED / TIMEOUT\`. The safe run did **not** produce
+  \`availability:*\` network traffic or new post-open store/dialog evidence.
+  This is an **actionability timeout**, not evidence the button has no
+  effect or that other-market availability is absent.
+- The initial frontend-issued
+  \`GET /api/pdp/v1/availability/sp/3496072\` returned
+  **\`pickupStores=[]\`** again. No initial multi-market rows were
+  verified. Omitted stores are **not** zero and neither A nor B can be
+  inferred. The separate \`/availability/hd/3496072\` structure remains
+  delivery-specific and is **not** used as pickup-store stock.
+
+### Next research run — strictly bounded native DOM click after timeout
+
+The probe still performs the **normal Playwright click first**. **Only if**
+that exact harmless opener was uniquely resolved, visible and enabled,
+and the native Playwright click raises an actual Playwright actionability
+\`TimeoutError\`, the probe **re-resolves** the same exact native
+\`button[data-component="PdpLink"]\` with normalized exact text and
+revalidates it **inside the page JavaScript**, then calls only that
+element's standard DOM \`element.click()\`. No coordinate click, broad
+substring, \`force=True\`, other-control fallback or purchase action is
+permitted. A failed re-resolution or failed DOM click is bounded and
+non-authoritative; exception text is never persisted.
+
+An attempted DOM \`element.click()\` is **provisional**, not proof of
+an availability action. After a bounded wait, at least one observable
+change is required: newly visible store/dialog UI, availability-specific
+button expansion, a new store-search/canonical store-row UI structure,
+or an **action-phase** frontend request related to availability,
+pickup, stores or locator. Unrelated recommendations, teasers, CMS and
+delivery data cannot qualify as store-stock facts. Without an effect,
+the recorded status becomes **\`DOM_CLICK_NO_OBSERVABLE_EFFECT\`**,
+and availability classification remains F.
+
+The phase \`availability:open\` is set **before the normal click and
+any DOM fallback**. Initial \`pickupStores=[]\` remains separately
+attributed to \`initial:page\`; any actual new \`/availability/sp/3496072\`
+response after the handler is a separate observation. The existing
+safe \`postOpenUi\` inspection records only bounded dialog, heading,
+search-input and canonical market-ID metadata. If a search field is
+shown without verified market rows, it is observed but **never filled
+with guessed text**. Markets 003/074 are clicked only if uniquely
+identifiable within one visible dialog. Numeric stock, qualitative
+availability and A/B/D/E coverage still require their **own**
+trusted product/store identity and stock-state evidence.
+
+**No successful availability-opening action or multi-market OBI contract
+is claimed until a later live run actually supplies such evidence.**
+
 ## OBSERVED BUT NOT YET PRODUCTION-TRUSTED
 
 The two `/api/pdp/v1/availability/{sp,hd}/3496072` calls are **real
@@ -87,22 +148,24 @@ The run-2 exact accessible-name selector was tested in run #3 and
 failed because nested SVG accessibility differs from visible innerText.
 The **current** selector requires one visible and enabled exact
 `button[data-component="PdpLink"]` with precisely matching normalized
-`innerText`. Run #3 did not yet execute this corrected version.
-Click failures produce bounded categories, never raw exception text.
+`innerText`. Run #4 successfully resolved the corrected exact control, but the normal
+Playwright click timed out. Only the subsequent audited research run may
+exercise the timeout-specific DOM fallback described above. Click failures
+produce bounded categories, never raw exception text.
 
-## UNKNOWN: research gates after run #2
+## UNKNOWN: research gates after run #4
 
 | Subject | Current status |
 | --- | --- |
-| Exact harmless opener | **CONFIRMED** SSR and innerText in runs #2/#3; SVG affects accessible name; no successful click yet |
+| Exact harmless opener | **CONFIRMED** exact unique visible enabled control in run #4; normal Playwright click timed out; native DOM fallback not yet live-verified |
 | Real product-bound availability request | **CONFIRMED** `/api/pdp/v1/availability/sp/3496072`; nested `pickupStores` schema **UNKNOWN** |
 | Separate delivery response | **CONFIRMED** `/api/pdp/v1/availability/hd/3496072`; `deliveryDataPerSeller` meaning **UNKNOWN** |
 | Store ID field inside `pickupStores` | UNKNOWN; must map exact three-digit canonical OBI_STORES number |
 | A/B/D/E request coverage, request-count economics | UNKNOWN; no trustworthy store rows yet |
 | Numeric versus qualitative store availability | UNKNOWN; no usable verified state field |
 | Zero/unavailable/null/omitted store behavior | UNKNOWN; do not invent values |
-| Persistent selected-store mutation during interaction | UNKNOWN; runs #2/#3 did not complete a click, no other-store checking occurred |
-| Product-owned initial Nuxt multi-store preload | **NOT OBSERVED** for control product 3496072 in run #2 |
+| Persistent selected-store mutation during interaction | UNKNOWN; run #4 actionability timeout prevented observed post-open UI and other-market checks |
+| Product-owned initial Nuxt multi-store preload | **NOT OBSERVED** for control product 3496072 in runs #2–#4 |
 
 ## REJECTED / UNSAFE ASSUMPTIONS
 
@@ -179,7 +242,7 @@ bodies, cookies or localStorage. Cookie/localStorage values are compared
 A change flag is not proof of which selected store changed.
 
 The manual job may technically succeed while output classification
-remains F_INCONCLUSIVE. Runs #2 and #3 are such cases. The next run should
+remains F_INCONCLUSIVE. Runs #2, #3 and #4 are such cases. The next run should
 capture newly opened UI and post-open network traffic after the fixed innerText opener;
 do not report any A–E result without verified store IDs and usable states.
 
@@ -253,9 +316,10 @@ real OBI evidence. No production provider, parser, Worker, Advisor,
 protocol, Room, UI, prompt, WorkingProfile or endpoint call changes
 are included in this PR.
 
-**Exit gate:** runs #2/#3 verified product/store ownership, the harmless
-opener, two product-bound initial availability routes and **empty initial
-pickupStores in run #3**, but no multi-market stock semantics. Audit the
-next manual browser run of the corrected innerText selector and post-open
-structural diagnostics before deciding on any provider-neutral contract.
+**Exit gate:** runs #2–#4 verified product/store identity, the exact
+harmless opener, two real frontend availability routes and **empty initial
+pickupStores in runs #3/#4**. Normal click timed out in run #4 and there
+is still no post-open availability evidence. Audit a live run of the
+timeout-only, strictly revalidated DOM fallback and inspect safe post-open
+UI/network evidence before deciding on any provider-neutral contract.
 Production remains a separate PR. **Do not merge this research PR.**
