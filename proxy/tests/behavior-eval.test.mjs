@@ -1370,18 +1370,10 @@ test("scenario B rubric allows bounded surfaced-count wording without treating i
   assert.equal(result.status, "PASS");
   assert.equal(result.localToolCallCount, 1);
   assert.equal(result.trace.finalProductRefs.length, 3);
-  assert.equal(
-    scenario.semanticRubric.some((line) =>
-      /bounded count.*not by itself.*complete|number of candidates.*not by itself/i.test(line),
-    ),
-    true,
-  );
-  assert.equal(
-    scenario.semanticRubric.some((line) =>
-      /completeness\/exclusivity/i.test(line),
-    ),
-    true,
-  );
+  const rubricText = scenario.semanticRubric.join(" ");
+  assert.match(rubricText, /bounded lookup/i);
+  assert.match(rubricText, /not by itself a claim/i);
+  assert.match(rubricText, /complete assortment|completeness\/exclusivity/i);
 });
 
 test("scenario B semantic rubric still rejects an explicit full-assortment claim", async () => {
