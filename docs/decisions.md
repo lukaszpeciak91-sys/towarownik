@@ -547,3 +547,12 @@ These decisions describe the broader intended product behavior. The currently im
 - Logs must never contain chain-of-thought, user/model text, local or web query text, product content or identifiers, stock/price values, attachment filenames/content, response/call chain IDs, raw upstream bodies, authorization material, or secrets. ProviderId and branch/store ID are allowed operational metadata.
 - CONTINUE logs summarize the already-validated local result only through safe aggregate counts and rejection category; individual products are never logged.
 - Android trace propagation/reporting is intentionally deferred to B2.2.
+
+
+## 2026-10-09 — Android Advisor trace correlation B2.2
+
+- Android treats `X-Taksula-Trace-Id` as optional opaque operational metadata outside the Advisor JSON protocol. Only canonical UUID-form values are accepted; malformed or missing trace headers fail soft to null.
+- START and MESSAGE never send a prior turn trace. The first valid Worker response establishes the current USER-turn trace; every subsequent CONTINUE sends it, and a later valid Worker trace becomes authoritative without allowing a missing header to erase an already-established trace.
+- The final successful turn trace is persisted atomically with the ASSISTANT message in nullable `messages.advisorTraceId`. Room moves from schema 10 to 11 through a non-destructive 10→11 migration; historical USER/ASSISTANT rows remain valid with null trace.
+- Existing assistant-response problem reports include the persisted trace correlation even when full conversation context is excluded. Advisor failure diagnostics retain a valid Worker trace or, for a later network failure, the best already-established turn trace where available.
+- No Worker requestId, raw headers, auth material, OpenAI response/call IDs, new telemetry store, dashboard, diagnostics screen, or user-visible chat trace is introduced.
