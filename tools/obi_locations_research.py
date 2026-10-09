@@ -753,7 +753,7 @@ DOM_EXACT_AVAILABILITY_CLICK = """
 (element, expected) => {
     if (!element.isConnected || element.tagName !== 'BUTTON' ||
         element.getAttribute('data-component') !== 'PdpLink' ||
-        (element.innerText || '').replace(/\\s+/g, ' ').trim() !== expected ||
+        (element.innerText || '').replace(/\s+/g, ' ').trim() !== expected ||
         element.disabled || element.getAttribute('aria-disabled') === 'true' ||
         element.getClientRects().length === 0)
         return false;
@@ -1326,14 +1326,34 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                     result["selectedStoreMutation"] = "NOT_TESTED_NO_UI_INTERACTION"
                 else:
                     before = _stored_state(context, page)
-                    action[0] = "availability:open"
+                    before_ui = inspect_post_open_ui(page, stores)
+                    before_expanded = availability_button_expanded(page)
+                    request_count_before = len(requests)
+                    response_count_before = len(observations)
+                    # Begin the phase BEFORE any Playwright or native DOM click.
+                    begin_availability_open_phase(action)
                     control = click_safe_control(page, result["visibleControls"])
+                    if control["status"] == "CLICK_DISPATCHED":
+                        after_ui = inspect_post_open_ui(page, stores)
+                        after_expanded = availability_button_expanded(page)
+                        effect = verify_open_observable_effect(
+                            before_ui, after_ui, before_expanded,
+                            after_expanded, requests[request_count_before:],
+                            observations[response_count_before:], obik,
+                        )
+                        result["openEffectEvidence"] = effect
+                        if effect["effectObserved"]:
+                            control["status"] = "CLICKED"
+                        elif control["interactionMode"] == "DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT":
+                            control["status"] = "DOM_CLICK_NO_OBSERVABLE_EFFECT"
+                        else:
+                            control["status"] = "NORMAL_CLICK_NO_OBSERVABLE_EFFECT"
                     result["uiActions"].append({
                         "action": "availability:open", **control,
                     })
                     if control["status"] == "CLICKED":
                         result["controlsAfterOpen"] = discover_controls(page)
-                        result["postOpenUi"] = inspect_post_open_ui(page, stores)
+                        result["postOpenUi"] = after_ui
                         post_open_contract = classify_contract(
                             observations, stores, obik, nuxt,
                         )
@@ -1398,6 +1418,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
         f"visibleControls={json.dumps(result['visibleControls'], ensure_ascii=False)}",
         f"controlsAfterOpen={json.dumps(result.get('controlsAfterOpen', []), ensure_ascii=False)}",
         f"postOpenUi={json.dumps(result.get('postOpenUi', {}), ensure_ascii=False)}",
+        f"openEffectEvidence={json.dumps(result.get('openEffectEvidence', {}), ensure_ascii=False)}",
         f"uiActions={json.dumps(result['uiActions'], ensure_ascii=False)}",
         f"selectedStoreMutation={result['selectedStoreMutation']}",
         f"requestCountByAction={json.dumps(result['requestCountByAction'])}",
