@@ -246,7 +246,8 @@ No guessed endpoints or production network calls were added.
 Manual [KWANT live contract probe #37978509979](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37978509979) **succeeded**, head `c0a861a10ef651b8407baa58e43367923ebb1920`. After clicking the verified exact-product availability row for **580 / MBN116E/HAG**, the frontend issued:
 
 ```http
-GET https://services.kwant.net.pl/api/front/products/580/departments?extended
+GET https://services.kwant.net.pl/api/front/products/580/departments
+# observed query key: extended (value not asserted by sanitized summary)
 ```
 
 The safe network observer recorded the query field name **`extended`**; no semantics or value are invented. Response top-level fields were `list`, `total_stock`, `unit`. The `list` contained **21 rows**, with **21/21 distinct numeric `department_id` values present in the public branch directory**, and one numeric `stock` per row. Several rows contained **literal `0`**, rather than null or omission. **Nowy Sącz / `department_id=205` had `stock=424`**, matching the previously independently verified selected-branch current response. The product identity is fixed by the **singular request path** `/products/580/departments`, even though response top-level `product_id` is omitted.
