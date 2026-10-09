@@ -484,6 +484,7 @@ private fun ProviderProduct.toManualProductUiModel(
         obik = ref.productId,
         grossPrice = grossPrice,
         stock = stock,
+        centralStock = centralStock,
         productUrl = productUrl,
         storeNumber = branchId.value,
         primaryImageUrl = primaryImageUrl,
