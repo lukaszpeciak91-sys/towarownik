@@ -59,6 +59,28 @@ function multipartRequest(
   });
 }
 
+function multiRequest(path, payload, attachments, options = {}) {
+  const form = new FormData();
+  form.set("payload", JSON.stringify(payload));
+  for (const { bytes, mimeType, filename } of attachments) {
+    form.append("attachment", new File([bytes], filename, { type: mimeType }));
+  }
+  const headers = { Authorization: "Bearer " + APP_TOKEN };
+  if (!options.omitHeader) headers["X-Taksula-Attachment-Protocol"] = "5";
+  if (!options.omitLength) headers["Content-Length"] = String(options.contentLength ?? 1024);
+  return new Request("https://proxy.example" + path, {
+    method: "POST", headers, body: form,
+  });
+}
+
+const jpegBytes = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 1]);
+const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+const pdfBytes = new TextEncoder().encode("%PDF-1.7\n");
+const imagePart = { bytes: jpegBytes, mimeType: "image/jpeg", filename: "first.jpg" };
+const pdfPart = { bytes: pdfBytes, mimeType: "application/pdf", filename: "second.pdf" };
+const pngPart = { bytes: pngBytes, mimeType: "image/png", filename: "third.png" };
+const v5Start = { protocolVersion: 5, message: "", providerId: "kwant-pl", branchId: "205" };
+
 function answerPayload(text = "Synthetic answer") {
   const structured = JSON.stringify({
     text,
@@ -442,6 +464,130 @@ test("protocol v3 KWANT request receives provider-aware product tool", async () 
   );
 });
 
+test("protocol v5 accepts one part without changing v4 single-file transport", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const response = await worker.fetch(
+    multiRequest("/v1/agent/start", v5Start, [imagePart]), configuredEnv,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(fake.captures[0].body.input[0].content, [{
+    type: "input_image",
+    image_url: "data:image/jpeg;base64," + Buffer.from(jpegBytes).toString("base64"),
+    detail: "high",
+  }]);
+  assert.equal(fake.captures[0].body.tools[0].name, "find_products");
+});
+
+test("protocol v5 forwards two or three ordered mixed files in one USER input", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  for (const attachments of [[pdfPart, imagePart], [imagePart, pdfPart, pngPart]]) {
+    const response = await worker.fetch(
+      multiRequest("/v1/agent/start", v5Start, attachments), configuredEnv,
+    );
+    assert.equal(response.status, 200);
+    const input = fake.captures.at(-1).body.input;
+    assert.equal(input.length, 1);
+    assert.equal(input[0].role, "user");
+    assert.deepEqual(
+      input[0].content.map((part) => part.type),
+      attachments.map((part) => part.mimeType === "application/pdf" ? "input_file" : "input_image"),
+    );
+    for (let i = 0; i < attachments.length; i++) {
+      const outputPart = input[0].content[i];
+      const expected = attachments[i];
+      const dataUrl = "data:" + expected.mimeType + ";base64," + Buffer.from(expected.bytes).toString("base64");
+      if (expected.mimeType === "application/pdf") {
+        assert.equal(outputPart.filename, expected.filename);
+        assert.equal(outputPart.file_data, dataUrl);
+      } else {
+        assert.equal(outputPart.detail, "high");
+        assert.equal(outputPart.image_url, dataUrl);
+      }
+    }
+  }
+});
+
+test("protocol v5 MESSAGE preserves text and previous response", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const response = await worker.fetch(multiRequest("/v1/agent/message", {
+    ...v5Start, previousResponseId: "resp_earlier", message: "porównaj załączniki",
+  }, [pdfPart, imagePart, pngPart]), configuredEnv);
+  assert.equal(response.status, 200);
+  const upstream = fake.captures[0].body;
+  assert.equal(upstream.previous_response_id, "resp_earlier");
+  assert.deepEqual(upstream.input[0].content.map((part) => part.type),
+    ["input_text", "input_file", "input_image", "input_image"]);
+  assert.equal(upstream.input[0].content[0].text, "porównaj załączniki");
+});
+
+test("protocol v5 rejects absent, extra or bad parts before OpenAI", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const variants = [
+    [],
+    [imagePart, pdfPart, pngPart, imagePart],
+    [imagePart, { ...pdfPart, mimeType: "image/png" }],
+    [imagePart, { ...pdfPart, mimeType: "text/plain" }],
+    [imagePart, { ...pdfPart, bytes: new Uint8Array() }],
+  ];
+  for (const attachments of variants) {
+    const response = await worker.fetch(multiRequest("/v1/agent/start", v5Start, attachments), configuredEnv);
+    assert.equal(response.status, 400);
+  }
+  const missingMarker = await worker.fetch(
+    multiRequest("/v1/agent/start", v5Start, [imagePart, pdfPart], { omitHeader: true }), configuredEnv,
+  );
+  assert.equal(missingMarker.status, 400);
+  const mismatchedVersion = await worker.fetch(
+    multiRequest("/v1/agent/start", { ...v5Start, protocolVersion: 4 }, [imagePart]), configuredEnv,
+  );
+  assert.equal(mismatchedVersion.status, 400);
+  const jsonV5 = await worker.fetch(request("/v1/agent/start", v5Start), configuredEnv);
+  assert.equal(jsonV5.status, 400);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("protocol v5 enforces total Content-Length before multipart parsing", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const req = multiRequest("/v1/agent/start", v5Start, [imagePart], {
+    contentLength: 3 * 16 * 1024 * 1024 + 16 * 1024 + 1,
+  });
+  let parsed = false;
+  Object.defineProperty(req, "formData", {
+    value: async () => { parsed = true; throw new Error("must not parse"); },
+  });
+  const response = await worker.fetch(req, configuredEnv);
+  assert.equal(response.status, 413);
+  assert.equal(parsed, false);
+  assert.equal(fake.captures.length, 0);
+});
+
+test("protocol v5 continuation remains JSON-only with provider tool unchanged", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const body = {
+    protocolVersion: 5, responseId: "resp_previous", callId: "call_1",
+    providerId: "kwant-pl", branchId: "205", tool: "find_products",
+    result: {
+      providerId: "kwant-pl", branchId: "205",
+      queries: [{ query: "MBN116E", limit: 1 }], rejection: "local_tool_limit_reached",
+    },
+  };
+  const response = await worker.fetch(request("/v1/agent/continue", body), configuredEnv);
+  assert.equal(response.status, 200);
+  assert.deepEqual(fake.captures[0].body.input.map((entry) => entry.type), ["function_call_output"]);
+  assert.equal(JSON.stringify(fake.captures[0].body).includes("data:"), false);
+  const multipart = await worker.fetch(
+    multiRequest("/v1/agent/continue", body, [imagePart]), configuredEnv,
+  );
+  assert.equal(multipart.status, 400);
+  assert.equal(fake.captures.length, 1);
+});
+
 test("protocol v4 image multipart supports attachment-only and high-detail image input", async () => {
   const fake = fakeOpenAI(answerPayload("image"));
   const worker = createWorker(fake.fetch);
@@ -693,7 +839,7 @@ test("unsupported future protocol version fails explicitly before upstream work"
 
   const response = await worker.fetch(
     request("/v1/agent/start", {
-      protocolVersion: 5,
+      protocolVersion: 6,
       message: "future client",
       providerId: "kwant-pl",
       branchId: "205",
