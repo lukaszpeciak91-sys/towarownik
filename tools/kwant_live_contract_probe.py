@@ -3746,10 +3746,11 @@ def select_strongest_location_candidate(
     observations: list[dict[str, Any]],
     directory: dict[str, str],
     aggregate: Any,
+    expected_product_id: str | None = None,
 ) -> dict[str, Any]:
     """Diagnostic ranking solely by observed identity, coverage, quantities and UI."""
     aggregate_quantity = parse_public_aggregate_quantity(aggregate)
-    scored: list[tuple[tuple[int, ...], int, dict[str, Any], dict[str, Any]]] = []
+    scored: list[tuple[tuple[int, ...], int, dict[str, Any], dict[str, Any], str]] = []
     for index, observation in enumerate(observations):
         if not str(observation.get("action", "")).startswith("locations:"):
             continue
@@ -3759,19 +3760,31 @@ def select_strongest_location_candidate(
         count = shape.get("verifiedDirectoryBranchCount", 0)
         if count < 2:
             continue
-        coverage = evaluate_candidate_coverage(shape, directory)
+        identity_source = (
+            product_identity_evidence(observation, expected_product_id)
+            if expected_product_id is not None
+            else (
+                "RESPONSE_PRODUCT_ID"
+                if shape.get("productIdentityMatches") is True
+                else "UNKNOWN"
+            )
+        )
+        coverage = evaluate_candidate_coverage(
+            shape, directory,
+            product_scope_verified=identity_source != "UNKNOWN",
+        )
         triggered_ui = observation.get("action") not in (
             "locations:page",
         )
         score = (
-            int(shape.get("productIdentityMatches") is True),
+            int(identity_source != "UNKNOWN"),
             int(count >= 2),
             int(shape.get("numericCandidateCount", 0) > 0),
             int(triggered_ui),
             count,
             int(shape.get("numericCandidateCount", 0)),
         )
-        scored.append((score, index, shape, coverage))
+        scored.append((score, index, shape, coverage, identity_source))
 
     if not scored:
         return {
@@ -3782,10 +3795,10 @@ def select_strongest_location_candidate(
             "parsedAggregateBranchStock": aggregate_quantity,
         }
 
-    score, index, shape, coverage = max(
+    score, index, shape, coverage, identity_source = max(
         scored, key=lambda item: (item[0], -item[1])
     )
-    scope_verified = shape.get("productIdentityMatches") is True
+    scope_verified = identity_source != "UNKNOWN"
     total = coverage["sumConfirmedObservedBranchStock"]
     complete = coverage["completeness"] == "ALL_DIRECTORY_BRANCHES"
     if not scope_verified:
@@ -3800,6 +3813,7 @@ def select_strongest_location_candidate(
         "strongestCandidate": {
             "observationIndex": index,
             "productIdentityVerified": scope_verified,
+            "productIdentityEvidence": identity_source,
             "uiTriggered": score[3] == 1,
             "verifiedDirectoryBranchCount": coverage["verifiedDirectoryBranchCount"],
             "numericCandidateCount": shape.get("numericCandidateCount", 0),
@@ -4186,6 +4200,7 @@ def research_product_locations(
         strongest = select_strongest_location_candidate(
             capture.records, capture.directory,
             result.get("aggregateBranchStock", UNKNOWN),
+            product_id,
         )
         result.update(strongest)
         result["contractClassification"] = classify_locations_contract(
