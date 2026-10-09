@@ -3450,7 +3450,7 @@ def classify_locations_contract(
 
 
 def batch_prices_stock_evidence(
-    path: str, data: Any, expected_id: str,
+    path: str, data: Any, expected_id: str, depstock: str | None = None,
 ) -> dict[str, Any] | None:
     """Observe only confirmed per-row product identity, never infer joins by index."""
     match = BATCH_PRICES_PATH.fullmatch(path)
@@ -3462,6 +3462,8 @@ def batch_prices_stock_evidence(
     control_rows = []
     identity_rows = 0
     scoped_rows = 0
+    requested_id_rows = 0
+    selected_branch_rows = 0
     for entry in rows[:120]:
         if not isinstance(entry, dict):
             continue
@@ -3469,6 +3471,8 @@ def batch_prices_stock_evidence(
         if type(identity) not in (int, str) or not str(identity).isdigit():
             continue
         identity_rows += 1
+        if str(identity) in ids:
+            requested_id_rows += 1
         department = entry.get("department_stock")
         if isinstance(department, dict):
             bid, _ = observed_branch_identity(department)
@@ -3477,17 +3481,24 @@ def batch_prices_stock_evidence(
             )
             if bid is not None and state in ("known_zero", "known_positive"):
                 scoped_rows += 1
-                if str(identity) == expected_id:
+                if depstock is not None and bid == depstock:
+                    selected_branch_rows += 1
+                if str(identity) == expected_id and str(identity) in ids:
                     control_rows.append({"branchId": bid, "stock": quantity})
     return {
         "requestedProductIdCount": len(ids),
         "responseRowCount": len(rows),
         "identityBoundRowCount": identity_rows,
+        "requestedProductIdentityRowCount": requested_id_rows,
+        "selectedBranchRowCount": selected_branch_rows,
         "departmentStockRowCount": scoped_rows,
         "controlProductRows": control_rows[:3],
         "usableBatchCandidate": (
             bool(rows) and identity_rows == len(rows)
+            and requested_id_rows == len(rows)
             and scoped_rows == len(rows)
+            and depstock is not None
+            and selected_branch_rows == len(rows)
         ),
         "status": "STRUCTURAL_CANDIDATE_NOT_PRODUCTION_VERIFIED",
     }
@@ -3769,7 +3780,10 @@ class ObservedLocationsResponses:
             return
         summary = research_json_shape(data, self.product_id, self.directory)
         batch_evidence = batch_prices_stock_evidence(
-            parsed.path, data, self.product_id
+            parsed.path, data, self.product_id,
+            depstock=sanitized_query(
+                getattr(request, "url", ""), action=action
+            )["safeValues"].get("depstock"),
         )
         method = str(getattr(request, "method", "")).upper()
         req_headers = getattr(request, "headers", {}) or {}
