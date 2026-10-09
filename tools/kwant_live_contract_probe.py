@@ -3564,25 +3564,20 @@ def classify_locations_contract(
                 multi[0], expected_id
             ),
         )
-        all_rows = multi[0]["shape"].get("branchRows", [])
-        numeric_ids = {
-            row["branchId"] for row in all_rows
-            if row.get("branchKnownInDirectory")
-            and row.get("candidateState") in ("known_zero", "known_positive")
-        }
-        # For discovery, alternative candidate fields may coexist. Keep the
-        # reconciliation sum stricter, but do not miss the shape itself.
-        if (
-            numeric_ids == set(directory)
-            and coverage["completeness"] == "ALL_DIRECTORY_BRANCHES"
-        ):
-            return {"type": "A_ONE_SHOT_ALL_BRANCHES",
-                    "reason": "PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE"}
+        # A requires 1 unambiguous, valid numeric row for EACH public branch.
+        # Duplicate candidate fields or null/invalid rows never silently
+        # become authoritative stock, even with full directory ID coverage.
         if coverage["sumConfirmedObservedBranchStock"] is not None:
             if coverage["completeness"] == "ALL_DIRECTORY_BRANCHES":
-                return {"type": "A_ONE_SHOT_ALL_BRANCHES", "reason": "PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE"}
+                return {
+                    "type": "A_ONE_SHOT_ALL_BRANCHES",
+                    "reason": "PRODUCT_BOUND_FULL_DIRECTORY_RESPONSE",
+                }
             if coverage["completeness"] == "POSITIVE_ONLY_CANDIDATE":
-                return {"type": "B_ONE_SHOT_POSITIVE_ONLY", "reason": "CANDIDATE_ONLY_POSITIVE_SUBSET_NOT_PROOF_OF_ZERO_OMISSIONS"}
+                return {
+                    "type": "B_ONE_SHOT_POSITIVE_ONLY",
+                    "reason": "CANDIDATE_ONLY_POSITIVE_SUBSET_NOT_PROOF_OF_ZERO_OMISSIONS",
+                }
     if len(multi) > 1 and len(multi) <= 5:
         combined_ids = set()
         for item in multi:
