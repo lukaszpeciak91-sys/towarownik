@@ -501,9 +501,10 @@ private fun TowarownikApp() {
     fun clearPendingAttachment() {
         pickerEpoch++
         invalidateAttachmentImport()
-        if (pendingAttachmentOwnership.clearPending(pendingAttachments)) {
-            pendingAttachments = emptyList()
-        }
+        // Never carry old selection into a different conversation, even when
+        // a preferences write fails; old durable markers remain for startup cleanup.
+        pendingAttachmentOwnership.clearPending(pendingAttachments)
+        pendingAttachments = emptyList()
         attachmentError = null
     }
 
