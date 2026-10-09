@@ -654,16 +654,19 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                         # Stop if the overlay/selector did not provide the row.
                         if outcome["status"] != "CLICKED":
                             break
-                after = _stored_state(context, page)
-                if before[0] is not None and after[0] is not None:
-                    result["selectedStoreMutation"] = (
-                        "COOKIE_STATE_CHANGED" if before[0] != after[0]
-                        else "COOKIE_STATE_UNCHANGED"
-                    )
-                    result["localStorageChanged"] = (
-                        None if before[1] is None or after[1] is None
-                        else before[1] != after[1]
-                    )
+                if control["status"] == "CLICKED":
+                    after = _stored_state(context, page)
+                    if before[0] is not None and after[0] is not None:
+                        result["selectedStoreMutation"] = (
+                            "COOKIE_STATE_CHANGED" if before[0] != after[0]
+                            else "COOKIE_STATE_UNCHANGED"
+                        )
+                        result["localStorageChanged"] = (
+                            None if before[1] is None or after[1] is None
+                            else before[1] != after[1]
+                        )
+                else:
+                    result["selectedStoreMutation"] = "NOT_TESTED_NO_SAFE_CONTROL"
             result["contractClassification"] = classify_contract(
                 observations, stores, obik, nuxt,
             )
