@@ -341,6 +341,201 @@ class MultiMarketResearchTest(unittest.TestCase):
         self.assertIs(self.r.resolve_exact_availability_opener(page)[0], real)
         self.assertEqual(0, other.clicks)
 
+    class FakeModalLocator:
+        def __init__(self, nodes=()):
+            self.nodes = list(nodes)
+
+        def count(self):
+            return len(self.nodes)
+
+        def nth(self, index):
+            return self.nodes[index]
+
+    class FakeModalNode:
+        def __init__(self, *, content="", visible=True, enabled=True,
+                     attributes=None, children=None):
+            self.content = content
+            self.visible = visible
+            self.enabled = enabled
+            self.attributes = attributes or {}
+            self.children = children or {}
+            self.clicks = 0
+
+        def is_visible(self):
+            return self.visible
+
+        def is_enabled(self):
+            return self.enabled
+
+        def get_attribute(self, name):
+            return self.attributes.get(name)
+
+        def inner_text(self, timeout=0):
+            return self.content
+
+        def evaluate(self, expression):
+            return list(self.attributes)[:45]
+
+        def locator(self, selector):
+            return MultiMarketResearchTest.FakeModalLocator(
+                self.children.get(selector, ())
+            )
+
+        def scroll_into_view_if_needed(self, timeout=0):
+            pass
+
+        def click(self, timeout=0):
+            self.clicks += 1
+
+    def test_post_open_ui_exposes_only_bounded_modal_structure_and_canonical_ids(self):
+        r = self.r
+        heading = self.FakeModalNode(
+            content="Wybierz sklep",
+            attributes={"role": "heading"},
+        )
+        search = self.FakeModalNode(
+            attributes={
+                "type": "search",
+                "placeholder": "Wyszukaj sklep",
+                "aria-label": "Wyszukaj sklep",
+            },
+        )
+        private_address = self.stores["003"]["address"]
+        market = self.FakeModalNode(
+            content="Kraków " + private_address + " 30-999 PRIVATE_UNSAFE",
+            attributes={
+                "data-store-number": "003",
+                "data-analytics-secret": "SECRET_SESSION",
+                "data-market-token": "PRIVATE_TOKEN",
+            },
+        )
+        other = self.FakeModalNode(
+            content="Łódź " + self.stores["074"]["address"],
+            attributes={"data-market-id": "074"},
+        )
+        controls = 'button,[role="button"],[role="option"],a[href],[data-store-number],[data-store-id],[data-market-id]'
+        dialog = self.FakeModalNode(
+            visible=True,
+            attributes={"role": "dialog"},
+            children={
+                'h1,h2,h3,h4,[role="heading"],label': [heading],
+                'input,textarea,[role="combobox"],[role="searchbox"]': [search],
+                controls: [market, other],
+            },
+        )
+        page = self.FakeModalNode(children={
+            'dialog,[role="dialog"],[aria-modal="true"]': [dialog],
+            '[role="region"]': [],
+        })
+        result = r.inspect_post_open_ui(page, self.stores)
+        self.assertEqual(1, result["visibleDialogCount"])
+        self.assertEqual("ONE_VISIBLE_DIALOG", result["scope"])
+        self.assertTrue(result["storeClickScopeVerified"])
+        self.assertEqual(1, result["visibleInputCount"])
+        self.assertTrue(result["storeSearchInputObserved"])
+        self.assertEqual("search", result["inputs"][0]["type"])
+        self.assertEqual(2, result["candidateStoreRowsCount"])
+        self.assertEqual(
+            {"003", "074"},
+            {x["storeNumber"] for x in result["canonicalStoreCandidates"]}
+        )
+        self.assertIn(
+            "data-store-number", result["dataAttributeNames"]
+        )
+        self.assertTrue(result["structuralOnly"])
+        safe_json = json.dumps(result, ensure_ascii=False)
+        for private in (private_address, "PRIVATE_UNSAFE", "30-999",
+                        "SECRET_SESSION", "PRIVATE_TOKEN", "data-market-token",
+                        "data-analytics-secret"):
+            self.assertNotIn(private, safe_json)
+
+    def test_canonical_address_needs_city_and_address_not_city_only(self):
+        r = self.r
+        addr = self.stores["003"]["address"]
+        known = r.identify_canonical_dom_store(
+            "Kraków " + addr + " SECRET_RAW", {}, self.stores,
+        )
+        self.assertEqual("003", known["storeNumber"])
+        self.assertEqual("VERIFIED", known["identityStatus"])
+        self.assertNotIn(addr, json.dumps(known))
+        self.assertNotIn("SECRET_RAW", json.dumps(known))
+        unknown = r.identify_canonical_dom_store(
+            "Kraków", {}, self.stores,
+        )
+        self.assertIsNone(unknown["storeNumber"])
+        self.assertEqual("UNKNOWN", unknown["identityStatus"])
+        wrong_city = r.identify_canonical_dom_store(
+            "Warszawa " + addr, {}, self.stores
+        )
+        self.assertEqual("UNKNOWN", wrong_city["identityStatus"])
+        conflict = r.identify_canonical_dom_store(
+            "Kraków " + addr,
+            {"data-market-id": "019"}, self.stores
+        )
+        self.assertIsNone(conflict["storeNumber"])
+        self.assertEqual("AMBIGUOUS", conflict["identityStatus"])
+        self.assertNotIn("Kraków", json.dumps(conflict))
+
+    def test_unscoped_or_search_only_ui_never_triggers_guessed_store_selection(self):
+        r = self.r
+        controls = 'button,[role="button"],[role="option"],a[href],[data-store-number],[data-store-id],[data-market-id]'
+        search = self.FakeModalNode(
+            attributes={"type": "text", "placeholder": "Znajdź sklep"}
+        )
+        dialog = self.FakeModalNode(children={
+            'h1,h2,h3,h4,[role="heading"],label': [],
+            'input,textarea,[role="combobox"],[role="searchbox"]': [search],
+            controls: [],
+        })
+        page = self.FakeModalNode(children={
+            'dialog,[role="dialog"],[aria-modal="true"]': [dialog],
+            '[role="region"]': [],
+        })
+        summary = r.inspect_post_open_ui(page, self.stores)
+        self.assertEqual(0, summary["candidateStoreRowsCount"])
+        self.assertTrue(summary["storeSearchInputObserved"])
+        self.assertEqual(
+            "NO_UNAMBIGUOUS_STORE_ROW",
+            r._try_market_choice(page, "003", self.stores)["status"]
+        )
+        unscoped = self.FakeModalNode(children={
+            'dialog,[role="dialog"],[aria-modal="true"]': [],
+            '[role="region"]': [],
+        })
+        summary = r.inspect_post_open_ui(unscoped, self.stores)
+        self.assertFalse(summary["storeClickScopeVerified"])
+        self.assertEqual(
+            "NO_UNAMBIGUOUS_DIALOG",
+            r._try_market_choice(unscoped, "003", self.stores)["status"]
+        )
+        self.assertEqual(0, search.clicks)
+
+    def test_initial_empty_sp_and_post_open_rows_are_distinct_action_evidence(self):
+        path = "/api/pdp/v1/availability/sp/3496072"
+        initial = self.observation(
+            {"pickupStores": []}, path=path, action="initial:page"
+        )
+        self.assertEqual(0, initial["shape"]["pickupStoresStructure"]["containerLength"])
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([initial], self.stores, self.obik)["type"])
+        post = self.observation(
+            {"pickupStores": [
+                {"storeNumber": "075", "stock": 0},
+                {"storeNumber": "003", "availability": "available"},
+            ]}, path=path, action="availability:open"
+        )
+        self.assertNotEqual(initial["action"], post["action"])
+        self.assertEqual("initial:page", initial["action"])
+        self.assertEqual("availability:open", post["action"])
+        self.assertEqual(0, len(initial["shape"]["storeRows"]))
+        self.assertEqual(2, len(post["shape"]["storeRows"]))
+        self.assertEqual(0, post["shape"]["storeRows"][0]["value"])
+        self.assertNotIn("074", self.r.verified_rows(post, self.stores))
+        self.assertEqual(
+            "B_ONE_SHOT_SUBSET",
+            self.r.classify_contract([initial, post], self.stores, self.obik)["type"]
+        )
+
     def test_observed_sp_structural_diagnostics_no_unknown_field_classification(self):
         r = self.r
         payload = {"pickupStores": [
