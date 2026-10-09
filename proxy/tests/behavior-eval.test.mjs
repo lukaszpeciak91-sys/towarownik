@@ -388,15 +388,91 @@ test("scenario D keeps OBI plumbing content and shapes KWANT to electrical clari
     );
     assert.match(
       result.trace.clarificationOrFinalAnswer.text,
-      /\?/,
-    );
-    assert.match(
-      result.trace.clarificationOrFinalAnswer.text,
       /kandyd/i,
     );
     assert.doesNotMatch(
       result.trace.clarificationOrFinalAnswer.text,
       /ten (?:na pewno )?(?:pasuje|jest właściwy)|polecam ten/i,
+    );
+  }
+});
+
+test("scenario D accepts actionable resolution steps without requiring a question mark", async () => {
+  const cases = [
+    {
+      provider: "obi-v2",
+      scenario: behaviorScenarioForProvider("D", "obi-v2"),
+      start() {
+        return toolRequest([{ query: "perlator", limit: 2 }]);
+      },
+      text:
+        "Mam kandydaty M22 i M24. Dobór zależy od gwintu — odkręć starą końcówkę i sprawdź oznaczenie albo zmierz średnicę. Do czasu ustalenia gwintu żaden z nich nie jest potwierdzonym dopasowaniem.",
+    },
+    {
+      provider: "kwant-v3",
+      scenario: behaviorScenarioForProvider("D", "kwant-v3"),
+      start() {
+        return {
+          type: "tool_request",
+          responseId: "resp_tool",
+          tool: {
+            name: "find_products",
+            callId: "call_tool",
+            arguments: {
+              providerId: "kwant-pl",
+              branchId: "205",
+              requestedBranch: null,
+              queries: [{ query: "B16", limit: 2 }],
+            },
+          },
+          webSearchCalls: 0,
+        };
+      },
+      text:
+        "Poniżej są kandydaci B16 1P i 3P. Najpierw ustal wymaganą konfigurację biegunów dla obwodu; bez tego nie da się wskazać właściwego aparatu.",
+    },
+  ];
+
+  for (const item of cases) {
+    let observedRubric = [];
+    const result = await runBehaviorTrial(
+      item.scenario,
+      1,
+      {
+        async start() {
+          return item.start();
+        },
+        async continueTurn(
+          _responseId,
+          _callId,
+          _branchId,
+          mockedResult,
+        ) {
+          return answer(item.text, verifiedRefs(mockedResult));
+        },
+      },
+      {
+        async grade({ scenario: gradedScenario }) {
+          observedRubric = gradedScenario.semanticRubric;
+          return {
+            pass: true,
+            reason:
+              "answer keeps the critical parameter unresolved and gives an actionable resolution step",
+          };
+        },
+      },
+      item.provider,
+    );
+
+    assert.equal(result.status, "PASS");
+    assert.equal(item.text.includes("?"), false);
+    assert.equal(result.localToolCallCount, 1);
+    assert.equal(result.trace.finalProductRefs.length, 2);
+    assert.equal(
+      observedRubric.some((line) =>
+        /may either ask.*or|must be established|actionable instruction/i.test(line),
+      ),
+      true,
     );
   }
 });
@@ -1265,9 +1341,8 @@ test("scenario A rejects arbitrary single-result narrowing", async () => {
   );
 });
 
-test("browse exhaustive wording is rejected by the behavioral semantic rubric", async () => {
+test("scenario B rubric allows bounded surfaced-count wording without treating it as exhaustive", async () => {
   const scenario = behaviorScenario("B");
-  let observedRubric = [];
   const result = await runBehaviorTrial(
     scenario,
     1,
@@ -1284,36 +1359,76 @@ test("browse exhaustive wording is rejected by the behavioral semantic rubric", 
         mockedResult,
       ) {
         return answer(
-          "Mamy trzy warianty czarnych trytytek.",
+          "Mam trzy zweryfikowane warianty czarnych trytytek.",
+          verifiedRefs(mockedResult),
+        );
+      },
+    },
+    passingSemanticJudge,
+  );
+
+  assert.equal(result.status, "PASS");
+  assert.equal(result.localToolCallCount, 1);
+  assert.equal(result.trace.finalProductRefs.length, 3);
+  assert.equal(
+    scenario.semanticRubric.some((line) =>
+      /bounded count.*not by itself.*complete|number of candidates.*not by itself/i.test(line),
+    ),
+    true,
+  );
+  assert.equal(
+    scenario.semanticRubric.some((line) =>
+      /completeness\/exclusivity/i.test(line),
+    ),
+    true,
+  );
+});
+
+test("scenario B semantic rubric still rejects an explicit full-assortment claim", async () => {
+  const scenario = behaviorScenario("B");
+  let observedAnswer = "";
+  const result = await runBehaviorTrial(
+    scenario,
+    1,
+    {
+      async start() {
+        return toolRequest([
+          { query: "czarne trytytki", limit: 3 },
+        ]);
+      },
+      async continueTurn(
+        _responseId,
+        _callId,
+        _storeNumber,
+        mockedResult,
+      ) {
+        return answer(
+          "To wszystkie czarne trytytki, jakie mamy — tylko te trzy warianty.",
           verifiedRefs(mockedResult),
         );
       },
     },
     {
-      async grade({ scenario: gradedScenario, trace }) {
-        observedRubric = gradedScenario.semanticRubric;
-        const exhaustive =
-          /mamy trzy warianty/i.test(
-            trace.clarificationOrFinalAnswer?.text ?? "",
-          );
+      async grade({ trace }) {
+        observedAnswer =
+          trace.clarificationOrFinalAnswer?.text ?? "";
         return {
-          pass: !exhaustive,
-          reason: exhaustive
-            ? "bounded subset was presented as the complete assortment"
-            : "non-exhaustive wording",
+          pass: false,
+          reason:
+            "answer explicitly claimed the bounded results were the complete assortment",
         };
       },
     },
   );
 
   assert.equal(
-    observedRubric.some((line) =>
-      /does not imply.*complete assortment/i.test(line),
-    ),
-    true,
+    observedAnswer,
+    "To wszystkie czarne trytytki, jakie mamy — tylko te trzy warianty.",
   );
   assert.equal(result.status, "FAIL");
   assert.match(result.reason, /complete assortment/i);
+  assert.equal(result.localToolCallCount, 1);
+  assert.equal(result.trace.finalProductRefs.length, 3);
 });
 
 test("scenario C accepts a semantic exact-size cable-tie query without literal indoor wording", async () => {
@@ -2273,6 +2388,26 @@ test("semantic grader uses the normal eval output budget and accepts a valid gra
       "tools",
     ),
     false,
+  );
+  assert.match(
+    captures[0].instructions,
+    /bounded samples/i,
+  );
+  assert.match(
+    captures[0].instructions,
+    /number of candidates actually surfaced does not by itself claim.*complete/i,
+  );
+  assert.match(
+    captures[0].instructions,
+    /explicit or semantically clear completeness\/exclusivity claims/i,
+  );
+  assert.match(
+    captures[0].instructions,
+    /semantic meaning rather than exact wording, punctuation, or magic phrases/i,
+  );
+  assert.match(
+    captures[0].instructions,
+    /rather than requiring a literal interrogative sentence or question mark/i,
   );
 });
 
