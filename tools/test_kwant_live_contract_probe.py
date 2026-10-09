@@ -1764,5 +1764,105 @@ class ReportWriterTest(unittest.TestCase):
         )
 
 
+
+class LocationsResearchTest(unittest.TestCase):
+    def test_public_directory_maps_numeric_department_id_to_public_name(self):
+        html = (
+            '<script id="__NEXT_DATA__" type="application/json">'
+            + json.dumps({"props": {"pageProps": {"departments": {"list": [
+                {"department_id": 205, "name": "Nowy Sącz"},
+                {"department_id": 204, "name": "Tarnów"},
+                {"department_id": "BAD", "name": "Unknown"},
+                {"department_id": 300, "name": "token=SECRET"},
+            ]}}}})
+            + "</script>"
+        )
+        self.assertEqual(
+            {"205": "Nowy Sącz", "204": "Tarnów"},
+            probe.public_branch_directory_from_html(html),
+        )
+        self.assertEqual({}, probe.public_branch_directory_from_html(""))
+
+    def test_search_fields_do_not_claim_selected_branch_stock(self):
+        shape = probe.research_json_shape(
+            {"hits": [
+                {"id": 580, "name": "control", "code": "MBN116E/HAG",
+                 "stock": 999, "central_stock": 345},
+            ]},
+            "580",
+            {"205": "Nowy Sącz"},
+        )
+        self.assertEqual(1, shape["searchHitCount"])
+        self.assertEqual(["central_stock", "stock"], shape["searchHitStockFields"])
+        self.assertEqual([], shape["branchRows"])
+        self.assertEqual(probe.UNKNOWN, shape["productIdentityMatches"])
+
+    def test_per_branch_stock_zero_positive_null_and_directory_mapping(self):
+        shape = probe.research_json_shape(
+            {"product_id": 580, "branches": [
+                {"department_id": 205, "stock": 0},
+                {"department_id": 204, "stock": 18},
+                {"department_id": 999, "stock": None},
+                {"department_id": 20, "stock": "?"}
+            ]},
+            "580",
+            {"205": "Nowy Sącz", "204": "Tarnów"},
+        )
+        self.assertTrue(shape["productIdentityMatches"])
+        self.assertEqual(4, shape["branchDistinctIds"])
+        rows = shape["branchRows"]
+        self.assertEqual(
+            ["known_zero", "known_positive", "unknown_null", "invalid"],
+            [r["stockState"] for r in rows],
+        )
+        self.assertEqual([0, 18, None, None], [r["stock"] for r in rows])
+        self.assertEqual([True, True, False, False],
+                         [r["branchKnownInDirectory"] for r in rows])
+        self.assertNotIn("name", str(shape))
+        self.assertEqual("Tarnów", rows[1]["branchNameFromDirectory"])
+
+    def test_mismatched_product_identity_remains_mismatched(self):
+        shape = probe.research_json_shape(
+            {"product_id": 581, "department_stock": {
+                "department_id": 205, "stock": 3,
+            }},
+            "580", {"205": "Nowy Sącz"},
+        )
+        self.assertFalse(shape["productIdentityMatches"])
+        self.assertEqual(1, shape["branchDistinctIds"])
+
+    def test_unexpected_public_host_not_inspected(self):
+        class Request:
+            url = "https://evil.example/api/front/products/580/current"
+            method = "GET"
+            resource_type = "fetch"
+
+        class Response:
+            request = Request()
+            url = Request.url
+            headers = {"content-type": "application/json"}
+            status = 200
+
+            def body(self):
+                raise AssertionError("should never read external response bodies")
+
+        network = probe.NetworkRecorder(action="locations:page")
+        capture = probe.ObservedLocationsResponses(network, "580")
+        capture.on_response(Response())
+        self.assertEqual([], capture.records)
+
+    def test_research_schema_contains_no_secret_source_values(self):
+        secret = "SENSITIVE_ACCOUNT_TOKEN"
+        shape = probe.research_json_shape({
+            "product_id": 580,
+            "sessionToken": secret,
+            "departments": [
+                {"department_id": 205, "stock": 4,
+                 "account": secret, "cookie": secret}
+            ],
+        }, "580", {"205": "Nowy Sącz"})
+        self.assertNotIn(secret, json.dumps(shape, ensure_ascii=False))
+        self.assertNotIn("sessionToken", shape["rootFields"])
+
 if __name__ == "__main__":
     unittest.main()

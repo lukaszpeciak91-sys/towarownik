@@ -1595,6 +1595,21 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
             )
         )
 
+    locations = summary.get("locationsResearch")
+    if isinstance(locations, dict):
+        lines.extend([
+            "", "PRODUCT LOCATIONS RESEARCH",
+            "verifiedProductPage=" + format_scalar(locations.get("verifiedProductPage", False)),
+            "directoryBranchCount=" + str(locations.get("directoryBranchCount", 0)),
+            "oneShotPerBranchResponseObserved=" + format_scalar(locations.get("oneShotPerBranchResponseObserved", False)),
+            "candidateMultiBranchResponseObserved=" + format_scalar(locations.get("candidateMultiBranchResponseObserved", False)),
+            "productPageShape=" + format_scalar(locations.get("productPageShape", {})),
+            "completeness=" + str(locations.get("completeness", UNKNOWN)),
+            "aggregateReconciliation=" + str(locations.get("aggregateReconciliation", "NOT_EVALUATED")),
+            "uiActions=" + format_scalar(locations.get("uiActions", [])),
+        ])
+        for observed in locations.get("observedResponses", []):
+            lines.append("observed=" + format_scalar(observed))
     (out_dir / "summary.txt").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
@@ -2581,6 +2596,7 @@ def run_live_probe(
     raw_dir = out_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     recorder = NetworkRecorder()
+    locations_capture = ObservedLocationsResponses(recorder, numeric_product_id)
     numeric_product_route = probe_numeric_product_route_http(
         numeric_product_id
     )
@@ -2599,6 +2615,7 @@ def run_live_probe(
         page = context.new_page()
         page.on("request", recorder.on_request)
         page.on("response", recorder.on_response)
+        page.on("response", locations_capture.on_response)
 
         recorder.set_action("baseline")
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
@@ -2761,6 +2778,15 @@ def run_live_probe(
             raw_dir=raw_dir,
         )
 
+        branch_html_for_locations = (raw_dir / "branch-before-select.html").read_text(
+            encoding="utf-8"
+        ) if (raw_dir / "branch-before-select.html").exists() else ""
+        locations_research = research_product_locations(
+            page, recorder, locations_capture,
+            product_id=numeric_product_id,
+            branch_html=branch_html_for_locations,
+        )
+        recorder.set_action("home:after-locations")
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
         frontend_clues = collect_frontend_clues(page, context)
         department_cookie_research = (
@@ -2868,6 +2894,7 @@ def run_live_probe(
             department_cookie_research=department_cookie_research,
             numeric_product_route=numeric_product_route,
         )
+        summary['locationsResearch'] = locations_research
         browser.close()
         return summary
 
@@ -2880,6 +2907,304 @@ def strip_private_search_fields(
         for key, child in value.items()
         if not key.startswith("_")
     }
+
+
+
+# Locations research is deliberately diagnostic only. No endpoint is guessed or
+# requested directly: all API evidence below comes from observed browser traffic.
+LOCATIONS_RESEARCH_MAX_RESPONSES = 35
+LOCATIONS_RESEARCH_MAX_BODY_BYTES = 1_500_000
+LOCATIONS_RESEARCH_MAX_BRANCH_ROWS = 60
+
+
+def public_branch_directory_from_html(html: str) -> dict[str, str]:
+    """Use only verified public department IDs/names from the branch directory."""
+    match = re.search(
+        r"""<script[^>]+id=["']__NEXT_DATA__["'][^>]*>(.*?)</script>""",
+        html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return {}
+    try:
+        payload = json.loads(match.group(1))
+        rows = payload["props"]["pageProps"]["departments"]["list"]
+    except (ValueError, KeyError, TypeError):
+        return {}
+    directory: dict[str, str] = {}
+    if not isinstance(rows, list):
+        return directory
+    for item in rows[:150]:
+        if not isinstance(item, dict):
+            continue
+        branch_id, name = item.get("department_id"), item.get("name")
+        if (
+            type(branch_id) is int
+            and 0 <= branch_id <= 99999999
+            and isinstance(name, str)
+            and 0 < len(name) <= 120
+            and not SECRET_KEY_RE.search(name)
+            and is_safe_public_value(name)
+        ):
+            directory[str(branch_id)] = name
+    return directory
+
+
+def research_json_shape(
+    payload: Any,
+    expected_product_id: str,
+    directory: dict[str, str],
+) -> dict[str, Any]:
+    """Summarize public stock-shaped JSON; never return source objects/bodies."""
+    if not isinstance(payload, dict):
+        return {"rootType": type(payload).__name__, "branchRows": []}
+    root_id = payload.get("product_id", payload.get("productId"))
+    identity = (
+        str(root_id) == expected_product_id
+        if isinstance(root_id, (str, int)) and not isinstance(root_id, bool)
+        else UNKNOWN
+    )
+    hits = payload.get("hits")
+    summary: dict[str, Any] = {
+        "rootFields": sorted(
+            str(k)[:60] for k in payload if not SECRET_KEY_RE.search(str(k))
+        )[:65],
+        "productIdentityMatches": identity,
+        "branchRows": [],
+    }
+    if isinstance(hits, list):
+        summary["searchHitCount"] = len(hits)
+        first = next((h for h in hits if isinstance(h, dict)), {})
+        summary["searchHitFields"] = sorted(
+            str(k)[:60] for k in first if not SECRET_KEY_RE.search(str(k))
+        )[:75]
+        # Field names prove availability (or absence) more safely than copying
+        # candidate data, which can include product and account information.
+        summary["searchHitStockFields"] = [
+            key for key in summary["searchHitFields"]
+            if re.search(r"stock|magazyn|central|availability|department", key, re.I)
+        ]
+
+    candidate_rows: list[dict[str, Any]] = []
+    inspected = 0
+    def visit(node: Any, path: str, depth: int) -> None:
+        nonlocal inspected
+        if inspected >= 5000 or depth > 7:
+            return
+        inspected += 1
+        if isinstance(node, dict):
+            branch_id = node.get("department_id", node.get("department_stock_id"))
+            if (
+                isinstance(branch_id, (int, str))
+                and not isinstance(branch_id, bool)
+                and str(branch_id).isdigit()
+                and "stock" in node
+                and len(candidate_rows) < LOCATIONS_RESEARCH_MAX_BRANCH_ROWS
+            ):
+                stock = node["stock"]
+                valid_stock = (
+                    type(stock) is int and stock >= 0
+                )
+                candidate_rows.append({
+                    "jsonPath": path,
+                    "branchId": str(branch_id)[:12],
+                    "branchKnownInDirectory": str(branch_id) in directory,
+                    "branchNameFromDirectory": directory.get(str(branch_id)),
+                    "stockFieldPresent": True,
+                    "stock": stock if valid_stock else None,
+                    "stockState": (
+                        "known_zero" if valid_stock and stock == 0
+                        else "known_positive" if valid_stock
+                        else "unknown_null" if stock is None
+                        else "invalid"
+                    ),
+                })
+            for key, value in list(node.items())[:120]:
+                if not SECRET_KEY_RE.search(str(key)):
+                    visit(value, path + "." + str(key)[:55], depth + 1)
+        elif isinstance(node, list):
+            for element in node[:120]:
+                visit(element, path + "[]", depth + 1)
+    visit(payload, "$", 0)
+    summary["branchRows"] = candidate_rows
+    summary["branchRowCountCaptured"] = len(candidate_rows)
+    summary["branchDistinctIds"] = len({
+        row["branchId"] for row in candidate_rows
+    })
+    return summary
+
+
+class ObservedLocationsResponses:
+    """Conservative, bounded observer for *real* frontend JSON responses."""
+
+    def __init__(self, recorder: NetworkRecorder, product_id: str) -> None:
+        self.recorder = recorder
+        self.product_id = product_id
+        self.directory: dict[str, str] = {}
+        self.records: list[dict[str, Any]] = []
+
+    def on_response(self, response: Any) -> None:
+        if len(self.records) >= LOCATIONS_RESEARCH_MAX_RESPONSES:
+            return
+        action = self.recorder.action
+        if not (
+            action.startswith("search:")
+            or action.startswith("product:")
+            or action.startswith("locations:")
+        ):
+            return
+        request = getattr(response, "request", None)
+        if not request or getattr(request, "resource_type", None) not in {"xhr", "fetch"}:
+            return
+        ok, safe = sanitize_kwant_network_url(getattr(response, "url", ""))
+        if not ok:
+            return
+        parsed = urlsplit(safe)
+        # The observer records existing service calls, never probes invented URLs.
+        if (
+            parsed.hostname != KWANT_SERVICES_HOST
+            or not parsed.path.startswith("/api/front/")
+        ):
+            return
+        headers = getattr(response, "headers", {}) or {}
+        if "json" not in str(headers.get("content-type", "")).lower():
+            return
+        try:
+            length = int(headers.get("content-length", "0"))
+        except (ValueError, TypeError):
+            return
+        if length > LOCATIONS_RESEARCH_MAX_BODY_BYTES:
+            return
+        try:
+            body = response.body()
+            if len(body) > LOCATIONS_RESEARCH_MAX_BODY_BYTES:
+                return
+            data = json.loads(body)
+        except Exception:
+            # A failed browser response read must not break the whole probe.
+            return
+        summary = research_json_shape(data, self.product_id, self.directory)
+        method = str(getattr(request, "method", "")).upper()
+        req_headers = getattr(request, "headers", {}) or {}
+        self.records.append({
+            "action": action,
+            "host": parsed.hostname,
+            "path": parsed.path,
+            "method": method,
+            "status": getattr(response, "status", None),
+            "query": sanitized_query(getattr(request, "url", ""), action=action),
+            "body": sanitize_body_shape(
+                getattr(request, "post_data", None),
+                content_type=str(req_headers.get("content-type", "")),
+                action=action,
+            ),
+            "shape": summary,
+        })
+
+
+def research_product_locations(
+    page: Any,
+    recorder: NetworkRecorder,
+    capture: ObservedLocationsResponses,
+    *,
+    product_id: str,
+    branch_html: str,
+) -> dict[str, Any]:
+    """Open known product + availability affordances; no checkout actions."""
+    capture.directory = public_branch_directory_from_html(branch_html)
+    result: dict[str, Any] = {
+        "productId": product_id,
+        "directoryBranchCount": len(capture.directory),
+        "verifiedProductPage": False,
+        "productPageShape": {},
+        "uiActions": [],
+        "observedResponses": [],
+        "oneShotPerBranchResponseObserved": False,
+        "candidateMultiBranchResponseObserved": False,
+        "completeness": UNKNOWN,
+        "aggregateReconciliation": "NOT_EVALUATED",
+    }
+    try:
+        recorder.set_action("locations:page")
+        page.goto(
+            f"{KWANT_ORIGIN}/produkt/{product_id}",
+            wait_until="domcontentloaded",
+            timeout=45000,
+        )
+        page.wait_for_timeout(1500)
+        if product_page_identifier(page.url) != product_id:
+            result["reason"] = "PRODUCT_ID_NOT_VERIFIED"
+            return result
+        result["verifiedProductPage"] = True
+        try:
+            page_json = page.locator("script#__NEXT_DATA__").first.text_content(
+                timeout=1000
+            )
+            page_data = json.loads(page_json or "{}")
+            result["productPageShape"] = research_json_shape(
+                page_data, product_id, capture.directory
+            )
+        except Exception:
+            result["productPageShape"] = {"status": "UNKNOWN"}
+        body = page.locator("body").inner_text(timeout=6000)
+        result["aggregateBranchStock"] = extract_stock_value(
+            body, r"W\s+oddzia[lł]ach"
+        )
+        result["centralStockVisible"] = extract_stock_value(body, r"Centrala")
+        # Click only public stock/pickup text, never purchase buttons or forms.
+        for label, pattern in (
+            ("branch-aggregate", r"W\s+oddzia[lł]ach\s*:"),
+            ("pickup", r"Odbi[oó]r\s+za\s+godzin[eę]"),
+            ("availability", r"Sprawd[zź]\s+dost[eę]pno[sś][cć]"),
+        ):
+            try:
+                locator = page.get_by_text(re.compile(pattern, re.I))
+                if locator.count() == 0:
+                    result["uiActions"].append({"target": label, "found": False})
+                    continue
+                target = locator.first
+                if not target.is_visible():
+                    result["uiActions"].append({"target": label, "found": True, "clicked": False})
+                    continue
+                recorder.set_action("locations:" + label)
+                before = len(capture.records)
+                target.click(timeout=4000)
+                page.wait_for_timeout(1300)
+                result["uiActions"].append({
+                    "target": label,
+                    "found": True,
+                    "clicked": True,
+                    "newApiResponses": len(capture.records) - before,
+                })
+            except Exception:
+                result["uiActions"].append({
+                    "target": label, "found": True, "clicked": False
+                })
+    except Exception:
+        result["reason"] = "PUBLIC_PAGE_UNAVAILABLE"
+    finally:
+        result["observedResponses"] = list(capture.records)
+        result["candidateMultiBranchResponseObserved"] = any(
+            row["shape"].get("branchDistinctIds", 0) >= 2
+            and sum(
+                int(x["branchKnownInDirectory"])
+                for x in row["shape"].get("branchRows", [])
+            ) >= 2
+            for row in capture.records
+            if row["action"].startswith("locations:")
+            and row["shape"].get("productIdentityMatches") is not False
+        )
+        result["oneShotPerBranchResponseObserved"] = any(
+            row["shape"].get("branchDistinctIds", 0) >= 2
+            and row["shape"].get("productIdentityMatches") is True
+            and sum(
+                int(x["branchKnownInDirectory"])
+                for x in row["shape"].get("branchRows", [])
+            ) >= 2
+            for row in capture.records
+            if row["action"].startswith("locations:")
+        )
+    return result
 
 
 def main() -> int:
