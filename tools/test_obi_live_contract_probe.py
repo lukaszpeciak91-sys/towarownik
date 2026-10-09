@@ -214,8 +214,235 @@ class MultiMarketResearchTest(unittest.TestCase):
             "action": action, "host": "www.obi.pl", "method": "GET",
             "path": path, "status": status,
             "query": query or {"names": [], "safeValues": {}},
-            "body": body, "shape": r.response_shape(data, self.obik, self.stores),
+            "body": body, "shape": r.response_shape(
+                data, self.obik, self.stores, path,
+            ),
         }
+
+    class FakeExactButton:
+        def __init__(self, *, name=None, visible=True, enabled=True,
+                     component="PdpLink"):
+            self.name = name
+            self.visible = visible
+            self.enabled = enabled
+            self.component = component
+            self.clicks = 0
+            self.scrolled = 0
+
+        def is_visible(self):
+            return self.visible
+
+        def is_enabled(self):
+            return self.enabled
+
+        def get_attribute(self, name):
+            return self.component if name == "data-component" else None
+
+        def scroll_into_view_if_needed(self, timeout=0):
+            self.scrolled += 1
+
+        def click(self, timeout=0):
+            self.clicks += 1
+
+    @staticmethod
+    def fake_exact_button_page(*button_names):
+        class Locator:
+            def __init__(self, matches):
+                self.matches = matches
+
+            def count(self):
+                return len(self.matches)
+
+            @property
+            def first(self):
+                return self.matches[0]
+
+        class Page:
+            def __init__(self, buttons):
+                self.buttons = buttons
+                self.last_lookup = None
+
+            def get_by_role(self, role, name, exact=False):
+                self.last_lookup = (role, name, exact)
+                if not exact or role != "button":
+                    raise AssertionError("Must use the observed exact role/name")
+                return Locator([b for b in self.buttons if b.name == name])
+
+            def wait_for_timeout(self, millis):
+                pass
+
+        return Page(button_names)
+
+    def test_observed_exact_button_selected_without_dom_index_or_recommendations(self):
+        r = self.r
+        for order in (("recommendation", "real"), ("real", "recommendation")):
+            with self.subTest(order=order):
+                exact = self.FakeExactButton(name=r.OBSERVED_AVAILABILITY_BUTTON)
+                recommendation = self.FakeExactButton(
+                    name="Dostępność Dragon klej w innym sklepie"
+                )
+                by_name = {"real": exact, "recommendation": recommendation}
+                page = self.fake_exact_button_page(
+                    *(by_name[key] for key in order)
+                )
+                selected, status = r.resolve_exact_availability_opener(page)
+                self.assertIs(selected, exact)
+                self.assertEqual("EXACT_BUTTON_RESOLVED", status)
+                result = r.click_safe_control(
+                    page, [{"index": 0, "label": "dostępność (recommendation)"}]
+                )
+                self.assertEqual("CLICKED", result["status"])
+                self.assertEqual(("button", r.OBSERVED_AVAILABILITY_BUTTON, True),
+                                 page.last_lookup)
+                self.assertEqual(1, exact.clicks)
+                self.assertEqual(1, exact.scrolled)
+                self.assertEqual(0, recommendation.clicks)
+
+    def test_exact_availability_duplicate_missing_hidden_disabled_changed_fail_closed(self):
+        r = self.r
+        exact = lambda **kwargs: self.FakeExactButton(
+            name=r.OBSERVED_AVAILABILITY_BUTTON, **kwargs
+        )
+        examples = (
+            ([], "EXACT_BUTTON_MISSING"),
+            ([exact(), exact()], "EXACT_BUTTON_AMBIGUOUS"),
+            ([exact(visible=False)], "EXACT_BUTTON_HIDDEN"),
+            ([exact(enabled=False)], "EXACT_BUTTON_DISABLED"),
+            ([exact(component="Checkout")], "UNEXPECTED_BUTTON_COMPONENT"),
+            ([self.FakeExactButton(name="Sprawdź dostępność")], "EXACT_BUTTON_MISSING"),
+        )
+        for buttons, expected in examples:
+            with self.subTest(expected=expected):
+                page = self.fake_exact_button_page(*buttons)
+                result = r.click_safe_control(page, [])
+                self.assertEqual(expected, result["status"])
+                self.assertTrue(all(b.clicks == 0 for b in buttons))
+
+    def test_observed_sp_structural_diagnostics_no_unknown_field_classification(self):
+        r = self.r
+        payload = {"pickupStores": [
+            {"storeCode": "075", "stateOfGoods": "top-secret-free-text",
+             "quantityMaybe": 0, "someOtherStock": None,
+             "street": "ul. SECRET 99", "postalCode": "33-300",
+             "coordinates": [49.0, 20.0], "apiToken": "SECRET_TOKEN"},
+            {"storeCode": "003", "stateOfGoods": "second-secret-value",
+             "quantityMaybe": 4, "userSession": "SESSION-PRIVATE"},
+        ]}
+        path = "/api/pdp/v1/availability/sp/3496072"
+        record = self.observation(payload, path=path, action="initial:page")
+        structure = record["shape"]["pickupStoresStructure"]
+        self.assertEqual("list", structure["containerType"])
+        self.assertEqual(2, structure["containerLength"])
+        self.assertTrue(structure["structuralOnly"])
+        self.assertTrue(structure["representativeObjectKeys"])
+        self.assertIn({"field": "storeCode", "storeNumber": "075"},
+                      structure["canonicalStoreIdFields"])
+        self.assertIn({"field": "storeCode", "storeNumber": "003"},
+                      structure["canonicalStoreIdFields"])
+        self.assertTrue(any(
+            entry["field"] == "quantityMaybe" and entry["scalarType"] == "integer"
+            and entry["numericCandidate"] == 0
+            for entry in structure["availabilityCandidateFields"]
+        ))
+        self.assertEqual([], record["shape"]["storeRows"])
+        self.assertEqual(
+            "SINGULAR_REQUEST_PRODUCT_PATH",
+            r.product_identity(record, self.obik)
+        )
+        self.assertTrue(r.observed_availability_response(record, self.obik))
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([record], self.stores, self.obik)["type"])
+        safe = json.dumps(record, ensure_ascii=False)
+        for secret in ("SECRET", "33-300", "49.0", "20.0", "userSession",
+                       "postalCode", "coordinates", "stateOfGoods\": \"top"):
+            self.assertNotIn(secret, safe)
+
+    def test_sp_structural_diagnostic_object_nesting_without_stock_row(self):
+        data = {"pickupStores": {"results": {"items": [
+            {"branchCode": "075", "unknownState": False},
+            {"branchCode": "003", "unknownState": None},
+        ]}}}
+        record = self.observation(
+            data, path="/api/pdp/v1/availability/sp/3496072",
+            action="initial:page"
+        )
+        tree = record["shape"]["pickupStoresStructure"]
+        self.assertEqual("object", tree["containerType"])
+        self.assertIn("results", tree["containerKeys"])
+        self.assertGreaterEqual(len(tree["nestingShape"]), 3)
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([record], self.stores, self.obik)["type"])
+
+    def test_initial_product_bound_sp_can_classify_a_and_b_only_with_known_states(self):
+        path = "/api/pdp/v1/availability/sp/3496072"
+        all_stores = {"pickupStores": [
+            {"storeNumber": store, "stock": 0 if i == 0 else i + 2}
+            for i, store in enumerate(self.stores)
+        ]}
+        record = self.observation(
+            all_stores, path=path, action="initial:page"
+        )
+        self.assertEqual("A_ONE_SHOT_ALL_STORES",
+            self.r.classify_contract([record], self.stores, self.obik)["type"])
+        self.assertEqual("known_zero",
+                         record["shape"]["storeRows"][0]["state"])
+        self.assertEqual(0, record["shape"]["storeRows"][0]["value"])
+        partial = self.observation({"pickupStores": [
+            {"storeNumber": "075", "stock": 0},
+            {"storeNumber": "003", "availability": "available"},
+        ]}, path=path, action="initial:page")
+        self.assertEqual("B_ONE_SHOT_SUBSET",
+            self.r.classify_contract([partial], self.stores, self.obik)["type"])
+        self.assertNotIn("074",
+            self.r.verified_rows(partial, self.stores))
+        invalid = self.observation({"pickupStores": [
+            {"storeNumber": "075", "stock": None},
+            {"storeNumber": "003", "availability": None},
+        ]}, path=path, action="initial:page")
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([invalid], self.stores, self.obik)["type"])
+
+    def test_initial_page_generic_and_hd_separate_without_market_states(self):
+        r = self.r
+        rows = [
+            {"storeNumber": "075", "stock": 3},
+            {"storeNumber": "003", "stock": 2},
+        ]
+        for path in (
+            "/api/teasers", "/api/recommendations/3496072",
+            "/api/stores", "/api/cms/3496072",
+        ):
+            with self.subTest(path=path):
+                record = self.observation(
+                    {"pickupStores": rows}, path=path, action="initial:page"
+                )
+                self.assertFalse(
+                    r.observed_availability_response(record, self.obik)
+                )
+                self.assertEqual("F_INCONCLUSIVE",
+                    r.classify_contract([record], self.stores, self.obik)["type"])
+        hd = self.observation(
+            {"deliveryDataPerSeller": {
+                "sellerMetadata": {"name": "PRIVATE seller title"},
+                "deliveryState": "low",
+            }},
+            path="/api/pdp/v1/availability/hd/3496072",
+            action="initial:page",
+        )
+        self.assertIn("deliveryDataPerSellerStructure", hd["shape"])
+        self.assertNotIn("pickupStoresStructure", hd["shape"])
+        self.assertEqual([], hd["shape"]["storeRows"])
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([hd], self.stores, self.obik)["type"])
+        self.assertNotIn("PRIVATE seller title", json.dumps(hd))
+        wrong = self.observation(
+            {"pickupStores": rows},
+            path="/api/pdp/v1/availability/sp/3496073",
+            action="initial:page",
+        )
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([wrong], self.stores, self.obik)["type"])
+        self.assertNotIn("pickupStoresStructure", wrong["shape"])
 
     def test_canonical_store_directory_is_exact_not_inferred_from_city(self):
         self.assertGreaterEqual(len(self.stores), 50)
