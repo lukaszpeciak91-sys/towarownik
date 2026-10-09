@@ -326,7 +326,7 @@ Protocol v3 query groups expose search text only. For KWANT, article number, EAN
 
 ## Android advisor attachment acquisition
 
-The advisor composer owns at most one unsent `AdvisorAttachment`. Its compact in-composer `+` menu launches Android contracts rather than custom browsers: `PickVisualMedia(ImageOnly)` for one user-selected photo (with the AndroidX/system fallback), `TakePicture` into the dedicated `cache/advisor_camera_capture/` FileProvider path, and `OpenDocument` constrained to PDF and images. The store shortcut opens the existing WorkingProfile selector; it does not create or mutate a second store model.
+The advisor composer owns an ordered list of up to three unsent `AdvisorAttachment` objects. Its compact in-composer `+` menu launches Android contracts rather than custom browsers: `PickVisualMedia(ImageOnly)` for one user-selected photo (with the AndroidX/system fallback), `TakePicture` into the dedicated `cache/advisor_camera_capture/` FileProvider path, and `OpenDocument` constrained to PDF and images. The store shortcut opens the existing WorkingProfile selector; it does not create or mutate a second store model.
 
 Selected content crosses an Android-local `AttachmentImporter` boundary before becoming pending state. PDFs are signature/MIME checked and copied with the existing 16 MiB ceiling. Images are bounds-inspected, EXIF-oriented, proportionally reduced only above a centralized 4096 px maximum dimension, and re-encoded as metadata-free PNG when alpha matters or quality-92 JPEG otherwise. Preview reads the resulting app-private attachment, never the external URI. Replacing, removing, starting a new conversation, or switching conversations best-effort deletes the unsent private file. A single private pending-owner marker preserves that ownership across activity recreation/process state restore; on a true cold start, if no usable pending attachment is restored, Android checks only that marked localId against Room and best-effort deletes it when it is not owned by message_attachments. No directory scan is performed.
 
@@ -350,6 +350,13 @@ Advisor-facing upstream failures retain the public `502 {"error":"upstream_failu
 - Version 5 is distinct from v4. The current UI still sends one attachment through v4; Android's explicit `attachments: List<AdvisorAttachment>` API selects v5 without changing Room storage, pending ownership, UI, or retrieval/controller workflows.
 - V5 START/MESSAGE sends `X-Taksula-Attachment-Protocol: 5` and a JSON `payload` declaring `protocolVersion: 5`, followed by 1–3 repeated `attachment` file parts in stable order. The header chooses the larger pre-formData size guard; mismatched marker/payload versions reject. Legacy v4 retains its original single part and 16 MiB + 16 KiB declared-length guard; v5 permits at most 24 MiB of aggregate attachment bytes plus 16 KiB of multipart overhead, while every file retains the existing 16 MiB bound and MIME/magic validation.
 - The Worker validates all parts before forwarding them together in one Responses USER message. Optional text comes first, then ordered high-detail `input_image` or named PDF `input_file`. One-file v4, v2/v3 JSON text, JSON-only `/continue` (including v5), provider-aware `find_products`, local verification authority, observability schema, and response chaining remain intact.
+
+## Multi-attachment Android lifecycle (Room v12)
+
+- Room 11→12 migrates the single `message_attachments` row into `(messageId,position=0)` without rewriting private file IDs; composite `(messageId,position)` keys persist up to 3 ordered rows, with unique localId and CASCADE cleanup.
+- Android photo and document pickers support multi-selection where available; camera and per-item replacement import one item. Compact attachments remain above multiline text; Enter inserts a newline, and only the send icon submits.
+- Composer saveable state, durable pending/staged/retired ownership sets, import generation guards and Room-first handoff prevent a candidate from crossing conversations. Failed turns reclaim all submitted files before deleting the interrupted USER row. Startup reconciliation never deletes files still owned by Room.
+- USER history renders ordered image/PDF previews independently; a missing/corrupt item does not suppress other items. Android selects v5 for any 1–3 attachments (24 MiB total), while text-only v2/v3 stays JSON; v4 remains available for existing legacy clients.
 
 ## Sent attachment presentation and import isolation
 
