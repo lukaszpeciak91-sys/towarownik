@@ -746,30 +746,178 @@ def resolve_exact_availability_opener(page: Any) -> tuple[Any | None, str]:
 
 
 
+# Only the already observed harmless PDP button can be clicked with DOM
+# fallback. This JavaScript rechecks the element *inside* the browser before
+# dispatch and never clicks coordinates, a child node, or another selector.
+DOM_EXACT_AVAILABILITY_CLICK = """
+(element, expected) => {
+    if (!element.isConnected || element.tagName !== 'BUTTON' ||
+        element.getAttribute('data-component') !== 'PdpLink' ||
+        (element.innerText || '').replace(/\\s+/g, ' ').trim() !== expected ||
+        element.disabled || element.getAttribute('aria-disabled') === 'true' ||
+        element.getClientRects().length === 0)
+        return false;
+    const style = window.getComputedStyle(element);
+    if (style.visibility === 'hidden' || style.display === 'none')
+        return false;
+    element.click();
+    return true;
+}
+"""
+
+
+def is_playwright_click_timeout(exc: Exception) -> bool:
+    """Only an actual Playwright click actionability timeout may fall back."""
+    cls = type(exc)
+    return cls.__name__ == "TimeoutError" and cls.__module__.startswith("playwright.")
+
+
+def begin_availability_open_phase(action: list[str]) -> None:
+    """Set network attribution BEFORE normal or research-only DOM click."""
+    action[0] = "availability:open"
+
+
 def click_safe_control(page: Any, controls: list[dict[str, Any]]) -> dict[str, Any]:
-    """Click precisely the live-observed harmless availability button."""
-    # controls are diagnostics only, never an index-based click handle.
+    """Normal click first; strictly identical, revalidated native DOM fallback."""
+    # Diagnostic controls never authorize or select the click target.
     button, category = resolve_exact_availability_opener(page)
     if button is None:
         return {"status": category}
     try:
         button.scroll_into_view_if_needed(timeout=2500)
-        button.click(timeout=5000)  # normal click only: no force=True
-        page.wait_for_timeout(1500)
-        return {
-            "status": "CLICKED", "label": OBSERVED_AVAILABILITY_BUTTON,
-            "role": "button", "selectorEvidence": "EXACT_OBSERVED_PDP_LINK_INNER_TEXT",
-        }
+    except Exception:
+        # Never fall back on a scrolling failure, even a timeout.
+        return {"status": "CLICK_FAILED", "failureCategory": "SCROLL_FAILED"}
+    try:
+        button.click(timeout=5000)  # Playwright actionability, never force.
+        mode = "NORMAL_CLICK"
     except Exception as exc:
-        # Never print raw Playwright exceptions (may contain page content/URLs).
+        if not is_playwright_click_timeout(exc):
+            return {
+                "status": "CLICK_FAILED",
+                "failureCategory": (
+                    "TIMEOUT" if type(exc).__name__ == "TimeoutError"
+                    else "PLAYWRIGHT_CLICK_ERROR"
+                ),
+            }
+        # A timed-out action can leave a stale locator or changed DOM.
+        # Resolve and verify the SAME harmless button a second time.
+        fresh, fresh_status = resolve_exact_availability_opener(page)
+        if fresh is None:
+            return {
+                "status": "CLICK_FAILED",
+                "failureCategory": "ACTIONABILITY_TIMEOUT",
+                "fallbackResolution": fresh_status,
+            }
+        try:
+            dispatched = fresh.evaluate(
+                DOM_EXACT_AVAILABILITY_CLICK, OBSERVED_AVAILABILITY_BUTTON
+            )
+            if dispatched is not True:
+                return {
+                    "status": "CLICK_FAILED",
+                    "failureCategory": "DOM_TARGET_CHANGED",
+                }
+            mode = "DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT"
+        except Exception:
+            return {
+                "status": "CLICK_FAILED",
+                "failureCategory": "DOM_CLICK_FAILED",
+            }
+    try:
+        page.wait_for_timeout(1200)  # bounded UI/XHR reaction window
+    except Exception:
         return {
             "status": "CLICK_FAILED",
-            "failureCategory": (
-                "TIMEOUT" if type(exc).__name__ == "TimeoutError"
-                else "PLAYWRIGHT_CLICK_ERROR"
-            ),
+            "failureCategory": "POST_CLICK_OBSERVATION_FAILED",
+            "interactionMode": mode,
         }
+    # Dispatch is provisional; the caller MUST independently observe a
+    # relevant browser request, response or safe new availability UI.
+    return {
+        "status": "CLICK_DISPATCHED",
+        "interactionMode": mode,
+        "selectorEvidence": "EXACT_OBSERVED_PDP_LINK_INNER_TEXT",
+    }
 
+
+def availability_button_expanded(page: Any) -> bool | None:
+    """Only the exact opener aria-expanded boolean; never log element text."""
+    button, status = resolve_exact_availability_opener(page)
+    if status != "EXACT_BUTTON_RESOLVED" or button is None:
+        return None
+    try:
+        value = button.get_attribute("aria-expanded")
+        return True if value == "true" else False if value == "false" else None
+    except Exception:
+        return None
+
+
+def relevant_open_network_record(record: dict[str, Any], obik: str) -> bool:
+    """An action-phase request can prove an event, not inventory coverage.
+
+    Delayed recommendations/CMS/teaser traffic never proves the click worked.
+    Product availability *classification* remains separately identity gated.
+    """
+    if record.get("action") != "availability:open":
+        return False
+    host = record.get("host")
+    if not isinstance(host, str) or not ALLOWED_HOST.fullmatch(host):
+        return False
+    path = record.get("path") or ""
+    if any(x in path.lower() for x in (
+        "recommend", "teaser", "cms", "tracking", "analytics", "promo"
+    )):
+        return False
+    parts = path.lower().strip("/").split("/")
+    return (
+        bool(OBSERVED_SP_PATH.fullmatch(path) and
+             OBSERVED_SP_PATH.fullmatch(path).group(1) == obik)
+        or bool(OBSERVED_HD_PATH.fullmatch(path) and
+                OBSERVED_HD_PATH.fullmatch(path).group(1) == obik)
+        or bool(set(parts) & {"availability", "pickup", "stores", "store",
+                              "locator", "market", "markets", "locations"})
+    )
+
+
+def verify_open_observable_effect(
+    before_ui: dict[str, Any], after_ui: dict[str, Any],
+    before_expanded: bool | None, after_expanded: bool | None,
+    new_requests: list[dict[str, Any]],
+    new_responses: list[dict[str, Any]],
+    obik: str,
+) -> dict[str, Any]:
+    """Safe, bounded evidence required AFTER either click dispatch."""
+    relevant_requests = [
+        item for item in new_requests
+        if relevant_open_network_record(item, obik)
+    ]
+    availability_responses = [
+        item for item in new_responses
+        if item.get("action") == "availability:open"
+        and observed_availability_response(item, obik)
+    ]
+    dialog_opened = (
+        after_ui.get("visibleDialogCount", 0) >
+        before_ui.get("visibleDialogCount", 0)
+    )
+    store_ui_changed = (
+        (after_ui.get("storeSearchInputObserved") is True and
+         before_ui.get("storeSearchInputObserved") is not True)
+        or (after_ui.get("candidateStoreRowsCount", 0) >
+            before_ui.get("candidateStoreRowsCount", 0))
+    )
+    expanded = before_expanded is False and after_expanded is True
+    observed = bool(relevant_requests or availability_responses
+                    or dialog_opened or store_ui_changed or expanded)
+    return {
+        "effectObserved": observed,
+        "newRelevantRequests": len(relevant_requests),
+        "newProductAvailabilityResponses": len(availability_responses),
+        "newDialog": dialog_opened,
+        "newStoreSelectionUi": store_ui_changed,
+        "availabilityControlExpanded": expanded,
+    }
 
 
 # Only these repository-driven keywords/known public phrases may be
