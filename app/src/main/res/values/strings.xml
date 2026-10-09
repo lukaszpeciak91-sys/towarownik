@@ -34,6 +34,9 @@
     <string name="attachment_file">Plik</string>
     <string name="attachment_switch_store">Przełącz magazyn</string>
     <string name="attachment_remove">Usuń załącznik</string>
+    <string name="attachment_replace">Zastąp załącznik</string>
+    <string name="attachment_error_too_many">Możesz dodać maksymalnie 3 załączniki.</string>
+    <string name="attachment_error_total_too_large">Łączny rozmiar załączników nie może przekroczyć 24 MiB.</string>
     <string name="attachment_photo">Zdjęcie</string>
     <string name="attachment_image_preview">Podgląd zdjęcia</string>
     <string name="attachment_importing">Przetwarzanie załącznika…</string>

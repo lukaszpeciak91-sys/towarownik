@@ -101,6 +101,12 @@ internal class AdvisorController(
         String,
         AdvisorAttachment,
     ) -> AdvisorProxyCallResult)? = null,
+    private val startAgentWithAttachments: (suspend (
+        String, String, String, List<AdvisorAttachment>,
+    ) -> AdvisorProxyCallResult)? = null,
+    private val messageAgentWithAttachments: (suspend (
+        String, String, String, String, List<AdvisorAttachment>,
+    ) -> AdvisorProxyCallResult)? = null,
 ) {
     suspend fun runTurn(
         input: String,
@@ -108,12 +114,18 @@ internal class AdvisorController(
         conversationStoreNumber: String = DEFAULT_OBI_STORE_NUMBER,
         conversationProviderId: String = OBI_PROVIDER_ID.value,
         attachment: AdvisorAttachment? = null,
+        attachments: List<AdvisorAttachment> = emptyList(),
         onOpenAiResponse: (AdvisorUsage?, Long) -> Unit = { _, _ -> },
         onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
     ): AdvisorUiState {
         val normalizedInput = input.normalizeWhitespace()
-        if (normalizedInput.isBlank() && attachment == null) {
+        val requested = if (attachments.isEmpty()) listOfNotNull(attachment) else attachments
+        if (normalizedInput.isBlank() && requested.isEmpty() ||
+            requested.size > 3 ||
+            requested.map { it.localId }.distinct().size != requested.size ||
+            requested.sumOf { it.byteSize } > 24L * 1024 * 1024
+        ) {
             return AdvisorUiState.Error(AdvisorError.INPUT).also(onState)
         }
 
@@ -133,8 +145,8 @@ internal class AdvisorController(
         }
         val turnContract = advisorTransportContract(
             providerId = conversationProvider,
-            hasAttachment = attachment != null,
-        )
+            hasAttachment = requested.isNotEmpty(),
+        ).let { if (attachments.isNotEmpty()) AdvisorTransportContract.PROVIDER_V5 else it }
         var turnBranches: List<ProviderBranch>? = null
 
         suspend fun loadTurnBranches(): ProviderBranchResult {
@@ -253,7 +265,12 @@ internal class AdvisorController(
 
         val initialCall = safeProxyCall {
             if (previousResponseId == null) {
-                if (attachment != null) requireNotNull(startAgentWithAttachment)(
+                if (attachments.isNotEmpty()) requireNotNull(startAgentWithAttachments)(
+                    normalizedInput,
+                    conversationProviderId,
+                    conversationStoreNumber,
+                    attachments,
+                ) else if (attachment != null) requireNotNull(startAgentWithAttachment)(
                     normalizedInput,
                     conversationProviderId,
                     conversationStoreNumber,
@@ -264,7 +281,13 @@ internal class AdvisorController(
                     conversationStoreNumber,
                 )
             } else {
-                if (attachment != null) requireNotNull(messageAgentWithAttachment)(
+                if (attachments.isNotEmpty()) requireNotNull(messageAgentWithAttachments)(
+                    previousResponseId,
+                    normalizedInput,
+                    conversationProviderId,
+                    conversationStoreNumber,
+                    attachments,
+                ) else if (attachment != null) requireNotNull(messageAgentWithAttachment)(
                     previousResponseId,
                     normalizedInput,
                     conversationProviderId,
@@ -659,6 +682,12 @@ internal class AdvisorController(
                         responseId, message, providerId, branchId, attachment,
                     ->
                     proxyClient.message(responseId, message, providerId, branchId, attachment)
+                },
+                startAgentWithAttachments = { message, providerId, branchId, parts ->
+                    proxyClient.start(message, providerId, branchId, parts)
+                },
+                messageAgentWithAttachments = { responseId, message, providerId, branchId, parts ->
+                    proxyClient.message(responseId, message, providerId, branchId, parts)
                 },
             )
         }

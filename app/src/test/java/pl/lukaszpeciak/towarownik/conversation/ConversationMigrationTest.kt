@@ -15,6 +15,74 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class ConversationMigrationTest {
     @Test
+    fun migration11To12PreservesOldFileAndSupportsThreeOrderedRows() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "test-conversation-v11-attachments.db"
+        context.deleteDatabase(name)
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(11) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createV2Schema(db)
+                        MIGRATION_2_3.migrate(db)
+                        MIGRATION_3_4.migrate(db)
+                        MIGRATION_4_5.migrate(db)
+                        MIGRATION_5_6.migrate(db)
+                        MIGRATION_6_7.migrate(db)
+                        MIGRATION_7_8.migrate(db)
+                        MIGRATION_8_9.migrate(db)
+                        MIGRATION_9_10.migrate(db)
+                        MIGRATION_10_11.migrate(db)
+                    }
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int,
+                    ) = Unit
+                }).build(),
+        )
+        try {
+            val db = helper.writableDatabase
+            db.execSQL("PRAGMA foreign_keys=ON")
+            db.execSQL(
+                "INSERT INTO conversations " +
+                    "(id,title,createdAt,updatedAt,lastResponseId,draft,storeNumber,providerId,branchId) " +
+                    "VALUES (1,'legacy',1,1,NULL,'','075','obi-pl','075')",
+            )
+            db.execSQL("INSERT INTO messages (id,conversationId,role,text,createdAt) VALUES (1,1,'USER','',1)")
+            val legacyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            db.execSQL(
+                "INSERT INTO message_attachments " +
+                    "(messageId,type,displayName,mimeType,localId,byteSize,width,height,createdAt) " +
+                    "VALUES (1,'PDF','legacy.pdf','application/pdf','$legacyId',8,NULL,NULL,1)",
+            )
+            MIGRATION_11_12.migrate(db)
+            assertEquals("0", queryText(db, "SELECT position FROM message_attachments WHERE messageId=1"))
+            assertEquals(legacyId, queryText(db, "SELECT localId FROM message_attachments WHERE messageId=1"))
+            for (position in 1..2) {
+                val id = position.toString().repeat(32)
+                db.execSQL(
+                    "INSERT INTO message_attachments " +
+                        "(messageId,position,type,displayName,mimeType,localId,byteSize,width,height,createdAt) " +
+                        "VALUES (1,$position,'PDF','file$position.pdf','application/pdf','$id',8,NULL,NULL,1)",
+                )
+            }
+            val ordered = db.query(
+                "SELECT position, displayName FROM message_attachments WHERE messageId=1 ORDER BY position",
+            ).use { cursor ->
+                buildList {
+                    while (cursor.moveToNext()) add(cursor.getInt(0) to cursor.getString(1))
+                }
+            }
+            assertEquals(listOf(0 to "legacy.pdf", 1 to "file1.pdf", 2 to "file2.pdf"), ordered)
+            db.execSQL("DELETE FROM messages WHERE id=1")
+            assertEquals("0", queryText(db, "SELECT COUNT(*) FROM message_attachments"))
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
     fun `migration 10 to 11 preserves history and defaults trace to null`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.deleteDatabase(DB_V10_NAME)

@@ -39,6 +39,7 @@ internal data class AdvisorChatMessage(
     val searchActions: List<PersistedSearchAction> = emptyList(),
     val persistedMessageId: Long? = null,
     val attachment: AdvisorAttachment? = null,
+    val attachments: List<AdvisorAttachment> = listOfNotNull(attachment),
 )
 
 internal data class AdvisorCaseUiState(
@@ -88,6 +89,7 @@ internal fun PersistedConversation.toAdvisorCaseUiState(): AdvisorCaseUiState =
                 searchActions = message.searchActions,
                 persistedMessageId = message.id,
                 attachment = message.attachment,
+                attachments = message.attachments,
             )
         },
     )
@@ -231,6 +233,14 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                         put("createdAt", attachment.createdAt)
                                     }
                                 } ?: JsonNull,
+                            )
+                            put(
+                                "attachments",
+                                buildJsonArray {
+                                    message.attachments.forEach { item ->
+                                        add(attachmentJson(item))
+                                    }
+                                },
                             )
                             put(
                                 "searchActions",
@@ -491,40 +501,13 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                         ?.jsonPrimitive
                         ?.longOrNull,
                     attachment = (objectValue["attachment"] as? JsonObject)
-                        ?.let { attachment ->
-                            validatedAttachmentOrNull(
-                                type = attachment["type"]
-                                    ?.jsonPrimitive
-                                    ?.contentOrNull
-                                    ?: return@let null,
-                                displayName = attachment["displayName"]
-                                    ?.jsonPrimitive
-                                    ?.contentOrNull
-                                    ?: return@let null,
-                                mimeType = attachment["mimeType"]
-                                    ?.jsonPrimitive
-                                    ?.contentOrNull
-                                    ?: return@let null,
-                                localId = attachment["localId"]
-                                    ?.jsonPrimitive
-                                    ?.contentOrNull
-                                    ?: return@let null,
-                                byteSize = attachment["byteSize"]
-                                    ?.jsonPrimitive
-                                    ?.longOrNull
-                                    ?: return@let null,
-                                width = attachment["width"]
-                                    ?.jsonPrimitive
-                                    ?.intOrNull,
-                                height = attachment["height"]
-                                    ?.jsonPrimitive
-                                    ?.intOrNull,
-                                createdAt = attachment["createdAt"]
-                                    ?.jsonPrimitive
-                                    ?.longOrNull
-                                    ?: return@let null,
-                            )
-                        },
+                        ?.let(::advisorAttachmentFromJson),
+                    attachments = ((objectValue["attachments"] as? JsonArray)
+                        ?.mapNotNull { (it as? JsonObject)?.let(::advisorAttachmentFromJson) }
+                        ?: listOfNotNull(
+                            (objectValue["attachment"] as? JsonObject)
+                                ?.let(::advisorAttachmentFromJson),
+                        )).take(3),
                 )
             }
             .orEmpty()
@@ -680,3 +663,27 @@ private val MARKDOWN_PAREN_LINK = Regex(
 private val MARKDOWN_HEADING = Regex(
     pattern = """(?m)^\s*#{1,6}\s+""",
 )
+ 
+private fun attachmentJson(item: AdvisorAttachment): JsonObject = buildJsonObject {
+    put("type", item.type.name)
+    put("displayName", item.displayName)
+    put("mimeType", item.mimeType)
+    put("localId", item.localId)
+    put("byteSize", item.byteSize)
+    put("width", item.width?.let(::JsonPrimitive) ?: JsonNull)
+    put("height", item.height?.let(::JsonPrimitive) ?: JsonNull)
+    put("createdAt", item.createdAt)
+}
+
+private fun advisorAttachmentFromJson(value: JsonObject): AdvisorAttachment? {
+    return validatedAttachmentOrNull(
+        type = value["type"]?.jsonPrimitive?.contentOrNull ?: return null,
+        displayName = value["displayName"]?.jsonPrimitive?.contentOrNull ?: return null,
+        mimeType = value["mimeType"]?.jsonPrimitive?.contentOrNull ?: return null,
+        localId = value["localId"]?.jsonPrimitive?.contentOrNull ?: return null,
+        byteSize = value["byteSize"]?.jsonPrimitive?.longOrNull ?: return null,
+        width = value["width"]?.jsonPrimitive?.intOrNull,
+        height = value["height"]?.jsonPrimitive?.intOrNull,
+        createdAt = value["createdAt"]?.jsonPrimitive?.longOrNull ?: return null,
+    )
+}

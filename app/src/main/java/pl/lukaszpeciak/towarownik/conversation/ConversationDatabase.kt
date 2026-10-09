@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageSearchActionEntity::class,
         MessageAttachmentEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 internal abstract class ConversationDatabase : RoomDatabase() {
@@ -44,12 +44,58 @@ internal abstract class ConversationDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10,
                         MIGRATION_10_11,
+                        MIGRATION_11_12,
                     )
                     .build()
                     .also { database ->
                         instance = database
                     }
             }
+    }
+}
+
+internal val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS `message_attachments_v12` (
+                `messageId` INTEGER NOT NULL,
+                `position` INTEGER NOT NULL,
+                `type` TEXT NOT NULL,
+                `displayName` TEXT NOT NULL,
+                `mimeType` TEXT NOT NULL,
+                `localId` TEXT NOT NULL,
+                `byteSize` INTEGER NOT NULL,
+                `width` INTEGER,
+                `height` INTEGER,
+                `createdAt` INTEGER NOT NULL,
+                PRIMARY KEY(`messageId`, `position`),
+                FOREIGN KEY(`messageId`) REFERENCES `messages`(`id`)
+                    ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            INSERT INTO message_attachments_v12 (
+                messageId, position, type, displayName, mimeType, localId,
+                byteSize, width, height, createdAt
+            )
+            SELECT messageId, 0, type, displayName, mimeType, localId,
+                byteSize, width, height, createdAt
+            FROM message_attachments
+            """.trimIndent(),
+        )
+        db.execSQL("DROP TABLE message_attachments")
+        db.execSQL("ALTER TABLE message_attachments_v12 RENAME TO message_attachments")
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_message_attachments_messageId` " +
+                "ON `message_attachments` (`messageId`)",
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_message_attachments_localId` " +
+                "ON `message_attachments` (`localId`)",
+        )
     }
 }
 

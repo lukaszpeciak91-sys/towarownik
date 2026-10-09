@@ -2,6 +2,9 @@
 
 ## Current phase
 
+Multi-attachment phase 2: Android composer, Room v12 ordered relations and 11→12 migration, multi-picker/camera, private-file ownership reconciliation, per-file remove/replace, 24 MiB total guard and failed-turn restoration. All attachment turns select v5; text-only behavior remains unchanged.
+
+
 Multi-attachment transport phase 1: opt-in provider protocol v5 supports 1–3 JPEG/PNG/PDF parts for START/MESSAGE, with a 16 MiB per-file bound and 24 MiB aggregate raw-file ceiling (plus 16 KiB multipart overhead), stable Responses input order, Android transport list overloads, and unchanged JSON-only continuation. Existing single-file UI/v4, v2/v3, Room and ownership remain unchanged; UI multi-selection is deliberately deferred.
 
 
@@ -82,11 +85,11 @@ Implemented direction:
 - one persistent WorkingProfile selects the provider + branch for new conversations (default `obi-pl / 075`), while saved conversations keep their own profile;
 - the advisor top bar exposes the provider/branch context and one-off cross-branch requests never mutate that persisted conversation profile;
 - direct OBIK and selected EAN/text candidates exact-verify against the active selected store while search discovery remains store-independent;
-- local Advisor tooling is protocol-shaped: text-only OBI uses v2 `find_obi_products(storeNumber, queries[])`; provider-aware text uses v3 `find_products(...)`; attachment turns use v4 `find_products(...)`. Grouped calls remain bounded to at most five query groups and five requested products in total;
+- local Advisor tooling is protocol-shaped: text-only OBI uses v2 `find_obi_products(storeNumber, queries[])`; provider-aware text uses v3 `find_products(...)`; attachment turns use v5 `find_products(...)` (legacy v4 still accepted). Grouped calls remain bounded to at most five query groups and five requested products in total;
 - customer-kit requests can verify several categories in one local call, with grouped `verified` / `not_found` / `unavailable` results and successful groups retained independently;
 - the per-USER-turn ceiling is three local provider calls; a fourth requested batch performs zero provider work, returns `local_tool_limit_reached`, and forces the final continuation to proceed without another local function call;
 - Android's shared `BranchResolver` authorizes one-off branch changes from only the CURRENT USER message against the active provider's real branch directory; exact IDs remain valid, natural metadata requires explicit branch/location intent, and ambiguous/unknown references fail closed;
-- START/MESSAGE carry the conversation provider/branch context and the initiating transport family is preserved through CONTINUE; OBI text remains v2, provider-aware text v3, attachments v4, and unversioned Worker requests remain pinned to grouped v2 compatibility;
+- START/MESSAGE carry the conversation provider/branch context and the initiating transport family is preserved through CONTINUE; OBI text remains v2, provider-aware text v3, attachments v5, and unversioned Worker requests remain pinned to grouped v2 compatibility;
 - unsupported/unauthorized branch or store requests fail closed before provider retrieval and never substitute a default branch;
 - verified cards/history/reports preserve their own snapshot store and changing the conversation selector never rewrites historical facts;
 - store `075` remains the deterministic regression/live-probe baseline.

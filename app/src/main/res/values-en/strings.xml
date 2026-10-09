@@ -34,6 +34,9 @@
     <string name="attachment_file">File</string>
     <string name="attachment_switch_store">Switch store</string>
     <string name="attachment_remove">Remove attachment</string>
+    <string name="attachment_replace">Replace attachment</string>
+    <string name="attachment_error_too_many">You can add up to 3 attachments.</string>
+    <string name="attachment_error_total_too_large">Attachments must total no more than 24 MiB.</string>
     <string name="attachment_photo">Photo</string>
     <string name="attachment_image_preview">Photo preview</string>
     <string name="attachment_importing">Processing attachment…</string>

@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-09 — multi-attachment phase 2 Android UX and ownership
+
+- Room v12 replaces the single attachment/message key with `(messageId,position)` and preserves every v11 row at position 0. No blob storage; private file IDs and metadata remain unchanged.
+- Composer supports up to three ordered attachments via multi-select photo/document pickers, one-at-a-time camera, individual removal and replacement, with localized 3-file/24 MiB limits. All attachment turns now opt into v5; text-only protocol families remain unchanged.
+- Pending/staged/retired ownership is journaled as durable sets before publishing/deleting files, startup checks Room ownership before cleanup, and failed turns reclaim the full list before Room recovery. Sent chat renders each attachment separately so one corrupted file fails soft.
+- No proxy transport or provider-authority changes.
+
+
 ## 2026-10-09 — opt-in multi-attachment transport v5
 
 - Preserve the deployed v4 single-attachment multipart contract and its early 16 MiB + 16 KiB Content-Length rejection; opt-in v5 requires an explicit `X-Taksula-Attachment-Protocol: 5` header matching `protocolVersion: 5` in the JSON payload.

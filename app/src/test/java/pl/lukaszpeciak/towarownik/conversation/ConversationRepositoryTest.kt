@@ -24,6 +24,7 @@ import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.formatAttachmentByteSize
 import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentOwnership
+import pl.lukaszpeciak.towarownik.attachment.MultiPendingAttachmentOwnership
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
@@ -51,6 +52,102 @@ class ConversationRepositoryTest {
         database.close()
         context.deleteDatabase(DB_NAME)
         context.filesDir.resolve("advisor_attachments").deleteRecursively()
+    }
+
+    @Test
+    fun oneTwoAndThreeAttachmentsRoundTripWithOrderAfterDatabaseRestart() = runBlocking {
+        fun make(name: String) = attachmentStorage.importValidated(
+            AttachmentType.PDF, name, "application/pdf", 5, createdAt = 1,
+            source = { ByteArrayInputStream("%PDF-".toByteArray()) },
+        )
+        val groups = listOf(
+            listOf(make("one-first.pdf")),
+            listOf(make("two-first.pdf"), make("two-second.pdf")),
+            listOf(make("three-first.pdf"), make("three-second.pdf"), make("three-third.pdf")),
+        )
+        val ids = groups.mapIndexed { index, group ->
+            repository.beginUserTurn(
+                conversationId = null, text = "turn$index",
+                createdAt = (100 + index).toLong(),
+                attachments = group,
+            ).conversationId
+        }
+        database.close()
+        openDatabase()
+        ids.forEachIndexed { index, id ->
+            assertEquals(
+                groups[index].map { it.localId },
+                repository.load(id)!!.messages.single().attachments.map { it.localId },
+            )
+        }
+        attachmentStorage.delete(groups[2][1].localId)
+        val restored = repository.load(ids[2])!!.messages.single().attachments
+        assertEquals(3, restored.size)
+        assertEquals(
+            listOf(AttachmentRenderKind.PDF, AttachmentRenderKind.UNAVAILABLE, AttachmentRenderKind.PDF),
+            restored.map { attachmentStorage.renderKind(it) },
+        )
+    }
+
+    @Test
+    fun multiAttachmentFailedTurnRestoresEveryFileAndDraft() = runBlocking {
+        val files = (1..3).map { i ->
+            attachmentStorage.importValidated(
+                AttachmentType.PDF, "retry$i.pdf", "application/pdf", 5,
+                source = { ByteArrayInputStream("%PDF-".toByteArray()) },
+            )
+        }
+        val started = repository.beginUserTurn(
+            null, "Retry all", 200, attachments = files,
+        )
+        val owner = MultiPendingAttachmentOwnership(
+            attachmentStorage,
+            context.getSharedPreferences("multi-failed-turn-test", Context.MODE_PRIVATE),
+        )
+        val recovery = repository.recoverFailedAdvisorTurn(
+            started.conversationId,
+            claimPendingAttachment = { owner.claimRecovered(listOf(it)) },
+            claimPendingAttachments = owner::claimRecovered,
+        )
+        assertEquals("Retry all", recovery.conversation?.draft)
+        assertEquals(files, recovery.pendingAttachments)
+        assertEquals(0, messageAttachmentCount(started.conversationId))
+        assertTrue(files.all { attachmentStorage.exists(it.localId) })
+    }
+
+    @Test
+    fun deletingAndExpiringMultiAttachmentTurnsCleansEveryFile() = runBlocking {
+        fun make(name: String) = attachmentStorage.importValidated(
+            AttachmentType.PDF, name, "application/pdf", 5,
+            source = { ByteArrayInputStream("%PDF-".toByteArray()) },
+        )
+        val deleted = listOf(make("delete1"), make("delete2"), make("delete3"))
+        val one = repository.beginUserTurn(null, "delete", 100, attachments = deleted)
+        assertTrue(repository.deleteConversation(one.conversationId))
+        assertTrue(deleted.none { attachmentStorage.exists(it.localId) })
+
+        val expired = listOf(make("expire1"), make("expire2"), make("expire3"))
+        repository.beginUserTurn(null, "expire", 100, attachments = expired)
+        repository.cleanupExpiredConversations(CONVERSATION_RETENTION_MILLIS + 101)
+        assertTrue(expired.none { attachmentStorage.exists(it.localId) })
+    }
+
+    @Test
+    fun tooManyOrTooLargeAttachmentGroupsRejectBeforePersistence() = runBlocking {
+        val sample = attachmentStorage.importValidated(
+            AttachmentType.PDF, "test.pdf", "application/pdf", 5,
+            source = { ByteArrayInputStream("%PDF-".toByteArray()) },
+        )
+        val many = (0..3).map { sample.copy(localId = it.toString().repeat(32)) }
+        assertTrue(runCatching {
+            repository.beginUserTurn(null, "four", attachments = many)
+        }.isFailure)
+        val huge = (0..1).map {
+            sample.copy(localId = it.toString().repeat(32), byteSize = 16L * 1024 * 1024)
+        }
+        assertTrue(runCatching {
+            repository.beginUserTurn(null, "oversize", attachments = huge)
+        }.isFailure)
     }
 
     @Test
@@ -233,7 +330,7 @@ class ConversationRepositoryTest {
     }
 
     @Test
-    fun `one attachment per message is structurally enforced and cascades with message`() = runBlocking {
+    fun multiAttachmentRowsRequireUniquePositionAndCascade() = runBlocking {
         val attachment = attachmentStorage.importValidated(
             AttachmentType.PDF, "one.pdf", "application/pdf", 1, createdAt = 1,
             source = { ByteArrayInputStream(byteArrayOf(1)) },
@@ -241,12 +338,23 @@ class ConversationRepositoryTest {
         val started = repository.beginUserTurn(null, "one", 2, attachment = attachment)
         val db = database.openHelper.writableDatabase
         val messageId = repository.load(started.conversationId)!!.messages.single().id
-        val failed = runCatching {
-            db.execSQL("INSERT INTO message_attachments (messageId,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES ($messageId,'PDF','two.pdf','application/pdf','00000000000000000000000000000000',1,NULL,NULL,1)")
+        db.execSQL(
+            "INSERT INTO message_attachments (messageId,position,type,displayName,mimeType,localId,byteSize,width,height,createdAt) " +
+                "VALUES ($messageId,1,'PDF','two.pdf','application/pdf','00000000000000000000000000000000',1,NULL,NULL,1)",
+        )
+        db.execSQL(
+            "INSERT INTO message_attachments (messageId,position,type,displayName,mimeType,localId,byteSize,width,height,createdAt) " +
+                "VALUES ($messageId,2,'PDF','three.pdf','application/pdf','11111111111111111111111111111111',1,NULL,NULL,1)",
+        )
+        val duplicatePosition = runCatching {
+            db.execSQL(
+                "INSERT INTO message_attachments (messageId,position,type,displayName,mimeType,localId,byteSize,width,height,createdAt) " +
+                    "VALUES ($messageId,2,'PDF','four.pdf','application/pdf','22222222222222222222222222222222',1,NULL,NULL,1)",
+            )
         }.isFailure
-        assertTrue(failed)
+        assertTrue(duplicatePosition)
         repository.deleteConversation(started.conversationId)
-        assertEquals("0", database.openHelper.readableDatabase.query("SELECT COUNT(*) FROM message_attachments").use { it.moveToFirst(); it.getString(0) })
+        assertEquals("0", db.query("SELECT COUNT(*) FROM message_attachments").use { it.moveToFirst(); it.getString(0) })
     }
 
     @Test
@@ -279,7 +387,7 @@ class ConversationRepositoryTest {
         val malformed = repository.beginUserTurn(null, "malformed", 3)
         val messageId = repository.load(malformed.conversationId)!!.messages.single().id
         database.openHelper.writableDatabase.execSQL(
-            "INSERT INTO message_attachments (messageId,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES ($messageId,'ARCHIVE','bad.zip','application/zip','00000000000000000000000000000000',1,NULL,NULL,1)",
+            "INSERT INTO message_attachments (messageId,position,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES ($messageId,0,'ARCHIVE','bad.zip','application/zip','00000000000000000000000000000000',1,NULL,NULL,1)",
         )
         assertNull(repository.load(malformed.conversationId)?.messages?.single()?.attachment)
     }

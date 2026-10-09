@@ -274,3 +274,181 @@ internal val PendingAttachmentSaver = Saver<MutableState<AdvisorAttachment?>, Li
         )
     },
 )
+
+
+/**
+ * Ordered multi-file composer ownership. The durable sets are written before a
+ * private file is published, or before a pending file is retired; Room takes
+ * ownership only after the entire USER turn commits.
+ *
+ * Legacy v1 keys remain readable during upgrade from the single-file composer.
+ */
+internal class MultiPendingAttachmentOwnership(
+    private val storage: AttachmentStorage,
+    private val preferences: SharedPreferences,
+) {
+    constructor(context: Context, storage: AttachmentStorage) : this(
+        storage,
+        context.getSharedPreferences("advisor_pending_attachment", Context.MODE_PRIVATE),
+    )
+
+    private fun ids(key: String): Set<String> =
+        preferences.getStringSet(key, emptySet()).orEmpty().toSet()
+
+    private fun editIds(key: String, values: Set<String>): SharedPreferences.Editor =
+        preferences.edit().putStringSet(key, values.toSet())
+
+    fun stageImportedCandidate(item: AdvisorAttachment): Boolean =
+        editIds(STAGED, ids(STAGED) + item.localId).commit()
+
+    fun discardImportedCandidate(item: AdvisorAttachment) {
+        val id = item.localId
+        if (id !in ids(OWNED)) {
+            // Leave a durable marker if deletion fails (reconciliation retries).
+            retireAndDelete(setOf(id), staged = true)
+        }
+    }
+
+    /** Atomically publish a new ordered composer selection before retiring files. */
+    fun publishSelection(
+        next: List<AdvisorAttachment>,
+        replaced: List<AdvisorAttachment>,
+        candidate: AdvisorAttachment? = null,
+    ): Boolean {
+        if (next.size > 3 || next.map { it.localId }.distinct().size != next.size ||
+            next.sumOf { it.byteSize } > 24L * 1024 * 1024
+        ) return false
+        val nextIds = next.map { it.localId }.toSet()
+        if (candidate != null && candidate.localId !in ids(STAGED)) return false
+        val retiredIds = replaced.map { it.localId }.toSet() - nextIds
+        val editor = preferences.edit()
+            .putStringSet(OWNED, nextIds)
+            .putStringSet(RETIRED, ids(RETIRED) + retiredIds)
+        if (candidate != null) {
+            editor.putStringSet(STAGED, ids(STAGED) - candidate.localId)
+        }
+        if (!editor.commit()) return false
+        cleanRetired(retiredIds)
+        return true
+    }
+
+    /** Once Room has committed all rows, it is the sole owner of those files. */
+    fun handoffToPersisted(items: List<AdvisorAttachment>): Boolean {
+        val committed = items.map { it.localId }.toSet()
+        return editIds(OWNED, ids(OWNED) - committed).commit()
+    }
+
+    /** Claim before the interrupted USER message is removed from Room. */
+    fun claimRecovered(items: List<AdvisorAttachment>): Boolean {
+        val updated = ids(OWNED) + items.map { it.localId }
+        return editIds(OWNED, updated).commit()
+    }
+
+    fun clearPending(items: List<AdvisorAttachment>): Boolean =
+        publishSelection(emptyList(), items)
+
+    private fun retireAndDelete(localIds: Set<String>, staged: Boolean = false) {
+        if (localIds.isEmpty()) return
+        val editor = preferences.edit().putStringSet(RETIRED, ids(RETIRED) + localIds)
+        if (staged) editor.putStringSet(STAGED, ids(STAGED) - localIds)
+        if (editor.commit()) cleanRetired(localIds)
+    }
+
+    private fun cleanRetired(localIds: Set<String>) {
+        for (id in localIds) {
+            if (runCatching { storage.delete(id) }.getOrDefault(false)) {
+                preferences.edit().putStringSet(RETIRED, ids(RETIRED) - id).commit()
+            }
+        }
+    }
+
+    suspend fun reconcileAfterStartup(
+        restored: List<AdvisorAttachment>,
+        isPersisted: suspend (String) -> Boolean,
+    ): List<AdvisorAttachment> {
+        val legacyOwned = listOfNotNull(preferences.getString("local_id", null))
+        val legacyStaged = listOfNotNull(preferences.getString("staged_local_id", null))
+        val legacyRetired = listOfNotNull(preferences.getString("retired_local_id", null))
+        // Do not reclaim already persisted USER attachments from a stale saved snapshot.
+        val usable = restored.take(3).filter {
+            storage.exists(it.localId) && !isPersisted(it.localId)
+        }.distinctBy { it.localId }
+        val keep = usable.map { it.localId }.toSet()
+        val leftovers = ids(OWNED) + ids(STAGED) + ids(RETIRED) +
+            legacyOwned + legacyStaged + legacyRetired
+        // One committed preferences transaction, so a crash cannot lose both
+        // the restored owned set and pending retirement references.
+        if (!preferences.edit()
+                .putStringSet(OWNED, keep)
+                .putStringSet(STAGED, emptySet())
+                .putStringSet(RETIRED, leftovers - keep)
+                .remove("local_id").remove("staged_local_id").remove("retired_local_id")
+                .commit()
+        ) return usable
+
+        val removable = leftovers - keep
+        for (id in removable) {
+            if (!isPersisted(id)) cleanRetired(setOf(id))
+            else preferences.edit().putStringSet(RETIRED, ids(RETIRED) - id).commit()
+        }
+        return usable
+    }
+
+    private companion object {
+        const val OWNED = "multi_owned_ids"
+        const val STAGED = "multi_staged_ids"
+        const val RETIRED = "multi_retired_ids"
+    }
+}
+
+internal const val MAX_ADVISOR_ATTACHMENTS = 3
+internal const val MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES = 24L * 1024 * 1024
+
+internal fun appendOrReplaceAttachment(
+    items: List<AdvisorAttachment>,
+    candidate: AdvisorAttachment,
+    replaceLocalId: String? = null,
+): List<AdvisorAttachment>? {
+    val index = replaceLocalId?.let { id -> items.indexOfFirst { it.localId == id } } ?: -1
+    if (replaceLocalId != null && index < 0) return null
+    if (items.any { it.localId == candidate.localId }) return null
+    if (index < 0 && items.size >= MAX_ADVISOR_ATTACHMENTS) return null
+    val next = items.toMutableList()
+    if (index >= 0) next[index] = candidate else next.add(candidate)
+    return next.takeIf {
+        it.size <= MAX_ADVISOR_ATTACHMENTS &&
+            it.sumOf { part -> part.byteSize } <= MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+    }
+}
+
+internal fun canSendAdvisorComposer(
+    enabled: Boolean,
+    importInProgress: Boolean,
+    text: String,
+    attachments: List<AdvisorAttachment>,
+): Boolean =
+    enabled && !importInProgress &&
+        (text.isNotBlank() || attachments.isNotEmpty()) &&
+        attachments.size <= MAX_ADVISOR_ATTACHMENTS &&
+        attachments.sumOf { it.byteSize } <= MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+
+internal val PendingAttachmentsSaver = Saver<MutableState<List<AdvisorAttachment>>, List<Any?>>(
+    save = { state ->
+        state.value.flatMap { value ->
+            listOf(
+                value.type.name, value.displayName, value.mimeType, value.localId,
+                value.byteSize, value.width, value.height, value.createdAt,
+            )
+        }
+    },
+    restore = { saved ->
+        mutableStateOf(saved.chunked(8).mapNotNull { part ->
+            if (part.size != 8) null else validatedAttachmentOrNull(
+                type = part[0] as String, displayName = part[1] as String,
+                mimeType = part[2] as String, localId = part[3] as String,
+                byteSize = part[4] as Long, width = part[5] as Int?,
+                height = part[6] as Int?, createdAt = part[7] as Long,
+            )
+        }.take(MAX_ADVISOR_ATTACHMENTS))
+    },
+)

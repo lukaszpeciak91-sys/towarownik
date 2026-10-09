@@ -97,6 +97,36 @@ internal abstract class ConversationDao {
         conversationId: Long,
     ): MessageAttachmentEntity?
 
+    @Query(
+        """
+        SELECT ma.* FROM message_attachments ma
+        WHERE ma.messageId = (
+            SELECT m.id FROM messages m
+            WHERE m.conversationId = :conversationId
+            ORDER BY m.createdAt DESC, m.id DESC LIMIT 1
+        )
+        ORDER BY ma.position ASC
+        """,
+    )
+    abstract suspend fun getLastMessageAttachments(
+        conversationId: Long,
+    ): List<MessageAttachmentEntity>
+
+    @Query(
+        """
+        SELECT ma.localId FROM message_attachments ma
+        WHERE ma.messageId = (
+            SELECT m.id FROM messages m
+            WHERE m.conversationId = :conversationId
+            ORDER BY m.createdAt DESC, m.id DESC LIMIT 1
+        )
+        ORDER BY ma.position ASC
+        """,
+    )
+    abstract suspend fun getLastMessageAttachmentIds(
+        conversationId: Long,
+    ): List<String>
+
 
     @Query("SELECT ma.localId FROM message_attachments ma JOIN messages m ON m.id = ma.messageId JOIN conversations c ON c.id = m.conversationId WHERE c.updatedAt < :cutoffExclusive")
     abstract suspend fun getAttachmentIdsUpdatedBefore(cutoffExclusive: Long): List<String>
@@ -202,6 +232,7 @@ internal abstract class ConversationDao {
         providerId: String,
         branchId: String,
         attachment: AdvisorAttachment? = null,
+        attachments: List<AdvisorAttachment> = listOfNotNull(attachment),
     ): Pair<Long, String?> {
         val conversationId = insertConversation(
             ConversationEntity(
@@ -223,7 +254,12 @@ internal abstract class ConversationDao {
                 createdAt = createdAt,
             ),
         )
-        attachment?.let { insertMessageAttachment(it.toEntity(messageId)) }
+        require(attachments.size <= 3)
+        require(attachments.map { it.localId }.distinct().size == attachments.size)
+        require(attachments.sumOf { it.byteSize } <= 24L * 1024L * 1024L)
+        attachments.forEachIndexed { position, item ->
+            insertMessageAttachment(item.toEntity(messageId, position))
+        }
         return conversationId to null
     }
 
@@ -235,6 +271,7 @@ internal abstract class ConversationDao {
         expectedProviderId: String,
         expectedBranchId: String,
         attachment: AdvisorAttachment? = null,
+        attachments: List<AdvisorAttachment> = listOfNotNull(attachment),
     ): String? {
         val conversation = checkNotNull(getConversation(conversationId))
         require(conversation.providerId == expectedProviderId)
@@ -247,7 +284,12 @@ internal abstract class ConversationDao {
                 createdAt = createdAt,
             ),
         )
-        attachment?.let { insertMessageAttachment(it.toEntity(messageId)) }
+        require(attachments.size <= 3)
+        require(attachments.map { it.localId }.distinct().size == attachments.size)
+        require(attachments.sumOf { it.byteSize } <= 24L * 1024L * 1024L)
+        attachments.forEachIndexed { position, item ->
+            insertMessageAttachment(item.toEntity(messageId, position))
+        }
         markUserTurnStarted(
             conversationId = conversationId,
             updatedAt = createdAt,
@@ -380,7 +422,7 @@ internal abstract class ConversationDao {
     }
 }
 
-private fun AdvisorAttachment.toEntity(messageId: Long): MessageAttachmentEntity {
+private fun AdvisorAttachment.toEntity(messageId: Long, position: Int): MessageAttachmentEntity {
     require(
         validatedAttachmentOrNull(
             type.name, displayName, mimeType, localId, byteSize,
@@ -389,6 +431,7 @@ private fun AdvisorAttachment.toEntity(messageId: Long): MessageAttachmentEntity
     )
     return MessageAttachmentEntity(
         messageId = messageId,
+        position = position,
         type = type.name,
         displayName = displayName,
         mimeType = mimeType,

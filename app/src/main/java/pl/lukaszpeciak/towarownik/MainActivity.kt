@@ -12,8 +12,11 @@ import pl.lukaszpeciak.towarownik.attachment.AttachmentImporter
 import pl.lukaszpeciak.towarownik.attachment.AttachmentImportGuard
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.attachment.CameraCapture
-import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentOwnership
-import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentSaver
+import pl.lukaszpeciak.towarownik.attachment.MultiPendingAttachmentOwnership
+import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentsSaver
+import pl.lukaszpeciak.towarownik.attachment.MAX_ADVISOR_ATTACHMENTS
+import pl.lukaszpeciak.towarownik.attachment.MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+import pl.lukaszpeciak.towarownik.attachment.appendOrReplaceAttachment
 import pl.lukaszpeciak.towarownik.attachment.canSendAdvisorComposer
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -231,7 +234,7 @@ private fun TowarownikApp() {
     }
     val attachmentStorage = remember { AttachmentStorage(context) }
     val pendingAttachmentOwnership = remember {
-        PendingAttachmentOwnership(context, attachmentStorage)
+        MultiPendingAttachmentOwnership(context, attachmentStorage)
     }
     val conversationRepository = remember {
         ConversationRepository(
@@ -302,8 +305,8 @@ private fun TowarownikApp() {
     var advisorState by remember {
         mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
     }
-    var pendingAttachment by rememberSaveable(saver = PendingAttachmentSaver) {
-        mutableStateOf<AdvisorAttachment?>(null)
+    var pendingAttachments by rememberSaveable(saver = PendingAttachmentsSaver) {
+        mutableStateOf<List<AdvisorAttachment>>(emptyList())
     }
     var attachmentError by remember { mutableStateOf<AttachmentImportError?>(null) }
     var attachmentImporting by remember { mutableStateOf(false) }
@@ -326,8 +329,8 @@ private fun TowarownikApp() {
     val advisorRequestGuard = remember { AdvisorRequestGuard() }
 
     LaunchedEffect(Unit) {
-        pendingAttachment = pendingAttachmentOwnership.reconcileAfterStartup(
-            restored = pendingAttachment,
+        pendingAttachments = pendingAttachmentOwnership.reconcileAfterStartup(
+            restored = pendingAttachments,
             isPersisted = conversationRepository::isAttachmentPersisted,
         )
     }
@@ -337,80 +340,123 @@ private fun TowarownikApp() {
         attachmentImporting = false
     }
 
-    fun acceptImportResult(
-        token: Long,
-        result: AttachmentImportResult,
-    ) {
-        if (!attachmentImportGuard.isCurrent(token)) {
-            if (result is AttachmentImportResult.Success) {
-                pendingAttachmentOwnership.discardImportedCandidate(
-                    result.attachment,
-                )
-            }
-            return
-        }
+    // Invalidated when switching cases, before an in-flight picker can return.
+    var pickerEpoch by remember { mutableStateOf(0L) }
+    var pickerLaunchedAt by remember { mutableStateOf(0L) }
+    var replacementTarget by remember { mutableStateOf<String?>(null) }
 
-        attachmentImporting = false
-        when (result) {
-            is AttachmentImportResult.Success -> {
-                val previous = pendingAttachment
-                if (
-                    pendingAttachmentOwnership.activateImportedCandidate(
-                        attachment = result.attachment,
-                        previous = previous,
-                    )
-                ) {
-                    pendingAttachment = result.attachment
-                    attachmentError = null
-                } else {
-                    attachmentError = AttachmentImportError.CANNOT_OPEN
-                }
-            }
-            is AttachmentImportResult.Failure -> attachmentError = result.error
-        }
-    }
-
-    fun importAttachment(
-        uri: Uri,
+    fun importAttachments(
+        uris: List<Uri>,
         suggestedName: String? = null,
+        replaceLocalId: String? = null,
         afterImport: () -> Unit = {},
     ) {
+        if (uris.isEmpty()) { afterImport(); return }
+        if (uris.size > MAX_ADVISOR_ATTACHMENTS ||
+            (replaceLocalId == null &&
+                pendingAttachments.size + uris.size > MAX_ADVISOR_ATTACHMENTS) ||
+            (replaceLocalId != null && uris.size != 1)
+        ) {
+            attachmentError = AttachmentImportError.TOO_MANY
+            afterImport()
+            return
+        }
         val token = attachmentImportGuard.begin()
         attachmentImporting = true
         attachmentError = null
         scope.launch {
-            val result = attachmentImportMutex.withLock {
-                withContext(Dispatchers.IO) {
-                    try {
-                        attachmentImporter.import(uri, suggestedName)
-                    } catch (_: Exception) {
-                        AttachmentImportResult.Failure(
-                            AttachmentImportError.CANNOT_OPEN,
-                        )
+            try {
+                attachmentImportMutex.withLock {
+                    for ((index, uri) in uris.withIndex()) {
+                        val result = withContext(Dispatchers.IO) {
+                            try {
+                                attachmentImporter.import(
+                                    uri, if (uris.size == 1) suggestedName else null,
+                                )
+                            } catch (_: Exception) {
+                                AttachmentImportResult.Failure(AttachmentImportError.CANNOT_OPEN)
+                            }
+                        }
+                        if (!attachmentImportGuard.isCurrent(token)) {
+                            if (result is AttachmentImportResult.Success) {
+                                pendingAttachmentOwnership.discardImportedCandidate(result.attachment)
+                            }
+                            break
+                        }
+                        when (result) {
+                            is AttachmentImportResult.Success -> {
+                                val item = result.attachment
+                                val next = appendOrReplaceAttachment(
+                                    pendingAttachments, item,
+                                    if (index == 0) replaceLocalId else null,
+                                )
+                                if (next == null) {
+                                    attachmentError = if (
+                                        replaceLocalId == null &&
+                                        pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS
+                                    ) AttachmentImportError.TOO_MANY
+                                    else AttachmentImportError.TOTAL_TOO_LARGE
+                                    pendingAttachmentOwnership.discardImportedCandidate(item)
+                                    break
+                                }
+                                val replaced = pendingAttachments.filter { old ->
+                                    next.none { it.localId == old.localId }
+                                }
+                                if (pendingAttachmentOwnership.publishSelection(next, replaced, item)) {
+                                    pendingAttachments = next
+                                    attachmentError = null
+                                } else {
+                                    pendingAttachmentOwnership.discardImportedCandidate(item)
+                                    attachmentError = AttachmentImportError.CANNOT_OPEN
+                                    break
+                                }
+                            }
+                            is AttachmentImportResult.Failure -> {
+                                attachmentError = result.error
+                                break
+                            }
+                        }
                     }
                 }
+            } finally {
+                if (attachmentImportGuard.isCurrent(token)) attachmentImporting = false
+                afterImport()
             }
-            acceptImportResult(token, result)
-            afterImport()
         }
     }
 
     val photoPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia(),
-    ) { uri -> uri?.let { importAttachment(it) } }
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_ADVISOR_ATTACHMENTS),
+    ) { uris ->
+        if (pickerEpoch == pickerLaunchedAt) importAttachments(uris)
+    }
     val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (pickerEpoch == pickerLaunchedAt) importAttachments(uris)
+    }
+    val replacePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let { importAttachment(it) } }
+    ) { uri ->
+        if (pickerEpoch == pickerLaunchedAt) {
+            uri?.let { importAttachments(listOf(it), replaceLocalId = replacementTarget) }
+        }
+        replacementTarget = null
+    }
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture(),
     ) { captured ->
         val captureFile = cameraCapture.file
         if (captured && captureFile != null) {
-            importAttachment(
-                FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", captureFile),
-                "photo.jpg",
-                cameraCapture::cleanup,
-            )
+            if (pickerEpoch == pickerLaunchedAt) {
+                importAttachments(
+                    listOf(FileProvider.getUriForFile(
+                        context, "${context.packageName}.fileprovider", captureFile,
+                    )),
+                    suggestedName = "photo.jpg",
+                    afterImport = cameraCapture::cleanup,
+                )
+            } else cameraCapture.cleanup()
         } else if (!captured) {
             cameraCapture.cleanup()
         } else {
@@ -453,14 +499,24 @@ private fun TowarownikApp() {
     }
 
     fun clearPendingAttachment() {
+        pickerEpoch++
         invalidateAttachmentImport()
-        val previous = pendingAttachment
-        pendingAttachment = null
-        previous?.let {
-            pendingAttachmentOwnership.clearIfOwned(it.localId)
-            attachmentStorage.delete(it.localId)
-        }
+        // Never carry old selection into a different conversation, even when
+        // a preferences write fails; old durable markers remain for startup cleanup.
+        pendingAttachmentOwnership.clearPending(pendingAttachments)
+        pendingAttachments = emptyList()
         attachmentError = null
+    }
+
+    fun removePendingAttachment(localId: String) {
+        invalidateAttachmentImport()
+        val dropped = pendingAttachments.filter { it.localId == localId }
+        if (dropped.isEmpty()) return
+        val remaining = pendingAttachments.filterNot { it.localId == localId }
+        if (pendingAttachmentOwnership.publishSelection(remaining, dropped)) {
+            pendingAttachments = remaining
+            attachmentError = null
+        }
     }
 
     fun applyConversation(
@@ -641,8 +697,14 @@ private fun TowarownikApp() {
         if (advisorJob?.isActive == true || attachmentImporting) return
 
         val submitted = advisorCase.draft.trim()
-        val submittedAttachment = pendingAttachment
-        if (submitted.isBlank() && submittedAttachment == null) return
+        val submittedAttachments = pendingAttachments.toList()
+        if (submitted.isBlank() && submittedAttachments.isEmpty()) return
+        if (submittedAttachments.size > MAX_ADVISOR_ATTACHMENTS ||
+            submittedAttachments.sumOf { it.byteSize } > MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+        ) {
+            attachmentError = AttachmentImportError.TOTAL_TOO_LARGE
+            return
+        }
         val turnProfile = selectedWorkingProfile
 
         val generation = advisorRequestGuard.token()
@@ -654,12 +716,10 @@ private fun TowarownikApp() {
                 conversationId = activeConversationId,
                 text = submitted,
                 workingProfile = turnProfile,
-                attachment = submittedAttachment,
+                attachments = submittedAttachments,
             )
-            submittedAttachment?.let {
-                pendingAttachmentOwnership.handoffToPersisted(it.localId)
-            }
-            pendingAttachment = null
+            pendingAttachmentOwnership.handoffToPersisted(submittedAttachments)
+            pendingAttachments = emptyList()
 
             if (!advisorRequestGuard.isTokenCurrent(generation)) {
                 conversationRepository.recoverInterruptedTurn(
@@ -688,7 +748,7 @@ private fun TowarownikApp() {
                     previousResponseId = turn.previousResponseId,
                     conversationStoreNumber = branchId,
                     conversationProviderId = providerId,
-                    attachment = submittedAttachment,
+                    attachments = submittedAttachments,
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(
@@ -780,8 +840,11 @@ private fun TowarownikApp() {
                     val recovery = conversationRepository
                         .recoverFailedAdvisorTurn(
                             conversationId = turn.conversationId,
-                            claimPendingAttachment =
-                                pendingAttachmentOwnership::markPending,
+                            claimPendingAttachment = { item ->
+                                pendingAttachmentOwnership.claimRecovered(listOf(item))
+                            },
+                            claimPendingAttachments =
+                                pendingAttachmentOwnership::claimRecovered,
                         )
                     if (
                         advisorRequestGuard.isCurrent(
@@ -790,7 +853,7 @@ private fun TowarownikApp() {
                             activeConversationId = activeConversationId,
                         )
                     ) {
-                        pendingAttachment = recovery.pendingAttachment
+                        pendingAttachments = recovery.pendingAttachments
                         applyConversation(recovery.conversation)
                         advisorState = finalState
                     }
@@ -1037,23 +1100,43 @@ private fun TowarownikApp() {
                     state = advisorState,
                     onDraftChange = ::updateAdvisorDraft,
                     onSubmit = ::submitAdvisorTurn,
-                    pendingAttachment = pendingAttachment,
+                    pendingAttachments = pendingAttachments,
                     attachmentError = attachmentError,
                     attachmentImporting = attachmentImporting,
                     attachmentStorage = attachmentStorage,
-                    onRemoveAttachment = ::clearPendingAttachment,
+                    onRemoveAttachment = ::removePendingAttachment,
+                    onReplaceAttachment = { localId ->
+                        replacementTarget = localId
+                        pickerLaunchedAt = pickerEpoch
+                        replacePicker.launch(arrayOf("application/pdf", "image/*"))
+                    },
                     onOpenCamera = {
-                        runCatching { cameraCapture.createUri() }
+                        if (pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS) {
+                            attachmentError = AttachmentImportError.TOO_MANY
+                        } else {
+                            pickerLaunchedAt = pickerEpoch
+                            runCatching { cameraCapture.createUri() }
                             .onSuccess(cameraLauncher::launch)
                             .onFailure { attachmentError = AttachmentImportError.CAMERA_FAILED }
+                        }
                     },
                     onOpenPhotos = {
-                        photoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
+                        if (pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS) {
+                            attachmentError = AttachmentImportError.TOO_MANY
+                        } else {
+                            pickerLaunchedAt = pickerEpoch
+                            photoPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        }
                     },
                     onOpenFile = {
-                        filePicker.launch(arrayOf("application/pdf", "image/*"))
+                        if (pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS) {
+                            attachmentError = AttachmentImportError.TOO_MANY
+                        } else {
+                            pickerLaunchedAt = pickerEpoch
+                            filePicker.launch(arrayOf("application/pdf", "image/*"))
+                        }
                     },
                     onOpenProfileSelector = { profileMenuRequest++ },
                     onOpenDrawer = {
@@ -1569,11 +1652,12 @@ private fun AdvisorChatScreen(
     state: AdvisorUiState,
     onDraftChange: (String) -> Unit,
     onSubmit: () -> Unit,
-    pendingAttachment: AdvisorAttachment?,
+    pendingAttachments: List<AdvisorAttachment>,
     attachmentError: AttachmentImportError?,
     attachmentImporting: Boolean,
     attachmentStorage: AttachmentStorage,
-    onRemoveAttachment: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    onReplaceAttachment: (String) -> Unit,
     onOpenCamera: () -> Unit,
     onOpenPhotos: () -> Unit,
     onOpenFile: () -> Unit,
@@ -1616,7 +1700,7 @@ private fun AdvisorChatScreen(
             AdvisorComposer(
                 value = advisorCase.draft,
                 enabled = composerEnabled,
-                attachment = pendingAttachment,
+                attachments = pendingAttachments,
                 attachmentError = attachmentError,
                 importInProgress = attachmentImporting,
                 attachmentStorage = attachmentStorage,
@@ -1630,6 +1714,7 @@ private fun AdvisorChatScreen(
                 onValueChange = onDraftChange,
                 onSend = onSubmit,
                 onRemoveAttachment = onRemoveAttachment,
+                onReplaceAttachment = onReplaceAttachment,
                 onOpenCamera = onOpenCamera,
                 onOpenPhotos = onOpenPhotos,
                 onOpenFile = onOpenFile,
@@ -1937,7 +2022,7 @@ private fun WorkingProfileSelector(
 private fun AdvisorComposer(
     value: String,
     enabled: Boolean,
-    attachment: AdvisorAttachment?,
+    attachments: List<AdvisorAttachment>,
     attachmentError: AttachmentImportError?,
     importInProgress: Boolean,
     attachmentStorage: AttachmentStorage,
@@ -1946,7 +2031,8 @@ private fun AdvisorComposer(
     profileSwitchEnabled: Boolean,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
-    onRemoveAttachment: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    onReplaceAttachment: (String) -> Unit,
     onOpenCamera: () -> Unit,
     onOpenPhotos: () -> Unit,
     onOpenFile: () -> Unit,
@@ -1989,92 +2075,72 @@ private fun AdvisorComposer(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 ) {
                     Column {
-                        if (attachment != null || importInProgress) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 56.dp)
-                                    .padding(
-                                        start = 10.dp,
-                                        top = 8.dp,
-                                        end = 4.dp,
-                                    ),
-                                verticalAlignment = Alignment.CenterVertically,
+                        if (attachments.isNotEmpty() || importInProgress) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(start = 10.dp, end = 4.dp, top = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                val item = attachment
-                                when {
-                                    importInProgress -> {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(28.dp),
-                                            strokeWidth = 2.dp,
-                                        )
-                                    }
-                                    item?.type == AttachmentType.IMAGE -> {
-                                        AsyncImage(
-                                            model = attachmentStorage.contentUri(
-                                                context,
-                                                item.localId,
-                                            ),
-                                            contentDescription = stringResource(
-                                                R.string.attachment_image_preview,
-                                            ),
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.size(48.dp),
-                                        )
-                                    }
-                                    else -> {
-                                        PdfAttachmentBadge(
-                                            modifier = Modifier.size(40.dp),
-                                        )
-                                    }
-                                }
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(horizontal = 10.dp),
-                                ) {
-                                    Text(
-                                        text = when {
-                                            importInProgress ->
-                                                stringResource(
-                                                    R.string.attachment_importing,
-                                                )
-                                            item?.type == AttachmentType.IMAGE ->
-                                                item.displayName.ifBlank {
-                                                    stringResource(
-                                                        R.string.attachment_photo,
-                                                    )
-                                                }
-                                            else -> item?.displayName.orEmpty()
-                                        },
-                                        maxLines = 2,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    if (
-                                        !importInProgress &&
-                                        item?.type == AttachmentType.PDF
+                                attachments.forEach { item ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
-                                        Text(
-                                            text = formatAttachmentByteSize(
-                                                item.byteSize,
-                                            ),
-                                            style =
-                                                MaterialTheme.typography.bodySmall,
-                                            color =
-                                                MaterialTheme.colorScheme
-                                                    .onSurfaceVariant,
-                                        )
+                                        if (item.type == AttachmentType.IMAGE) {
+                                            AsyncImage(
+                                                model = attachmentStorage.contentUri(context, item.localId),
+                                                contentDescription = stringResource(R.string.attachment_image_preview),
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.size(40.dp),
+                                            )
+                                        } else {
+                                            PdfAttachmentBadge(modifier = Modifier.size(38.dp))
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.displayName,
+                                                maxLines = 1,
+                                                style = MaterialTheme.typography.bodySmall,
+                                            )
+                                            Text(
+                                                text = formatAttachmentByteSize(item.byteSize),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        IconButton(onClick = { onReplaceAttachment(item.localId) },
+                                            modifier = Modifier.size(36.dp)) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_document_24),
+                                                contentDescription = stringResource(R.string.attachment_replace),
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                        IconButton(onClick = { onRemoveAttachment(item.localId) },
+                                            modifier = Modifier.size(36.dp)) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_close_24),
+                                                contentDescription = stringResource(R.string.attachment_remove),
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
                                     }
                                 }
-                                IconButton(onClick = onRemoveAttachment) {
-                                    Icon(
-                                        painter = painterResource(
-                                            R.drawable.ic_close_24,
-                                        ),
-                                        contentDescription = stringResource(
-                                            R.string.attachment_remove,
-                                        ),
-                                    )
+                                if (importInProgress) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(22.dp), strokeWidth = 2.dp,
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.attachment_importing),
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2171,7 +2237,7 @@ private fun AdvisorComposer(
                         enabled = enabled,
                         importInProgress = importInProgress,
                         text = value,
-                        attachment = attachment,
+                        attachments = attachments,
                     ),
                     modifier = Modifier.size(48.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
@@ -2206,6 +2272,8 @@ private fun attachmentErrorText(error: AttachmentImportError): String = stringRe
     when (error) {
         AttachmentImportError.UNSUPPORTED_TYPE -> R.string.attachment_error_unsupported
         AttachmentImportError.TOO_LARGE -> R.string.attachment_error_too_large
+        AttachmentImportError.TOO_MANY -> R.string.attachment_error_too_many
+        AttachmentImportError.TOTAL_TOO_LARGE -> R.string.attachment_error_total_too_large
         AttachmentImportError.IMAGE_UNREADABLE -> R.string.attachment_error_image
         AttachmentImportError.CANNOT_OPEN -> R.string.attachment_error_open
         AttachmentImportError.CAMERA_FAILED -> R.string.attachment_error_camera
@@ -2285,127 +2353,128 @@ internal fun formatAttachmentByteSize(byteSize: Long): String {
     return "$formatted $unit"
 }
 
+
 @Composable
 private fun UserMessageContent(
     message: AdvisorChatMessage,
     attachmentStorage: AttachmentStorage,
 ) {
-    val context = LocalContext.current
-    val attachment = message.attachment
-    var imageFailed by remember(attachment?.localId) {
-        mutableStateOf(false)
-    }
-
     Column(
-        modifier = Modifier.padding(
-            horizontal = 10.dp,
-            vertical = 9.dp,
-        ),
+        modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        attachment?.let { item ->
-            val renderKind = attachmentStorage.renderKind(item)
-            when {
-                renderKind == AttachmentRenderKind.UNAVAILABLE ||
-                    imageFailed -> {
-                    Row(
-                        modifier = Modifier
-                            .widthIn(max = 300.dp)
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            painter = painterResource(
-                                R.drawable.ic_document_24,
-                            ),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Text(
-                            text = stringResource(
-                                R.string.attachment_error_missing_persisted,
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                renderKind == AttachmentRenderKind.IMAGE -> {
-                    AsyncImage(
-                        model = attachmentStorage.contentUri(
-                            context,
-                            item.localId,
-                        ),
-                        contentDescription = stringResource(
-                            R.string.attachment_image_preview,
-                        ),
-                        contentScale = ContentScale.Crop,
-                        onError = { imageFailed = true },
-                        modifier = Modifier
-                            .width(260.dp)
-                            .heightIn(min = 140.dp, max = 220.dp),
-                    )
-                }
-
-                else -> {
-                    Surface(
-                        modifier = Modifier.widthIn(max = 320.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(
-                            alpha = 0.45f,
-                        ),
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline.copy(
-                                alpha = 0.5f,
-                            ),
-                        ),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(
-                                horizontal = 12.dp,
-                                vertical = 10.dp,
-                            ),
-                            horizontalArrangement =
-                                Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            PdfAttachmentBadge(
-                                modifier = Modifier.size(32.dp),
-                            )
-                            Column {
-                                Text(
-                                    text = item.displayName,
-                                    maxLines = 2,
-                                    style =
-                                        MaterialTheme.typography.bodyMedium,
-                                )
-                                Text(
-                                    text = formatAttachmentByteSize(
-                                        item.byteSize,
-                                    ),
-                                    style =
-                                        MaterialTheme.typography.bodySmall,
-                                    color =
-                                        MaterialTheme.colorScheme
-                                            .onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+        message.attachments.forEach { part ->
+            UserAttachmentContent(part, attachmentStorage)
         }
-
         if (message.text.isNotBlank()) {
             Text(
                 text = message.text,
                 modifier = Modifier.padding(horizontal = 4.dp),
                 style = MaterialTheme.typography.bodyLarge,
             )
+        }
+    }
+}
+
+@Composable
+private fun UserAttachmentContent(
+    item: AdvisorAttachment,
+    attachmentStorage: AttachmentStorage,
+) {
+    val context = LocalContext.current
+    var imageFailed by remember(item.localId) { mutableStateOf(false) }
+    val renderKind = attachmentStorage.renderKind(item)
+    when {
+        renderKind == AttachmentRenderKind.UNAVAILABLE ||
+            imageFailed -> {
+            Row(
+                modifier = Modifier
+                    .widthIn(max = 300.dp)
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    painter = painterResource(
+                        R.drawable.ic_document_24,
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.attachment_error_missing_persisted,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        renderKind == AttachmentRenderKind.IMAGE -> {
+            AsyncImage(
+                model = attachmentStorage.contentUri(
+                    context,
+                    item.localId,
+                ),
+                contentDescription = stringResource(
+                    R.string.attachment_image_preview,
+                ),
+                contentScale = ContentScale.Crop,
+                onError = { imageFailed = true },
+                modifier = Modifier
+                    .width(260.dp)
+                    .heightIn(min = 140.dp, max = 220.dp),
+            )
+        }
+
+        else -> {
+            Surface(
+                modifier = Modifier.widthIn(max = 320.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(
+                    alpha = 0.45f,
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(
+                        alpha = 0.5f,
+                    ),
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(
+                        horizontal = 12.dp,
+                        vertical = 10.dp,
+                    ),
+                    horizontalArrangement =
+                        Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PdfAttachmentBadge(
+                        modifier = Modifier.size(32.dp),
+                    )
+                    Column {
+                        Text(
+                            text = item.displayName,
+                            maxLines = 2,
+                            style =
+                                MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = formatAttachmentByteSize(
+                                item.byteSize,
+                            ),
+                            style =
+                                MaterialTheme.typography.bodySmall,
+                            color =
+                                MaterialTheme.colorScheme
+                                    .onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -3405,11 +3474,12 @@ private fun AdvisorChatPreview() {
             state = AdvisorUiState.Idle,
             onDraftChange = {},
             onSubmit = {},
-            pendingAttachment = null,
+            pendingAttachments = emptyList(),
             attachmentError = null,
             attachmentImporting = false,
             attachmentStorage = previewAttachmentStorage,
             onRemoveAttachment = {},
+            onReplaceAttachment = {},
             onOpenCamera = {},
             onOpenPhotos = {},
             onOpenFile = {},

@@ -63,7 +63,7 @@ The self-contained Cloudflare Worker project lives under `proxy/` and is an acti
 
 Provider lookup remains local to Android. The Worker never scrapes OBI/KWANT or duplicates provider parsers/repositories. OBI text turns keep grouped protocol v2 with `find_obi_products(storeNumber, queries[])`; provider-aware text turns use v3 `find_products(providerId, branchId, requestedBranch, queries[])`; attachment turns use provider-aware v4 and the same `find_products` schema. Each grouped call accepts at most five query groups whose requested limits sum to at most five. Android independently allows at most three local calls per USER turn; if a fourth is requested, it performs no provider work and returns the graceful `local_tool_limit_reached` continuation. Android owns provider/branch authorization, executes the real provider lookup, and returns only compact verified product facts to the Worker. Trusted product URLs, verification timestamps, attachment bytes, and provider parser internals remain Android-local. Selective OpenAI web search is supplemental and cannot replace local provider verification for current stock, price, availability, or product-card grounding.
 
-Advisor transport is versioned independently from the app version. Protocol v4 extends provider-aware v3 with exactly one JPEG, PNG, or PDF attachment. Opt-in protocol v5 adds 1–3 attachments per START/MESSAGE, using repeated ordered `attachment` multipart parts and `X-Taksula-Attachment-Protocol: 5`; the Worker preserves the v4 16 MiB early body bound, validates each file (up to 16 MiB) and enforces a v5 aggregate attachment cap of 24 MiB and multipart ceiling of 24 MiB + 16 KiB. Android's transport API accepts a list, while the existing one-file composer still sends v4. Text-only v2/v3 and every `/continue` remain JSON. The Worker forwards all accepted images/PDFs as one ordered Responses USER input; no other types are enabled. Missing protocol markers remain pinned to grouped v2 compatibility, and explicit v1 remains the legacy single-query contract.
+Advisor transport is versioned independently from the app version. Protocol v4 extends provider-aware v3 with exactly one JPEG, PNG, or PDF attachment. Opt-in protocol v5 adds 1–3 attachments per START/MESSAGE, using repeated ordered `attachment` multipart parts and `X-Taksula-Attachment-Protocol: 5`; the Worker preserves the v4 16 MiB early body bound, validates each file (up to 16 MiB) and enforces a v5 aggregate attachment cap of 24 MiB and multipart ceiling of 24 MiB + 16 KiB. Android's composer now allows up to three ordered attachments and sends v5 even for a single attachment; existing older v4 clients remain compatible. Text-only v2/v3 and every `/continue` remain JSON. The Worker forwards all accepted images/PDFs as one ordered Responses USER input; no other types are enabled. Missing protocol markers remain pinned to grouped v2 compatibility, and explicit v1 remains the legacy single-query contract.
 
 Proxy checks require Node.js 22:
 
@@ -173,17 +173,17 @@ The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-n
 
 ## Local conversation persistence
 
-Room schema v11 stores provider-owned conversation context, rendered USER/ASSISTANT messages, verified product snapshots, normalized web sources, advisor search actions, attachment metadata, and nullable Advisor trace correlation:
+Room schema v12 stores provider-owned conversation context, rendered USER/ASSISTANT messages, verified product snapshots, normalized web sources, advisor search actions, attachment metadata, and nullable Advisor trace correlation:
 
 - conversation: id, title, createdAt, updatedAt, nullable lastResponseId, draft, legacy storeNumber, providerId, branchId;
 - message: id, conversationId, role, text, createdAt, nullable advisorTraceId;
 - message product: messageId, position, providerId, productId, branchId, legacy OBI identity where applicable, articleNumber, name, nullable selected-branch stock, nullable centralStock, lossless decimal price text, trusted productUrl, nullable trusted imageUrl, verifiedAt;
 - message source: messageId, position, bounded title, normalized HTTPS URL, nullable citation span;
 - message search action: messageId, position, exact advisor query, storeNumber, reportedTotalCount;
-- message attachment: one row per USER message with bounded metadata and opaque app-private localId; attachment bytes stay outside Room;
+- message attachments: 0–3 ordered rows per USER message with bounded metadata and opaque app-private localIds; attachment bytes stay outside Room;
 - child rows cascade with their message/conversation.
 
-Schema v1 upgrades non-destructively through explicit migrations to v11. The later migrations add provider/branch ownership (v7), provider-owned product identity (v8), central stock (v9), message attachments (v10), and nullable `messages.advisorTraceId` (v11). Historical rows retain safe defaults/nulls rather than being reinterpreted. Search actions and trace IDs are local operational metadata and are not model instructions.
+Schema v1 upgrades non-destructively through explicit migrations to v12. The later migrations add provider/branch ownership (v7), provider-owned product identity (v8), central stock (v9), message attachments (v10), and nullable `messages.advisorTraceId` (v11). Historical rows retain safe defaults/nulls rather than being reinterpreted. Search actions and trace IDs are local operational metadata and are not model instructions.
 
 No API keys, app bearer tokens, provider HTML/cookies, parser internals, raw OpenAI responses, or reasoning data are persisted.
 
