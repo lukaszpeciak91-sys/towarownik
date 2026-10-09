@@ -2421,7 +2421,7 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
              "department_stock": {"department_id": 205, "stock": 4}},
             {"product_id": 581,
              "department_stock": {"department_id": 205, "stock": 999}},
-        ]}, "580")
+        ]}, "580", depstock="205")
         self.assertEqual(2, good["identityBoundRowCount"])
         self.assertEqual([{"branchId": "205", "stock": 4}],
                          good["controlProductRows"])
@@ -2430,9 +2430,32 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
             {"department_stock": {"department_id": 205, "stock": 4}},
             {"product_id": 581,
              "department_stock": {"department_id": 205, "stock": 999}},
-        ]}, "580")
+        ]}, "580", depstock="205")
         self.assertEqual([], bad["controlProductRows"])
         self.assertFalse(bad["usableBatchCandidate"])
+        wrong_requested_id = probe.batch_prices_stock_evidence(url, {
+            "list": [
+                {"product_id": 580, "department_stock":
+                    {"department_id": 205, "stock": 4}},
+                {"product_id": 582, "department_stock":
+                    {"department_id": 205, "stock": 7}},
+            ],
+        }, "580", depstock="205")
+        self.assertFalse(wrong_requested_id["usableBatchCandidate"])
+        wrong_branch = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580, "department_stock":
+                {"department_id": 204, "stock": 4}},
+            {"product_id": 581, "department_stock":
+                {"department_id": 205, "stock": 7}},
+        ]}, "580", depstock="205")
+        self.assertFalse(wrong_branch["usableBatchCandidate"])
+        without_depstock = probe.batch_prices_stock_evidence(url, {"list": [
+            {"product_id": 580, "department_stock":
+                {"department_id": 205, "stock": 4}},
+            {"product_id": 581, "department_stock":
+                {"department_id": 205, "stock": 7}},
+        ]}, "580")
+        self.assertFalse(without_depstock["usableBatchCandidate"])
 
 
 if __name__ == "__main__":
