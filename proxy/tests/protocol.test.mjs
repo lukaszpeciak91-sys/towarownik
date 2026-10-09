@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import {
   LOCAL_TOOL_NAME,
   PROVIDER_LOCAL_TOOL_NAME,
+  ATTACHMENT_MAX_BYTES,
+  MULTIPART_BODY_MAX_BYTES,
+  MULTI_ATTACHMENT_TOTAL_MAX_BYTES,
+  MULTI_MULTIPART_BODY_MAX_BYTES,
 } from "../.test-dist/config.js";
 import { createWorker } from "../.test-dist/index.js";
 
@@ -550,11 +554,69 @@ test("protocol v5 rejects absent, extra or bad parts before OpenAI", async () =>
   assert.equal(fake.captures.length, 0);
 });
 
+test("v5 memory bound preserves a full 16 MiB file and exactly 24 MiB across two files", async () => {
+  assert.equal(ATTACHMENT_MAX_BYTES, 16 * 1024 * 1024);
+  assert.equal(MULTIPART_BODY_MAX_BYTES, ATTACHMENT_MAX_BYTES + 16 * 1024);
+  assert.equal(MULTI_ATTACHMENT_TOTAL_MAX_BYTES, 24 * 1024 * 1024);
+  assert.equal(MULTI_MULTIPART_BODY_MAX_BYTES, MULTI_ATTACHMENT_TOTAL_MAX_BYTES + 16 * 1024);
+
+  const largeJpeg = new Uint8Array(ATTACHMENT_MAX_BYTES);
+  largeJpeg.set(jpegBytes);
+  const first = { ...imagePart, bytes: largeJpeg };
+
+  {
+    const fake = fakeOpenAI(answerPayload());
+    const response = await createWorker(fake.fetch).fetch(
+      multiRequest("/v1/agent/start", v5Start, [first], {
+        contentLength: ATTACHMENT_MAX_BYTES + 1024,
+      }), configuredEnv,
+    );
+    assert.equal(response.status, 200, "single 16 MiB file");
+    const image = fake.captures[0].body.input[0].content[0];
+    assert.equal(image.detail, "high");
+    assert.equal(image.image_url.length,
+      "data:image/jpeg;base64,".length + 4 * Math.ceil(ATTACHMENT_MAX_BYTES / 3));
+  }
+
+  const largePdf = new Uint8Array(MULTI_ATTACHMENT_TOTAL_MAX_BYTES - ATTACHMENT_MAX_BYTES);
+  largePdf.set(pdfBytes);
+  const fake = fakeOpenAI(answerPayload());
+  const response = await createWorker(fake.fetch).fetch(
+    multiRequest("/v1/agent/start", v5Start, [
+      first, { ...pdfPart, bytes: largePdf },
+    ], { contentLength: MULTI_ATTACHMENT_TOTAL_MAX_BYTES + 1024 }),
+    configuredEnv,
+  );
+  assert.equal(response.status, 200, "combined exactly 24 MiB");
+  const content = fake.captures[0].body.input[0].content;
+  assert.deepEqual(content.map((part) => part.type), ["input_image", "input_file"]);
+  assert.equal(content[1].filename, pdfPart.filename);
+  assert.equal(content[1].file_data.length,
+    "data:application/pdf;base64,".length + 4 * Math.ceil(largePdf.length / 3));
+});
+
+test("v5 rejects >24 MiB aggregate even if each part is <=16 MiB", async () => {
+  const largeJpeg = new Uint8Array(ATTACHMENT_MAX_BYTES);
+  largeJpeg.set(jpegBytes);
+  const largePdf = new Uint8Array(MULTI_ATTACHMENT_TOTAL_MAX_BYTES - ATTACHMENT_MAX_BYTES + 1);
+  largePdf.set(pdfBytes);
+  const fake = fakeOpenAI(answerPayload());
+  const response = await createWorker(fake.fetch).fetch(
+    multiRequest("/v1/agent/start", v5Start, [
+      { ...imagePart, bytes: largeJpeg },
+      { ...pdfPart, bytes: largePdf },
+    ], { contentLength: MULTI_ATTACHMENT_TOTAL_MAX_BYTES + 1024 }),
+    configuredEnv,
+  );
+  assert.equal(response.status, 413);
+  assert.equal(fake.captures.length, 0, "invalid aggregate never reaches OpenAI");
+});
+
 test("protocol v5 enforces total Content-Length before multipart parsing", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
   const req = multiRequest("/v1/agent/start", v5Start, [imagePart], {
-    contentLength: 3 * 16 * 1024 * 1024 + 16 * 1024 + 1,
+    contentLength: MULTI_MULTIPART_BODY_MAX_BYTES + 1,
   });
   let parsed = false;
   Object.defineProperty(req, "formData", {
