@@ -2209,47 +2209,150 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
             "580", self.DIRECTORY,
         )
 
-    def test_semantic_button_selects_exact_aria_label_only(self):
-        class Button:
-            def is_visible(self): return True
-            def is_enabled(self): return True
-        class Found:
-            def count(self): return 1
-            first = Button()
-        class Page:
-            def get_by_role(self, role, name):
-                self.last_role, self.last_pattern = role, name
-                return Found()
-        page = Page()
-        self.assertIs(probe.availability_button(page), Found.first)
-        self.assertEqual("button", page.last_role)
-        self.assertIsNotNone(page.last_pattern.fullmatch(
-            "Sprawdź stan i kup towar w oddziałach Kwant"))
-        self.assertIsNone(page.last_pattern.fullmatch("Dodaj do koszyka"))
+    class FakeClickableParent:
+        def __init__(self, text, *, visible=True, enabled=True, role="button"):
+            self.text = text
+            self.visible = visible
+            self.enabled = enabled
+            self.role = role
+            self.clicks = 0
 
-    def test_one_visible_button_when_responsive_duplicate_is_hidden(self):
-        class Button:
-            def __init__(self, visible):
-                self.visible = visible
-            def is_visible(self): return self.visible
-            def is_enabled(self): return True
-        buttons = [Button(False), Button(True)]
-        class Found:
-            first = buttons[0]
-            def count(self): return 2
-            def nth(self, index): return buttons[index]
+        def get_attribute(self, attr):
+            return self.role if attr == "role" else None
+
+        def inner_text(self, timeout=1200):
+            return self.text
+
+        def is_visible(self):
+            return self.visible
+
+        def is_enabled(self):
+            return self.enabled
+
+        def click(self):
+            self.clicks += 1
+
+    @staticmethod
+    def fake_availability_page(parents):
+        """Use the observed DOM split: labelled child, clickable ancestor."""
+        class Ancestor:
+            def __init__(self, parent):
+                self.parent = parent
+
+            def count(self):
+                return 1
+
+            @property
+            def first(self):
+                return self.parent
+
+        class Child:
+            def __init__(self, parent):
+                self.parent = parent
+
+            def is_visible(self):
+                return self.parent.is_visible()
+
+            def locator(self, selector):
+                assert selector == probe.AVAILABILITY_PARENT_SELECTOR
+                return Ancestor(self.parent)
+
+        class Descendants:
+            def __init__(self, parents):
+                self.children = [Child(p) for p in parents]
+
+            def count(self):
+                return len(self.children)
+
+            def nth(self, index):
+                return self.children[index]
+
         class Page:
-            def get_by_role(self, role, name): return Found()
-        self.assertIs(probe.availability_button(Page()), buttons[1])
-        buttons[0].visible = True
-        self.assertIsNone(probe.availability_button(Page()))
+            def __init__(self, parents):
+                self.children = Descendants(parents)
+                self.last_selector = None
+
+            def locator(self, selector):
+                self.last_selector = selector
+                return self.children
+
+        return Page(parents)
+
+    def test_aria_child_clickable_parent_and_duplicate_expert_row(self):
+        stock = self.FakeClickableParent("424 szt. w Nowy Sącz")
+        expert = self.FakeClickableParent("Zapytaj eksperta")
+        for order in ((expert, stock), (stock, expert)):
+            with self.subTest(first=order[0].text):
+                page = self.fake_availability_page(order)
+                target = probe.availability_button(page, "Nowy Sącz")
+                self.assertIs(target, stock)
+                self.assertEqual(
+                    probe.AVAILABILITY_CHILD_SELECTOR, page.last_selector
+                )
+                self.assertNotEqual(target, expert)
+        chosen = probe.availability_button(
+            self.fake_availability_page([expert, stock]), "Nowy Sącz"
+        )
+        chosen.click()
+        self.assertEqual(1, stock.clicks)
+        self.assertEqual(0, expert.clicks)
+
+    def test_zero_and_unavailable_stock_row_still_resolve(self):
+        expert = self.FakeClickableParent("Zapytaj eksperta")
+        for phrase in (
+            "0 szt. w Nowy Sącz",
+            "Brak w Nowy Sącz",
+            "Niedostępny w Nowy Sącz",
+        ):
+            with self.subTest(phrase=phrase):
+                target = self.FakeClickableParent(phrase)
+                page = self.fake_availability_page([expert, target])
+                self.assertIs(
+                    probe.availability_button(page, "Nowy Sącz"), target
+                )
+
+    def test_selected_branch_missing_expert_or_other_branch_not_clicked(self):
+        expert = self.FakeClickableParent("Zapytaj eksperta")
+        other = self.FakeClickableParent("424 szt. w Tarnów")
+        page = self.fake_availability_page([expert, other])
+        self.assertIsNone(probe.availability_button(page, "Nowy Sącz"))
+        self.assertEqual(0, expert.clicks)
+        self.assertEqual(0, other.clicks)
+        self.assertEqual(
+            "F_INCONCLUSIVE",
+            probe.classify_locations_contract(
+                [], self.DIRECTORY, "580"
+            )["type"],
+        )
+
+    def test_multiple_stock_rows_or_disabled_stock_row_fail_closed(self):
+        first = self.FakeClickableParent("424 szt. w Nowy Sącz")
+        second = self.FakeClickableParent("0 szt. w Nowy Sącz")
+        self.assertIsNone(probe.availability_button(
+            self.fake_availability_page([first, second]), "Nowy Sącz"
+        ))
+        disabled = self.FakeClickableParent(
+            "424 szt. w Nowy Sącz", enabled=False
+        )
+        self.assertIsNone(probe.availability_button(
+            self.fake_availability_page([disabled]), "Nowy Sącz"
+        ))
+        hidden = self.FakeClickableParent(
+            "424 szt. w Nowy Sącz", visible=False
+        )
+        self.assertIsNone(probe.availability_button(
+            self.fake_availability_page([hidden]), "Nowy Sącz"
+        ))
+        self.assertIsNone(probe.availability_button(
+            self.fake_availability_page([first]), ""
+        ))
 
     def test_no_availability_button_is_inconclusive_not_endpoint_absent(self):
-        class NotFound:
-            def count(self): return 0
-        class Page:
-            def get_by_role(self, role, name): return NotFound()
-        self.assertIsNone(probe.availability_button(Page()))
+        self.assertIsNone(
+            probe.availability_button(
+                self.fake_availability_page([]), "Nowy Sącz"
+            )
+        )
         result = probe.classify_locations_contract([], self.DIRECTORY, "580")
         self.assertEqual("F_INCONCLUSIVE", result["type"])
 
