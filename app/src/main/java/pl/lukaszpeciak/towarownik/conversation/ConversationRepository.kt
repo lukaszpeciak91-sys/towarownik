@@ -125,12 +125,15 @@ internal data class PersistedMessage(
     val sources: List<PersistedWebSource> = emptyList(),
     val searchActions: List<PersistedSearchAction> = emptyList(),
     val attachment: AdvisorAttachment? = null,
+    val attachments: List<AdvisorAttachment> = listOfNotNull(attachment),
 )
 
 internal data class FailedAdvisorTurnRecovery(
     val conversation: PersistedConversation?,
-    val pendingAttachment: AdvisorAttachment?,
-)
+    val pendingAttachments: List<AdvisorAttachment>,
+) {
+    val pendingAttachment: AdvisorAttachment? get() = pendingAttachments.firstOrNull()
+}
 
 internal data class UserTurnStart(
     val conversationId: Long,
@@ -207,21 +210,25 @@ internal class ConversationRepository(
         createdAt: Long = now(),
         workingProfile: WorkingProfile = DEFAULT_WORKING_PROFILE,
         attachment: AdvisorAttachment? = null,
+        attachments: List<AdvisorAttachment> = listOfNotNull(attachment),
     ): UserTurnStart {
         val normalized = normalizeConversationText(text)
-        require(normalized.isNotBlank() || attachment != null)
+        require(normalized.isNotBlank() || attachments.isNotEmpty())
+        require(attachments.size <= 3)
+        require(attachments.map { it.localId }.distinct().size == attachments.size)
+        require(attachments.sumOf { it.byteSize } <= 24L * 1024 * 1024)
 
         return if (conversationId == null) {
             val (newId, previousResponseId) =
                 dao.createWithFirstUserMessage(
                     title = deriveConversationTitle(
-                        normalized.ifBlank { attachment?.displayName.orEmpty() },
+                        normalized.ifBlank { attachments.firstOrNull()?.displayName.orEmpty() },
                     ),
                     text = normalized,
                     createdAt = createdAt,
                     providerId = workingProfile.providerId.value,
                     branchId = workingProfile.branchId.value,
-                    attachment = attachment,
+                    attachments = attachments,
                 )
             UserTurnStart(
                 conversationId = newId,
@@ -237,7 +244,7 @@ internal class ConversationRepository(
                     createdAt = createdAt,
                     expectedProviderId = workingProfile.providerId.value,
                     expectedBranchId = workingProfile.branchId.value,
-                    attachment = attachment,
+                    attachments = attachments,
                 ),
                 workingProfile = workingProfile,
             )
@@ -298,17 +305,20 @@ internal class ConversationRepository(
     suspend fun recoverFailedAdvisorTurn(
         conversationId: Long,
         claimPendingAttachment: (AdvisorAttachment) -> Boolean,
+        claimPendingAttachments: ((List<AdvisorAttachment>) -> Boolean)? = null,
     ): FailedAdvisorTurnRecovery {
-        val attachment = dao.getLastMessageAttachment(conversationId)
-            ?.toAdvisorAttachmentOrNull()
-            ?.takeIf { candidate ->
+        val attachments = dao.getLastMessageAttachments(conversationId)
+            .mapNotNull { it.toAdvisorAttachmentOrNull() }
+            .filter { candidate ->
                 attachmentStorage?.exists(candidate.localId) != false
             }
+        val claimed = claimPendingAttachments?.invoke(attachments)
+            ?: attachments.all(claimPendingAttachment)
 
-        if (attachment != null && !claimPendingAttachment(attachment)) {
+        if (!claimed) {
             return FailedAdvisorTurnRecovery(
                 conversation = load(conversationId),
-                pendingAttachment = null,
+                pendingAttachments = emptyList(),
             )
         }
 
@@ -318,23 +328,21 @@ internal class ConversationRepository(
         )
         return FailedAdvisorTurnRecovery(
             conversation = load(conversationId),
-            pendingAttachment = attachment.takeIf { recovered },
+            pendingAttachments = attachments.takeIf { recovered }.orEmpty(),
         )
     }
 
     private suspend fun recoverInterruptedTurnAndCleanup(
         conversationId: Long,
     ) {
-        val attachmentId =
-            dao.getLastMessageAttachmentId(conversationId)
+        val attachmentIds =
+            dao.getLastMessageAttachmentIds(conversationId)
         val recovered = dao.recoverInterruptedTurn(
             conversationId = conversationId,
             recoveredAt = now(),
         )
-        if (recovered && attachmentId != null) {
-            runCatching {
-                attachmentStorage?.delete(attachmentId)
-            }
+        if (recovered && attachmentIds.isNotEmpty()) {
+            runCatching { attachmentStorage?.deleteAll(attachmentIds) }
         }
     }
 
@@ -460,20 +468,15 @@ private fun ConversationWithMessages.toPersisted(
                                 reportedTotalCount = action.reportedTotalCount,
                             )
                         },
-                    attachment = item.attachments.singleOrNull()?.let { value ->
-                        validatedAttachmentOrNull(
-                            type = value.type,
-                            displayName = value.displayName,
-                            mimeType = value.mimeType,
-                            localId = value.localId,
-                            byteSize = value.byteSize,
-                            width = value.width,
-                            height = value.height,
-                            createdAt = value.createdAt,
-                        )?.takeIf { attachment ->
-                            attachmentStorage?.exists(attachment.localId) != false
-                        }
-                    },
+                    attachments = item.attachments
+                        .sortedBy { it.position }
+                        .mapNotNull { it.toAdvisorAttachmentOrNull() },
+                    attachment = item.attachments
+                        .sortedBy { it.position }
+                        .mapNotNull { it.toAdvisorAttachmentOrNull() }
+                        .firstOrNull { candidate ->
+                            attachmentStorage?.exists(candidate.localId) != false
+                        },
                 )
             },
     )
