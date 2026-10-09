@@ -3242,7 +3242,8 @@ def inspect_availability_dom(
     """Bounded UI-only evidence. A visible name never proves a department ID."""
     result: dict[str, Any] = {
         "scopedListFound": False, "visibleDirectoryNames": [],
-        "explicitBranchIds": [], "zeroLabelVisible": False,
+        "explicitBranchIds": [], "explicitBranchLinkIds": [],
+        "zeroLabelVisible": False,
         "quantityTextVisible": False, "centralLabelVisible": False,
         "filterVisible": False,
     }
@@ -3290,6 +3291,18 @@ def inspect_availability_dom(
                 if bid in directory:
                     identifiers.add(bid)
         result["explicitBranchIds"] = sorted(identifiers)[:60]
+        links = scope.locator("a[href*='lista-hurtowni-elektrycznych']")
+        link_ids: set[str] = set()
+        for index in range(min(links.count(), 70)):
+            href = links.nth(index).get_attribute("href") or ""
+            absolute = urljoin(KWANT_ORIGIN, href)
+            safe, _ = sanitize_kwant_url(absolute)
+            if not safe:
+                continue
+            bid = extract_branch_page_identifier(absolute)
+            if bid in directory:
+                link_ids.add(bid)
+        result["explicitBranchLinkIds"] = sorted(link_ids)[:60]
     except Exception:
         result["inspectionFailed"] = True
     return result
