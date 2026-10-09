@@ -47,6 +47,30 @@ class AdvisorAttachmentTransportTest {
         )
     }
 
+    private fun largePart(
+        storage: AttachmentStorage,
+        name: String,
+        type: AttachmentType,
+        byteSize: Int,
+    ): pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment {
+        val bytes = ByteArray(byteSize)
+        val signature = if (type == AttachmentType.PDF) {
+            byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2d)
+        } else {
+            byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte())
+        }
+        signature.copyInto(bytes)
+        return storage.importValidated(
+            type = type,
+            displayName = name,
+            mimeType = if (type == AttachmentType.PDF) "application/pdf" else "image/jpeg",
+            byteSize = byteSize.toLong(),
+            width = if (type == AttachmentType.IMAGE) 1 else null,
+            height = if (type == AttachmentType.IMAGE) 1 else null,
+            source = { ByteArrayInputStream(bytes) },
+        )
+    }
+
     private fun multiAnswer() = MockResponse()
         .setHeader("Content-Type", "application/json")
         .setBody("""{"type":"answer","responseId":"resp_multi","text":"ok","productRefs":[]}""")
@@ -113,6 +137,31 @@ class AdvisorAttachmentTransportTest {
     }
 
     @Test
+    fun v5AcceptsSixteenMiBPerFileAndTwentyFourMiBAggregate() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        val one = largePart(storage, "full16.jpg", AttachmentType.IMAGE, 16 * 1024 * 1024)
+        val two = largePart(storage, "extra8.pdf", AttachmentType.PDF, 8 * 1024 * 1024)
+        val totalCap = 24L * 1024 * 1024
+        val bodyCap = totalCap + 16 * 1024
+        MockWebServer().use { server ->
+            repeat(2) { server.enqueue(multiAnswer()) }
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            for (files in listOf(listOf(one), listOf(one, two))) {
+                val result = client.start("", "kwant-pl", "205", attachments = files)
+                assertTrue(result is AdvisorProxyCallResult.Success)
+                val request = server.takeRequest()
+                assertEquals("5", request.getHeader("X-Taksula-Attachment-Protocol"))
+                val payloadSize = files.sumOf { it.byteSize }
+                assertTrue(request.body.size >= payloadSize)
+                assertTrue(request.body.size <= bodyCap)
+                assertTrue(request.getHeader("Content-Length")!!.toLong() <= bodyCap)
+            }
+        }
+    }
+
+    @Test
     fun v5RejectsInvalidCountAndMetadataBeforeNetwork() = runBlocking {
         val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
         val file = importPart(storage, "one.pdf", AttachmentType.PDF)
@@ -126,6 +175,11 @@ class AdvisorAttachmentTransportTest {
                 listOf(file, image, file, image),
                 listOf(file, image.copy(mimeType = "application/pdf")),
                 listOf(file, image.copy(byteSize = 16L * 1024 * 1024 + 1)),
+                // Neither individual part exceeds 16 MiB, but combined bytes exceed 24 MiB.
+                listOf(
+                    file.copy(byteSize = 16L * 1024 * 1024),
+                    image.copy(byteSize = 8L * 1024 * 1024 + 1),
+                ),
             )
             for (files in variants) {
                 assertEquals(
