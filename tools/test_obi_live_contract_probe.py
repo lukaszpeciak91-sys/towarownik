@@ -1024,6 +1024,38 @@ class MultiMarketResearchTest(unittest.TestCase):
                 {**request, "path": path}, self.obik
             ))
 
+    def test_live_five_stock_request_proves_open_effect_not_inventory(self):
+        r = self.r
+        phase = ["initial:page"]
+        r.begin_availability_open_phase(phase)
+        self.assertEqual("availability:open", phase[0])
+        request = r.safe_url_request(
+            "GET",
+            "https://www.obi.pl/api/pdp/v1/stock/3496072?storeIds=003%2C075",
+            None, self.obik, self.stores
+        )
+        request["action"] = phase[0]
+        # No modal, expanded attribute or new response is required for a
+        # *request* to prove the handler ran. Stock contract stays F.
+        effect = r.verify_open_observable_effect(
+            {"visibleDialogCount": 0}, {"visibleDialogCount": 0},
+            None, None, [request], [], self.obik,
+        )
+        self.assertTrue(effect["effectObserved"])
+        self.assertEqual(1, effect["newRelevantRequests"])
+        self.assertEqual(0, effect["newProductAvailabilityResponses"])
+        self.assertFalse(effect["newDialog"])
+        self.assertEqual(
+            "F_INCONCLUSIVE",
+            r.classify_contract([], self.stores, self.obik)["type"],
+        )
+        generic = {**request, "path": "/api/pdp/v1/stock/3496073"}
+        unrelated = r.verify_open_observable_effect(
+            {"visibleDialogCount": 0}, {"visibleDialogCount": 0},
+            None, None, [generic], [], self.obik,
+        )
+        self.assertFalse(unrelated["effectObserved"])
+
     def test_store_ids_comma_and_repeated_parameters_keep_sequence(self):
         r = self.r
         for query, sequence in (
