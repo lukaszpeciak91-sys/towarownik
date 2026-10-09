@@ -88,6 +88,15 @@ internal fun reportCategories(
 ): List<ProblemReportCategory> =
     ProblemReportCategory.entries.filter { it.reportType == type }
 
+internal fun advisorFailureDiagnosticForReport(
+    type: ProblemReportType,
+    currentFailureDiagnostic: String?,
+): String? =
+    when (type) {
+        ProblemReportType.ASSISTANT_RESPONSE -> null
+        ProblemReportType.GENERAL -> currentFailureDiagnostic
+    }
+
 internal data class ProblemReportRequest(
     val type: ProblemReportType,
     val category: ProblemReportCategory,
