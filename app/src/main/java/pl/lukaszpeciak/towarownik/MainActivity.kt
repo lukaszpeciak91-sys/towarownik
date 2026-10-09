@@ -499,14 +499,23 @@ private fun TowarownikApp() {
     }
 
     fun clearPendingAttachment() {
+        pickerEpoch++
         invalidateAttachmentImport()
-        val previous = pendingAttachment
-        pendingAttachment = null
-        previous?.let {
-            pendingAttachmentOwnership.clearIfOwned(it.localId)
-            attachmentStorage.delete(it.localId)
+        if (pendingAttachmentOwnership.clearPending(pendingAttachments)) {
+            pendingAttachments = emptyList()
         }
         attachmentError = null
+    }
+
+    fun removePendingAttachment(localId: String) {
+        invalidateAttachmentImport()
+        val dropped = pendingAttachments.filter { it.localId == localId }
+        if (dropped.isEmpty()) return
+        val remaining = pendingAttachments.filterNot { it.localId == localId }
+        if (pendingAttachmentOwnership.publishSelection(remaining, dropped)) {
+            pendingAttachments = remaining
+            attachmentError = null
+        }
     }
 
     fun applyConversation(
@@ -687,8 +696,14 @@ private fun TowarownikApp() {
         if (advisorJob?.isActive == true || attachmentImporting) return
 
         val submitted = advisorCase.draft.trim()
-        val submittedAttachment = pendingAttachment
-        if (submitted.isBlank() && submittedAttachment == null) return
+        val submittedAttachments = pendingAttachments.toList()
+        if (submitted.isBlank() && submittedAttachments.isEmpty()) return
+        if (submittedAttachments.size > MAX_ADVISOR_ATTACHMENTS ||
+            submittedAttachments.sumOf { it.byteSize } > MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+        ) {
+            attachmentError = AttachmentImportError.TOTAL_TOO_LARGE
+            return
+        }
         val turnProfile = selectedWorkingProfile
 
         val generation = advisorRequestGuard.token()
@@ -700,12 +715,10 @@ private fun TowarownikApp() {
                 conversationId = activeConversationId,
                 text = submitted,
                 workingProfile = turnProfile,
-                attachment = submittedAttachment,
+                attachments = submittedAttachments,
             )
-            submittedAttachment?.let {
-                pendingAttachmentOwnership.handoffToPersisted(it.localId)
-            }
-            pendingAttachment = null
+            pendingAttachmentOwnership.handoffToPersisted(submittedAttachments)
+            pendingAttachments = emptyList()
 
             if (!advisorRequestGuard.isTokenCurrent(generation)) {
                 conversationRepository.recoverInterruptedTurn(
@@ -734,7 +747,7 @@ private fun TowarownikApp() {
                     previousResponseId = turn.previousResponseId,
                     conversationStoreNumber = branchId,
                     conversationProviderId = providerId,
-                    attachment = submittedAttachment,
+                    attachments = submittedAttachments,
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(
@@ -826,8 +839,11 @@ private fun TowarownikApp() {
                     val recovery = conversationRepository
                         .recoverFailedAdvisorTurn(
                             conversationId = turn.conversationId,
-                            claimPendingAttachment =
-                                pendingAttachmentOwnership::markPending,
+                            claimPendingAttachment = { item ->
+                                pendingAttachmentOwnership.claimRecovered(listOf(item))
+                            },
+                            claimPendingAttachments =
+                                pendingAttachmentOwnership::claimRecovered,
                         )
                     if (
                         advisorRequestGuard.isCurrent(
@@ -836,7 +852,7 @@ private fun TowarownikApp() {
                             activeConversationId = activeConversationId,
                         )
                     ) {
-                        pendingAttachment = recovery.pendingAttachment
+                        pendingAttachments = recovery.pendingAttachments
                         applyConversation(recovery.conversation)
                         advisorState = finalState
                     }
