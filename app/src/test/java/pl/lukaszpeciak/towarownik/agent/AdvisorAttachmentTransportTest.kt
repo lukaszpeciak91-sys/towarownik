@@ -99,10 +99,60 @@ class AdvisorAttachmentTransportTest {
             assertTrue(body.contains("\"protocolVersion\":4"))
             assertTrue(body.contains("%PDF-"))
             assertEquals("/v1/agent/start", request.path)
+            assertEquals(
+                null,
+                request.getHeader(ADVISOR_TRACE_HEADER),
+            )
         }
     }
+
+    @Test
+    fun `attachment message starts a fresh trace and sends no prior trace header`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val storage = AttachmentStorage(context)
+        val bytes = byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2d)
+        val attachment = storage.importValidated(
+            type = AttachmentType.PDF,
+            displayName = "message.pdf",
+            mimeType = "application/pdf",
+            byteSize = bytes.size.toLong(),
+            source = { ByteArrayInputStream(bytes) },
+        )
+
+        MockWebServer().use { server ->
+            val trace = "77777777-7777-4777-8777-777777777777"
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setHeader(ADVISOR_TRACE_HEADER, trace)
+                    .setBody(
+                        """{"type":"answer","responseId":"resp_2","text":"ok","productRefs":[]}""",
+                    ),
+            )
+            val client = AdvisorProxyClient(
+                appToken = "token",
+                baseUrl = server.url("/"),
+                attachmentStorage = storage,
+            )
+
+            val result = client.message(
+                previousResponseId = "resp_previous",
+                message = "follow up",
+                providerId = "obi-pl",
+                branchId = "075",
+                attachment = attachment,
+            ) as AdvisorProxyCallResult.Success
+
+            val request = server.takeRequest()
+            assertEquals("/v1/agent/message", request.path)
+            assertEquals(null, request.getHeader(ADVISOR_TRACE_HEADER))
+            assertEquals(trace, result.traceId)
+        }
+    }
+
     @Test
     fun `OBI attachment tool turn stays protocol v4 through continuation and grounds the verified card`() = runBlocking {
+        val turnTrace = "88888888-8888-4888-8888-888888888888"
         val context = ApplicationProvider.getApplicationContext<Context>()
         val storage = AttachmentStorage(context)
         val bytes = byteArrayOf(0x25, 0x50, 0x44, 0x46, 0x2d)
@@ -118,6 +168,7 @@ class AdvisorAttachmentTransportTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
+                    .setHeader(ADVISOR_TRACE_HEADER, turnTrace)
                     .setBody(
                         """
                         {
@@ -141,6 +192,7 @@ class AdvisorAttachmentTransportTest {
             server.enqueue(
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
+                    .setHeader(ADVISOR_TRACE_HEADER, turnTrace)
                     .setBody(
                         """
                         {
@@ -201,6 +253,26 @@ class AdvisorAttachmentTransportTest {
                         branchId = branchId,
                         contract = contract,
                         continuation = continuation,
+                    )
+                },
+                continueAgentWithTrace = {
+                        responseId,
+                        callId,
+                        providerId,
+                        branchId,
+                        contract,
+                        continuation,
+                        traceId,
+                    ->
+                    continueAdvisorToolTurn(
+                        proxyClient = client,
+                        responseId = responseId,
+                        callId = callId,
+                        providerId = providerId,
+                        branchId = branchId,
+                        contract = contract,
+                        continuation = continuation,
+                        traceId = traceId,
                     )
                 },
                 executeObiTool = { arguments ->
@@ -267,12 +339,14 @@ class AdvisorAttachmentTransportTest {
             assertTrue(final is AdvisorUiState.Success)
             final as AdvisorUiState.Success
             assertEquals("resp_final", final.responseId)
+            assertEquals(turnTrace, final.traceId)
             assertEquals(listOf(snapshot), final.products)
             assertEquals(1, obiExecutions)
             assertEquals(0, providerExecutions)
 
             val startRequest = server.takeRequest()
             assertEquals("/v1/agent/start", startRequest.path)
+            assertEquals(null, startRequest.getHeader(ADVISOR_TRACE_HEADER))
             assertTrue(
                 startRequest.getHeader("Content-Type")
                     ?.startsWith("multipart/form-data;") == true,
@@ -284,6 +358,10 @@ class AdvisorAttachmentTransportTest {
 
             val continueRequest = server.takeRequest()
             assertEquals("/v1/agent/continue", continueRequest.path)
+            assertEquals(
+                turnTrace,
+                continueRequest.getHeader(ADVISOR_TRACE_HEADER),
+            )
             val continueBody = Json.parseToJsonElement(
                 continueRequest.body.readUtf8(),
             ).jsonObject
