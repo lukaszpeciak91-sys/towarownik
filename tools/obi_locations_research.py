@@ -890,33 +890,56 @@ def run_browser(obik: str, store: str, other_markets: list[str],
             elif not nuxt.get("selectedStoreVerified"):
                 result["reason"] = "SELECTED_STORE_NOT_VERIFIED_IN_PRODUCT_NUXT"
             else:
-                before = _stored_state(context, page)
-                action[0] = "availability:open"
-                control = click_safe_control(page, result["visibleControls"])
-                result["uiActions"].append({"action": "availability:open", **control})
-                if control["status"] == "CLICKED":
-                    for target in other_markets[:2]:
-                        action[0] = "availability:store-" + target
-                        outcome = _try_market_choice(page, target, stores)
-                        result["uiActions"].append({
-                            "action": "availability:store-check", **outcome
-                        })
-                        # Stop if the overlay/selector did not provide the row.
-                        if outcome["status"] != "CLICKED":
-                            break
-                if control["status"] == "CLICKED":
-                    after = _stored_state(context, page)
-                    if before[0] is not None and after[0] is not None:
-                        result["selectedStoreMutation"] = (
-                            "COOKIE_STATE_CHANGED" if before[0] != after[0]
-                            else "COOKIE_STATE_UNCHANGED"
-                        )
-                        result["localStorageChanged"] = (
-                            None if before[1] is None or after[1] is None
-                            else before[1] != after[1]
-                        )
+                initial_contract = classify_contract(
+                    observations, stores, obik, nuxt,
+                )
+                if initial_contract["type"] == "A_ONE_SHOT_ALL_STORES":
+                    # A real initial-page response already covers all markets;
+                    # no store-state mutation/click is needed merely to probe.
+                    result["uiActions"].append({
+                        "action": "availability:open",
+                        "status": "SKIPPED_COMPLETE_INITIAL_CONTRACT",
+                    })
+                    result["selectedStoreMutation"] = "NOT_TESTED_NO_UI_INTERACTION"
                 else:
-                    result["selectedStoreMutation"] = "NOT_TESTED_NO_SAFE_CONTROL"
+                    before = _stored_state(context, page)
+                    action[0] = "availability:open"
+                    control = click_safe_control(page, result["visibleControls"])
+                    result["uiActions"].append({
+                        "action": "availability:open", **control,
+                    })
+                    if control["status"] == "CLICKED":
+                        result["controlsAfterOpen"] = discover_controls(page)
+                        post_open_contract = classify_contract(
+                            observations, stores, obik, nuxt,
+                        )
+                        if post_open_contract["type"] == "A_ONE_SHOT_ALL_STORES":
+                            result["uiActions"].append({
+                                "action": "availability:other-stores",
+                                "status": "SKIPPED_COMPLETE_PRODUCT_CONTRACT",
+                            })
+                        else:
+                            for target in other_markets[:2]:
+                                action[0] = "availability:store-" + target
+                                outcome = _try_market_choice(page, target, stores)
+                                result["uiActions"].append({
+                                    "action": "availability:store-check", **outcome,
+                                })
+                                if outcome["status"] != "CLICKED":
+                                    break
+                    if control["status"] == "CLICKED":
+                        after = _stored_state(context, page)
+                        if before[0] is not None and after[0] is not None:
+                            result["selectedStoreMutation"] = (
+                                "COOKIE_STATE_CHANGED" if before[0] != after[0]
+                                else "COOKIE_STATE_UNCHANGED"
+                            )
+                            result["localStorageChanged"] = (
+                                None if before[1] is None or after[1] is None
+                                else before[1] != after[1]
+                            )
+                    else:
+                        result["selectedStoreMutation"] = "NOT_TESTED_NO_SAFE_CONTROL"
             result["contractClassification"] = classify_contract(
                 observations, stores, obik, nuxt,
             )
@@ -943,6 +966,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
         f"contractClassification={json.dumps(result['contractClassification'])}",
         f"initialNuxt={json.dumps(result['initialNuxt'], ensure_ascii=False)}",
         f"visibleControls={json.dumps(result['visibleControls'], ensure_ascii=False)}",
+        f"controlsAfterOpen={json.dumps(result.get('controlsAfterOpen', []), ensure_ascii=False)}",
         f"uiActions={json.dumps(result['uiActions'], ensure_ascii=False)}",
         f"selectedStoreMutation={result['selectedStoreMutation']}",
         f"requestCountByAction={json.dumps(result['requestCountByAction'])}",
