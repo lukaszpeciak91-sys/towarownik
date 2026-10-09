@@ -236,11 +236,10 @@ invoke.
   **not** supersede search-with-\`depstock\` when that produces
   independently corroborated control stock.
 
-**Next required gate:** dispatch the updated manual workflow from PR #98
-*after these fixes* and audit sanitized \`locationsResearch\` only if the
-correct stock-row parent opens. **The all-branches contract remains
-unresolved; there is no new post-fix live finding.** No guessed endpoints
-or production network calls were added.
+**Historical status after run #17:** a manual probe was still needed to open
+the correct stock-row parent. **Run #18 has since satisfied this gate and
+confirmed the one-shot 21/21 branch response, as documented below.**
+No guessed endpoints or production network calls were added.
 
 ## Live run #18 — confirmed public frontend contract (9 October 2026)
 
