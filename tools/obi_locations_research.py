@@ -802,6 +802,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
     observations = result["observations"]
     requests = result["observedRequests"]
     action = ["initial:page"]
+    request_phase: dict[int, str] = {}
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
@@ -814,13 +815,16 @@ def run_browser(obik: str, store: str, other_markets: list[str],
             )
             page = context.new_page()
             def record_response(response: Any) -> None:
-                if (len(observations) >= MAX_RECORDS
-                        or (action[0] == "initial:page" and sum(
-                            r["action"] == "initial:page" for r in observations
-                        ) >= 25)):
-                    return
                 try:
                     request = response.request
+                    # Attribute a response to the phase of its REQUEST,
+                    # never to whatever control happens to be active later.
+                    phase = request_phase.get(id(request), "UNATTRIBUTED_REQUEST")
+                    if (len(observations) >= MAX_RECORDS
+                            or (phase == "initial:page" and sum(
+                                r["action"] == "initial:page" for r in observations
+                            ) >= 25)):
+                        return
                     if request.resource_type not in ("xhr", "fetch", "document"):
                         return
                     safe = safe_url_request(
@@ -842,7 +846,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                     )
                     # Keep bounded shape, not raw JSON or response headers.
                     observations.append({
-                        "action": action[0], **safe,
+                        "action": phase, **safe,
                         "status": response.status, "shape": shape,
                     })
                 except Exception:
@@ -862,6 +866,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                         obik, stores,
                     )
                     if safe is not None:
+                        request_phase[id(request)] = action[0]
                         requests.append({"action": action[0], **safe})
                 except Exception:
                     return
