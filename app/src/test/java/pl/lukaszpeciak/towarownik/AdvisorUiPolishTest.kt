@@ -7,8 +7,36 @@ import org.junit.Assert.assertTrue
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 
 class AdvisorUiPolishTest {
+    @Test
+    fun chatStateRoundTripsThreeOrderedAttachments() {
+        fun sample(id: String, name: String) = AdvisorAttachment(
+            type = AttachmentType.PDF,
+            displayName = name, mimeType = "application/pdf",
+            localId = id.repeat(32), byteSize = 42,
+            createdAt = 12,
+        )
+        val attachments = listOf(
+            sample("a", "one.pdf"), sample("b", "two.pdf"), sample("c", "three.pdf"),
+        )
+        val state = AdvisorCaseUiState(messages = listOf(
+            AdvisorChatMessage(
+                role = ChatMessageRole.USER,
+                text = "Compare",
+                createdAt = 123,
+                attachments = attachments,
+            ),
+        ))
+        val restored = restoreAdvisorCase(saveAdvisorCase(state))
+        assertEquals(
+            attachments.map { it.localId },
+            restored.messages.single().attachments.map { it.localId },
+        )
+    }
+
     @Test
     fun `local tool progress label follows active provider`() {
         assertEquals(
