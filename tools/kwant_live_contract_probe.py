@@ -1612,6 +1612,18 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
             "completeness=" + str(locations.get("completeness", UNKNOWN)),
             "aggregateReconciliation=" + str(locations.get("aggregateReconciliation", "NOT_EVALUATED")),
             "uiActions=" + format_scalar(locations.get("uiActions", [])),
+            "availabilitySelector=" + str(locations.get("availabilitySelector", UNKNOWN)),
+            "availabilityControlFound=" + format_scalar(locations.get("availabilityControlFound", False)),
+            "contractClassification=" + format_scalar(locations.get("contractClassification", {})),
+            "availabilityUi=" + format_scalar(locations.get("availabilityUi", {})),
+            "filterResearch=" + format_scalar(locations.get("filterResearch", {})),
+            "searchRequestDepstockObserved=" + format_scalar(locations.get("searchRequestDepstockObserved", False)),
+            "batchPricesResearch=" + format_scalar(locations.get("batchPricesResearch", [])),
+            "selectedBranchStock=" + format_scalar(locations.get("selectedBranchStock")),
+            "selectedBranchStockSource=" + str(locations.get("selectedBranchStockSource", UNKNOWN)),
+            "centralStock=" + format_scalar(locations.get("centralStock")),
+            "centralStockSource=" + str(locations.get("centralStockSource", UNKNOWN)),
+            "aggregateBranchStockSource=" + str(locations.get("aggregateBranchStockSource", UNKNOWN)),
         ])
         for observed in locations.get("observedResponses", []):
             lines.append("observed=" + format_scalar(observed))
@@ -2790,6 +2802,7 @@ def run_live_probe(
             page, recorder, locations_capture,
             product_id=numeric_product_id,
             branch_html=branch_html_for_locations,
+            selected_branch_id=str(department_stock_id) if department_stock_id != UNKNOWN else "",
         )
         recorder.set_action("home:after-locations")
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
@@ -2899,7 +2912,30 @@ def run_live_probe(
             department_cookie_research=department_cookie_research,
             numeric_product_route=numeric_product_route,
         )
-        summary['locationsResearch'] = locations_research
+        # Generic full-page regexes can read recommended-product stock.
+        # Replace *all* displayed stock scopes with exact-product evidence.
+        for candidate in (
+            summary["product"],
+            summary["product"].get("beforeBranchSelection", {}),
+            summary["product"].get("afterBranchSelection", {}),
+        ):
+            if isinstance(candidate, dict):
+                for field in (
+                    "selectedBranchStock", "centralStock", "aggregateBranchStock"
+                ):
+                    candidate[field] = UNKNOWN
+        for field, loc_key in (
+            ("selectedBranchStock", "selectedBranchStock"),
+            ("centralStock", "centralStock"),
+            ("aggregateBranchStock", "aggregateBranchStock"),
+        ):
+            quantity = locations_research.get(loc_key)
+            if quantity not in (None, UNKNOWN):
+                summary["product"][field] = quantity
+            summary["product"][field + "Source"] = locations_research.get(
+                loc_key + "Source", "UNKNOWN"
+            )
+        summary["locationsResearch"] = locations_research
         browser.close()
         return summary
 
@@ -3741,21 +3777,33 @@ def research_product_locations(
     *,
     product_id: str,
     branch_html: str,
+    selected_branch_id: str = "205",
 ) -> dict[str, Any]:
-    """Open known product + availability affordances; no checkout actions."""
+    """Inspect exact-product availability control; never submit a cart action."""
     capture.directory = public_branch_directory_from_html(branch_html)
     result: dict[str, Any] = {
         "productId": product_id,
         "directoryBranchCount": len(capture.directory),
         "verifiedProductPage": False,
+        "availabilitySelector": "role=button; aria-label=" + AVAILABILITY_ARIA_LABEL,
+        "availabilityControlFound": False,
         "productPageShape": {},
         "productPageBranchListCandidate": False,
         "uiActions": [],
+        "availabilityUi": {},
+        "filterResearch": {"classification": "NOT_TOGGLED"},
         "observedResponses": [],
         "oneShotPerBranchResponseObserved": False,
         "candidateMultiBranchResponseObserved": False,
         "completeness": UNKNOWN,
         "aggregateReconciliation": "NOT_EVALUATED",
+        "aggregateBranchStock": UNKNOWN,
+        "aggregateBranchStockSource": "UNKNOWN",
+        "selectedBranchStock": None,
+        "selectedBranchStockSource": "UNKNOWN",
+        "centralStock": None,
+        "centralStockSource": "UNKNOWN",
+        "contractClassification": {"type": "F_INCONCLUSIVE"},
     }
     try:
         recorder.set_action("locations:page")
@@ -3764,58 +3812,107 @@ def research_product_locations(
             wait_until="domcontentloaded",
             timeout=45000,
         )
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(1000)
         if product_page_identifier(page.url) != product_id:
             result["reason"] = "PRODUCT_ID_NOT_VERIFIED"
             return result
         result["verifiedProductPage"] = True
         try:
-            page_json = page.locator("script#__NEXT_DATA__").first.text_content(
-                timeout=1000
+            next_json = page.locator("script#__NEXT_DATA__").first.text_content(
+                timeout=1500
             )
-            page_data = json.loads(page_json or "{}")
+            page_data = json.loads(next_json or "{}")
+            props = page_data.get("props", {}).get("pageProps", {})
+            exact_product = props.get("product") if isinstance(props, dict) else None
+            # Research the exact product subtree only; Next root includes
+            # unrelated recommendation and storefront data.
             result["productPageShape"] = research_json_shape(
-                page_data, product_id, capture.directory
+                exact_product, product_id, capture.directory
             )
+            central = extract_exact_product_central_stock(
+                page_data, product_id
+            )
+            result["centralStock"] = central["stock"]
+            result["centralStockSource"] = central["source"]
             result["productPageBranchListCandidate"] = (
-                result["productPageShape"].get("branchDistinctIds", 0) >= 2
+                result["productPageShape"].get("verifiedDirectoryBranchCount", 0) >= 2
             )
         except Exception:
             result["productPageShape"] = {"status": "UNKNOWN"}
-        body = page.locator("body").inner_text(timeout=6000)
-        result["aggregateBranchStock"] = extract_stock_value(
-            body, r"W\s+oddzia[lł]ach"
-        )
-        result["centralStockVisible"] = extract_stock_value(body, r"Centrala")
-        # Click only public stock/pickup text, never purchase buttons or forms.
-        for label, pattern in (
-            ("branch-aggregate", r"W\s+oddzia[lł]ach\s*:"),
-            ("pickup", r"Odbi[oó]r\s+za\s+godzin[eę]"),
-            ("availability", r"Sprawd[zź]\s+dost[eę]pno[sś][cć]"),
-        ):
+
+        target = availability_button(page)
+        if target is None:
+            result["reason"] = "ACCESSIBLE_AVAILABILITY_BUTTON_NOT_FOUND"
+            return result
+        result["availabilityControlFound"] = True
+        # This text is scoped to the exact availability button, not to full
+        # page body/recommendations. Only a literal aggregate is accepted.
+        try:
+            control_text = target.inner_text(timeout=1200)
+            match = re.search(
+                r"W\s+oddzia[lł]ach\s*:\s*(\d[\d \u00a0]*)\s*szt\.?",
+                control_text, re.I,
+            )
+            if match and parse_public_aggregate_quantity(
+                match.group(1) + " szt."
+            ) is not None:
+                result["aggregateBranchStock"] = match.group(1).strip() + " szt."
+                result["aggregateBranchStockSource"] = "EXACT_AVAILABILITY_BUTTON"
+        except Exception:
+            pass
+
+        recorder.set_action("locations:open-branches")
+        before = len(capture.records)
+        try:
+            target.click(timeout=5000)
+            page.wait_for_timeout(1800)
+            opened = inspect_availability_dom(page, capture.directory)
+            result["availabilityUi"] = opened
+            result["uiActions"].append({
+                "target": "exact-availability-aria-button",
+                "found": True, "clicked": True,
+                "newApiResponses": len(capture.records) - before,
+            })
+        except Exception:
+            result["uiActions"].append({
+                "target": "exact-availability-aria-button",
+                "found": True, "clicked": False,
+            })
+            result["reason"] = "AVAILABILITY_CLICK_FAILED"
+            return result
+
+        # Optional harmless filter. Never click controls representing cart,
+        # purchase, reservation or pickup submission.
+        filter_control = None
+        try:
+            checkbox = page.get_by_role(
+                "checkbox", name=AVAILABLE_ONLY_LABEL_RE
+            )
+            if checkbox.count() == 1 and checkbox.first.is_visible():
+                filter_control = checkbox.first
+            else:
+                label = page.get_by_text(AVAILABLE_ONLY_LABEL_RE)
+                if label.count() == 1 and label.first.is_visible():
+                    filter_control = label.first
+        except Exception:
+            filter_control = None
+        if filter_control is not None:
+            recorder.set_action("locations:available-only-filter")
+            before_filter = len(capture.records)
             try:
-                locator = page.get_by_text(re.compile(pattern, re.I))
-                if locator.count() == 0:
-                    result["uiActions"].append({"target": label, "found": False})
-                    continue
-                target = locator.first
-                if not target.is_visible():
-                    result["uiActions"].append({"target": label, "found": True, "clicked": False})
-                    continue
-                recorder.set_action("locations:" + label)
-                before = len(capture.records)
-                target.click(timeout=4000)
+                filter_control.click(timeout=3000)
                 page.wait_for_timeout(1300)
-                result["uiActions"].append({
-                    "target": label,
-                    "found": True,
-                    "clicked": True,
-                    "newApiResponses": len(capture.records) - before,
-                })
+                filtered = inspect_availability_dom(page, capture.directory)
+                result["filterResearch"] = classify_availability_filter(
+                    opened, filtered,
+                    len(capture.records) - before_filter, True,
+                )
+                result["availabilityUiAfterFilter"] = filtered
             except Exception:
-                result["uiActions"].append({
-                    "target": label, "found": True, "clicked": False
-                })
+                result["filterResearch"] = classify_availability_filter(
+                    opened, opened, 0, False,
+                )
+                result["filterResearch"]["reason"] = "FILTER_CLICK_FAILED"
     except Exception:
         result["reason"] = "PUBLIC_PAGE_UNAVAILABLE"
     finally:
@@ -3825,16 +3922,42 @@ def research_product_locations(
             for row in capture.records
             if row.get("action", "").startswith("locations:")
         )
-        # A structural candidate never establishes a verified one-shot contract.
-        result["oneShotPerBranchResponseObserved"] = False
-        result.update(select_strongest_location_candidate(
-            capture.records,
-            capture.directory,
+        strongest = select_strongest_location_candidate(
+            capture.records, capture.directory,
             result.get("aggregateBranchStock", UNKNOWN),
-        ))
+        )
+        result.update(strongest)
+        result["contractClassification"] = classify_locations_contract(
+            capture.records, capture.directory, product_id,
+            result.get("productPageShape"),
+        )
+        # A structural classification still needs a manual live review.
+        result["oneShotPerBranchResponseObserved"] = (
+            result["contractClassification"]["type"] in (
+                "A_ONE_SHOT_ALL_BRANCHES", "B_ONE_SHOT_POSITIVE_ONLY"
+            )
+        )
+        selected = selected_branch_current_diagnostic(
+            capture.records, product_id, selected_branch_id
+        )
+        result["selectedBranchStock"] = selected["stock"]
+        result["selectedBranchStockSource"] = selected["source"]
         result["searchRankingEvidence"] = summarize_search_ranking_evidence(
             capture.records, capture.directory, product_id
         )
+        result["searchRequestDepstockObserved"] = any(
+            item.get("path") == KWANT_SEARCH_API_PATH
+            and item.get("method") == "POST"
+            and str((item.get("body") or {}).get("safeValues", {}).get(
+                "depstock", ""
+            )) == selected_branch_id
+            for item in capture.records
+        )
+        result["batchPricesResearch"] = [
+            item["batchPrices"]
+            for item in capture.records
+            if "batchPrices" in item
+        ][:8]
     return result
 
 
