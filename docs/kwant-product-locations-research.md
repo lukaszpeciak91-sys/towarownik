@@ -1,6 +1,6 @@
 # KWANT: product availability across locations — live-contract research
 
-Status: **INCONCLUSIVE — a per-branch one-shot endpoint has not been verified** (9 October 2026).
+Status: **INCONCLUSIVE — first live run confirmed selected-branch search stock, but no per-branch all-locations endpoint has been verified** (9 October 2026).
 This document separates existing repository-backed live evidence from questions still requiring a
 new **manual** Playwright network observation. Do not use this document as permission
 to implement a production stock endpoint or to invent branch quantities.
@@ -129,6 +129,92 @@ live workflow has been executed for this research follow-up.
   or a batch inventory service has **not** been live-confirmed. Captured
   `searchHitFields`, `searchHitStockFields` and `searchRankingEvidence`
   distinguish fields from independently corroborated stock scope.
+
+
+## First live run — verified observation and unresolved availability (9 October 2026)
+
+Manual GitHub Actions \`KWANT live contract probe\` run
+[\`37967702694\`](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37967702694),
+at commit \`afe62f2d29e212f62384587ece34b9bd1c630e4e\`,
+**completed successfully**. It establishes the following observations for
+public control product 580 / MBN116E/HAG / selected Nowy Sącz branch 205:
+
+- The selected-branch search request is \`POST /api/front/search-engine/page\`
+  on \`services.kwant.net.pl\` with **\`depstock: 205\`** in the public
+  request body. The control hit contains \`department_stock.department_id=205\`
+  and stock-shaped \`stock\` and \`stock_num\` fields.
+- Independently observed \`GET /api/front/products/580/current?depstock=205\`
+  matched the same product, branch and quantity. Search probe verdict:
+  \`SELECTED_BRANCH_STOCK_PROVEN_FOR_CONTROL\`. This does **not** prove
+  all other search hits or branches.
+- A public batch request was also observed with shape
+  \`GET /api/front/products/prices/<multiple-product-IDs>?depstock=205\`.
+  The first run did not conclusively validate per-row product identity and
+  completeness of that batch response; it remains a candidate for future
+  bounded stock enrichment, not a production dependency.
+- The first probe **did not open** the cross-branch availability UI, so
+  no A–E location contract was verified. The real product page showed
+  a non-cart button whose accessible label is
+  **\`Sprawdź stan i kup towar w oddziałach Kwant\`** and text equivalent to
+  \`Pokaż tylko oddziały w których produkt jest dostępny\`.
+  This button is the target of the next *manual* browser probe.
+- Historical generic whole-page text regexes produced e.g.
+  \`selectedBranchStock=127 szt.\` and \`centralStock=5699 szt.\`
+  from unrelated page text. These figures are **rejected** as exact
+  product facts and should not be reused as stocks. The current-product
+  response showed selected-branch 424 in this run. Exact structured
+  main-product \`product.stock\` is the appropriate separate central source,
+  rather than any occurrence of a \`Centrala\` label in body text.
+
+### Follow-up instrumentation (no subsequent live result yet)
+
+- Selector: Playwright \`page.get_by_role("button", name=re.compile(
+  "^Sprawdź stan i kup towar w oddziałach Kwant$", re.I))\`
+  on the **canonicalized and verified product 580 page**, unique,
+  visible and enabled. Dedicated network action:
+  \`locations:open-branches\`. No shopping/cart button is clicked.
+- Sanitized \`xhr/fetch\` recordings preserve availability responses and
+  reserve capacity after ordinary search traffic. A scoped visible
+  availability dialog/drawer snapshot reports branch names **as display
+  evidence only**, explicit numeric \`data-*\` branch IDs when mapped to the
+  verified directory, quantity/zero labels and separate central label.
+  No full page text is treated as per-branch stock.
+- If the harmless accessible **\`Pokaż tylko oddziały ...\`** filter can be
+  identified, it is toggled once. \`REQUEST_TRIGGERED\` versus
+  \`NO_API_REQUEST_OBSERVED\` distinguishes an observed new request from
+  a likely client-side filter; UI counts/zero-label visibility are compared.
+  It is not possible to infer backend completeness from the label alone.
+- The probe's \`contractClassification.type\` is research-only:
+  \`A_ONE_SHOT_ALL_BRANCHES\`, \`B_ONE_SHOT_POSITIVE_ONLY\`,
+  \`C_FRONTEND_PRELOADED\`, \`D_MULTI_REQUEST_BOUNDED\`,
+  \`E_PER_BRANCH_FANOUT\`, or \`F_INCONCLUSIVE\`. A/B are *structural*
+  candidates (B positive-subset coverage is **not** proof that omitted
+  branches have zero stock), C requires an exact structured product page,
+  D bounded multi-response coverage, and E at least three different
+  product-bound, branch-scoped requests. Product binding must be verified
+  from exact response product identity, a singular product-ID request path,
+  or matching body identity; a generic branch directory alone cannot pass.
+  A match must still pass a manual endpoint-level audit before production.
+- The new \`locationsResearch\` inventory diagnostics distinguish:
+  \`selectedBranchStockSource=CURRENT_IDENTITY_AND_DEPSTOCK_VERIFIED\`
+  (exact root product ID, matching \`department_stock.department_id\`,
+  trusted request host/path/\`depstock\`) and
+  \`centralStockSource=NEXT_DATA_EXACT_PRODUCT_ID\`
+  (main Next pageProps product, exact \`id\`). Aggregate remains
+  \`UNKNOWN\` unless explicitly present *inside the exact availability
+  control*, never regexed from the page body. The top-level safe summary
+  and its nested before/after snapshots no longer present contaminated
+  general-body stock figures.
+- Batch-prices evidence captures only bounded row identity and nested
+  department stock shapes, with independent IDs per row; a record's
+  positional order is not proof of the requested product. This does
+  **not** supersede search-with-\`depstock\` when that produces
+  independently corroborated control stock.
+
+**Next required gate:** dispatch the updated manual workflow from PR #98
+and audit the sanitized \`locationsResearch\` after the accessibility button
+opens. **The all-branches contract remains unresolved; no new run is claimed
+by this update.** No guessed live endpoints or production calls were added.
 
 ## Sanitized example (SYNTHETIC, not a captured KWANT response)
 
