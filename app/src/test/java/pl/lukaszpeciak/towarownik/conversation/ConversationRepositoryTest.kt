@@ -168,6 +168,61 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `assistant trace persists reloads and malformed trace is dropped`() = runBlocking {
+        val trace = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val validTurn = repository.beginUserTurn(
+            conversationId = null,
+            text = "valid trace",
+            createdAt = 100,
+        )
+        repository.completeAssistantTurn(
+            conversationId = validTurn.conversationId,
+            text = "answer",
+            finalResponseId = "resp_final",
+            createdAt = 110,
+            advisorTraceId = trace,
+        )
+
+        val invalidTurn = repository.beginUserTurn(
+            conversationId = null,
+            text = "invalid trace",
+            createdAt = 200,
+        )
+        repository.completeAssistantTurn(
+            conversationId = invalidTurn.conversationId,
+            text = "answer",
+            finalResponseId = "resp_final_2",
+            createdAt = 210,
+            advisorTraceId = "not-a-trace",
+        )
+
+        assertEquals(
+            trace,
+            repository.load(validTurn.conversationId)
+                ?.messages
+                ?.last()
+                ?.advisorTraceId,
+        )
+        assertNull(
+            repository.load(invalidTurn.conversationId)
+                ?.messages
+                ?.last()
+                ?.advisorTraceId,
+        )
+
+        database.close()
+        openDatabase()
+
+        assertEquals(
+            trace,
+            repository.load(validTurn.conversationId)
+                ?.messages
+                ?.last()
+                ?.advisorTraceId,
+        )
+    }
+
+    @Test
     fun `text only turn remains unchanged`() = runBlocking {
         val started = repository.beginUserTurn(null, "  Plain question  ", 101)
         val current = requireNotNull(repository.load(started.conversationId))

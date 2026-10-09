@@ -753,6 +753,7 @@ private fun TowarownikApp() {
                         finalResponseId = finalState.responseId,
                         products = finalState.products,
                         sources = display.sources,
+                        advisorTraceId = finalState.traceId,
                         searchActions = finalState.searchActions.map { action ->
                             PersistedSearchAction(
                                 query = action.query,
@@ -1195,9 +1196,13 @@ private fun TowarownikApp() {
                             conversationId = reportConversationId,
                             reportedMessageId = reportMessageId,
                             advisorFailureDiagnostic =
-                                (advisorState as? AdvisorUiState.Error)
-                                    ?.diagnostic
-                                    ?.reportValue(),
+                                advisorFailureDiagnosticForReport(
+                                    type = reportType,
+                                    currentFailureDiagnostic =
+                                        (advisorState as? AdvisorUiState.Error)
+                                            ?.diagnostic
+                                            ?.reportValue(),
+                                ),
                         )
                         val result = createProblemReportSharePayload(
                             context = uiContext,

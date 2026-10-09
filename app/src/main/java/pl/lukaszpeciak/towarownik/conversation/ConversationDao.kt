@@ -264,6 +264,7 @@ internal abstract class ConversationDao {
         products: List<VerifiedProductSnapshot>,
         sources: List<PersistedWebSource> = emptyList(),
         searchActions: List<PersistedSearchAction> = emptyList(),
+        advisorTraceId: String? = null,
     ) {
         checkNotNull(getConversation(conversationId))
         require(products.size <= 5)
@@ -301,6 +302,7 @@ internal abstract class ConversationDao {
                 role = MESSAGE_ROLE_ASSISTANT,
                 text = text,
                 createdAt = createdAt,
+                advisorTraceId = advisorTraceId,
             ),
         )
         if (products.isNotEmpty()) {

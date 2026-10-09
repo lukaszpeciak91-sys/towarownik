@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
@@ -1284,6 +1285,133 @@ class AdvisorProxyClientTest {
             }
             assertTrue(retainedFactCount < 30)
         }
+    }
+
+    @Test
+    fun `start captures valid Worker trace header`() = runBlocking {
+        MockWebServer().use { server ->
+            val trace = "11111111-1111-4111-8111-111111111111"
+            server.enqueue(
+                answerResponse().setHeader(ADVISOR_TRACE_HEADER, trace),
+            )
+
+            val result = client(server, FAKE_TOKEN)
+                .start("trace me") as AdvisorProxyCallResult.Success
+
+            assertEquals(trace, result.traceId)
+            assertEquals(null, server.takeRequest().getHeader(ADVISOR_TRACE_HEADER))
+        }
+    }
+
+    @Test
+    fun `message captures returned trace without sending a previous turn trace`() = runBlocking {
+        MockWebServer().use { server ->
+            val trace = "22222222-2222-4222-8222-222222222222"
+            server.enqueue(
+                answerResponse().setHeader(
+                    "x-taksula-trace-id",
+                    trace,
+                ),
+            )
+
+            val result = client(server, FAKE_TOKEN).message(
+                previousResponseId = "resp_previous",
+                message = "next turn",
+            ) as AdvisorProxyCallResult.Success
+
+            assertEquals(trace, result.traceId)
+            assertEquals(null, server.takeRequest().getHeader(ADVISOR_TRACE_HEADER))
+        }
+    }
+
+    @Test
+    fun `missing or invalid trace header never fails a valid response`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(answerResponse())
+            server.enqueue(
+                answerResponse().setHeader(
+                    ADVISOR_TRACE_HEADER,
+                    "not-a-uuid",
+                ),
+            )
+            val client = client(server, FAKE_TOKEN)
+
+            val missing = client.start("first")
+            val invalid = client.start("second")
+
+            assertTrue(missing is AdvisorProxyCallResult.Success)
+            assertEquals(
+                null,
+                (missing as AdvisorProxyCallResult.Success).traceId,
+            )
+            assertTrue(invalid is AdvisorProxyCallResult.Success)
+            assertEquals(
+                null,
+                (invalid as AdvisorProxyCallResult.Success).traceId,
+            )
+        }
+    }
+
+    @Test
+    fun `continue sends supplied trace and accepts returned authoritative trace`() = runBlocking {
+        MockWebServer().use { server ->
+            val sent = "33333333-3333-4333-8333-333333333333"
+            val returned = "44444444-4444-4444-8444-444444444444"
+            server.enqueue(
+                answerResponse().setHeader(
+                    ADVISOR_TRACE_HEADER,
+                    returned,
+                ),
+            )
+            val client = client(server, FAKE_TOKEN)
+
+            val result = client.continueTurn(
+                responseId = "resp_previous",
+                callId = "call_previous",
+                storeNumber = "075",
+                continuation = AdvisorToolContinuation.LocalToolLimitReached(
+                    queries = listOf(AdvisorToolQuery("test", 1)),
+                    storeNumber = "075",
+                ),
+                traceId = sent,
+            ) as AdvisorProxyCallResult.Success
+
+            assertEquals(
+                sent,
+                server.takeRequest().getHeader(ADVISOR_TRACE_HEADER),
+            )
+            assertEquals(returned, result.traceId)
+        }
+    }
+
+    @Test
+    fun `http failure keeps valid Worker trace while network failure has none`() = runBlocking {
+        MockWebServer().use { server ->
+            val trace = "55555555-5555-4555-8555-555555555555"
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(502)
+                    .setHeader("Content-Type", "application/json")
+                    .setHeader(ADVISOR_TRACE_HEADER, trace)
+                    .setBody("""{"error":"upstream_failure"}"""),
+            )
+            val client = client(server, FAKE_TOKEN)
+
+            val http = client.start("failure")
+                as AdvisorProxyCallResult.Failure
+            assertEquals(502, http.httpStatus)
+            assertEquals("upstream_failure", http.proxyErrorCode)
+            assertEquals(trace, http.traceId)
+        }
+
+        val unreachable = AdvisorProxyClient(
+            appToken = FAKE_TOKEN,
+            baseUrl = "http://127.0.0.1:1/".toHttpUrl(),
+        )
+        val network = unreachable.start("failure")
+            as AdvisorProxyCallResult.Failure
+        assertEquals(AdvisorProxyFailureKind.NETWORK, network.kind)
+        assertEquals(null, network.traceId)
     }
 
     private fun client(

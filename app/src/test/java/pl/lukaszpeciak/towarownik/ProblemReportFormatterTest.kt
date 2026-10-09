@@ -66,6 +66,157 @@ class ProblemReportFormatterTest {
     }
 
     @Test
+    fun `assistant report includes persisted Advisor trace without conversation context`() {
+        val trace = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val report = ProblemReportFormatter.format(
+            request = assistantRequest(includeConversation = false),
+            evidence = ProblemReportEvidence(
+                conversationId = 44,
+                reportedMessage = assistant(
+                    id = 2,
+                    text = "TARGET",
+                    advisorTraceId = trace,
+                ),
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = null,
+        )
+
+        assertTrue(report.contains("Advisor trace: $trace"))
+        assertFalse(report.contains("CONVERSATION CONTEXT"))
+    }
+
+    @Test
+    fun `historical assistant response without trace remains reportable`() {
+        val report = ProblemReportFormatter.format(
+            request = assistantRequest(includeConversation = false),
+            evidence = ProblemReportEvidence(
+                conversationId = 44,
+                reportedMessage = assistant(2, "HISTORICAL"),
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = null,
+        )
+
+        assertTrue(report.contains("HISTORICAL"))
+        assertTrue(report.contains("Advisor trace: unavailable"))
+    }
+
+    @Test
+    fun `failure report includes known Worker trace while unrelated general report does not invent one`() {
+        val trace = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        val failureReport = ProblemReportFormatter.format(
+            request = ProblemReportRequest(
+                type = ProblemReportType.GENERAL,
+                category = ProblemReportCategory.APP_PROBLEM,
+                description = "Advisor failed",
+                includeConversation = false,
+                includeObiDiagnostics = false,
+                advisorFailureDiagnostic =
+                    "kind=SERVICE http=502 proxy=upstream_failure endpoint=start trace=$trace",
+            ),
+            evidence = ProblemReportEvidence(
+                conversationId = null,
+                reportedMessage = null,
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = null,
+        )
+        assertTrue(failureReport.contains("trace=$trace"))
+
+        val unrelated = ProblemReportFormatter.format(
+            request = ProblemReportRequest(
+                type = ProblemReportType.GENERAL,
+                category = ProblemReportCategory.APP_PROBLEM,
+                description = "Unrelated app problem",
+                includeConversation = false,
+                includeObiDiagnostics = false,
+            ),
+            evidence = ProblemReportEvidence(
+                conversationId = null,
+                reportedMessage = null,
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = null,
+        )
+        assertFalse(unrelated.contains(trace))
+        assertFalse(unrelated.contains("Advisor trace:"))
+    }
+
+    @Test
+    fun `assistant report keeps persisted trace and excludes unrelated current failure trace`() {
+        val persistedTrace = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val unrelatedFailureTrace = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        val currentFailure =
+            "kind=SERVICE http=502 proxy=upstream_failure endpoint=continue trace=$unrelatedFailureTrace"
+        val request = assistantRequest(
+            includeConversation = false,
+        ).copy(
+            advisorFailureDiagnostic =
+                advisorFailureDiagnosticForReport(
+                    type = ProblemReportType.ASSISTANT_RESPONSE,
+                    currentFailureDiagnostic = currentFailure,
+                ),
+        )
+
+        val report = ProblemReportFormatter.format(
+            request = request,
+            evidence = ProblemReportEvidence(
+                conversationId = 44,
+                reportedMessage = assistant(
+                    id = 2,
+                    text = "TARGET",
+                    advisorTraceId = persistedTrace,
+                ),
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = null,
+        )
+
+        assertTrue(report.contains("Advisor trace: $persistedTrace"))
+        assertFalse(report.contains("Advisor failure:"))
+        assertFalse(report.contains(unrelatedFailureTrace))
+    }
+
+    @Test
+    fun `general report preserves current failure diagnostic correlation`() {
+        val currentFailureTrace = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        val currentFailure =
+            "kind=SERVICE http=502 proxy=upstream_failure endpoint=continue trace=$currentFailureTrace"
+        val request = ProblemReportRequest(
+            type = ProblemReportType.GENERAL,
+            category = ProblemReportCategory.APP_PROBLEM,
+            description = "Advisor failed",
+            includeConversation = false,
+            includeObiDiagnostics = false,
+            advisorFailureDiagnostic =
+                advisorFailureDiagnosticForReport(
+                    type = ProblemReportType.GENERAL,
+                    currentFailureDiagnostic = currentFailure,
+                ),
+        )
+
+        val report = ProblemReportFormatter.format(
+            request = request,
+            evidence = ProblemReportEvidence(
+                conversationId = null,
+                reportedMessage = null,
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = null,
+        )
+
+        assertTrue(report.contains("Advisor failure: $currentFailure"))
+        assertTrue(report.contains(currentFailureTrace))
+    }
+
+    @Test
     fun `assistant report with conversation stops exactly at reported response`() {
         val first = user(1, "FIRST USER")
         val earlierAssistant = assistant(
@@ -274,12 +425,14 @@ class ProblemReportFormatterTest {
         id: Long,
         text: String,
         products: List<VerifiedProductSnapshot> = emptyList(),
+        advisorTraceId: String? = null,
     ) = PersistedMessage(
         id = id,
         role = MESSAGE_ROLE_ASSISTANT,
         text = text,
         createdAt = id * 1_000,
         products = products,
+        advisorTraceId = advisorTraceId,
     )
 
     private fun product(

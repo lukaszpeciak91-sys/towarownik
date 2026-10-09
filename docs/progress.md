@@ -296,3 +296,12 @@ The currently planned AI capability stage is complete after this selective web-s
 - Added turn correlation through `X-Taksula-Trace-Id`: START/MESSAGE always create a new trace, while CONTINUE reuses a valid propagated trace or fails soft to a new trace when correlation is unavailable. Each HTTP request also receives an internal requestId.
 - CONTINUE logging records only deterministic aggregate local-result counts and safe rejection category; no user/model/query/product/attachment content, product identifiers, stock/price values, response/call IDs, upstream bodies, credentials, or chain-of-thought enter structured logs.
 - JSON protocol bodies, prompts, provider behavior, tool schemas, retrieval, attachments, usage pricing, Android, and protocol versions are unchanged. Android propagation/reporting remains B2.2.
+
+
+## 2026-10-09 — Android Advisor observability B2.2
+
+- Android now captures the Worker's optional `X-Taksula-Trace-Id`, validates it as UUID-form metadata, and propagates one trace across every CONTINUE in the same USER turn without sending an old trace on START/MESSAGE.
+- A valid trace returned by a continuation becomes authoritative for later continuations; a missing/invalid later trace does not erase an already-established turn trace.
+- Successful ASSISTANT responses persist the final trace in Room schema v11 via migration 10→11. Historical pre-B2.2 messages keep null trace and conversation/history reload restores new traces normally.
+- Existing problem-report TXT output now carries the persisted assistant trace, while failure diagnostics include the known Worker/current-turn trace when available. Unrelated general reports do not receive a random previous Advisor trace.
+- No Advisor behavior, Worker implementation, JSON schema, tool contract, provider/retrieval behavior, attachment lifecycle, pricing, chat layout, telemetry database, or dashboard changed.

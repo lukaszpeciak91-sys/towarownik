@@ -41,6 +41,7 @@ internal sealed interface AdvisorUiState {
         val products: List<VerifiedProductSnapshot> = emptyList(),
         val sources: List<AdvisorWebSource> = emptyList(),
         val searchActions: List<AdvisorSearchAction> = emptyList(),
+        val traceId: String? = null,
     ) : AdvisorUiState
     data class Error(
         val error: AdvisorError,
@@ -69,6 +70,15 @@ internal class AdvisorController(
         contract: AdvisorTransportContract,
         continuation: AdvisorToolContinuation,
     ) -> AdvisorProxyCallResult,
+    private val continueAgentWithTrace: (suspend (
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        contract: AdvisorTransportContract,
+        continuation: AdvisorToolContinuation,
+        traceId: String?,
+    ) -> AdvisorProxyCallResult)? = null,
     private val executeObiTool: suspend (
         AdvisorToolArguments,
     ) -> AdvisorToolExecutionResult,
@@ -269,8 +279,10 @@ internal class AdvisorController(
             }
         }
 
+        var turnTraceId: String? = null
         var proxyResult = when (initialCall) {
             is AdvisorProxyCallResult.Success -> {
+                turnTraceId = advisorTraceIdOrNull(initialCall.traceId)
                 observeUsageSafely(
                     usage = initialCall.result.usageOrNull(),
                     webSearchCalls =
@@ -280,7 +292,9 @@ internal class AdvisorController(
                 initialCall.result
             }
             is AdvisorProxyCallResult.Failure ->
-                return initialCall.toUiError().also(onState)
+                return initialCall.toUiError(
+                    fallbackTraceId = null,
+                ).also(onState)
         }
 
         var toolCalls = 0
@@ -306,6 +320,7 @@ internal class AdvisorController(
                         products = selectedProducts,
                         sources = proxyResult.sources,
                         searchActions = searchActionsByKey.values.toList(),
+                        traceId = turnTraceId,
                     ).also(onState)
                 }
 
@@ -325,23 +340,26 @@ internal class AdvisorController(
                         onState(AdvisorUiState.WaitingForFinalAnswer)
                         proxyResult = when (
                             val continued = safeProxyCall {
-                                continueAgent(
-                                    toolRequest.responseId,
-                                    toolRequest.callId,
-                                    conversationProviderId,
-                                    conversationStoreNumber,
-                                    turnContract,
-                                    AdvisorToolContinuation.LocalToolLimitReached(
+                                continueProxyTurn(
+                                    responseId = toolRequest.responseId,
+                                    callId = toolRequest.callId,
+                                    providerId = conversationProviderId,
+                                    branchId = conversationStoreNumber,
+                                    contract = turnContract,
+                                    continuation = AdvisorToolContinuation.LocalToolLimitReached(
                                         queries = toolRequest.arguments.queries,
                                         storeNumber =
                                             toolRequest.arguments.storeNumber,
                                         providerId =
                                             toolRequest.arguments.providerId,
                                     ),
+                                    traceId = turnTraceId,
                                 )
                             }
                         ) {
                             is AdvisorProxyCallResult.Success -> {
+                                turnTraceId =
+                                    advisorTraceIdOrNull(continued.traceId) ?: turnTraceId
                                 observeUsageSafely(
                                     usage =
                                         continued.result.usageOrNull(),
@@ -353,7 +371,9 @@ internal class AdvisorController(
                             }
 
                             is AdvisorProxyCallResult.Failure ->
-                                return continued.toUiError().also(onState)
+                                return continued.toUiError(
+                                    fallbackTraceId = turnTraceId,
+                                ).also(onState)
                         }
                         continue
                     }
@@ -431,17 +451,20 @@ internal class AdvisorController(
                     onState(AdvisorUiState.WaitingForFinalAnswer)
                     proxyResult = when (
                         val continued = safeProxyCall {
-                            continueAgent(
-                                toolRequest.responseId,
-                                toolRequest.callId,
-                                conversationProviderId,
-                                conversationStoreNumber,
-                                turnContract,
-                                continuation,
+                            continueProxyTurn(
+                                responseId = toolRequest.responseId,
+                                callId = toolRequest.callId,
+                                providerId = conversationProviderId,
+                                branchId = conversationStoreNumber,
+                                contract = turnContract,
+                                continuation = continuation,
+                                traceId = turnTraceId,
                             )
                         }
                     ) {
                         is AdvisorProxyCallResult.Success -> {
+                            turnTraceId =
+                                continued.traceId ?: turnTraceId
                             observeUsageSafely(
                                 usage = continued.result.usageOrNull(),
                                 webSearchCalls =
@@ -451,12 +474,40 @@ internal class AdvisorController(
                             continued.result
                         }
                         is AdvisorProxyCallResult.Failure ->
-                            return continued.toUiError().also(onState)
+                            return continued.toUiError(
+                                fallbackTraceId = turnTraceId,
+                            ).also(onState)
                     }
                 }
             }
         }
     }
+
+    private suspend fun continueProxyTurn(
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        contract: AdvisorTransportContract,
+        continuation: AdvisorToolContinuation,
+        traceId: String?,
+    ): AdvisorProxyCallResult =
+        continueAgentWithTrace?.invoke(
+            responseId,
+            callId,
+            providerId,
+            branchId,
+            contract,
+            continuation,
+            traceId,
+        ) ?: continueAgent(
+            responseId,
+            callId,
+            providerId,
+            branchId,
+            contract,
+            continuation,
+        )
 
     private fun observeUsageSafely(
         usage: AdvisorUsage?,
@@ -572,6 +623,26 @@ internal class AdvisorController(
                         continuation = continuation,
                     )
                 },
+                continueAgentWithTrace = {
+                        responseId,
+                        callId,
+                        providerId,
+                        branchId,
+                        contract,
+                        continuation,
+                        traceId,
+                    ->
+                    continueAdvisorToolTurn(
+                        proxyClient = proxyClient,
+                        responseId = responseId,
+                        callId = callId,
+                        providerId = providerId,
+                        branchId = branchId,
+                        contract = contract,
+                        continuation = continuation,
+                        traceId = traceId,
+                    )
+                },
                 executeObiTool = obiTool::execute,
                 executeProviderTool = providerTool::execute,
                 branchDirectory = { providerId ->
@@ -612,6 +683,7 @@ internal suspend fun continueAdvisorToolTurn(
     branchId: String,
     contract: AdvisorTransportContract,
     continuation: AdvisorToolContinuation,
+    traceId: String? = null,
 ): AdvisorProxyCallResult =
     when (contract) {
         AdvisorTransportContract.OBI_V2 ->
@@ -620,6 +692,7 @@ internal suspend fun continueAdvisorToolTurn(
                 callId = callId,
                 storeNumber = branchId,
                 continuation = continuation,
+                traceId = traceId,
             )
         AdvisorTransportContract.PROVIDER_V3,
         AdvisorTransportContract.PROVIDER_V4,
@@ -631,6 +704,7 @@ internal suspend fun continueAdvisorToolTurn(
                 branchId = branchId,
                 continuation = continuation,
                 protocolVersion = contract.protocolVersion,
+                traceId = traceId,
             )
     }
 
@@ -684,9 +758,13 @@ private fun AdvisorProxyResult.webSearchCalls(): Long =
         is AdvisorProxyResult.ToolRequest -> webSearchCalls
     }
 
-private fun AdvisorProxyCallResult.Failure.toUiError():
-    AdvisorUiState.Error =
-    AdvisorUiState.Error(
+private fun AdvisorProxyCallResult.Failure.toUiError(
+    fallbackTraceId: String?,
+): AdvisorUiState.Error {
+    val bestTraceId =
+        advisorTraceIdOrNull(traceId) ?: advisorTraceIdOrNull(fallbackTraceId)
+    val baseDiagnostic = diagnosticOrNull()
+    return AdvisorUiState.Error(
         error = when (kind) {
             AdvisorProxyFailureKind.NOT_CONFIGURED ->
                 AdvisorError.NOT_CONFIGURED
@@ -699,8 +777,18 @@ private fun AdvisorProxyCallResult.Failure.toUiError():
             AdvisorProxyFailureKind.PROTOCOL ->
                 AdvisorError.PROTOCOL
         },
-        diagnostic = diagnosticOrNull(),
+        diagnostic = when {
+            baseDiagnostic != null ->
+                baseDiagnostic.copy(traceId = bestTraceId)
+            bestTraceId != null ->
+                AdvisorFailureDiagnostic(
+                    kind = kind,
+                    traceId = bestTraceId,
+                )
+            else -> null
+        },
     )
+}
 
 private val ADVISOR_CONTROL_OR_WHITESPACE = Regex("""[\s\p{Cc}]+""")
 

@@ -176,6 +176,7 @@ internal class AdvisorProxyClient(
         callId: String,
         storeNumber: String,
         continuation: AdvisorToolContinuation,
+        traceId: String? = null,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
@@ -232,6 +233,7 @@ internal class AdvisorProxyClient(
         return execute(
             endpoint = "v1/agent/continue",
             body = body,
+            traceId = traceId,
         )
     }
 
@@ -242,6 +244,7 @@ internal class AdvisorProxyClient(
         branchId: String,
         continuation: AdvisorToolContinuation,
         protocolVersion: Int = ADVISOR_PROTOCOL_VERSION,
+        traceId: String? = null,
     ): AdvisorProxyCallResult {
         if (!isConfigured()) {
             return AdvisorProxyCallResult.Failure(
@@ -310,22 +313,27 @@ internal class AdvisorProxyClient(
         return execute(
             endpoint = "v1/agent/continue",
             body = body,
+            traceId = traceId,
         )
     }
 
     private suspend fun execute(
         endpoint: String,
         body: JsonObject,
+        traceId: String? = null,
     ): AdvisorProxyCallResult {
         val url = baseUrl.newBuilder()
             .addPathSegments(endpoint)
             .build()
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
             .header("Authorization", "Bearer $appToken")
             .header("Content-Type", JSON_MEDIA_TYPE.toString())
-            .build()
+        advisorTraceIdOrNull(traceId)?.let {
+            requestBuilder.header(ADVISOR_TRACE_HEADER, it)
+        }
+        val request = requestBuilder.build()
 
         return suspendCancellableCoroutine { continuation ->
             val call = client.newCall(request)
@@ -444,6 +452,9 @@ internal class AdvisorProxyClient(
         response: Response,
         endpoint: String,
     ): AdvisorProxyCallResult {
+        val traceId = advisorTraceIdOrNull(
+            response.header(ADVISOR_TRACE_HEADER),
+        )
         if (!response.isSuccessful) {
             val kind = when (response.code) {
                 401 -> AdvisorProxyFailureKind.AUTHENTICATION
@@ -455,6 +466,7 @@ internal class AdvisorProxyClient(
                 httpStatus = response.code,
                 proxyErrorCode = parseProxyErrorCode(response),
                 endpoint = endpoint,
+                traceId = traceId,
             )
         }
 
@@ -463,11 +475,13 @@ internal class AdvisorProxyClient(
         }.getOrNull()
             ?: return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
+                traceId = traceId,
             )
 
         if (preview.isEmpty() || preview.size > MAX_PROXY_RESPONSE_BYTES) {
             return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
+                traceId = traceId,
             )
         }
 
@@ -476,6 +490,7 @@ internal class AdvisorProxyClient(
         }.getOrNull()
             ?: return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
+                traceId = traceId,
             )
 
         val result = runCatching {
@@ -483,9 +498,13 @@ internal class AdvisorProxyClient(
         }.getOrNull()
             ?: return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
+                traceId = traceId,
             )
 
-        return AdvisorProxyCallResult.Success(result)
+        return AdvisorProxyCallResult.Success(
+            result = result,
+            traceId = traceId,
+        )
     }
 
     private fun parseProxyErrorCode(

@@ -1677,6 +1677,119 @@ class AdvisorControllerTest {
         assertEquals(1, toolAssistedSignals)
     }
 
+    @Test
+    fun `turn trace is established propagated updated and retained across continuations`() = runBlocking {
+        val firstTrace = "11111111-1111-4111-8111-111111111111"
+        val updatedTrace = "22222222-2222-4222-8222-222222222222"
+        val observed = mutableListOf<String?>()
+        var continuation = 0
+        val controller = controller(
+            start = {
+                successTool(
+                    "resp_1",
+                    "call_1",
+                    "first",
+                    traceId = firstTrace,
+                )
+            },
+            continueCall = { _, _, result ->
+                continuation += 1
+                when (continuation) {
+                    1 -> successTool(
+                        "resp_2",
+                        "call_2",
+                        "second",
+                        traceId = updatedTrace,
+                    )
+                    2 -> successTool(
+                        "resp_3",
+                        "call_3",
+                        "third",
+                        traceId = null,
+                    )
+                    else -> successAnswer(
+                        "resp_final",
+                        "Done",
+                        traceId = null,
+                    )
+                }
+            },
+            tool = { verifiedResult(it.query) },
+            onContinueTrace = { observed += it },
+        )
+
+        val final = controller.runTurn("test", null) { }
+            as AdvisorUiState.Success
+
+        assertEquals(
+            listOf(firstTrace, updatedTrace, updatedTrace),
+            observed,
+        )
+        assertEquals(updatedTrace, final.traceId)
+    }
+
+    @Test
+    fun `new user turn does not inherit prior turn trace`() = runBlocking {
+        val firstTrace = "33333333-3333-4333-8333-333333333333"
+        val controller = controller(
+            start = {
+                successAnswer(
+                    "resp_first",
+                    "First",
+                    traceId = firstTrace,
+                )
+            },
+            message = { _, _ ->
+                successAnswer(
+                    "resp_second",
+                    "Second",
+                    traceId = null,
+                )
+            },
+        )
+
+        val first = controller.runTurn("first", null) { }
+            as AdvisorUiState.Success
+        val second = controller.runTurn(
+            "second",
+            first.responseId,
+        ) { } as AdvisorUiState.Success
+
+        assertEquals(firstTrace, first.traceId)
+        assertEquals(null, second.traceId)
+    }
+
+    @Test
+    fun `continuation network failure keeps best known turn trace in diagnostic`() = runBlocking {
+        val trace = "44444444-4444-4444-8444-444444444444"
+        val controller = controller(
+            start = {
+                successTool(
+                    "resp_tool",
+                    "call_1",
+                    "test",
+                    traceId = trace,
+                )
+            },
+            continueCall = { _, _, _ ->
+                AdvisorProxyCallResult.Failure(
+                    AdvisorProxyFailureKind.NETWORK,
+                )
+            },
+            tool = { verifiedResult(it.query) },
+        )
+
+        val final = controller.runTurn("test", null) { }
+            as AdvisorUiState.Error
+
+        assertEquals(AdvisorError.NETWORK, final.error)
+        assertEquals(trace, final.diagnostic?.traceId)
+        assertEquals(
+            "kind=NETWORK trace=$trace",
+            final.diagnostic?.reportValue(),
+        )
+    }
+
     private fun controller(
         configured: Boolean = true,
         start: suspend (String) -> AdvisorProxyCallResult = {
@@ -1719,6 +1832,7 @@ class AdvisorControllerTest {
         onStartStore: (String) -> Unit = {},
         onMessageStore: (String) -> Unit = {},
         onContinueStore: (String) -> Unit = {},
+        onContinueTrace: (String?) -> Unit = {},
     ) = AdvisorController(
         isConfigured = { configured },
         startAgent = { input, _, branchId ->
@@ -1738,6 +1852,38 @@ class AdvisorControllerTest {
                 continuation,
             ->
             onContinueStore(branchId)
+            when (continuation) {
+                is AdvisorToolContinuation.Verified ->
+                    continueCall(
+                        responseId,
+                        callId,
+                        continuation.result,
+                    )
+                is AdvisorToolContinuation.RejectedStore ->
+                    rejectedContinueCall(
+                        responseId,
+                        callId,
+                        continuation,
+                    )
+                is AdvisorToolContinuation.LocalToolLimitReached ->
+                    limitContinueCall(
+                        responseId,
+                        callId,
+                        continuation,
+                    )
+            }
+        },
+        continueAgentWithTrace = {
+                responseId,
+                callId,
+                _,
+                branchId,
+                _,
+                continuation,
+                traceId,
+            ->
+            onContinueStore(branchId)
+            onContinueTrace(traceId)
             when (continuation) {
                 is AdvisorToolContinuation.Verified ->
                     continueCall(
@@ -1798,8 +1944,9 @@ class AdvisorControllerTest {
         text: String,
         productObiks: List<String> = emptyList(),
         storeNumber: String = "075",
+        traceId: String? = null,
     ) = AdvisorProxyCallResult.Success(
-        AdvisorProxyResult.Answer(
+        result = AdvisorProxyResult.Answer(
             responseId = responseId,
             text = text,
             productRefs = productObiks.map {
@@ -1809,8 +1956,8 @@ class AdvisorControllerTest {
                 )
             },
         ),
+        traceId = traceId,
     )
-
     private fun successAnswerRefs(
         responseId: String,
         text: String,
@@ -1828,8 +1975,9 @@ class AdvisorControllerTest {
         callId: String,
         query: String,
         storeNumber: String = "075",
+        traceId: String? = null,
     ) = AdvisorProxyCallResult.Success(
-        AdvisorProxyResult.ToolRequest(
+        result = AdvisorProxyResult.ToolRequest(
             responseId = responseId,
             callId = callId,
             arguments = AdvisorToolArguments(
@@ -1838,8 +1986,8 @@ class AdvisorControllerTest {
                 limit = 5,
             ),
         ),
+        traceId = traceId,
     )
-
     private fun verifiedResult(
         query: String,
         snapshot: VerifiedProductSnapshot = snapshot(
