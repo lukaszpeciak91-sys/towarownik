@@ -28,7 +28,7 @@ Implemented direction:
 - local tool allowance is three calls per USER turn and resets on every new USER message;
 - interrupted USER-only tails recover to editable draft without automatic resend;
 - switching/new conversation cancels active work and stale callbacks are rejected;
-- current OBI facts continue to be refreshed through the existing Android local tool;
+- current provider facts continue to be refreshed through the active Android local provider tool;
 - conversations are treated as individual customer cases, with “Nowa rozmowa” recommended for a new customer/problem;
 - startup-only local retention removes conversations strictly older than 30 days by `updatedAt`;
 - the exact 30-day cutoff remains retained and message rows cascade on deletion;
@@ -126,7 +126,7 @@ Android test version: **0.1.10 (11)**.
 - current Responses `web_search` is available selectively alongside the protocol-appropriate local provider tool, with `tool_choice=auto` and `max_tool_calls=1` for built-ins;
 - Android local provider verification remains authoritative for current selected-branch stock/price/availability and only current-turn verified snapshots may enter productRefs/cards;
 - final answers preserve at most six normalized HTTPS sources from actual OpenAI url_citation annotations; real annotation offsets are mapped only when exact, safely mapped citations render as clickable inline markers, and unmappable sources remain in the compact fallback source list;
-- Room schema v6 keeps the v4 message-source citation relation and v5 message-search actions, and adds nullable persisted product image URLs so verified historical cards can restore their original trusted thumbnail;
+- Room schema v11 retains message sources/search actions/product images and additionally persists provider/branch ownership, provider-owned product identity, central stock, message attachments, and nullable Advisor trace correlation through explicit non-destructive migrations;
 - searched pages are explicitly untrusted reference data and cannot alter role/tool/trust/privacy rules;
 - AI Usage counts completed web searches independently from optional token usage; current pricing adds USD 0.01 per search action when cost is priceable;
 - web availability alone does not count as a call, while missing/malformed usage still preserves the actual search count and keeps existing unpriced/known-minimum budget semantics;
