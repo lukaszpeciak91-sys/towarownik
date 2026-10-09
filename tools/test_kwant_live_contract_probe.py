@@ -2227,6 +2227,23 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
             "Sprawdź stan i kup towar w oddziałach Kwant"))
         self.assertIsNone(page.last_pattern.fullmatch("Dodaj do koszyka"))
 
+    def test_one_visible_button_when_responsive_duplicate_is_hidden(self):
+        class Button:
+            def __init__(self, visible):
+                self.visible = visible
+            def is_visible(self): return self.visible
+            def is_enabled(self): return True
+        buttons = [Button(False), Button(True)]
+        class Found:
+            first = buttons[0]
+            def count(self): return 2
+            def nth(self, index): return buttons[index]
+        class Page:
+            def get_by_role(self, role, name): return Found()
+        self.assertIs(probe.availability_button(Page()), buttons[1])
+        buttons[0].visible = True
+        self.assertIsNone(probe.availability_button(Page()))
+
     def test_no_availability_button_is_inconclusive_not_endpoint_absent(self):
         class NotFound:
             def count(self): return 0
