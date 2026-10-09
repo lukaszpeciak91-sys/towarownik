@@ -46,6 +46,7 @@ internal data class MessageEntity(
     val role: String,
     val text: String,
     val createdAt: Long,
+    val advisorTraceId: String? = null,
 )
 
 @Entity(
