@@ -402,6 +402,42 @@ class MultiMarketResearchTest(unittest.TestCase):
         self.assertEqual("F_INCONCLUSIVE",
             self.r.classify_contract([invalid], self.stores, self.obik)["type"])
 
+    def test_generic_status_and_requested_quantity_are_not_inventory_evidence(self):
+        path = "/api/pdp/v1/availability/sp/3496072"
+        for field, value in (("status", "available"), ("quantity", 2)):
+            with self.subTest(field=field):
+                record = self.observation(
+                    {"pickupStores": [
+                        {"storeNumber": "075", field: value},
+                        {"storeNumber": "003", field: value},
+                    ]},
+                    path=path, action="initial:page",
+                )
+                self.assertEqual(
+                    "F_INCONCLUSIVE",
+                    self.r.classify_contract(
+                        [record], self.stores, self.obik
+                    )["type"],
+                )
+                self.assertEqual({}, self.r.verified_rows(record, self.stores))
+                self.assertTrue(
+                    record["shape"]["pickupStoresStructure"]["structuralOnly"]
+                )
+
+    def test_exact_opener_click_timeout_returns_bounded_category(self):
+        class TimeoutButton(self.FakeExactButton):
+            def click(self, timeout=0):
+                raise TimeoutError("SENSITIVE page text and URL token=SECRET")
+
+        button = TimeoutButton(name=self.r.OBSERVED_AVAILABILITY_BUTTON)
+        page = self.fake_exact_button_page(button)
+        result = self.r.click_safe_control(page, [])
+        self.assertEqual("CLICK_FAILED", result["status"])
+        # Python TimeoutError should remain bounded, without exception text.
+        self.assertEqual("TIMEOUT", result["failureCategory"])
+        self.assertNotIn("SECRET", json.dumps(result))
+        self.assertNotIn("SENSITIVE", json.dumps(result))
+
     def test_initial_page_generic_and_hd_separate_without_market_states(self):
         r = self.r
         rows = [
