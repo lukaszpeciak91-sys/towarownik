@@ -50,5 +50,6 @@ class VerifiedProductUiModelTest {
         assertEquals("obi-pl", ui.providerId)
         assertEquals("075", ui.branchId)
         assertEquals("3496072", ui.productId)
+        assertEquals(null, ui.centralStock)
     }
 }
