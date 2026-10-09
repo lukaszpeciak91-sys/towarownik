@@ -444,7 +444,8 @@ def discover_controls(page: Any) -> list[dict[str, Any]]:
                 nearby = ""
             controls.append({
                 "index": index, "role": role if role in ("button", "a", "select", "link") else "other",
-                "label": label, "nearbyText": nearby, "enabled": node.is_enabled(),
+                "label": label, "nearbyText": nearby,
+                "visible": True, "enabled": node.is_enabled(),
             })
             if len(controls) >= MAX_CONTROLS:
                 break
@@ -532,12 +533,13 @@ def run_browser(obik: str, store: str, other_markets: list[str],
         "canonicalStoreCount": len(stores),
         "verifiedProductPage": False,
         "initialNuxt": {}, "visibleControls": [], "uiActions": [],
-        "observations": [], "requestCountByAction": {},
+        "observations": [], "observedRequests": [], "requestCountByAction": {},
         "selectedStoreMutation": "UNKNOWN",
         "contractClassification": {"type": "F_INCONCLUSIVE"},
         "researchOnly": True,
     }
     observations = result["observations"]
+    requests = result["observedRequests"]
     action = ["initial:page"]
     try:
         with sync_playwright() as pw:
@@ -579,6 +581,22 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                     })
                 except Exception:
                     return
+            def record_request(request: Any) -> None:
+                if len(requests) >= MAX_RECORDS:
+                    return
+                try:
+                    if request.resource_type not in ("xhr", "fetch", "document"):
+                        return
+                    safe = safe_url_request(
+                        request.method, request.url,
+                        request.post_data if request.method != "GET" else None,
+                        obik, stores,
+                    )
+                    if safe is not None:
+                        requests.append({"action": action[0], **safe})
+                except Exception:
+                    return
+            page.on("request", record_request)
             page.on("response", record_response)
             # The same established public store-switch route as production.
             # Never request a new guessed endpoint.
@@ -627,8 +645,8 @@ def run_browser(obik: str, store: str, other_markets: list[str],
             result["contractClassification"] = classify_contract(
                 observations, stores, obik, nuxt,
             )
-            for observation in observations:
-                key = observation["action"]
+            for request in requests:
+                key = request["action"]
                 result["requestCountByAction"][key] = (
                     result["requestCountByAction"].get(key, 0) + 1
                 )
@@ -654,7 +672,10 @@ def run_browser(obik: str, store: str, other_markets: list[str],
         f"selectedStoreMutation={result['selectedStoreMutation']}",
         f"requestCountByAction={json.dumps(result['requestCountByAction'])}",
         f"observedResponseCount={len(observations)}",
+        f"observedRequestCount={len(requests)}",
     ]
+    for item in requests[:50]:
+        lines.append("request=" + json.dumps(item, ensure_ascii=False, separators=(",", ":")))
     for item in observations[:50]:
         lines.append("observed=" + json.dumps(item, ensure_ascii=False, separators=(",", ":")))
     (out_dir / "locations-summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
