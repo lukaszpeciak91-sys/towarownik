@@ -2414,6 +2414,32 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
             )["selectedBranchStockProven"]
         )
 
+    def test_availability_request_capture_is_bounded_and_sanitized(self):
+        class Request:
+            resource_type = "xhr"
+            url = ("https://services.kwant.net.pl/api/front/seen"
+                   "?depstock=205&sessionToken=SECRET_VALUE")
+            method = "GET"
+            post_data = None
+            headers = {}
+        recorder = probe.NetworkRecorder(action="locations:open-branches")
+        capture = probe.ObservedLocationsResponses(recorder, "580")
+        capture.on_request(Request())
+        self.assertEqual(1, len(capture.request_records))
+        self.assertEqual(
+            "205", capture.request_records[0]["query"]["safeValues"]["depstock"]
+        )
+        self.assertNotIn(
+            "SECRET_VALUE", json.dumps(capture.request_records)
+        )
+        recorder.set_action("product:after")
+        capture.on_request(Request())
+        self.assertEqual(1, len(capture.request_records))
+        Request.url = "https://untrusted.invalid/api/front/seen"
+        recorder.set_action("locations:open-branches")
+        capture.on_request(Request())
+        self.assertEqual(1, len(capture.request_records))
+
     def test_batch_product_identity_never_inferred_from_list_order(self):
         url = "/api/front/products/prices/580,581"
         good = probe.batch_prices_stock_evidence(url, {"list": [
