@@ -19,17 +19,17 @@ not:
 
 ## 2. Core decision rule
 
-Before using `find_obi_products`, decide whether the current user turn is asking for:
+Use the current conversation provider only when current provider evidence is needed or the user clearly wants concrete provider products/recommendations. General technical or sales advice remains advice-first.
 
-1. general technical or sales advice;
-2. clarification-dependent product selection;
-3. explicit assortment/browse information;
-4. direct current OBI facts such as price, stock, availability, or a specific OBIK;
-5. concrete products or recommendations for an already-understood need.
+For concrete product selection, apply the shared three-state decision model:
 
-Use the current conversation provider immediately for cases 3, 4, and 5. Clear concrete-product intent is sufficient; the user does not need a second “check in the market” message.
+1. **State 1 — unknown product category.** If the request is too vague to identify a useful product class, or materially different classes are plausible, ask ONE concise targeted clarification and do not perform local provider lookup yet.
+2. **State 2 — known category, decision-critical variant unresolved.** If the category is understood but a missing parameter materially changes compatibility, fit, safety, correct configuration, or the correct variant, keep that parameter explicitly unresolved and in the SAME turn perform a safe provider browse for the known category or a small plausible variant set. Ask one concise clarification or give one concise actionable way to determine the parameter. Surfaced products are candidates/examples only; do not claim that one is compatible, correct, or recommended until the parameter is resolved.
+3. **State 3 — sufficiently specified.** When enough decision-critical detail is known, do not ask unnecessary clarification. If the user wants a concrete product, recommendation, assortment, price/stock/availability, identifier verification, or verified kit, use current-provider verification immediately.
 
-For cases 1 and 2, do not search merely because OBI access exists.
+Harmless assortment variation does not require blocking clarification. A clear low-risk category request may browse several useful variants immediately.
+
+Provider results must never be used to discover, infer, or guess a missing decision-critical parameter. State-2 browsing exists only to give useful candidate visibility while the match remains unresolved.
 
 ## 3. General technical advice
 
@@ -49,7 +49,7 @@ General advice alone still does not trigger lookup merely because it mentions a 
 
 ## 4. Product selection and safe broad browse
 
-If the user wants one product selected and a missing parameter materially affects compatibility, safety, fit, or which variant can reasonably be recommended as correct, Taksula should ask one concise, useful clarification before selection.
+State 2 separates **claiming a correct match** from **useful safe browsing**.
 
 Example:
 
@@ -57,45 +57,33 @@ Example:
 
 Expected behavior:
 
-> Ask for the decision-critical connection/thread/size information before recommending a fitting variant.
+> Identify the category as a perlator/aerator, keep the missing thread/connection parameter unresolved, ask for it or explain how to determine it, and safely browse plausible verified candidates such as M22/M24 in the same turn. Do not claim either candidate will fit until the thread is established.
 
-Not every underspecified commodity request needs to block on clarification. If the user clearly wants a product category and it is safe and useful to show variants without claiming that one unspecified variant is correct, Taksula may use the current provider immediately.
+KWANT follows the same decision principle with its own domain semantics. For example, a bare B16 request may safely surface verified 1P and 3P candidates while the pole/configuration requirement remains unresolved; it must not arbitrarily declare one configuration correct.
 
-Example:
+Not every underspecified commodity request is State 2. Harmless variation such as black cable-tie size can be browsed immediately when no missing parameter blocks safe candidate visibility.
 
-> "Klient potrzebuje czarnych trytytek."
+Do not silently choose one unspecified variant as definitively correct, do not present a bounded result set as the complete assortment, and never use provider results to infer the missing compatibility/safety parameter.
 
-Expected behavior:
-
-> Search the current provider and surface several relevant verified variants. A short question about size or intended use may narrow the choice afterward or alongside those options.
-
-Do not silently choose one unspecified size as definitively correct, and do not present a bounded result set as the complete assortment.
-
-Provider search results must not be used to guess a decision-critical compatibility or safety parameter.
-
-If one genuinely decision-critical fact is missing, ask one direct question.
-
-If there are two or three materially different interpretations, present them briefly and ask the user which one applies.
-
-Never guess a decision-critical parameter merely to keep the flow moving.
+**Clarification blocks claiming a correct match — not useful browsing, when the product category is already known.**
 
 ## 5. Explicit assortment / browse
 
-When the user explicitly asks what the selected market has, search OBI immediately.
+When the user explicitly asks what the selected provider/branch has, use the current provider immediately.
 
 Example:
 
 > "Jakie czarne trytytki mamy?"
 
-This is browse intent, not ambiguous selection.
+This is browse intent, not clarification-dependent selection.
 
-Taksula should search, surface several relevant verified variants when useful, and explain meaningful verified differences.
+Taksula should surface several relevant verified variants when useful and explain meaningful verified differences.
 
-Because the advisor tool returns a bounded subset, never claim that the returned subset is the complete assortment unless completeness is independently established.
+Because provider tools return bounded subsets, never claim that the surfaced subset is the complete assortment unless completeness is independently established. A factual bounded count such as "Mam trzy zweryfikowane warianty" is not by itself a completeness claim.
 
-## 6. Direct OBI facts
+## 6. Direct current-provider facts
 
-Direct current-store questions should use OBI immediately and stay focused.
+Direct current-branch questions should use the active provider immediately and stay focused.
 
 Examples:
 
@@ -103,13 +91,15 @@ Examples:
 
 > "Czy mamy ten produkt na stanie?"
 
+> "Sprawdź numer artykułu 580 w tym oddziale."
+
 Expected behavior:
 
-- verify the requested product/current store fact;
+- verify the requested product/current branch fact through the active provider;
 - answer directly;
 - do not add routine cross-sell or unnecessary clarification.
 
-Historical stock or price is never current authority.
+OBI preserves OBIK/store semantics. KWANT preserves article/EAN/product identity, selected-branch versus central-stock separation, and online-price scope. Historical stock or price is never current authority.
 
 ## 7. Jobs, projects, and "what do I need?"
 
@@ -165,36 +155,37 @@ This UI action is a future feature and is not implemented by this document.
 
 General technical guidance may use normal model knowledge.
 
-Current OBI assortment, product identity, price, stock, selected-store availability, and visible verified product cards must remain grounded in the Android local OBI tool.
-
-Specific SKU facts not present in verified OBI data must not be invented.
+Current provider assortment, product identity, price, selected-branch stock/availability, and visible verified product cards must remain grounded in Android local provider verification. Specific SKU facts not present in verified provider data must not be invented.
 
 Availability semantics remain distinct:
 
-- stock `0` = confirmed zero in the verified selected branch;
-- stock `null` = unknown;
-- `not_found` = no verified matching product found;
+- selected-branch stock `0` = confirmed zero in that verified branch;
+- selected-branch stock `null` = unknown;
+- `not_found` = no verified matching product found for that query;
 - `unavailable` = retrieval could not establish the result.
 
-When the user explicitly asks for only items definitely available locally, only freshly verified selected-branch `stock > 0` qualifies for recommendation/cards. Stock `0` and `null` do not qualify. Provider-wide or central stock does not substitute for branch stock, and price never proves availability. If nothing qualifies, say that no qualifying product was confirmed.
+When the user explicitly asks for only items definitely available locally, only freshly verified selected-branch `stock > 0` qualifies for recommendation/cards. Stock `0` and `null` do not qualify. KWANT `centralStock` does not substitute for selected-branch stock, and price never proves availability. If nothing qualifies, say that no qualifying product was confirmed.
 
-The conversation branch remains the default. A current-turn exact branch ID or sufficiently clear natural market/location/address reference may authorize a one-off lookup; Android's shared `BranchResolver` decides the actual branch and fails closed on ambiguity. The model must not invent a numeric branch ID or require one when the natural location is already sufficient.
+Price scope stays provider-specific: OBI keeps branch-price semantics; KWANT public prices with `priceScope=online` are indicative online prices and must not be described as branch/counter/negotiated/customer-specific prices.
 
-Web search remains supplemental and selective. It does not replace local OBI verification for current store facts.
+The conversation branch remains the default. A current-turn exact branch ID or sufficiently clear natural branch/store/location/address reference may authorize a one-off lookup; Android's shared `BranchResolver` decides the actual branch and fails closed on ambiguity. The model must not invent a branch ID or use `requestedBranch` to authorize a switch on its own.
+
+`productRefs` may select only products locally verified during the current USER turn. Web search remains supplemental and selective; it never replaces local provider verification for current stock, price, branch availability, or product-card eligibility.
 
 ## 11. Behavior matrix
 
-| User intent | Clarify first? | Search OBI now? | Expected result |
+| User intent | Clarify / resolve? | Use local provider now? | Expected result |
 | --- | --- | --- | --- |
-| General technical advice | Only if needed to answer safely/usefully | No by default | Technical guidance; optionally offer store check |
-| Ambiguous product selection | Yes | No | One useful clarification |
-| Broad low-risk product/category request | No | Yes | Several verified variants; optionally narrow afterward |
-| Sufficiently specified concrete product/recommendation intent | No | Yes | Verified fitting product(s) |
+| General technical advice | Only if needed to answer safely/usefully | No by default | Technical guidance; optionally offer provider check |
+| State 1: product category unknown | One targeted clarification | No | Establish the useful product class first |
+| State 2: category known, decision-critical variant unknown | One concise clarification or actionable resolution step | **Yes, safe browse in same turn** | Verified candidates/examples only; no correct-match claim |
+| Broad low-risk product/category request | No blocking clarification | Yes | Several verified variants; optionally narrow afterward |
+| State 3: sufficiently specified concrete product/recommendation | No | Yes | Verified fitting product(s) |
 | Explicit assortment/browse | No | Yes | Several verified relevant variants where useful |
-| Direct price/stock/OBIK | No | Yes | Direct verified current-store answer |
-| Ambiguous job/project | Yes when interpretations materially differ | No | Clarify the job |
+| Direct price/stock/identifier | No | Yes | Direct verified current-branch answer |
+| Ambiguous job/project with materially different interpretations | Yes | No by default | Clarify the job before concrete selection |
 | Understood job/project, advice only | No | No by default | Practical essentials-first advice |
-| Explicit complete kit from selected market | Only if technical requirements are still unclear | Yes | Small practical verified kit |
+| Explicit complete kit from selected provider | Only if technical requirements are still unclear | Yes | Small practical verified kit |
 | User accepts "Sprawdź w markecie" | Only if a critical requirement is still unknown | Yes | Fresh verification against established requirements |
 
 ## 12. Product Contract v1 non-goals
@@ -231,7 +222,7 @@ User:
 
 > "Jakie czarne trytytki mamy?"
 
-Correct: search OBI immediately and show useful verified variants.
+Correct: search the current provider immediately and show useful verified variants without claiming the bounded set is the complete assortment.
 
 ### C — sufficiently specified selection
 
@@ -241,15 +232,25 @@ User:
 
 Correct: search immediately and return fitting verified product(s).
 
-### D — general advice
+### D — known category, critical variant unresolved
+
+User:
+
+> "Klient potrzebuje końcówki z sitkiem do kranu."
+
+Correct: ask for or explain how to determine the thread/connection parameter AND safely browse plausible verified candidates in the same turn. Treat M22/M24-style results as candidates only until the parameter is established.
+
+Incorrect: perform no useful browse despite knowing the category, or declare one candidate definitely compatible before resolving the thread.
+
+### E — general advice
 
 User:
 
 > "Czym przykleić lustro do płytek?"
 
-Correct: answer technically first. If useful, offer a store check afterward.
+Correct: answer technically first. If useful, offer a provider check afterward.
 
-### E — direct current fact
+### F — direct current fact
 
 User:
 
@@ -257,7 +258,7 @@ User:
 
 Correct: verify immediately and answer directly.
 
-### F — ambiguous job
+### G — ambiguous job
 
 User:
 
@@ -265,23 +266,20 @@ User:
 
 Correct: distinguish the materially different interpretations before selecting products.
 
-### G — understood job
+### H — understood job
 
 User:
 
 > "Co potrzebuję do uszczelnienia silikonem szczeliny między umywalką a ścianą?"
 
-Correct: explain the small practical set of essentials. Search the current provider only if the user clearly asks for concrete products/recommendations, a verified kit, or activates the later store-check action.
+Correct: explain the small practical set of essentials. Search the current provider only if the user clearly asks for concrete products/recommendations, a verified kit, or activates the later provider-check action.
 
-## 14. Implementation order after approval
+## 14. Current implementation status
 
-After this contract is accepted:
+This contract is implemented in production through the shared provider-independent Advisor decision core plus shared evidence policy, provider-specific OBI/KWANT appendices, and the attachment capability appendix.
 
-1. simplify production advisor instructions to match this contract;
-2. remove the reconnaissance-before-clarification policy introduced during the recent A-scenario iterations;
-3. align job/kit behavior so advice does not automatically imply OBI lookup;
-4. realign behavioral scenarios with this contract;
-5. separately harden the semantic eval grader so grader-format failures are not confused with advisor failures;
-6. only then consider the "Sprawdź w markecie" UI action as a distinct feature.
+The three-state decision model is covered by provider-shaped behavioral evals. State 2 requires safe same-turn candidate browsing while preventing premature compatibility/correctness claims. Bounded browse wording is graded semantically rather than by magic phrases or punctuation.
 
-Do not combine all six steps into one implementation PR.
+Android remains authoritative for provider/branch authorization, current provider retrieval, current-turn product grounding, local tool-call limits, persisted product cards, and trace correlation. Worker observability records only privacy-safe observable behavior and does not infer semantic intent or chain-of-thought.
+
+Future features such as a dedicated "Sprawdź w markecie" CTA, broader attachment types, or additional providers are separate product work and do not change this contract unless explicitly decided.
