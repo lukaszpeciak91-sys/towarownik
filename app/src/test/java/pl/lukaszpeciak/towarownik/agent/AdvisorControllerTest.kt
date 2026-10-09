@@ -68,18 +68,18 @@ class AdvisorControllerTest {
             executeProviderTool = { error("No KWANT tool") },
             branchDirectory = ::testBranchDirectory,
             startAgentWithAttachments = { _, _, _, parts ->
-                calls += "v5-start-\${parts.size}"
+                calls += "v5-start-${parts.size}"
                 successAnswer("resp_start", "Attached response")
             },
             messageAgentWithAttachments = { responseId, _, _, _, parts ->
                 assertEquals("resp_start", responseId)
-                calls += "v5-message-\${parts.size}"
+                calls += "v5-message-${parts.size}"
                 successAnswer("resp_message", "More attached response")
             },
         )
         fun part(id: String) = AdvisorAttachment(
             type = AttachmentType.PDF, mimeType = "application/pdf",
-            displayName = "\$id.pdf", localId = id.repeat(32), byteSize = 5, createdAt = 0,
+            displayName = "$id.pdf", localId = id.repeat(32), byteSize = 5, createdAt = 0,
         )
         val plain = controller.runTurn(
             input = "Hello", previousResponseId = null,
