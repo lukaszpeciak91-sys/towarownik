@@ -992,35 +992,59 @@ def _stored_state(context: Any, page: Any) -> tuple[Any, Any]:
 
 def _try_market_choice(page: Any, target_id: str,
                        stores: dict[str, dict[str, str]]) -> dict[str, Any]:
-    """No city-only match: choose only explicit canonical ID or exact address."""
-    meta = stores[target_id]
+    """Only a verified market row within one visible dialog may be clicked.
+
+    A search field alone never authorizes guessed input. No city-only matching.
+    """
+    dialogs = visible_modal_scopes(page)
+    if len(dialogs) != 1:
+        return {"storeNumber": target_id, "status": "NO_UNAMBIGUOUS_DIALOG"}
     matches = []
     try:
-        nodes = page.locator("button,[role='button'],a[href]")
-        for index in range(min(nodes.count(), 240)):
+        nodes = dialogs[0].locator(
+            'button,[role="button"],[role="option"],a[href],'
+            '[data-store-number],[data-store-id],[data-market-id]'
+        )
+        for index in range(min(nodes.count(), 160)):
             node = nodes.nth(index)
-            if not node.is_visible() or not node.is_enabled():
+            if not node.is_visible():
                 continue
-            raw = (node.get_attribute("aria-label") or "") + " " + node.inner_text(timeout=400)
-            norm = re.sub(r"\s+", " ", raw).casefold()
-            id_match = any(
-                node.get_attribute(attr) == target_id
-                for attr in ("data-store-number", "data-store-id", "data-market-id")
+            attrs = {
+                name: node.get_attribute(name) for name in DATA_STORE_ATTRIBUTE_NAMES
+            }
+            identity = identify_canonical_dom_store(
+                node.inner_text(timeout=400), attrs, stores
             )
-            address_match = meta["address"].casefold() in norm and meta["city"].casefold() in norm
-            if (id_match or address_match) and not UNSAFE_ACTION.search(raw):
-                matches.append(index)
+            if identity["storeNumber"] == target_id and identity["identityStatus"] == "VERIFIED":
+                matches.append(node)
     except Exception:
         return {"storeNumber": target_id, "status": "CONTROL_INSPECTION_FAILED"}
     if len(matches) != 1:
         return {"storeNumber": target_id, "status": "NO_UNAMBIGUOUS_STORE_ROW",
                 "matchCount": len(matches)}
+    button = matches[0]
+    if not button.is_enabled():
+        return {"storeNumber": target_id, "status": "STORE_ROW_DISABLED"}
     try:
-        page.locator("button,[role='button'],a[href]").nth(matches[0]).click(timeout=3500)
-        page.wait_for_timeout(1200)
+        # Revalidate before clicking, not by a stale integer DOM index.
+        attrs = {name: button.get_attribute(name)
+                 for name in DATA_STORE_ATTRIBUTE_NAMES}
+        current = identify_canonical_dom_store(
+            button.inner_text(timeout=400), attrs, stores
+        )
+        if current["storeNumber"] != target_id or not button.is_visible():
+            return {"storeNumber": target_id, "status": "STORE_ROW_CHANGED"}
+        button.scroll_into_view_if_needed(timeout=2500)
+        button.click(timeout=3500)
+        page.wait_for_timeout(1000)
         return {"storeNumber": target_id, "status": "CLICKED"}
-    except Exception:
-        return {"storeNumber": target_id, "status": "CLICK_FAILED"}
+    except Exception as exc:
+        return {
+            "storeNumber": target_id, "status": "CLICK_FAILED",
+            "failureCategory": "TIMEOUT" if type(exc).__name__ == "TimeoutError"
+                               else "PLAYWRIGHT_CLICK_ERROR",
+        }
+
 
 
 def run_browser(obik: str, store: str, other_markets: list[str],
@@ -1154,6 +1178,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                     })
                     if control["status"] == "CLICKED":
                         result["controlsAfterOpen"] = discover_controls(page)
+                        result["postOpenUi"] = inspect_post_open_ui(page, stores)
                         post_open_contract = classify_contract(
                             observations, stores, obik, nuxt,
                         )
@@ -1161,6 +1186,12 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                             result["uiActions"].append({
                                 "action": "availability:other-stores",
                                 "status": "SKIPPED_COMPLETE_PRODUCT_CONTRACT",
+                            })
+                        elif (result["postOpenUi"]["storeSearchInputObserved"]
+                              and not result["postOpenUi"]["candidateStoreRowsCount"]):
+                            result["uiActions"].append({
+                                "action": "availability:other-stores",
+                                "status": "SEARCH_INPUT_OBSERVED_NO_GUESSED_INPUT",
                             })
                         else:
                             for target in other_markets[:2]:
@@ -1211,6 +1242,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
         f"initialNuxt={json.dumps(result['initialNuxt'], ensure_ascii=False)}",
         f"visibleControls={json.dumps(result['visibleControls'], ensure_ascii=False)}",
         f"controlsAfterOpen={json.dumps(result.get('controlsAfterOpen', []), ensure_ascii=False)}",
+        f"postOpenUi={json.dumps(result.get('postOpenUi', {}), ensure_ascii=False)}",
         f"uiActions={json.dumps(result['uiActions'], ensure_ascii=False)}",
         f"selectedStoreMutation={result['selectedStoreMutation']}",
         f"requestCountByAction={json.dumps(result['requestCountByAction'])}",
