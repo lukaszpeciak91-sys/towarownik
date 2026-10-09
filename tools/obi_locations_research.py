@@ -162,16 +162,72 @@ def safe_request_body(body: str | None, obik: str, stores: dict[str, Any]) -> di
     return {"type": "object", **safe_parameters(list(parsed.items()), obik, stores)}
 
 
+def safe_observed_store_ids(
+    pairs: list[tuple[str, Any]], stores: dict[str, Any],
+) -> dict[str, Any]:
+    """Expose only canonical IDs from run-5 observed storeIds query.
+
+    Retain canonical occurrence order/duplicates separately from the
+    deduplicated comparison set. Unknown tokens are never serialized.
+    storeIds may repeat or contain comma-separated canonical values;
+    no attempt is made to invent unobserved query encodings.
+    """
+    limit = len(stores)
+    observed = [value for name, value in pairs if name == "storeIds"]
+    if not observed:
+        return {
+            "present": False, "canonicalIds": [], "canonicalCount": 0,
+            "canonicalSequence": [], "tokenCount": 0,
+            "duplicatesPresent": False, "invalidOrUnknownPresent": False,
+            "truncated": False,
+        }
+    tokens: list[str] = []
+    invalid = False
+    overflow = False
+    for value in observed[:limit + 1]:
+        if not isinstance(value, str):
+            invalid = True
+            continue
+        raw_tokens = value.split(",")
+        if len(tokens) + len(raw_tokens) > limit:
+            overflow = True
+        tokens.extend(raw_tokens[:max(0, limit - len(tokens))])
+    if len(observed) > limit or overflow:
+        invalid = True
+    valid = [
+        token for token in tokens
+        if STORE_NUMBER.fullmatch(token) and token in stores
+    ]
+    if len(valid) != len(tokens):
+        invalid = True
+    canonical = list(dict.fromkeys(valid))
+    return {
+        "present": True,
+        "canonicalIds": canonical,
+        "canonicalCount": len(canonical),
+        "canonicalSequence": valid,
+        "tokenCount": len(tokens),
+        "duplicatesPresent": len(valid) != len(canonical),
+        "invalidOrUnknownPresent": invalid,
+        "truncated": overflow or len(observed) > limit,
+    }
+
+
 def safe_url_request(method: str, url: str, body: str | None,
                      obik: str, stores: dict[str, Any]) -> dict[str, Any] | None:
     if not trusted_url(url):
         return None
     parsed = urlsplit(url)
+    path = safe_path(url, obik, stores)
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    query = safe_parameters(query_pairs, obik, stores)
+    observed_stock = OBSERVED_STOCK_PATH.fullmatch(path)
+    if observed_stock and observed_stock.group(1) == obik:
+        query["storeIds"] = safe_observed_store_ids(query_pairs, stores)
     return {
         "host": parsed.hostname,
         "method": method if method in ("GET", "POST", "PUT", "PATCH", "DELETE") else "OTHER",
-        "path": safe_path(url, obik, stores),
-        "query": safe_parameters(parse_qsl(parsed.query, keep_blank_values=True), obik, stores),
+        "path": path, "query": query,
         "body": safe_request_body(body, obik, stores),
     }
 
@@ -242,6 +298,10 @@ def product_identity(record: dict[str, Any], obik: str) -> str:
     )):
         return "CONFLICT"
     path = record.get("path", "")
+    exact_stock = OBSERVED_STOCK_PATH.fullmatch(path)
+    if exact_stock:
+        return ("SINGULAR_REQUEST_PRODUCT_PATH"
+                if exact_stock.group(1) == obik else "CONFLICT")
     pieces = path.strip("/").split("/")
     if obik in pieces and any(p in {"p", "product", "products", "article", "articles", "sku", "availability"} for p in pieces):
         return "SINGULAR_REQUEST_PRODUCT_PATH"
@@ -265,6 +325,12 @@ OBSERVED_SP_PATH = re.compile(
 OBSERVED_HD_PATH = re.compile(
     r"/api/pdp/v1/availability/hd/(\d{7})\Z"
 )
+# Live OBI run #5: frontend-issued after the verified harmless opener.
+# This is NOT a guessed endpoint and has no production caller.
+OBSERVED_STOCK_PATH = re.compile(
+    r"/api/pdp/v1/stock/(\d{7})\Z"
+)
+
 
 
 def scalar_type(value: Any) -> str:
@@ -404,6 +470,13 @@ def response_shape(data: Any, obik: str, stores: dict[str, Any],
             result["deliveryDataPerSellerStructure"] = structural_availability_container(
                 data["deliveryDataPerSeller"], stores
             )
+    # Run #5 stock: independently report LIST shape. This is never by
+    # itself promotion of an unknown field to trusted store or stock.
+    match_stock = OBSERVED_STOCK_PATH.fullmatch(request_path)
+    if match_stock and match_stock.group(1) == obik:
+        result["stockResponseStructure"] = structural_availability_container(
+            data, stores
+        )
     return result
 
 
@@ -438,7 +511,8 @@ def observed_availability_response(record: dict[str, Any], obik: str) -> bool:
     path = record.get("path") or ""
     sp = OBSERVED_SP_PATH.fullmatch(path)
     hd = OBSERVED_HD_PATH.fullmatch(path)
-    if (sp or hd) and (sp or hd).group(1) == obik:
+    stock = OBSERVED_STOCK_PATH.fullmatch(path)
+    if (sp or hd or stock) and (sp or hd or stock).group(1) == obik:
         return True
     if not (record.get("action") or "").startswith("availability:"):
         return False
@@ -887,7 +961,9 @@ def relevant_open_network_record(record: dict[str, Any], obik: str) -> bool:
         return False
     parts = path.lower().strip("/").split("/")
     return (
-        bool(OBSERVED_SP_PATH.fullmatch(path) and
+        bool(OBSERVED_STOCK_PATH.fullmatch(path) and
+             OBSERVED_STOCK_PATH.fullmatch(path).group(1) == obik)
+        or bool(OBSERVED_SP_PATH.fullmatch(path) and
              OBSERVED_SP_PATH.fullmatch(path).group(1) == obik)
         or bool(OBSERVED_HD_PATH.fullmatch(path) and
                 OBSERVED_HD_PATH.fullmatch(path).group(1) == obik)
