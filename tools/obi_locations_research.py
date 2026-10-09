@@ -749,7 +749,7 @@ def resolve_exact_availability_opener(page: Any) -> tuple[Any | None, str]:
 # Only the already observed harmless PDP button can be clicked with DOM
 # fallback. This JavaScript rechecks the element *inside* the browser before
 # dispatch and never clicks coordinates, a child node, or another selector.
-DOM_EXACT_AVAILABILITY_CLICK = """
+DOM_EXACT_AVAILABILITY_CLICK = r"""
 (element, expected) => {
     if (!element.isConnected || element.tagName !== 'BUTTON' ||
         element.getAttribute('data-component') !== 'PdpLink' ||
