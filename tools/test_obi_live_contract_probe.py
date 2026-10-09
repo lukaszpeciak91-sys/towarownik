@@ -960,6 +960,258 @@ class MultiMarketResearchTest(unittest.TestCase):
             r.classify_contract([wrong], self.stores, self.obik)["type"])
         self.assertNotIn("pickupStoresStructure", wrong["shape"])
 
+    def observed_stock_record(
+        self, rows, store_query, *, product_id="3496072",
+        action="availability:open",
+    ):
+        r = self.r
+        url = ("https://www.obi.pl/api/pdp/v1/stock/" +
+               product_id + "?" + store_query)
+        safe = r.safe_url_request("GET", url, None, self.obik, self.stores)
+        path = safe["path"]
+        return {
+            "action": action,
+            **safe,
+            "status": 200,
+            "shape": r.response_shape(rows, self.obik, self.stores, path),
+        }
+
+    def test_live_five_exact_stock_path_product_identity_and_wrong_id(self):
+        r = self.r
+        item = self.observed_stock_record(
+            [{"storeNumber": "075", "stock": 0}], "storeIds=075",
+        )
+        self.assertEqual(
+            "/api/pdp/v1/stock/3496072", item["path"]
+        )
+        self.assertEqual("SINGULAR_REQUEST_PRODUCT_PATH",
+                         r.product_identity(item, self.obik))
+        self.assertTrue(r.observed_availability_response(item, self.obik))
+        self.assertTrue(r.relevant_open_network_record(item, self.obik))
+        wrong = self.observed_stock_record(
+            [{"storeNumber": "075", "stock": 0}],
+            "storeIds=075", product_id="3496073",
+        )
+        self.assertNotEqual("SINGULAR_REQUEST_PRODUCT_PATH",
+                            r.product_identity(wrong, self.obik))
+        self.assertFalse(r.observed_availability_response(wrong, self.obik))
+        self.assertFalse(r.relevant_open_network_record(wrong, self.obik))
+        self.assertNotIn("stockResponseStructure", wrong["shape"])
+
+    def test_live_five_exact_stock_request_counts_as_open_effect(self):
+        r = self.r
+        request = r.safe_url_request(
+            "GET",
+            "https://www.obi.pl/api/pdp/v1/stock/3496072?storeIds=075%2C003",
+            None, self.obik, self.stores,
+        )
+        request["action"] = "availability:open"
+        self.assertTrue(r.relevant_open_network_record(request, self.obik))
+        self.assertFalse(r.relevant_open_network_record(
+            {**request, "action": "initial:page"}, self.obik,
+        ))
+        self.assertFalse(r.relevant_open_network_record(
+            {**request, "path": "/api/pdp/v1/stock/3496073"}, self.obik,
+        ))
+        for path in ("/api/stock/3496072", "/api/pdp/v1/stock/3496072/extra",
+                     "/api/pdp/v1/notstock/3496072"):
+            self.assertFalse(
+                r.observed_availability_response(
+                    {**request, "path": path, "status": 200}, self.obik
+                )
+            )
+            self.assertFalse(r.relevant_open_network_record(
+                {**request, "path": path}, self.obik
+            ))
+
+    def test_store_ids_comma_and_repeated_parameters_keep_sequence(self):
+        r = self.r
+        for query, sequence in (
+            ("storeIds=003%2C019%2C075", ["003", "019", "075"]),
+            ("storeIds=003&storeIds=019&storeIds=075", ["003", "019", "075"]),
+            ("storeIds=003%2C019&storeIds=075", ["003", "019", "075"]),
+        ):
+            with self.subTest(query=query):
+                record = self.observed_stock_record([], query)
+                store_ids = record["query"]["storeIds"]
+                self.assertEqual(sequence, store_ids["canonicalIds"])
+                self.assertEqual(sequence, store_ids["canonicalSequence"])
+                self.assertEqual(3, store_ids["canonicalCount"])
+                self.assertFalse(store_ids["invalidOrUnknownPresent"])
+                self.assertFalse(store_ids["duplicatesPresent"])
+                self.assertTrue(store_ids["present"])
+        duplicate = self.observed_stock_record(
+            [], "storeIds=003%2C075&storeIds=003",
+        )["query"]["storeIds"]
+        self.assertEqual(["003", "075", "003"], duplicate["canonicalSequence"])
+        self.assertEqual(["003", "075"], duplicate["canonicalIds"])
+        self.assertEqual(2, duplicate["canonicalCount"])
+        self.assertTrue(duplicate["duplicatesPresent"])
+
+    def test_store_ids_unsafe_unknown_redacted_and_leading_zeros_preserved(self):
+        r = self.r
+        record = self.observed_stock_record(
+            [], "storeIds=003%2C075%2CBAD_SECRET%2C999"
+                "&token=PERSONAL_TOKEN&postalCode=33-300",
+        )
+        meta = record["query"]["storeIds"]
+        self.assertEqual(["003", "075"], meta["canonicalIds"])
+        self.assertTrue(meta["invalidOrUnknownPresent"])
+        self.assertEqual(4, meta["tokenCount"])
+        safe = json.dumps(record)
+        for hidden in ("BAD_SECRET", "PERSONAL_TOKEN", "33-300", "999"):
+            self.assertNotIn(hidden, safe)
+        self.assertEqual(
+            "F_INCONCLUSIVE",
+            r.classify_contract([record], self.stores, self.obik)["type"]
+        )
+        self.assertFalse(r.stock_request_coverage(record, self.stores)[
+            "requestIdsVerified"
+        ])
+        store_limit = len(self.stores)
+        overflowing = r.safe_observed_store_ids([
+            ("storeIds", ",".join(["075"] * (store_limit + 3))),
+        ], self.stores)
+        self.assertLessEqual(len(overflowing["canonicalSequence"]), store_limit)
+        self.assertTrue(overflowing["truncated"])
+        self.assertTrue(overflowing["invalidOrUnknownPresent"])
+
+    def test_stock_response_root_list_safe_schema_unknown_store_field(self):
+        r = self.r
+        rows = [
+            {
+                "storeCodeMystery": "003", "availableStock": 0,
+                "stockDescription": "PRIVATE_JUNK", "coordinates": [48.0, 20.1],
+                "postalCode": "33-300", "sessionToken": "HIDDEN_TOKEN",
+                "contactAddress": "SECRET STREET",
+            },
+            {
+                "storeCodeMystery": "075", "availableStock": None,
+                "stockDescription": "PRIVATE_TWO",
+            },
+        ]
+        record = self.observed_stock_record(rows, "storeIds=003%2C075")
+        shape = record["shape"]
+        diag = shape["stockResponseStructure"]
+        self.assertEqual("list", diag["containerType"])
+        self.assertEqual(2, diag["containerLength"])
+        self.assertTrue(diag["structuralOnly"])
+        self.assertIn("storeCodeMystery", diag["representativeObjectKeys"][0])
+        self.assertIn({"field": "storeCodeMystery", "storeNumber": "003"},
+                      diag["canonicalStoreIdFields"])
+        self.assertIn({"field": "storeCodeMystery", "storeNumber": "075"},
+                      diag["canonicalStoreIdFields"])
+        self.assertTrue(any(
+            item["field"] == "availableStock" and item.get("numericCandidate") == 0
+            for item in diag["availabilityCandidateFields"]
+        ))
+        self.assertTrue(any(
+            item["field"] == "availableStock" and item["scalarType"] == "null"
+            for item in diag["availabilityCandidateFields"]
+        ))
+        # Structural identity is not promoted into STORE_KEYS.
+        self.assertEqual([], shape["storeRows"])
+        self.assertEqual({},
+                         r.product_bound_stock_rows(record, self.stores, self.obik))
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([record], self.stores, self.obik)["type"])
+        safe = json.dumps(record, ensure_ascii=False)
+        for value in ("PRIVATE_JUNK", "PRIVATE_TWO", "HIDDEN_TOKEN",
+                      "33-300", "SECRET STREET", "48.0", "20.1"):
+            self.assertNotIn(value, safe)
+
+    def test_stock_batch_requested_vs_returned_rows_and_missing_unknown(self):
+        r = self.r
+        record = self.observed_stock_record([
+            {"storeNumber": "003", "stock": 0},
+            {"storeNumber": "075", "stock": None},
+        ], "storeIds=003%2C075%2C074")
+        coverage = r.stock_request_coverage(record, self.stores)
+        self.assertTrue(coverage["requestIdsVerified"])
+        self.assertEqual(["003", "075", "074"],
+                         coverage["requestedCanonicalIds"])
+        self.assertEqual(["003", "075"],
+                         coverage["returnedTrustedIds"])
+        self.assertEqual(["074"], coverage["missingRequestedIds"])
+        self.assertTrue(coverage["returnedSubsetOfRequest"])
+        self.assertFalse(coverage["everyRequestedStoreHasTrustedState"])
+        self.assertTrue(coverage["omittedIsUnknown"])
+        self.assertEqual(0, r.verified_rows(record, self.stores)["003"]["value"])
+        self.assertEqual("unknown_null",
+                         r.verified_rows(record, self.stores)["075"]["state"])
+        self.assertNotIn("074", r.verified_rows(record, self.stores))
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([record], self.stores, self.obik)["type"])
+
+    def test_known_stock_batch_can_be_but_is_not_yet_live_classified(self):
+        r = self.r
+        record = self.observed_stock_record([
+            {"storeNumber": "003", "stock": 0},
+            {"storeNumber": "075", "stock": 12},
+        ], "storeIds=003%2C075")
+        self.assertEqual("B_ONE_SHOT_SUBSET",
+            r.classify_contract([record], self.stores, self.obik)["type"])
+        unexpected = self.observed_stock_record([
+            {"storeNumber": "003", "stock": 0},
+            {"storeNumber": "074", "stock": 12},
+        ], "storeIds=003%2C075")
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([unexpected], self.stores, self.obik)["type"])
+        no_query = self.observation([
+            {"storeNumber": "003", "stock": 0},
+            {"storeNumber": "075", "stock": 12},
+        ], path="/api/pdp/v1/stock/3496072", action="availability:open")
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([no_query], self.stores, self.obik)["type"])
+        all_ids = ",".join(self.stores)
+        full = self.observed_stock_record([
+            {"storeNumber": sid, "stock": idx}
+            for idx, sid in enumerate(self.stores)
+        ], "storeIds=" + all_ids)
+        self.assertEqual("A_ONE_SHOT_ALL_STORES",
+            r.classify_contract([full], self.stores, self.obik)["type"])
+        subset_of_full = self.observed_stock_record([
+            {"storeNumber": "003", "stock": 0},
+            {"storeNumber": "075", "stock": 5},
+        ], "storeIds=" + all_ids)
+        self.assertEqual("B_ONE_SHOT_SUBSET",
+            r.classify_contract([subset_of_full], self.stores, self.obik)["type"])
+        # Even complete response cannot be A unless the request also
+        # explicitly covered every canonical OBI market.
+        not_requested = self.observed_stock_record([
+            {"storeNumber": sid, "stock": idx}
+            for idx, sid in enumerate(self.stores)
+        ], "storeIds=003%2C075")
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([not_requested], self.stores, self.obik)["type"])
+
+    def test_stock_after_open_remains_distinct_from_initial_sp_and_hd(self):
+        r = self.r
+        initial = self.observation(
+            {"pickupStores": []},
+            path="/api/pdp/v1/availability/sp/3496072",
+            action="initial:page",
+        )
+        delivery = self.observation(
+            {"deliveryDataPerSeller": [{
+                "sellerId": 100, "deliveryOption": "delivery"}]},
+            path="/api/pdp/v1/availability/hd/3496072",
+            action="initial:page",
+        )
+        post = self.observed_stock_record(
+            [{"mysteryIdField": "003", "availableStock": 0}],
+            "storeIds=003", action="availability:open",
+        )
+        self.assertNotIn("stockResponseStructure", initial["shape"])
+        self.assertEqual(0,
+            initial["shape"]["pickupStoresStructure"]["containerLength"])
+        self.assertNotIn("stockResponseStructure", delivery["shape"])
+        self.assertEqual("availability:open", post["action"])
+        self.assertEqual("list", post["shape"]["stockResponseStructure"]["containerType"])
+        self.assertTrue(r.relevant_open_network_record(post, self.obik))
+        self.assertEqual("F_INCONCLUSIVE",
+            r.classify_contract([initial, delivery, post], self.stores, self.obik)["type"])
+
     def test_canonical_store_directory_is_exact_not_inferred_from_city(self):
         self.assertGreaterEqual(len(self.stores), 50)
         self.assertEqual("Nowy Sącz", self.stores["075"]["city"])
