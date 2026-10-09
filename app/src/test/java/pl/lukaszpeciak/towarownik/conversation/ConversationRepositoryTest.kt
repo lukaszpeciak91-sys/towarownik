@@ -387,7 +387,7 @@ class ConversationRepositoryTest {
         val malformed = repository.beginUserTurn(null, "malformed", 3)
         val messageId = repository.load(malformed.conversationId)!!.messages.single().id
         database.openHelper.writableDatabase.execSQL(
-            "INSERT INTO message_attachments (messageId,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES ($messageId,'ARCHIVE','bad.zip','application/zip','00000000000000000000000000000000',1,NULL,NULL,1)",
+            "INSERT INTO message_attachments (messageId,position,type,displayName,mimeType,localId,byteSize,width,height,createdAt) VALUES ($messageId,0,'ARCHIVE','bad.zip','application/zip','00000000000000000000000000000000',1,NULL,NULL,1)",
         )
         assertNull(repository.load(malformed.conversationId)?.messages?.single()?.attachment)
     }
