@@ -1,6 +1,6 @@
 # OBI product availability across markets — research
 
-**Status: F_INCONCLUSIVE — confirmed first interactive live browser run #37990629233 (9 October 2026); multi-market contract not yet verified.**
+**Status: F_INCONCLUSIVE — live runs #2 and #3 completed (9 October 2026); no post-open multi-market stock contract verified.**
 Research only. There is no verified OBI all-market or subset API in this PR.
 The A–F test fixtures are synthetic and must never be interpreted as live findings.
 
@@ -55,6 +55,24 @@ completed successfully on head
   response shapes. The old research parser recognized no usable state field,
   so the classification was correctly **`F_INCONCLUSIVE`**.
 
+## CONFIRMED: live run #3 — empty prefetch, SVG-influenced button name
+
+Manual **OBI live contract probe** [run #37994385878](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37994385878) succeeded on HEAD \`b9aecc29e14901b3aacac59e9e4124a3235dc332\` (before the current selector change). Result: **\`F_INCONCLUSIVE\`**.
+
+- Exact OBIK **3496072**, selected market **075**, product-owned Nuxt identity and selected-store proof were verified again.
+- Initial Nuxt **did not contain product-owned multi-market stock/availability**.
+- The real browser's **initial:page** request \`GET /api/pdp/v1/availability/sp/3496072\` returned HTTP 200 with **\`pickupStores=[]\`**; research-only structural diagnostic: \`containerType=list\`, \`containerLength=0\`, **zero canonical store rows**. This does not mean other markets have zero stock or that a subset was checked.
+- Independently, \`GET /api/pdp/v1/availability/hd/3496072\` returned \`deliveryDataPerSeller\`, one observed item with field names \`sellerId\`, \`deliveryDate\`, \`deliveryOption\`, \`deliveryCost\`. This **delivery structure is not store-pickup inventory** and must remain separate.
+- Exact harmless opener remained present as an SSR **\`<button data-component="PdpLink">\`** with exact visible \`innerText\` **„Sprawdź dostępność w innym sklepie”**. Its nested SVG has an \`<title>arrow-right</title>\`, potentially changing Playwright's **accessible name**. The previous \`get_by_role(..., name=..., exact=True)\` returned zero matches; \`EXACT_BUTTON_MISSING\` was a **selector false negative**, *not* evidence the button disappeared.
+- No opener click was completed in run #3. **No post-open request, store-picker behavior, mutation of selected-store state, or multi-market stock contract has been proven.** Run #3 must remain **F**.
+
+### Research follow-up after run #3 (no new live evidence yet)
+
+- The opener now resolves **native** \`button[data-component="PdpLink"]\` candidates and requires exactly one with normalized **innerText equal to the observed entire phrase**. DOM index and generic availability substring never select it; zero/duplicate/hidden/disabled/changed controls fail closed. The click scrolls into view, uses a normal non-forced click and emits only a bounded failure category.
+- After an actual successful click, the probe records **new post-open UI structure** separately: visible dialog/region counts, bounded safe headings/keyword tags, input count and type, keyword-only search hints, candidate row counts, safe store-related **data-attribute names** and verified canonical OBI market numbers from explicit ID data attributes or exact **repository city + address** matching. Raw modal addresses, coordinates, arbitrary strings, postal codes, identifiers and cookies are **not emitted**.
+- A store search input alone is **observation only**, never permission to type guessed text. Market 003/074 selection is attempted only for one uniquely identified enabled row inside one visible dialog. No city-only match or page-wide recommendation click.
+- Browser requests are attributed to the action during which they **began**. Initial \`pickupStores=[]\` stays \`initial:page\`; if the frontend later issues a new product-bound request and returns non-empty \`pickupStores\`, that is a **separate \`availability:open\` observation**. Existing strict product identity, canonical store ID, typed usable state, zero/null/missing distinctions and A–F gates are unchanged. A complete proven initial response would make additional market clicks unnecessary; no such response has yet been observed.
+
 ## OBSERVED BUT NOT YET PRODUCTION-TRUSTED
 
 The two `/api/pdp/v1/availability/{sp,hd}/3496072` calls are **real
@@ -65,26 +83,25 @@ only bounded **structural** evidence inside `pickupStores` and, separately,
 `deliveryDataPerSeller`; it will **not** automatically promote a matching
 store-shaped object to known availability.
 
-The exact opener now uses
-`get_by_role("button", name="Sprawdź dostępność w innym sklepie", exact=True)`.
-It requires one visible, enabled match, optionally corroborates
-`data-component=PdpLink`, scrolls it into view and makes a normal click;
-zero/multiple/hidden/disabled/changed controls fail closed. No generic
-availability text, recommendation, DOM index or forced click is used.
+The run-2 exact accessible-name selector was tested in run #3 and
+failed because nested SVG accessibility differs from visible innerText.
+The **current** selector requires one visible and enabled exact
+`button[data-component="PdpLink"]` with precisely matching normalized
+`innerText`. Run #3 did not yet execute this corrected version.
 Click failures produce bounded categories, never raw exception text.
 
 ## UNKNOWN: research gates after run #2
 
 | Subject | Current status |
 | --- | --- |
-| Exact harmless opener | **CONFIRMED** in product SSR/visible controls; run #2 click failed |
+| Exact harmless opener | **CONFIRMED** SSR and innerText in runs #2/#3; SVG affects accessible name; no successful click yet |
 | Real product-bound availability request | **CONFIRMED** `/api/pdp/v1/availability/sp/3496072`; nested `pickupStores` schema **UNKNOWN** |
 | Separate delivery response | **CONFIRMED** `/api/pdp/v1/availability/hd/3496072`; `deliveryDataPerSeller` meaning **UNKNOWN** |
 | Store ID field inside `pickupStores` | UNKNOWN; must map exact three-digit canonical OBI_STORES number |
 | A/B/D/E request coverage, request-count economics | UNKNOWN; no trustworthy store rows yet |
 | Numeric versus qualitative store availability | UNKNOWN; no usable verified state field |
 | Zero/unavailable/null/omitted store behavior | UNKNOWN; do not invent values |
-| Persistent selected-store mutation during interaction | UNKNOWN; click failed, no store checking occurred |
+| Persistent selected-store mutation during interaction | UNKNOWN; runs #2/#3 did not complete a click, no other-store checking occurred |
 | Product-owned initial Nuxt multi-store preload | **NOT OBSERVED** for control product 3496072 in run #2 |
 
 ## REJECTED / UNSAFE ASSUMPTIONS
@@ -160,8 +177,8 @@ bodies, cookies or localStorage. Cookie/localStorage values are compared
 A change flag is not proof of which selected store changed.
 
 The manual job may technically succeed while output classification
-remains F_INCONCLUSIVE. Run #2 is one such case. The next run should
-record the `pickupStores` nested shape and retry the now-exact opener;
+remains F_INCONCLUSIVE. Runs #2 and #3 are such cases. The next run should
+capture newly opened UI and post-open network traffic after the fixed innerText opener;
 do not report any A–E result without verified store IDs and usable states.
 
 ## Offline analyzer and A–F classification
@@ -234,8 +251,9 @@ real OBI evidence. No production provider, parser, Worker, Advisor,
 protocol, Room, UI, prompt, WorkingProfile or endpoint call changes
 are included in this PR.
 
-**Exit gate:** run #2 confirmed the exact product, selected store, harmless
-opener and two real pre-click availability endpoints, but **not their market
-stock semantics**. Audit a second manual browser run after the safe parser
-and exact-click changes, classify only product-bound verified market states,
-and plan production in a separate PR. **Do not merge this research PR.**
+**Exit gate:** runs #2/#3 verified product/store ownership, the harmless
+opener, two product-bound initial availability routes and **empty initial
+pickupStores in run #3**, but no multi-market stock semantics. Audit the
+next manual browser run of the corrected innerText selector and post-open
+structural diagnostics before deciding on any provider-neutral contract.
+Production remains a separate PR. **Do not merge this research PR.**
