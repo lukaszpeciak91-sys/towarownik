@@ -3220,24 +3220,76 @@ BATCH_PRICES_PATH = re.compile(
 )
 
 
-def availability_button(page: Any) -> Any | None:
-    """Target the proven accessible action, never generic purchase buttons."""
-    pattern = re.compile(r"^Sprawdź stan i kup towar w oddziałach Kwant$", re.I)
+AVAILABILITY_CHILD_SELECTOR = (
+    '[aria-label="Sprawdź stan i kup towar w oddziałach Kwant"]'
+)
+AVAILABILITY_PARENT_SELECTOR = "xpath=ancestor::*[@role='button'][1]"
+AVAILABILITY_STOCK_ROW_RE = re.compile(
+    r"\b(?:[0-9]{1,9}\s*szt\.?|brak|niedostepn\w*|dostepn\w*|stan)\b",
+    re.I,
+)
+AVAILABILITY_EXCLUDED_ROW_RE = re.compile(
+    r"\b(?:zapytaj\s+eksperta|kontakt\s+z\s+ekspertem|"
+    r"dodaj\s+do\s+koszyka|kup\s+teraz|zadzwo[nń]|telefon)\b",
+    re.I,
+)
+
+
+def is_selected_branch_stock_row(
+    parent_text: str, selected_branch_label: str,
+) -> bool:
+    """Screen exact inventory row text; name alone is never sufficient."""
+    if not isinstance(parent_text, str) or len(parent_text) > 360:
+        return False
+    normalized = normalize_branch_identity(parent_text)
+    branch = normalize_branch_identity(selected_branch_label)
+    if not normalized or not branch or len(branch) > 100:
+        return False
+    if not re.search(rf"(?<!\w){re.escape(branch)}(?!\w)", normalized):
+        return False
+    return (
+        AVAILABILITY_STOCK_ROW_RE.search(normalized) is not None
+        and AVAILABILITY_EXCLUDED_ROW_RE.search(normalized) is None
+    )
+
+
+def availability_button(
+    page: Any, selected_branch_label: str,
+) -> Any | None:
+    """Resolve actual clickable ancestor, never the duplicate expert row.
+
+    Run #17: aria-label is on a child, role=button on its parent. Require
+    precisely one eligible visible, enabled stock-row parent for the publicly
+    verified selected branch; do not rely on DOM order.
+    """
+    if not normalize_branch_identity(selected_branch_label):
+        return None
     try:
-        button = page.get_by_role("button", name=pattern)
-        count = button.count()
-        if not 1 <= count <= 10:
+        descendants = page.locator(AVAILABILITY_CHILD_SELECTOR)
+        count = descendants.count()
+        if not 1 <= count <= 12:
             return None
-        eligible = []
+        matches: list[Any] = []
         for index in range(count):
-            target = button.first if index == 0 else button.nth(index)
-            if target.is_visible() and target.is_enabled():
-                eligible.append(target)
-        if len(eligible) == 1:
-            return eligible[0]
+            child = descendants.nth(index)
+            if not child.is_visible():
+                continue
+            parent = child.locator(AVAILABILITY_PARENT_SELECTOR)
+            if parent.count() != 1:
+                continue
+            button = parent.first
+            if (
+                button.get_attribute("role") != "button"
+                or not button.is_visible()
+                or not button.is_enabled()
+            ):
+                continue
+            text = button.inner_text(timeout=1200)[:361]
+            if is_selected_branch_stock_row(text, selected_branch_label):
+                matches.append(button)
+        return matches[0] if len(matches) == 1 else None
     except Exception:
         return None
-    return None
 
 
 def inspect_availability_dom(
