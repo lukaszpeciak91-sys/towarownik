@@ -507,25 +507,61 @@ def discover_controls(page: Any) -> list[dict[str, Any]]:
     return controls
 
 
-def click_safe_control(page: Any, controls: list[dict[str, Any]]) -> dict[str, Any]:
-    """Click only ONE unambiguous harmless store/availability discovery control."""
-    eligible = [c for c in controls if c["enabled"]
-                and c["role"] in ("button", "a", "link")
-                and SELECT_ACTION.search(c["label"])
-                and SELECT_VERB.search(c["label"])
-                and not UNSAFE_ACTION.search(c["label"])]
-    if len(eligible) != 1:
-        return {"status": "NO_UNAMBIGUOUS_SAFE_CONTROL", "eligibleCount": len(eligible)}
-    target = eligible[0]
+OBSERVED_AVAILABILITY_BUTTON = "Sprawdź dostępność w innym sklepie"
+
+
+def resolve_exact_availability_opener(page: Any) -> tuple[Any | None, str]:
+    """Run #2: real PDP button[data-component=PdpLink], exact accessible name.
+
+    Deliberately never fall back to index, substring, nearby text or
+    recommendation matches. A hidden/disabled/duplicate button is not usable.
+    """
     try:
-        node = page.locator("button,[role='button'],a[href],select").nth(target["index"])
-        if not node.is_visible() or not node.is_enabled():
-            return {"status": "CONTROL_CHANGED"}
-        node.click(timeout=3500)
-        page.wait_for_timeout(1200)
-        return {"status": "CLICKED", "label": target["label"], "role": target["role"]}
+        locator = page.get_by_role(
+            "button", name=OBSERVED_AVAILABILITY_BUTTON, exact=True,
+        )
+        count = locator.count()
+        if count == 0:
+            return None, "EXACT_BUTTON_MISSING"
+        if count != 1:
+            return None, "EXACT_BUTTON_AMBIGUOUS"
+        button = locator.first
+        if not button.is_visible():
+            return None, "EXACT_BUTTON_HIDDEN"
+        if not button.is_enabled():
+            return None, "EXACT_BUTTON_DISABLED"
+        component = button.get_attribute("data-component")
+        if component not in (None, "PdpLink"):
+            return None, "UNEXPECTED_BUTTON_COMPONENT"
+        return button, "EXACT_BUTTON_RESOLVED"
     except Exception:
-        return {"status": "CLICK_FAILED"}
+        return None, "BUTTON_RESOLUTION_FAILED"
+
+
+def click_safe_control(page: Any, controls: list[dict[str, Any]]) -> dict[str, Any]:
+    """Click precisely the live-observed harmless availability button."""
+    # controls are diagnostics only, never an index-based click handle.
+    button, category = resolve_exact_availability_opener(page)
+    if button is None:
+        return {"status": category}
+    try:
+        button.scroll_into_view_if_needed(timeout=2500)
+        button.click(timeout=5000)  # normal click only: no force=True
+        page.wait_for_timeout(1500)
+        return {
+            "status": "CLICKED", "label": OBSERVED_AVAILABILITY_BUTTON,
+            "role": "button", "selectorEvidence": "EXACT_OBSERVED_ROLE_AND_NAME",
+        }
+    except Exception as exc:
+        # Never print raw Playwright exceptions (may contain page content/URLs).
+        return {
+            "status": "CLICK_FAILED",
+            "failureCategory": (
+                "TIMEOUT" if type(exc).__name__ == "TimeoutError"
+                else "PLAYWRIGHT_CLICK_ERROR"
+            ),
+        }
+
 
 
 def _stored_state(context: Any, page: Any) -> tuple[Any, Any]:
