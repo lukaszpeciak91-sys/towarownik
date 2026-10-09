@@ -345,6 +345,12 @@ Advisor-facing upstream failures retain the public `502 {"error":"upstream_failu
 - Images become Responses `input_image` data URLs with `detail=high`; PDFs become `input_file.file_data` data URLs. The Files API and Cloudflare R2/KV/D1 are not involved.
 - Attachment content is untrusted user input. It may ground identity, codes, and specifications, but current provider stock, price, and availability retain the existing local verification boundary.
 
+## Opt-in multi-attachment transport (protocol v5)
+
+- Version 5 is distinct from v4. The current UI still sends one attachment through v4; Android's explicit `attachments: List<AdvisorAttachment>` API selects v5 without changing Room storage, pending ownership, UI, or retrieval/controller workflows.
+- V5 START/MESSAGE sends `X-Taksula-Attachment-Protocol: 5` and a JSON `payload` declaring `protocolVersion: 5`, followed by 1–3 repeated `attachment` file parts in stable order. The header chooses the larger pre-formData size guard; mismatched marker/payload versions reject. Legacy v4 retains its original single part and 16 MiB + 16 KiB declared-length guard; v5 permits up to 3 × 16 MiB + 16 KiB multipart bytes, while every file retains the existing 16 MiB bound and MIME/magic validation.
+- The Worker validates all parts before forwarding them together in one Responses USER message. Optional text comes first, then ordered high-detail `input_image` or named PDF `input_file`. One-file v4, v2/v3 JSON text, JSON-only `/continue` (including v5), provider-aware `find_products`, local verification authority, observability schema, and response chaining remain intact.
+
 ## Sent attachment presentation and import isolation
 
 Persisted USER attachment metadata remains the pointer to the existing app-private attachment file. Chat presentation resolves only that private file: images render as compact USER-bubble media above optional text, while PDFs render as a compact document row with the persisted sanitized display name and human-readable size. Missing files, size-mismatched files, or image decode failures degrade to a bounded unavailable-attachment message without exposing a path, URI, or content. Text-only history is unchanged.
