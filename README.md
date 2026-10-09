@@ -173,17 +173,17 @@ The Android product flow supports direct OBIK lookup plus EAN/GTIN and product-n
 
 ## Local conversation persistence
 
-Room schema v11 stores provider-owned conversation context, rendered USER/ASSISTANT messages, verified product snapshots, normalized web sources, advisor search actions, attachment metadata, and nullable Advisor trace correlation:
+Room schema v12 stores provider-owned conversation context, rendered USER/ASSISTANT messages, verified product snapshots, normalized web sources, advisor search actions, attachment metadata, and nullable Advisor trace correlation:
 
 - conversation: id, title, createdAt, updatedAt, nullable lastResponseId, draft, legacy storeNumber, providerId, branchId;
 - message: id, conversationId, role, text, createdAt, nullable advisorTraceId;
 - message product: messageId, position, providerId, productId, branchId, legacy OBI identity where applicable, articleNumber, name, nullable selected-branch stock, nullable centralStock, lossless decimal price text, trusted productUrl, nullable trusted imageUrl, verifiedAt;
 - message source: messageId, position, bounded title, normalized HTTPS URL, nullable citation span;
 - message search action: messageId, position, exact advisor query, storeNumber, reportedTotalCount;
-- message attachment: one row per USER message with bounded metadata and opaque app-private localId; attachment bytes stay outside Room;
+- message attachments: 0–3 ordered rows per USER message with bounded metadata and opaque app-private localIds; attachment bytes stay outside Room;
 - child rows cascade with their message/conversation.
 
-Schema v1 upgrades non-destructively through explicit migrations to v11. The later migrations add provider/branch ownership (v7), provider-owned product identity (v8), central stock (v9), message attachments (v10), and nullable `messages.advisorTraceId` (v11). Historical rows retain safe defaults/nulls rather than being reinterpreted. Search actions and trace IDs are local operational metadata and are not model instructions.
+Schema v1 upgrades non-destructively through explicit migrations to v12. The later migrations add provider/branch ownership (v7), provider-owned product identity (v8), central stock (v9), message attachments (v10), and nullable `messages.advisorTraceId` (v11). Historical rows retain safe defaults/nulls rather than being reinterpreted. Search actions and trace IDs are local operational metadata and are not model instructions.
 
 No API keys, app bearer tokens, provider HTML/cookies, parser internals, raw OpenAI responses, or reasoning data are persisted.
 
