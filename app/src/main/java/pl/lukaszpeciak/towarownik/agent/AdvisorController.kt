@@ -696,6 +696,7 @@ internal suspend fun continueAdvisorToolTurn(
             )
         AdvisorTransportContract.PROVIDER_V3,
         AdvisorTransportContract.PROVIDER_V4,
+        AdvisorTransportContract.PROVIDER_V5,
         ->
             proxyClient.continueTurn(
                 responseId = responseId,
