@@ -720,25 +720,64 @@ async function parseMultipartRequest(
   request: Request,
   isMessage: boolean,
 ): Promise<StartRequest | MessageRequest> {
-  requireMultipartContentLength(request.headers.get("Content-Length"));
+  // V5 opts into a larger pre-parse bound explicitly; v4's original
+  // Content-Length guard still runs before formData().
+  const versionHeader = request.headers.get(MULTI_ATTACHMENT_PROTOCOL_HEADER);
+  if (
+    versionHeader !== null &&
+    versionHeader !== String(MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION)
+  ) {
+    throw new InvalidRequestError();
+  }
+  const isMulti = versionHeader !== null;
+  requireMultipartContentLength(
+    request.headers.get("Content-Length"),
+    isMulti ? MULTI_MULTIPART_BODY_MAX_BYTES : MULTIPART_BODY_MAX_BYTES,
+  );
+
   const form = await request.formData().catch(() => {
     throw new InvalidRequestError();
   });
   const keys: string[] = [];
   form.forEach((_value, key) => keys.push(key));
-  if (keys.length !== 2 || !keys.includes("payload") || !keys.includes("attachment")) {
+  const payloads = form.getAll("payload");
+  const parts = form.getAll("attachment");
+  if (
+    payloads.length !== 1 ||
+    parts.length < 1 ||
+    parts.length > (isMulti ? MAX_MULTI_ATTACHMENTS : 1) ||
+    keys.length !== payloads.length + parts.length ||
+    keys.some((key) => key !== "payload" && key !== "attachment") ||
+    typeof payloads[0] !== "string" ||
+    parts.some((part) => !(part instanceof File))
+  ) {
     throw new InvalidRequestError();
   }
-  const payload = form.get("payload");
-  const file = form.get("attachment");
-  if (typeof payload !== "string" || !(file instanceof File)) throw new InvalidRequestError();
-  if (file.size < 1) throw new InvalidRequestError();
-  if (file.size > ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
+
+  const files = parts as File[];
+  let totalBytes = 0;
+  for (const file of files) {
+    if (file.size < 1) throw new InvalidRequestError();
+    if (file.size > ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
+    totalBytes += file.size;
+  }
+  if (totalBytes > MAX_MULTI_ATTACHMENTS * ATTACHMENT_MAX_BYTES) {
+    throw new RequestTooLargeError();
+  }
+
   let value: unknown;
-  try { value = JSON.parse(payload); } catch { throw new InvalidRequestError(); }
+  try {
+    value = JSON.parse(payloads[0] as string);
+  } catch {
+    throw new InvalidRequestError();
+  }
   const record = requireRecord(value);
   const protocolVersion = validateProtocolVersion(record.protocolVersion);
-  if (protocolVersion !== CURRENT_ADVISOR_PROTOCOL_VERSION) throw new InvalidRequestError(protocolVersion);
+  if (protocolVersion !== (isMulti
+    ? MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION
+    : CURRENT_ADVISOR_PROTOCOL_VERSION)) {
+    throw new InvalidRequestError(protocolVersion);
+  }
   const required = isMessage
     ? ["previousResponseId", "message", "providerId", "branchId"]
     : ["message", "providerId", "branchId"];
@@ -746,26 +785,37 @@ async function parseMultipartRequest(
   const message = validatedAttachmentMessage(object.message);
   const providerId = validateProviderId(object.providerId);
   const branchId = validateBranchId(object.branchId);
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  validateAttachmentSignature(file.type, bytes, protocolVersion);
+
+  // Fully validate every part before forwarding any of them to Responses.
+  const attachments: AdvisorAttachment[] = [];
+  for (const file of files) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    validateAttachmentSignature(file.type, bytes, protocolVersion);
+    attachments.push({
+      mimeType: file.type as AdvisorAttachment["mimeType"],
+      bytes,
+      filename: sanitizeAttachmentFilename(file.name),
+    });
+  }
   const base = {
     protocolVersion,
     message,
     providerId,
     branchId,
     storeNumber: branchId,
-    attachment: {
-      mimeType: file.type as AdvisorAttachment["mimeType"],
-      bytes,
-      filename: sanitizeAttachmentFilename(file.name),
-    },
+    ...(isMulti
+      ? { attachments }
+      : { attachment: attachments[0] }),
   };
   return isMessage
     ? { ...base, previousResponseId: boundedString(object.previousResponseId, MAX_RESPONSE_ID_CHARS) }
     : base;
 }
 
-function requireMultipartContentLength(value: string | null): number {
+function requireMultipartContentLength(
+  value: string | null,
+  maximum: number,
+): number {
   if (value === null) {
     throw new InvalidRequestError();
   }
@@ -774,7 +824,7 @@ function requireMultipartContentLength(value: string | null): number {
     throw new InvalidRequestError();
   }
   const parsed = Number(normalized);
-  if (!Number.isSafeInteger(parsed) || parsed > MULTIPART_BODY_MAX_BYTES) {
+  if (!Number.isSafeInteger(parsed) || parsed > maximum) {
     throw new RequestTooLargeError();
   }
   return parsed;
