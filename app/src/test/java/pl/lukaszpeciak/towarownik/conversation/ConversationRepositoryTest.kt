@@ -60,11 +60,10 @@ class ConversationRepositoryTest {
             AttachmentType.PDF, name, "application/pdf", 5, createdAt = 1,
             source = { ByteArrayInputStream("%PDF-".toByteArray()) },
         )
-        val first = make("first.pdf")
-        val second = make("second.pdf")
-        val third = make("third.pdf")
         val groups = listOf(
-            listOf(first), listOf(first, second), listOf(first, second, third),
+            listOf(make("one-first.pdf")),
+            listOf(make("two-first.pdf"), make("two-second.pdf")),
+            listOf(make("three-first.pdf"), make("three-second.pdf"), make("three-third.pdf")),
         )
         val ids = groups.mapIndexed { index, group ->
             repository.beginUserTurn(
@@ -81,7 +80,7 @@ class ConversationRepositoryTest {
                 repository.load(id)!!.messages.single().attachments.map { it.localId },
             )
         }
-        attachmentStorage.delete(second.localId)
+        attachmentStorage.delete(groups[2][1].localId)
         val restored = repository.load(ids[2])!!.messages.single().attachments
         assertEquals(3, restored.size)
         assertEquals(
