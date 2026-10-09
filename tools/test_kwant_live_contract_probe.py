@@ -2474,6 +2474,69 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
         self.assertEqual("REQUEST_TRIGGERED", remote["classification"])
         self.assertFalse(remote["afterZeroVisible"])
 
+
+    def test_early_selected_branch_id_and_exact_current_quantity(self):
+        html = (
+            '<script id="__NEXT_DATA__" type="application/json">'
+            + json.dumps({"props": {"pageProps": {"departments": {"list": [
+                {"department_id": 205, "name": "Nowy Sącz"},
+                {"department_id": 204, "name": "Tarnów"},
+            ]}}}})
+            + "</script>"
+        )
+        url = (
+            "https://kwant.net.pl/lista-hurtowni-elektrycznych/"
+            "hurtownia-elektryczna-nowy%20sacz/205"
+        )
+        def branch_id(**changes):
+            args = dict(
+                branch_page_url=url,
+                branch_html=html,
+                selected_branch_label="Nowy Sącz",
+                selection_confirmed=True,
+            )
+            args.update(changes)
+            return probe.resolved_public_selected_branch_id(**args)
+
+        self.assertEqual("205", branch_id())
+        self.assertEqual(probe.UNKNOWN, branch_id(selection_confirmed=False))
+        self.assertEqual(probe.UNKNOWN, branch_id(selected_branch_label="Tarnów"))
+        self.assertEqual(probe.UNKNOWN, branch_id(branch_page_url=url[:-3] + "999"))
+        self.assertEqual(probe.UNKNOWN, branch_id(branch_html="<html></html>"))
+
+        payload = {
+            "product_id": 580,
+            "department_stock": {"department_id": 205, "stock": 424},
+        }
+        observation = self.response(
+            probe.research_json_shape(payload, "580", self.DIRECTORY),
+            action="product:after",
+            path="/api/front/products/580/current",
+            query={"depstock": "205"},
+        )
+        exact = probe.selected_branch_current_diagnostic(
+            [observation], "580", branch_id()
+        )
+        self.assertEqual(424, exact["stock"])
+        self.assertEqual(
+            "CURRENT_IDENTITY_AND_DEPSTOCK_VERIFIED", exact["source"]
+        )
+        wrong_branch = {**observation, "query": {
+            "safeValues": {"depstock": "204"}
+        }}
+        wrong_product = {**observation, "shape": probe.research_json_shape(
+            {"product_id": 581, "department_stock": {
+                "department_id": 205, "stock": 424,
+            }},
+            "580", self.DIRECTORY,
+        )}
+        for invalid in (wrong_branch, wrong_product):
+            self.assertIsNone(
+                probe.selected_branch_current_diagnostic(
+                    [invalid], "580", branch_id()
+                )["stock"]
+            )
+
     def test_current_stock_diagnostic_excludes_recommendation_values(self):
         item = self.response(probe.research_json_shape(
             {"product_id": 580, "stock": 123,
