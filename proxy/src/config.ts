@@ -349,6 +349,7 @@ export const PROVIDER_TOOL = {
       },
       requestedBranch: {
         type: ["string", "null"],
+        minLength: 1,
         maxLength: 100,
         description:
           "Literal KWANT location explicitly named by the user for a one-off lookup, otherwise null.",

@@ -29,6 +29,7 @@ import {
   agentInstructionsForProfile,
   agentInstructionsForStore,
 } from "../.test-dist/config.js";
+import { parseToolArguments, InvalidRequestError } from "../.test-dist/validation.js";
 
 function count(haystack, needle) {
   return haystack.split(needle).length - 1;
@@ -539,6 +540,72 @@ test("protocol constants and local tool contracts remain unchanged", () => {
     PROVIDER_TOOL.parameters.properties.requestedBranch.type,
     ["string", "null"],
   );
+  assert.equal(
+    PROVIDER_TOOL.parameters.properties.providerId.pattern,
+    "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+  );
+  assert.equal(
+    PROVIDER_TOOL.parameters.properties.branchId.pattern,
+    "^[A-Za-z0-9._-]{1,64}$",
+  );
+  const queries = PROVIDER_TOOL.parameters.properties.queries;
+  assert.equal(queries.minItems, 1);
+  assert.equal(queries.maxItems, 5);
+  assert.deepEqual(queries.items.required, ["query", "limit"]);
+  assert.equal(queries.items.additionalProperties, false);
+  assert.equal(queries.items.properties.query.minLength, 1);
+  assert.equal(queries.items.properties.query.maxLength, 200);
+  assert.equal(queries.items.properties.limit.minimum, 1);
+  assert.equal(queries.items.properties.limit.maximum, 5);
+});
+
+test("provider requestedBranch strict schema matches the v3/v4 parser", () => {
+  const schema = PROVIDER_TOOL.parameters.properties.requestedBranch;
+  assert.deepEqual(schema.type, ["string", "null"]);
+  assert.equal(schema.minLength, 1);
+  assert.equal(schema.maxLength, 100);
+
+  const baseArgs = {
+    providerId: "kwant-pl",
+    branchId: "205",
+    requestedBranch: null,
+    queries: [{ query: "MBN116E", limit: 2 }],
+  };
+  const cases = [
+    { label: "no one-off branch", value: null, accepted: true },
+    { label: "explicit user location", value: "Nowy Sącz", accepted: true },
+    { label: "empty string", value: "", accepted: false },
+    { label: "maximum length", value: "x".repeat(100), accepted: true },
+    { label: "overlong string", value: "x".repeat(101), accepted: false },
+  ];
+
+  for (const { label, value, accepted } of cases) {
+    const schemaAccepts = value === null
+      ? schema.type.includes("null")
+      : typeof value === "string" &&
+        schema.type.includes("string") &&
+        value.length >= schema.minLength &&
+        value.length <= schema.maxLength;
+    assert.equal(schemaAccepts, accepted, `${label}: declared schema`);
+
+    for (const protocolVersion of [3, 4]) {
+      const args = { ...baseArgs, requestedBranch: value };
+      const raw = JSON.stringify(args);
+      if (accepted) {
+        assert.deepEqual(
+          parseToolArguments(raw, protocolVersion),
+          args,
+          `${label}: parser v${protocolVersion}`,
+        );
+      } else {
+        assert.throws(
+          () => parseToolArguments(raw, protocolVersion),
+          InvalidRequestError,
+          `${label}: parser v${protocolVersion}`,
+        );
+      }
+    }
+  }
 });
 
 test("final answer schemas remain unchanged", () => {
