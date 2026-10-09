@@ -3782,8 +3782,9 @@ class ObservedLocationsResponses:
         if not ok:
             return
         parsed = urlsplit(safe)
-        if parsed.hostname != KWANT_SERVICES_HOST or not parsed.path.startswith(
-            "/api/front/"
+        if (
+            parsed.hostname not in {KWANT_HOST, KWANT_SERVICES_HOST}
+            or not parsed.path.startswith("/api/")
         ):
             return
         headers = getattr(request, "headers", {}) or {}
@@ -3828,6 +3829,11 @@ class ObservedLocationsResponses:
         parsed = urlsplit(safe)
         if (
             not action.startswith("locations:")
+            and parsed.hostname != KWANT_SERVICES_HOST
+        ):
+            return
+        if (
+            not action.startswith("locations:")
             and parsed.path != KWANT_SEARCH_API_PATH
             and not CURRENT_STOCK_PATH.fullmatch(parsed.path)
             and not BATCH_PRICES_PATH.fullmatch(parsed.path)
@@ -3835,8 +3841,8 @@ class ObservedLocationsResponses:
             return
         # The observer records existing service calls, never probes invented URLs.
         if (
-            parsed.hostname != KWANT_SERVICES_HOST
-            or not parsed.path.startswith("/api/front/")
+            parsed.hostname not in {KWANT_HOST, KWANT_SERVICES_HOST}
+            or not parsed.path.startswith("/api/")
         ):
             return
         headers = getattr(response, "headers", {}) or {}
