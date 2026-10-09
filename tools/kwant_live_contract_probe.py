@@ -1627,6 +1627,8 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
         ])
         for observed in locations.get("observedResponses", []):
             lines.append("observed=" + format_scalar(observed))
+        for request in locations.get("observedRequests", []):
+            lines.append("availabilityRequest=" + format_scalar(request))
     (out_dir / "summary.txt").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
@@ -2633,6 +2635,7 @@ def run_live_probe(
         page.on("request", recorder.on_request)
         page.on("response", recorder.on_response)
         page.on("response", locations_capture.on_response)
+        page.on("request", locations_capture.on_request)
 
         recorder.set_action("baseline")
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
@@ -3720,6 +3723,35 @@ class ObservedLocationsResponses:
         self.product_id = product_id
         self.directory: dict[str, str] = {}
         self.records: list[dict[str, Any]] = []
+        self.request_records: list[dict[str, Any]] = []
+
+    def on_request(self, request: Any) -> None:
+        """Record availability requests separately from page-wide recorder cap."""
+        action = self.recorder.action
+        if not action.startswith("locations:") or len(self.request_records) >= 60:
+            return
+        if getattr(request, "resource_type", None) not in {"xhr", "fetch"}:
+            return
+        ok, safe = sanitize_kwant_network_url(getattr(request, "url", ""))
+        if not ok:
+            return
+        parsed = urlsplit(safe)
+        if parsed.hostname != KWANT_SERVICES_HOST or not parsed.path.startswith(
+            "/api/front/"
+        ):
+            return
+        headers = getattr(request, "headers", {}) or {}
+        self.request_records.append({
+            "action": action,
+            "method": str(getattr(request, "method", "")).upper(),
+            "host": parsed.hostname,
+            "path": parsed.path,
+            "query": sanitized_query(getattr(request, "url", "")),
+            "body": sanitize_body_shape(
+                getattr(request, "post_data", None),
+                content_type=str(headers.get("content-type", "")),
+            ),
+        })
 
     def on_response(self, response: Any) -> None:
         action = self.recorder.action
@@ -3827,6 +3859,7 @@ def research_product_locations(
         "availabilityUi": {},
         "filterResearch": {"classification": "NOT_TOGGLED"},
         "observedResponses": [],
+        "observedRequests": [],
         "oneShotPerBranchResponseObserved": False,
         "candidateMultiBranchResponseObserved": False,
         "completeness": UNKNOWN,
@@ -3897,6 +3930,7 @@ def research_product_locations(
 
         recorder.set_action("locations:open-branches")
         before = len(capture.records)
+        before_requests = len(capture.request_records)
         try:
             target.click(timeout=5000)
             page.wait_for_timeout(1800)
@@ -3906,6 +3940,7 @@ def research_product_locations(
                 "target": "exact-availability-aria-button",
                 "found": True, "clicked": True,
                 "newApiResponses": len(capture.records) - before,
+                "newApiRequests": len(capture.request_records) - before_requests,
             })
         except Exception:
             result["uiActions"].append({
@@ -3932,14 +3967,14 @@ def research_product_locations(
             filter_control = None
         if filter_control is not None:
             recorder.set_action("locations:available-only-filter")
-            before_filter = len(capture.records)
+            before_filter = len(capture.request_records)
             try:
                 filter_control.click(timeout=3000)
                 page.wait_for_timeout(1300)
                 filtered = inspect_availability_dom(page, capture.directory)
                 result["filterResearch"] = classify_availability_filter(
                     opened, filtered,
-                    len(capture.records) - before_filter, True,
+                    len(capture.request_records) - before_filter, True,
                 )
                 result["availabilityUiAfterFilter"] = filtered
             except Exception:
@@ -3951,6 +3986,7 @@ def research_product_locations(
         result["reason"] = "PUBLIC_PAGE_UNAVAILABLE"
     finally:
         result["observedResponses"] = list(capture.records)
+        result["observedRequests"] = list(capture.request_records)
         result["candidateMultiBranchResponseObserved"] = any(
             row.get("shape", {}).get("verifiedDirectoryBranchCount", 0) >= 2
             for row in capture.records
