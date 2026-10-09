@@ -2352,127 +2352,128 @@ internal fun formatAttachmentByteSize(byteSize: Long): String {
     return "$formatted $unit"
 }
 
+
 @Composable
 private fun UserMessageContent(
     message: AdvisorChatMessage,
     attachmentStorage: AttachmentStorage,
 ) {
-    val context = LocalContext.current
-    val attachment = message.attachment
-    var imageFailed by remember(attachment?.localId) {
-        mutableStateOf(false)
-    }
-
     Column(
-        modifier = Modifier.padding(
-            horizontal = 10.dp,
-            vertical = 9.dp,
-        ),
+        modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        attachment?.let { item ->
-            val renderKind = attachmentStorage.renderKind(item)
-            when {
-                renderKind == AttachmentRenderKind.UNAVAILABLE ||
-                    imageFailed -> {
-                    Row(
-                        modifier = Modifier
-                            .widthIn(max = 300.dp)
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            painter = painterResource(
-                                R.drawable.ic_document_24,
-                            ),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                        Text(
-                            text = stringResource(
-                                R.string.attachment_error_missing_persisted,
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                renderKind == AttachmentRenderKind.IMAGE -> {
-                    AsyncImage(
-                        model = attachmentStorage.contentUri(
-                            context,
-                            item.localId,
-                        ),
-                        contentDescription = stringResource(
-                            R.string.attachment_image_preview,
-                        ),
-                        contentScale = ContentScale.Crop,
-                        onError = { imageFailed = true },
-                        modifier = Modifier
-                            .width(260.dp)
-                            .heightIn(min = 140.dp, max = 220.dp),
-                    )
-                }
-
-                else -> {
-                    Surface(
-                        modifier = Modifier.widthIn(max = 320.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(
-                            alpha = 0.45f,
-                        ),
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline.copy(
-                                alpha = 0.5f,
-                            ),
-                        ),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(
-                                horizontal = 12.dp,
-                                vertical = 10.dp,
-                            ),
-                            horizontalArrangement =
-                                Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            PdfAttachmentBadge(
-                                modifier = Modifier.size(32.dp),
-                            )
-                            Column {
-                                Text(
-                                    text = item.displayName,
-                                    maxLines = 2,
-                                    style =
-                                        MaterialTheme.typography.bodyMedium,
-                                )
-                                Text(
-                                    text = formatAttachmentByteSize(
-                                        item.byteSize,
-                                    ),
-                                    style =
-                                        MaterialTheme.typography.bodySmall,
-                                    color =
-                                        MaterialTheme.colorScheme
-                                            .onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+        message.attachments.forEach { part ->
+            UserAttachmentContent(part, attachmentStorage)
         }
-
         if (message.text.isNotBlank()) {
             Text(
                 text = message.text,
                 modifier = Modifier.padding(horizontal = 4.dp),
                 style = MaterialTheme.typography.bodyLarge,
             )
+        }
+    }
+}
+
+@Composable
+private fun UserAttachmentContent(
+    item: AdvisorAttachment,
+    attachmentStorage: AttachmentStorage,
+) {
+    val context = LocalContext.current
+    var imageFailed by remember(item.localId) { mutableStateOf(false) }
+    val renderKind = attachmentStorage.renderKind(item)
+    when {
+        renderKind == AttachmentRenderKind.UNAVAILABLE ||
+            imageFailed -> {
+            Row(
+                modifier = Modifier
+                    .widthIn(max = 300.dp)
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    painter = painterResource(
+                        R.drawable.ic_document_24,
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.attachment_error_missing_persisted,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        renderKind == AttachmentRenderKind.IMAGE -> {
+            AsyncImage(
+                model = attachmentStorage.contentUri(
+                    context,
+                    item.localId,
+                ),
+                contentDescription = stringResource(
+                    R.string.attachment_image_preview,
+                ),
+                contentScale = ContentScale.Crop,
+                onError = { imageFailed = true },
+                modifier = Modifier
+                    .width(260.dp)
+                    .heightIn(min = 140.dp, max = 220.dp),
+            )
+        }
+
+        else -> {
+            Surface(
+                modifier = Modifier.widthIn(max = 320.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(
+                    alpha = 0.45f,
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(
+                        alpha = 0.5f,
+                    ),
+                ),
+            ) {
+                Row(
+                    modifier = Modifier.padding(
+                        horizontal = 12.dp,
+                        vertical = 10.dp,
+                    ),
+                    horizontalArrangement =
+                        Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PdfAttachmentBadge(
+                        modifier = Modifier.size(32.dp),
+                    )
+                    Column {
+                        Text(
+                            text = item.displayName,
+                            maxLines = 2,
+                            style =
+                                MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = formatAttachmentByteSize(
+                                item.byteSize,
+                            ),
+                            style =
+                                MaterialTheme.typography.bodySmall,
+                            color =
+                                MaterialTheme.colorScheme
+                                    .onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
     }
 }
