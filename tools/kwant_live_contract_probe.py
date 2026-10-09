@@ -2798,14 +2798,25 @@ def run_live_probe(
             raw_dir=raw_dir,
         )
 
-        branch_html_for_locations = (raw_dir / "branch-before-select.html").read_text(
-            encoding="utf-8"
-        ) if (raw_dir / "branch-before-select.html").exists() else ""
+        # Resolve the selected branch before locations research. The later
+        # departmentStockId cookie mapping is deliberately not yet available.
+        trusted_selected_branch_id = resolved_public_selected_branch_id(
+            branch_page_url=branch_page_url,
+            branch_html=branch_before_html,
+            selected_branch_label=branch_label,
+            selection_confirmed=(
+                target_branch_resolved and selection_observed is True
+            ),
+        )
         locations_research = research_product_locations(
             page, recorder, locations_capture,
             product_id=numeric_product_id,
-            branch_html=branch_html_for_locations,
-            selected_branch_id=str(department_stock_id) if department_stock_id != UNKNOWN else "",
+            branch_html=branch_before_html,
+            selected_branch_id=(
+                trusted_selected_branch_id
+                if trusted_selected_branch_id != UNKNOWN else ""
+            ),
+            selected_branch_label=branch_label,
         )
         recorder.set_action("home:after-locations")
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
@@ -2992,6 +3003,34 @@ def public_branch_directory_from_html(html: str) -> dict[str, str]:
         ):
             directory[str(branch_id)] = name
     return directory
+
+
+def resolved_public_selected_branch_id(
+    *,
+    branch_page_url: str,
+    branch_html: str,
+    selected_branch_label: str,
+    selection_confirmed: bool,
+) -> str:
+    """Cross-check the resolved selected branch page against live directory.
+
+    This is available BEFORE later cookie-constructor research sets the
+    final summary departmentStockId. Names only corroborate a numeric ID
+    already established by the public branch page and directory.
+    """
+    if not selection_confirmed:
+        return UNKNOWN
+    page_id = extract_branch_page_identifier(branch_page_url)
+    directory = public_branch_directory_from_html(branch_html)
+    if (
+        page_id == UNKNOWN
+        or page_id not in directory
+        or not branch_label_matches(
+            selected_branch_label, link_text=directory[page_id]
+        )
+    ):
+        return UNKNOWN
+    return page_id
 
 
 # Explicit research hypotheses, NOT established inventory semantics.
@@ -3955,7 +3994,8 @@ def research_product_locations(
     *,
     product_id: str,
     branch_html: str,
-    selected_branch_id: str = "205",
+    selected_branch_id: str,
+    selected_branch_label: str,
 ) -> dict[str, Any]:
     """Inspect exact-product availability control; never submit a cart action."""
     capture.directory = public_branch_directory_from_html(branch_html)
@@ -3963,7 +4003,15 @@ def research_product_locations(
         "productId": product_id,
         "directoryBranchCount": len(capture.directory),
         "verifiedProductPage": False,
-        "availabilitySelector": "role=button; aria-label=" + AVAILABILITY_ARIA_LABEL,
+        "availabilitySelector": (
+            "child " + AVAILABILITY_CHILD_SELECTOR
+            + " -> closest parent [role=button]; selected-branch stock-row"
+        ),
+        "selectedBranchIdForResearch": selected_branch_id or UNKNOWN,
+        "selectedBranchIdSource": (
+            "RESOLVED_PUBLIC_BRANCH_PAGE_AND_LIVE_DIRECTORY"
+            if selected_branch_id else "UNKNOWN"
+        ),
         "availabilityControlFound": False,
         "productPageShape": {},
         "productPageBranchListCandidate": False,
@@ -4019,7 +4067,7 @@ def research_product_locations(
         except Exception:
             result["productPageShape"] = {"status": "UNKNOWN"}
 
-        target = availability_button(page)
+        target = availability_button(page, selected_branch_label)
         if target is None:
             result["reason"] = "ACCESSIBLE_AVAILABILITY_BUTTON_NOT_FOUND"
             return result
