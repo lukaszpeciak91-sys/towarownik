@@ -420,7 +420,8 @@ internal class AdvisorProxyClient(
             MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION
         val maxCount = if (isMulti) 3 else 1
         val maxPerFileBytes = 16L * 1024 * 1024
-        val maxBodyBytes = maxCount * maxPerFileBytes + 16L * 1024
+        val maxTotalBytes = if (isMulti) 24L * 1024 * 1024 else maxPerFileBytes
+        val maxBodyBytes = maxTotalBytes + 16L * 1024
         if (
             attachments.size !in 1..maxCount ||
             attachments.any {
@@ -430,7 +431,7 @@ internal class AdvisorProxyClient(
                     (it.type == pl.lukaszpeciak.towarownik.attachment.AttachmentType.PDF &&
                         it.mimeType != "application/pdf")
             } ||
-            attachments.sumOf { it.byteSize } > maxCount * maxPerFileBytes
+            attachments.sumOf { it.byteSize } > maxTotalBytes
         ) {
             return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
         }
