@@ -57,43 +57,43 @@ completed successfully on head
 
 ## CONFIRMED: live run #3 — empty prefetch, SVG-influenced button name
 
-Manual **OBI live contract probe** [run #37994385878](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37994385878) succeeded on HEAD \`b9aecc29e14901b3aacac59e9e4124a3235dc332\` (before the current selector change). Result: **\`F_INCONCLUSIVE\`**.
+Manual **OBI live contract probe** [run #37994385878](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37994385878) succeeded on HEAD `b9aecc29e14901b3aacac59e9e4124a3235dc332` (before the current selector change). Result: **`F_INCONCLUSIVE`**.
 
 - Exact OBIK **3496072**, selected market **075**, product-owned Nuxt identity and selected-store proof were verified again.
 - Initial Nuxt **did not contain product-owned multi-market stock/availability**.
-- The real browser's **initial:page** request \`GET /api/pdp/v1/availability/sp/3496072\` returned HTTP 200 with **\`pickupStores=[]\`**; research-only structural diagnostic: \`containerType=list\`, \`containerLength=0\`, **zero canonical store rows**. This does not mean other markets have zero stock or that a subset was checked.
-- Independently, \`GET /api/pdp/v1/availability/hd/3496072\` returned \`deliveryDataPerSeller\`, one observed item with field names \`sellerId\`, \`deliveryDate\`, \`deliveryOption\`, \`deliveryCost\`. This **delivery structure is not store-pickup inventory** and must remain separate.
-- Exact harmless opener remained present as an SSR **\`<button data-component="PdpLink">\`** with exact visible \`innerText\` **„Sprawdź dostępność w innym sklepie”**. Its nested SVG has an \`<title>arrow-right</title>\`, potentially changing Playwright's **accessible name**. The previous \`get_by_role(..., name=..., exact=True)\` returned zero matches; \`EXACT_BUTTON_MISSING\` was a **selector false negative**, *not* evidence the button disappeared.
+- The real browser's **initial:page** request `GET /api/pdp/v1/availability/sp/3496072` returned HTTP 200 with **`pickupStores=[]`**; research-only structural diagnostic: `containerType=list`, `containerLength=0`, **zero canonical store rows**. This does not mean other markets have zero stock or that a subset was checked.
+- Independently, `GET /api/pdp/v1/availability/hd/3496072` returned `deliveryDataPerSeller`, one observed item with field names `sellerId`, `deliveryDate`, `deliveryOption`, `deliveryCost`. This **delivery structure is not store-pickup inventory** and must remain separate.
+- Exact harmless opener remained present as an SSR **`<button data-component="PdpLink">`** with exact visible `innerText` **„Sprawdź dostępność w innym sklepie”**. Its nested SVG has an `<title>arrow-right</title>`, potentially changing Playwright's **accessible name**. The previous `get_by_role(..., name=..., exact=True)` returned zero matches; `EXACT_BUTTON_MISSING` was a **selector false negative**, *not* evidence the button disappeared.
 - No opener click was completed in run #3. **No post-open request, store-picker behavior, mutation of selected-store state, or multi-market stock contract has been proven.** Run #3 must remain **F**.
 
 ### Research follow-up after run #3 (no new live evidence yet)
 
-- The opener now resolves **native** \`button[data-component="PdpLink"]\` candidates and requires exactly one with normalized **innerText equal to the observed entire phrase**. DOM index and generic availability substring never select it; zero/duplicate/hidden/disabled/changed controls fail closed. The click scrolls into view, uses a normal non-forced click and emits only a bounded failure category.
+- The opener now resolves **native** `button[data-component="PdpLink"]` candidates and requires exactly one with normalized **innerText equal to the observed entire phrase**. DOM index and generic availability substring never select it; zero/duplicate/hidden/disabled/changed controls fail closed. The click scrolls into view, uses a normal non-forced click and emits only a bounded failure category.
 - After an actual successful click, the probe records **new post-open UI structure** separately: visible dialog/region counts, bounded safe headings/keyword tags, input count and type, keyword-only search hints, candidate row counts, safe store-related **data-attribute names** and verified canonical OBI market numbers from explicit ID data attributes or exact **repository city + address** matching. Raw modal addresses, coordinates, arbitrary strings, postal codes, identifiers and cookies are **not emitted**.
 - A store search input alone is **observation only**, never permission to type guessed text. Market 003/074 selection is attempted only for one uniquely identified enabled row inside one visible dialog. No city-only match or page-wide recommendation click.
-- Browser requests are attributed to the action during which they **began**. Initial \`pickupStores=[]\` stays \`initial:page\`; if the frontend later issues a new product-bound request and returns non-empty \`pickupStores\`, that is a **separate \`availability:open\` observation**. Existing strict product identity, canonical store ID, typed usable state, zero/null/missing distinctions and A–F gates are unchanged. A complete proven initial response would make additional market clicks unnecessary; no such response has yet been observed.
+- Browser requests are attributed to the action during which they **began**. Initial `pickupStores=[]` stays `initial:page`; if the frontend later issues a new product-bound request and returns non-empty `pickupStores`, that is a **separate `availability:open` observation**. Existing strict product identity, canonical store ID, typed usable state, zero/null/missing distinctions and A–F gates are unchanged. A complete proven initial response would make additional market clicks unnecessary; no such response has yet been observed.
 
 ## CONFIRMED: live run #4 — exact opener resolved, Playwright actionability timeout
 
 Manual [OBI live contract probe #37997658969](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37997658969)
 completed successfully on HEAD
-\`7ac03a23a6787740ec8f477aac5e0fe542544561\`.
-The research classification remained **\`F_INCONCLUSIVE\`**.
+`7ac03a23a6787740ec8f477aac5e0fe542544561`.
+The research classification remained **`F_INCONCLUSIVE`**.
 
-- The exact native \`button[data-component="PdpLink"]\` was identified
-  **uniquely**, visible, enabled, with normalized \`innerText\` exactly
+- The exact native `button[data-component="PdpLink"]` was identified
+  **uniquely**, visible, enabled, with normalized `innerText` exactly
   **"Sprawdź dostępność w innym sklepie"**. It is not a recommendation,
   cart, purchase, or reservation control. Do **not** broaden its selector.
-- Normal Playwright \`button.click(timeout=5000)\` failed with a bounded
-  \`CLICK_FAILED / TIMEOUT\`. The safe run did **not** produce
-  \`availability:*\` network traffic or new post-open store/dialog evidence.
+- Normal Playwright `button.click(timeout=5000)` failed with a bounded
+  `CLICK_FAILED / TIMEOUT`. The safe run did **not** produce
+  `availability:*` network traffic or new post-open store/dialog evidence.
   This is an **actionability timeout**, not evidence the button has no
   effect or that other-market availability is absent.
 - The initial frontend-issued
-  \`GET /api/pdp/v1/availability/sp/3496072\` returned
-  **\`pickupStores=[]\`** again. No initial multi-market rows were
+  `GET /api/pdp/v1/availability/sp/3496072` returned
+  **`pickupStores=[]`** again. No initial multi-market rows were
   verified. Omitted stores are **not** zero and neither A nor B can be
-  inferred. The separate \`/availability/hd/3496072\` structure remains
+  inferred. The separate `/availability/hd/3496072` structure remains
   delivery-specific and is **not** used as pickup-store stock.
 
 ### Next research run — strictly bounded native DOM click after timeout
@@ -101,29 +101,29 @@ The research classification remained **\`F_INCONCLUSIVE\`**.
 The probe still performs the **normal Playwright click first**. **Only if**
 that exact harmless opener was uniquely resolved, visible and enabled,
 and the native Playwright click raises an actual Playwright actionability
-\`TimeoutError\`, the probe **re-resolves** the same exact native
-\`button[data-component="PdpLink"]\` with normalized exact text and
+`TimeoutError`, the probe **re-resolves** the same exact native
+`button[data-component="PdpLink"]` with normalized exact text and
 revalidates it **inside the page JavaScript**, then calls only that
-element's standard DOM \`element.click()\`. No coordinate click, broad
-substring, \`force=True\`, other-control fallback or purchase action is
+element's standard DOM `element.click()`. No coordinate click, broad
+substring, `force=True`, other-control fallback or purchase action is
 permitted. A failed re-resolution or failed DOM click is bounded and
 non-authoritative; exception text is never persisted.
 
-An attempted DOM \`element.click()\` is **provisional**, not proof of
+An attempted DOM `element.click()` is **provisional**, not proof of
 an availability action. After a bounded wait, at least one observable
 change is required: newly visible store/dialog UI, availability-specific
 button expansion, a new store-search/canonical store-row UI structure,
 or an **action-phase** frontend request related to availability,
 pickup, stores or locator. Unrelated recommendations, teasers, CMS and
 delivery data cannot qualify as store-stock facts. Without an effect,
-the recorded status becomes **\`DOM_CLICK_NO_OBSERVABLE_EFFECT\`**,
+the recorded status becomes **`DOM_CLICK_NO_OBSERVABLE_EFFECT`**,
 and availability classification remains F.
 
-The phase \`availability:open\` is set **before the normal click and
-any DOM fallback**. Initial \`pickupStores=[]\` remains separately
-attributed to \`initial:page\`; any actual new \`/availability/sp/3496072\`
+The phase `availability:open` is set **before the normal click and
+any DOM fallback**. Initial `pickupStores=[]` remains separately
+attributed to `initial:page`; any actual new `/availability/sp/3496072`
 response after the handler is a separate observation. The existing
-safe \`postOpenUi\` inspection records only bounded dialog, heading,
+safe `postOpenUi` inspection records only bounded dialog, heading,
 search-input and canonical market-ID metadata. If a search field is
 shown without verified market rows, it is observed but **never filled
 with guessed text**. Markets 003/074 are clicked only if uniquely
