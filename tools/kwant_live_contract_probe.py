@@ -3429,6 +3429,11 @@ def classify_locations_contract(
         page_shape.get("productIdentityMatches") is True
         and evaluate_candidate_coverage(page_shape, directory)["completeness"]
         == "ALL_DIRECTORY_BRANCHES"
+        and {
+            row["branchId"] for row in page_shape.get("branchRows", [])
+            if row.get("branchKnownInDirectory")
+            and row.get("candidateState") in ("known_zero", "known_positive")
+        } == set(directory)
     ):
         return {"type": "C_FRONTEND_PRELOADED", "reason": "VERIFIED_PAGE_PRODUCT_AND_DIRECTORY_ROWS"}
     scoped = [
@@ -3465,7 +3470,10 @@ def classify_locations_contract(
         combined_ids = set()
         for item in multi:
             for row in item["shape"].get("branchRows", []):
-                if row.get("branchKnownInDirectory"):
+                if (
+                    row.get("branchKnownInDirectory")
+                    and row.get("candidateState") in ("known_zero", "known_positive")
+                ):
                     combined_ids.add(row["branchId"])
         if combined_ids == set(directory):
             return {"type": "D_MULTI_REQUEST_BOUNDED", "reason": "MULTIPLE_PRODUCT_BOUND_RESPONSES_COVER_DIRECTORY"}
