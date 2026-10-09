@@ -841,6 +841,22 @@ def click_safe_control(page: Any, controls: list[dict[str, Any]]) -> dict[str, A
     }
 
 
+def finalize_open_control(
+    dispatched: dict[str, Any], evidence: dict[str, Any],
+) -> dict[str, Any]:
+    """A native DOM click is not an observed availability action on its own."""
+    if dispatched.get("status") != "CLICK_DISPATCHED":
+        return dispatched
+    result = dict(dispatched)
+    if evidence.get("effectObserved") is True:
+        result["status"] = "CLICKED"
+    elif dispatched.get("interactionMode") == "DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT":
+        result["status"] = "DOM_CLICK_NO_OBSERVABLE_EFFECT"
+    else:
+        result["status"] = "NORMAL_CLICK_NO_OBSERVABLE_EFFECT"
+    return result
+
+
 def availability_button_expanded(page: Any) -> bool | None:
     """Only the exact opener aria-expanded boolean; never log element text."""
     button, status = resolve_exact_availability_opener(page)
@@ -1342,12 +1358,7 @@ def run_browser(obik: str, store: str, other_markets: list[str],
                             observations[response_count_before:], obik,
                         )
                         result["openEffectEvidence"] = effect
-                        if effect["effectObserved"]:
-                            control["status"] = "CLICKED"
-                        elif control["interactionMode"] == "DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT":
-                            control["status"] = "DOM_CLICK_NO_OBSERVABLE_EFFECT"
-                        else:
-                            control["status"] = "NORMAL_CLICK_NO_OBSERVABLE_EFFECT"
+                        control = finalize_open_control(control, effect)
                     result["uiActions"].append({
                         "action": "availability:open", **control,
                     })
