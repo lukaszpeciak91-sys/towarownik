@@ -3319,7 +3319,16 @@ def classify_availability_filter(
 ) -> dict[str, Any]:
     state = "NOT_TOGGLED"
     if toggled:
-        state = "REQUEST_TRIGGERED" if new_requests > 0 else "NO_API_REQUEST_OBSERVED"
+        if new_requests > 0:
+            state = "REQUEST_TRIGGERED"
+        elif (
+            before.get("visibleDirectoryNames", [])
+            != after.get("visibleDirectoryNames", [])
+            or before.get("zeroLabelVisible") != after.get("zeroLabelVisible")
+        ):
+            state = "CLIENT_SIDE_FILTER_CANDIDATE"
+        else:
+            state = "NO_API_REQUEST_OBSERVED"
     return {
         "classification": state,
         "newObservedApiResponses": max(0, new_requests),
@@ -3327,6 +3336,8 @@ def classify_availability_filter(
         "afterVisibleBranchNameCount": len(after.get("visibleDirectoryNames", [])),
         "beforeZeroVisible": before.get("zeroLabelVisible", False),
         "afterZeroVisible": after.get("zeroLabelVisible", False),
+        "quantityLabelsStillVisible": after.get("quantityTextVisible", False),
+        "requestEvidenceOnly": new_requests > 0,
     }
 
 
@@ -3497,15 +3508,32 @@ def batch_prices_stock_evidence(
         department = entry.get("department_stock")
         if isinstance(department, dict):
             bid, _ = observed_branch_identity(department)
-            quantity, state = candidate_quantity(
-                department.get("stock")
-            )
-            if bid is not None and state in ("known_zero", "known_positive"):
+            candidate_fields = [
+                field for field in ("stock", "stock_num", "stockNum")
+                if field in department
+            ]
+            candidate_values = [
+                (field, *candidate_quantity(department[field]))
+                for field in candidate_fields
+            ]
+            valid_values = [
+                (field, quantity) for field, quantity, state in candidate_values
+                if state in ("known_zero", "known_positive")
+            ]
+            if (
+                bid is not None and valid_values
+                and len({value for _, value in valid_values}) == 1
+                and len(valid_values) == len(candidate_fields)
+            ):
                 scoped_rows += 1
                 if depstock is not None and bid == depstock:
                     selected_branch_rows += 1
                 if str(identity) == expected_id and str(identity) in ids:
-                    control_rows.append({"branchId": bid, "stock": quantity})
+                    control_rows.append({
+                        "branchId": bid,
+                        "stock": valid_values[0][1],
+                        "candidateField": valid_values[0][0],
+                    })
     return {
         "requestedProductIdCount": len(ids),
         "responseRowCount": len(rows),
