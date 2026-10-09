@@ -24,6 +24,7 @@ import {
   MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION,
   MULTI_ATTACHMENT_PROTOCOL_HEADER,
   MAX_MULTI_ATTACHMENTS,
+  MULTI_ATTACHMENT_TOTAL_MAX_BYTES,
 } from "./config.js";
 import type {
   AdvisorProtocolVersion,
@@ -761,7 +762,9 @@ async function parseMultipartRequest(
     if (file.size > ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
     totalBytes += file.size;
   }
-  if (totalBytes > MAX_MULTI_ATTACHMENTS * ATTACHMENT_MAX_BYTES) {
+  if (totalBytes > (isMulti
+    ? MULTI_ATTACHMENT_TOTAL_MAX_BYTES
+    : ATTACHMENT_MAX_BYTES)) {
     throw new RequestTooLargeError();
   }
 
