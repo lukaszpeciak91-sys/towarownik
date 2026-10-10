@@ -342,6 +342,17 @@ class ObiPayloadParserTest {
         assertEquals(BigDecimal("123.45"), product.grossPrice)
         assertEquals("https://www.obi.pl/p/7313810", product.productUrl)
         assertEquals("5900007313810", product.ean)
+        // No trusted per-store inventory-unit field in the verified real fixture.
+        assertNull(product.stockUnit)
+    }
+
+    @Test
+    fun `live OBI store stock without explicit unit does not invent pieces`() {
+        val product = parser.parse(
+            fixture("live-3496072-store-075.html"), "3496072", STORE,
+        ).getOrThrow()
+        assertEquals(25, product.stock)
+        assertNull(product.stockUnit)
     }
 
     @Test
