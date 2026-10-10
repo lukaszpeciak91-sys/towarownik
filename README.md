@@ -76,6 +76,8 @@ npm test
 
 For later Cloudflare repository setup, use `proxy` as the root directory and `towarownik-proxy` as the Worker name. Future secret names are documented in `proxy/README.md`; no secret is required for `/health`.
 
+Phase A1 extends v5 transport (not the current picker) with strictly allowlisted `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.log`, `.ini`, and `.conf` data. These are validated UTF-8 and sent as untrusted `input_text` with sanitized filenames, up to 1 MiB each, within existing multipart bounds; image/PDF behavior and Room v12 remain unchanged. XLS/XLSX/DOCX/ZIP are still unsupported.
+
 ## AI usage baseline and local budget
 
 Every successful OpenAI Responses API call may carry a bounded usage object from the Worker to Android: model, START/MESSAGE/CONTINUE request type, input/cached/output/reasoning/total token counts, estimated USD cost, and pricing version. Missing or malformed usage never invalidates an otherwise valid advisor answer. Each successful paid response is observed immediately, so usage from an earlier response remains counted even if a later local tool or continuation fails.
