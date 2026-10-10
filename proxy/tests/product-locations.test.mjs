@@ -194,3 +194,33 @@ test("legacy tool response from model fails without opt-in", async () => {
   }, false), env);
   assert.equal(reply.status, 502);
 });
+
+test("location local-tool limit removes both local tool definitions from next request", async () => {
+  const f = fake(answer);
+  const stopped = {
+    ...result,
+    productId: null,
+    status: "rejected",
+    reason: "local_tool_limit_reached",
+    coverage: "unknown",
+    checkedIds: [], returnedIds: [], missingIds: [],
+    locations: [], verifiedAtMillis: null, centralStock: null,
+  };
+  const reply = await createWorker(f.fetch).fetch(request("/v1/agent/continue", {
+    protocolVersion: 3, responseId: "resp_locations", callId: "call_locations",
+    providerId: "obi-pl", branchId: "075", tool: LOCATIONS_LOCAL_TOOL_NAME,
+    result: stopped,
+  }, true), env);
+  assert.equal(reply.status, 200);
+  assert.deepEqual(f.captures[0].tools.filter(t => t.type === "function"), []);
+});
+
+test("explicit legacy v1 cannot opt into a location function", async () => {
+  const f = fake(answer);
+  const response = await createWorker(f.fetch).fetch(request("/v1/agent/start", {
+    protocolVersion: 1, message: "Legacy search", storeNumber: "075",
+  }, true), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual(f.captures[0].tools.filter(t => t.type === "function").map(t => t.name),
+    ["find_obi_products"]);
+});
