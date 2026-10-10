@@ -35,7 +35,7 @@ export type LocalResultKind =
 export interface ContinuationResultSummary {
   localResultKind: LocalResultKind;
   localResultProviderId: string;
-  localResultBranchId: string;
+  localResultBranchId: string | null;
   resultQueryCount: number;
   verifiedProductCount: number;
   verifiedQueryCount: number;
@@ -258,7 +258,8 @@ export function summarizeContinuationResult(
       verifiedQueryCount: 0,
       notFoundQueryCount: 0,
       unavailableQueryCount: result.status === "unavailable" ? 1 : 0,
-      rejectionCategory: result.status === "rejected" ? result.reason : null,
+      rejectionCategory: result.reason === "local_tool_limit_reached"
+        ? "local_tool_limit_reached" : null,
     };
   }
   if ("products" in result) {

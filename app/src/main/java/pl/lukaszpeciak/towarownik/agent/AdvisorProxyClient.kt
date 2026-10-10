@@ -879,9 +879,9 @@ internal class AdvisorProxyClient(
             if (evidence.reason == null) put("reason", JsonNull)
             else put("reason", evidence.reason)
             put("coverage", evidence.coverage)
-            put("checkedIds", buildJsonArray { evidence.checkedIds.forEach { add(it) } })
-            put("returnedIds", buildJsonArray { evidence.returnedIds.forEach { add(it) } })
-            put("missingIds", buildJsonArray { evidence.missingIds.forEach { add(it) } })
+            put("checkedIds", buildJsonArray { evidence.checkedIds.forEach { add(JsonPrimitive(it)) } })
+            put("returnedIds", buildJsonArray { evidence.returnedIds.forEach { add(JsonPrimitive(it)) } })
+            put("missingIds", buildJsonArray { evidence.missingIds.forEach { add(JsonPrimitive(it)) } })
             put("locations", buildJsonArray {
                 evidence.locations.forEach { location ->
                     add(buildJsonObject {
