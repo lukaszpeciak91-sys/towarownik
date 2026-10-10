@@ -1,5 +1,10 @@
 # Architecture
 
+## PR #110 final authorization audit hardening — canonical scope and KWANT IDs (2026-10-10)
+
+Inventory-intent carry-over only accepts entire canonical city/branch-only clauses (including deterministic inflections), optionally with a contextual three-digit OBI market number. Price/advice suffixes break carry-over even after stock questions. The same shared canonical city inflections are used by follow-up matching and OBI authorized-scope parsing. OBI city-plus-market conflicts are rejected for both labeled `market w ... 054` and `a w ... 054`, without HTTP. Product identity validation rejects unknown explicitly labeled short KWANT IDs/article numbers (e.g. 7027/7035) before any location read; unlabeled quantities, dimensions and OBI market IDs do not create IDs. Ordinary KWANT `find_products` remains independent from unavailable multi-department `find_product_locations`, with Controller branch-route regression coverage.
+
+
 ## PR #110 audit hardening — bounded follow-up categories and current identity
 
 A pending inventory request survives only explicit clarification forms (`obu`/`oba`, constrained location-preposition follow-ups, supported market clarification or broad relative-market follow-up) or a bare location that exactly names a branch in the active provider's canonical directory. Generic short messages, including `pokaż ceny`, interrupt authorization even if a previous stock request exists. Current-message exact identifiers are resolved solely against previously verified snapshots and take precedence over older user selections; multiple explicit products stay ambiguous. Model IDs remain equality-only. Only location/provider denial categories invariant under newly verified product evidence are memoized in a turn; `untrusted_product` and `ambiguous_product` must be re-evaluated after discovery. Every model tool request still consumes the existing three-call budget.
