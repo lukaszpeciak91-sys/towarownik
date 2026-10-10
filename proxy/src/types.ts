@@ -34,10 +34,29 @@ export interface ProviderToolArguments {
   queries: ToolQuery[];
 }
 
+export interface LocationToolArguments {
+  providerId: string;
+  productId: string;
+  locations: string[];
+}
+export interface LocationToolResult {
+  providerId: string;
+  productId: string | null;
+  status: "verified" | "unavailable" | "rejected";
+  reason: string | null;
+  coverage: "all_public_locations" | "requested_subset" | "partial" | "unknown";
+  checkedIds: string[];
+  returnedIds: string[];
+  missingIds: string[];
+  locations: Array<{ branchId: string; name: string; stock: number | null }>;
+  verifiedAtMillis: number | null;
+  centralStock: number | null;
+}
 export type VersionedToolArguments =
   | LegacyToolArguments
   | ToolArguments
-  | ProviderToolArguments;
+  | ProviderToolArguments
+  | LocationToolArguments;
 
 export interface TechnicalFact {
   label: string;
@@ -134,6 +153,7 @@ export interface ProviderVerifiedToolResult {
 }
 
 export type ToolContinuationResult =
+  | LocationToolResult
   | LegacyVerifiedToolResult
   | LegacyRejectedToolResult
   | VerifiedToolResult
@@ -192,7 +212,7 @@ export type AgentResult =
       type: "tool_request";
       responseId: string;
       tool: {
-        name: "find_obi_products" | "find_products";
+        name: "find_obi_products" | "find_products" | "find_product_locations";
         callId: string;
         arguments: VersionedToolArguments;
       };

@@ -44,6 +44,18 @@ export const MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION = 5 as const;
 export const MULTI_ATTACHMENT_PROTOCOL_HEADER = "X-Taksula-Attachment-Protocol";
 export const LOCAL_TOOL_NAME = "find_obi_products";
 export const PROVIDER_LOCAL_TOOL_NAME = "find_products";
+export const LOCATIONS_LOCAL_TOOL_NAME = "find_product_locations";
+export const LOCATIONS_CAPABILITY_HEADER = "X-Taksula-Locations-Capability";
+export const LOCATIONS_CAPABILITY_VALUE = "1";
+export const LOCATIONS_INSTRUCTIONS =
+  "Use find_product_locations ONLY for explicit other-location stock requests about one exact trusted product. " +
+  "Model productId and location names are hints, not authorization. Android accepts exact verified current-turn products or verified assistant cards in THIS conversation only. " +
+  "If user supplies a NEW product identifier not yet verified, first use the regular discovery tool, then locations within the shared tool budget. " +
+  "When several verified products remain plausible, ask ONE concise product clarification. For OBI require precise user-named canonical markets; ambiguous cities or broad other-market requests need ONE location clarification. " +
+  "Never scan all OBI markets, arbitrarily select 20 or imply subset means nationwide. KWANT inventory may be temporarily unavailable due to unverified public extended query. Never treat unavailable or missing as zero. " +
+  "Summarize known positive stock first, then confirmed zeros, unknowns and coverage. Historical products authorize identity only, not fresh stock or new structured productRefs. " +
+  "Central stock is separate. A local_tool_limit_reached result means no further local tools.";
+
 export const MAX_TOOL_PRODUCTS = 5;
 export const MAX_TOOL_QUERIES = 5;
 export const MAX_TOOL_QUERY_CHARS = 200;
@@ -395,6 +407,27 @@ export const PROVIDER_TOOL = {
       },
     },
     required: ["providerId", "branchId", "requestedBranch", "queries"],
+    additionalProperties: false,
+  },
+} as const;
+
+export const LOCATIONS_TOOL = {
+  type: "function",
+  name: LOCATIONS_LOCAL_TOOL_NAME,
+  description: "Check other-location stock of an exact verified product, only on explicit user request; Android authorizes identities and scope.",
+  strict: true,
+  parameters: {
+    type: "object",
+    properties: {
+      providerId: { type: "string", minLength: 1, maxLength: 64 },
+      productId: { type: "string", minLength: 1, maxLength: 64 },
+      locations: {
+        type: "array", minItems: 0, maxItems: 20,
+        description: "Exact user-named market/branch hints; empty only for KWANT all-branches.",
+        items: { type: "string", minLength: 1, maxLength: 100 },
+      },
+    },
+    required: ["providerId", "productId", "locations"],
     additionalProperties: false,
   },
 } as const;
