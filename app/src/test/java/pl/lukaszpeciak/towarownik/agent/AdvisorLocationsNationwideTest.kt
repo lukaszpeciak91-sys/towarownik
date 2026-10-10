@@ -312,6 +312,21 @@ class AdvisorLocationsNationwideTest {
         assertEquals(1, fake.serviceReads.size)
         assertEquals(1, fake.httpBatches.size)
     }
+    @Test fun `two supported cities resolve all canonical markets for each conjunction`() = runBlocking {
+        val expected = OBI_STORES.filter { it.city == "Kraków" || it.city == "Warszawa" }
+            .map { it.storeNumber }.toSet()
+        assertEquals(7, expected.size)
+        for (separator in listOf("i", "oraz", ",")) {
+            val fake = FakeInventory()
+            val message = "Sprawdź stany w Krakowie $separator Warszawie"
+            val result = fake.run(message, hints = emptyList())
+            assertEquals(message, "verified", result.status)
+            assertEquals(message, "requested_subset", result.coverage)
+            assertEquals(message, expected, result.checkedIds.toSet())
+            assertEquals(message, 1, fake.serviceReads.size)
+            assertEquals(message, 1, fake.httpBatches.size)
+        }
+    }
     @Test fun `cancellation propagates without retry or further HTTP`() = runBlocking {
         val fake = FakeInventory(cancelAtRequest = 3)
         var propagated = false
