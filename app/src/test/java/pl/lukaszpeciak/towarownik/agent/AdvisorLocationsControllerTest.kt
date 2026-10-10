@@ -1,6 +1,8 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -280,6 +282,112 @@ class AdvisorLocationsControllerTest {
         assertTrue(result is AdvisorUiState.Success)
         assertEquals(1, requested)
         assertEquals(2, continuations)
+    }
+
+
+
+    @Test fun workerCompatibleEnvelopeUsesBoundedHistoryAndPreservesTrace() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setHeader(
+                        "X-Taksula-Trace-Id",
+                        "33333333-3333-4333-8333-333333333333",
+                    )
+                    .setBody(
+                        """
+                        {
+                          "type":"tool_request",
+                          "responseId":"resp_stock",
+                          "tool":{
+                            "name":"find_product_locations",
+                            "callId":"call_stock",
+                            "arguments":{
+                              "providerId":"obi-pl",
+                              "productId":"6117543",
+                              "locations":["Miejscu Piastowym"]
+                            }
+                          },
+                          "webSearchCalls":0
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+            val proxy = AdvisorProxyClient(
+                appToken = "test-token",
+                baseUrl = server.url("/"),
+            )
+            val parsed = proxy.start(
+                message = "a w Miejscu Piastowym?",
+                providerId = "obi-pl",
+                branchId = "075",
+            )
+            assertTrue(parsed is AdvisorProxyCallResult.Success)
+            val product = snapshot.copy(
+                obik = "6117543", productId = "6117543",
+            )
+            val old = snapshot.copy(
+                obik = "5524079", productId = "5524079",
+            )
+            var locationCalls = 0
+            val c = controller(
+                initial = parsed,
+                continueCall = { continuation ->
+                    val evidence = (continuation as AdvisorToolContinuation.Locations).evidence
+                    assertEquals("6117543", evidence.productId)
+                    assertEquals("verified", evidence.status)
+                    assertEquals(listOf("052"), evidence.checkedIds)
+                    answer()
+                },
+                locationCall = { args, provider, selected, input, current, past ->
+                    locationCalls++
+                    assertEquals("6117543", args.productId)
+                    assertEquals("obi-pl", provider)
+                    assertEquals("075", selected)
+                    assertTrue(input.startsWith("Sprawdź stan produktu:"))
+                    assertTrue(current.isEmpty())
+                    assertEquals(listOf(product), past)
+                    AdvisorLocationEvidence(
+                        providerId = "obi-pl",
+                        productId = "6117543",
+                        status = "verified",
+                        reason = null,
+                        coverage = "requested_subset",
+                        checkedIds = listOf("052"),
+                        returnedIds = listOf("052"),
+                        missingIds = emptyList(),
+                        locations = listOf(
+                            AdvisorLocationEntry("052", "Miejsce Piastowe", 4),
+                        ),
+                        verifiedAtMillis = 123L,
+                        centralStock = null,
+                    )
+                },
+            )
+            val final = c.runTurn(
+                input = "a w Miejscu Piastowym?",
+                previousResponseId = "resp_prior",
+                historicalVerifiedProducts = listOf(product, old),
+                locationHistory = listOf(
+                    AdvisorLocationHistoryMessage(
+                        "ASSISTANT", "Two verified products", listOf(product, old),
+                    ),
+                    AdvisorLocationHistoryMessage(
+                        "USER", "Sprawdź OBIK 6117543 w market OBI 003",
+                    ),
+                    AdvisorLocationHistoryMessage(
+                        "ASSISTANT", "Verified selected", listOf(product),
+                    ),
+                ),
+            ) {}
+            assertTrue(final is AdvisorUiState.Success)
+            assertEquals(1, locationCalls)
+            assertEquals(
+                "33333333-3333-4333-8333-333333333333",
+                (final as AdvisorUiState.Success).traceId,
+            )
+        }
     }
 
 
