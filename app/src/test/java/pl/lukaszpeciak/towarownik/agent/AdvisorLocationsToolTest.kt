@@ -72,6 +72,7 @@ class AdvisorLocationsToolTest {
         val evidence = tool(fake).execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
             "obi-pl",
+            "075",
             "Sprawdź w markecie OBI 075 ten produkt",
             emptyList(), listOf(one),
         )
@@ -88,6 +89,7 @@ class AdvisorLocationsToolTest {
         val result = tool(fake).execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
             "obi-pl",
+            "075",
             "Czy ten produkt jest dostępny w OBI 075?",
             listOf(one), emptyList(),
         )
@@ -101,6 +103,7 @@ class AdvisorLocationsToolTest {
         val ambiguous = svc.execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
             "obi-pl",
+            "075",
             "Gdzie jeszcze jest ten produkt? OBI 075",
             emptyList(), listOf(one, two),
         )
@@ -109,6 +112,7 @@ class AdvisorLocationsToolTest {
         val invented = svc.execute(
             AdvisorLocationArguments("obi-pl", "9999999", listOf("075")),
             "obi-pl",
+            "075",
             "Gdzie jeszcze jest 9999999? OBI 075",
             emptyList(), listOf(one),
         )
@@ -117,6 +121,7 @@ class AdvisorLocationsToolTest {
         val cross = svc.execute(
             AdvisorLocationArguments("kwant-pl", "3496072", emptyList()),
             "kwant-pl",
+            "205",
             "Sprawdź inne oddziały",
             emptyList(), listOf(one),
         )
@@ -124,12 +129,13 @@ class AdvisorLocationsToolTest {
         assertEquals(0, fake.calls)
     }
 
-    @Test fun `untrusted model selected market is rejected and broad scope asks clarification`() = runBlocking {
+    @Test fun `untrusted model selected market rejected and broad user scope checks all other`() = runBlocking {
         val fake = StockAdapter()
         val svc = tool(fake)
         val invented = svc.execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("003")),
             "obi-pl",
+            "075",
             "Sprawdź w OBI 075",
             emptyList(), listOf(one),
         )
@@ -137,23 +143,31 @@ class AdvisorLocationsToolTest {
         val broad = svc.execute(
             AdvisorLocationArguments("obi-pl", "3496072", emptyList()),
             "obi-pl",
+            "075",
             "Gdzie jeszcze jest ten produkt?",
             emptyList(), listOf(one),
         )
-        assertEquals("scope_required", broad.reason)
-        assertEquals(0, fake.calls)
+        assertEquals("verified", broad.status)
+        assertEquals("all_other_locations", broad.coverage)
+        assertEquals(61, broad.checkedIds.size)
+        assertTrue("Default selected market excluded", "075" !in broad.checkedIds)
+        assertEquals(4, fake.calls)
+        assertTrue(fake.lastRequested.size <= 20)
     }
 
-    @Test fun `OBI ambiguous city does not silently pick one market`() = runBlocking {
+    @Test fun `OBI city scope includes all four canonical Krakow markets`() = runBlocking {
         val fake = StockAdapter()
         val evidence = tool(fake).execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("Kraków")),
             "obi-pl",
+            "075",
             "Sprawdź w Krakowie",
             emptyList(), listOf(one),
         )
-        assertEquals("ambiguous_location", evidence.reason)
-        assertEquals(0, fake.calls)
+        assertEquals("verified", evidence.status)
+        assertEquals(setOf("019", "072", "003", "059"), evidence.checkedIds.toSet())
+        assertEquals(4, evidence.locations.size)
+        assertEquals(1, fake.calls)
     }
 
     @Test fun `OBI canonical exact store scope remains bound to user text`() = runBlocking {
@@ -161,6 +175,7 @@ class AdvisorLocationsToolTest {
         val evidence = tool(fake).execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("003", "075")),
             "obi-pl",
+            "075",
             "Sprawdź ten produkt w OBI 003 i 075",
             emptyList(), listOf(one),
         )
@@ -195,6 +210,7 @@ class AdvisorLocationsToolTest {
         val evidence = tool.execute(
             AdvisorLocationArguments("kwant-pl", "580", emptyList()),
             "kwant-pl",
+            "205",
             "Sprawdź ten produkt w innych oddziałach",
             emptyList(), listOf(kwant),
         )
