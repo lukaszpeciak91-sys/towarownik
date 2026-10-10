@@ -330,6 +330,7 @@ internal class AdvisorController(
         }
 
         var toolCalls = 0
+        var lastLocationEvidence: AdvisorLocationEvidence? = null
         var localToolLimitContinuationSent = false
         var toolAssistedObserved = false
         val verifiedByKey =
@@ -346,8 +347,13 @@ internal class AdvisorController(
                             verifiedByKey[reference.key]
                         }
                         .take(MAX_TOOL_PRODUCTS)
+                    val completeLocationList = lastLocationEvidence
+                        ?.let(::renderAdvisorLocationDetails)
+                        .orEmpty()
                     return AdvisorUiState.Success(
-                        text = proxyResult.text,
+                        text = if (completeLocationList.isBlank()) proxyResult.text else {
+                            proxyResult.text + "\n\n" + completeLocationList
+                        },
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
                         sources = proxyResult.sources,
@@ -422,6 +428,7 @@ internal class AdvisorController(
                             )
                         }
                     }
+                    lastLocationEvidence = evidence
                     onState(AdvisorUiState.WaitingForFinalAnswer)
                     proxyResult = when (
                         val continued = safeProxyCall {
