@@ -558,6 +558,7 @@ class AdvisorLocationsControllerTest {
                         result = AdvisorVerifiedToolResult(
                             storeNumber = expectedBranch,
                             results = emptyList(),
+                            providerId = "kwant-pl",
                         ),
                         snapshots = listOf(kwantSnapshot),
                     )
