@@ -1218,6 +1218,161 @@ class MultiMarketResearchTest(unittest.TestCase):
         self.assertEqual("F_INCONCLUSIVE",
             r.classify_contract([not_requested], self.stores, self.obik)["type"])
 
+    def test_run_six_observed_ten_market_batch_is_verified_B(self):
+        """Synthetic quantities; store IDs/field names are from real live run #6."""
+        r = self.r
+        requested = ["037", "038", "078", "073", "008",
+                     "053", "061", "022", "029", "070"]
+        self.assertEqual(62, len(self.stores))
+        self.assertTrue(all(i in self.stores for i in requested))
+        # Vary quantities, including explicit zero; do not assert live values.
+        synthetic = [
+            {"storeId": store, "availableQuantity": 0 if i == 0 else i + 1}
+            for i, store in enumerate(reversed(requested))
+        ]
+        record = self.observed_stock_record(
+            synthetic, "storeIds=" + "%2C".join(requested),
+        )
+        self.assertEqual("availability:open", record["action"])
+        self.assertEqual("/api/pdp/v1/stock/3496072", record["path"])
+        self.assertEqual("SINGULAR_REQUEST_PRODUCT_PATH",
+                         r.product_identity(record, self.obik))
+        self.assertEqual("TRUSTED", record["shape"]["stockParseStatus"])
+        self.assertEqual(10, len(record["shape"]["stockTrustedRows"]))
+        query = record["query"]["storeIds"]
+        self.assertEqual(requested, query["canonicalIds"])
+        self.assertEqual(10, query["canonicalCount"])
+        self.assertEqual(10, query["tokenCount"])
+        self.assertFalse(query["duplicatesPresent"])
+        self.assertFalse(query["invalidOrUnknownPresent"])
+        coverage = r.stock_request_coverage(record, self.stores)
+        self.assertTrue(coverage["requestIdsVerified"])
+        self.assertEqual(10, coverage["requestedCount"])
+        self.assertEqual(10, coverage["returnedTrustedCount"])
+        self.assertEqual([], coverage["missingRequestedIds"])
+        self.assertEqual([], coverage["unexpectedReturnedIds"])
+        self.assertTrue(coverage["everyRequestedStoreHasTrustedState"])
+        self.assertEqual(set(requested), set(coverage["returnedTrustedIds"]))
+        result = r.classify_contract([record], self.stores, self.obik)
+        self.assertEqual("B_ONE_SHOT_SUBSET", result["type"])
+        self.assertEqual("PRODUCT_BOUND_REQUESTED_STORE_BATCH",
+                         result["reason"])
+        self.assertNotEqual("A_ONE_SHOT_ALL_STORES", result["type"])
+
+    def test_exact_observed_stock_rows_zero_and_positive_are_preserved(self):
+        rows = [
+            {"storeId": "003", "availableQuantity": 0},
+            {"storeId": "019", "availableQuantity": 721},
+        ]
+        record = self.observed_stock_record(rows, "storeIds=019%2C003")
+        trusted = self.r.product_bound_stock_rows(
+            record, self.stores, self.obik
+        )
+        self.assertEqual(0, trusted["003"]["value"])
+        self.assertEqual("known_zero", trusted["003"]["state"])
+        self.assertEqual(721, trusted["019"]["value"])
+        self.assertEqual("known_positive", trusted["019"]["state"])
+        self.assertEqual(["003", "019"],
+            self.r.stock_request_coverage(record, self.stores)["returnedTrustedIds"])
+        self.assertNotIn("075", trusted)
+        self.assertEqual("B_ONE_SHOT_SUBSET",
+            self.r.classify_contract([record], self.stores, self.obik)["type"])
+
+    def test_stock_parser_rejects_every_invalid_row_as_a_whole(self):
+        cases = (
+            ("null", {"storeId": "003", "availableQuantity": None},
+             "REJECTED_INVALID_QUANTITY"),
+            ("missing", {"storeId": "003"}, "REJECTED_MISSING_QUANTITY"),
+            ("negative", {"storeId": "003", "availableQuantity": -1},
+             "REJECTED_INVALID_QUANTITY"),
+            ("float", {"storeId": "003", "availableQuantity": 2.0},
+             "REJECTED_INVALID_QUANTITY"),
+            ("string", {"storeId": "003", "availableQuantity": "0"},
+             "REJECTED_INVALID_QUANTITY"),
+            ("boolean", {"storeId": "003", "availableQuantity": True},
+             "REJECTED_INVALID_QUANTITY"),
+            ("unknown_id", {"storeId": "999", "availableQuantity": 1},
+             "REJECTED_NONCANONICAL_STORE"),
+            ("leading_zero_lost", {"storeId": 3, "availableQuantity": 1},
+             "REJECTED_NONCANONICAL_STORE"),
+            ("missing_id", {"availableQuantity": 1},
+             "REJECTED_NONCANONICAL_STORE"),
+            ("nonobject", "SECRET", "REJECTED_NON_OBJECT_ROW"),
+        )
+        valid = {"storeId": "019", "availableQuantity": 9}
+        for name, bad, expected in cases:
+            with self.subTest(case=name):
+                record = self.observed_stock_record(
+                    [valid, bad], "storeIds=003%2C019"
+                )
+                self.assertEqual(expected, record["shape"]["stockParseStatus"])
+                self.assertEqual([], record["shape"]["stockTrustedRows"])
+                self.assertEqual({},
+                    self.r.product_bound_stock_rows(record, self.stores, self.obik))
+                self.assertEqual("F_INCONCLUSIVE",
+                    self.r.classify_contract([record], self.stores, self.obik)["type"])
+        duplicates = self.observed_stock_record([
+            {"storeId": "003", "availableQuantity": 0},
+            {"storeId": "003", "availableQuantity": 5},
+        ], "storeIds=003%2C019")
+        self.assertEqual("REJECTED_DUPLICATE_STORE",
+                         duplicates["shape"]["stockParseStatus"])
+        self.assertEqual([],
+                         duplicates["shape"]["stockTrustedRows"])
+
+    def test_observed_stock_scope_rejects_wrong_product_host_status_and_method(self):
+        valid = [
+            {"storeId": "003", "availableQuantity": 0},
+            {"storeId": "019", "availableQuantity": 8},
+        ]
+        right = self.observed_stock_record(valid, "storeIds=003%2C019")
+        wrong = self.observed_stock_record(
+            valid, "storeIds=003%2C019", product_id="3496073"
+        )
+        altered = [
+            wrong,
+            {**right, "host": "evil.example"},
+            {**right, "status": 404},
+            {**right, "method": "POST"},
+            {**right, "path": "/api/stores/3496072"},
+        ]
+        for record in altered:
+            self.assertEqual({},
+                self.r.product_bound_stock_rows(record, self.stores, self.obik))
+            self.assertEqual("F_INCONCLUSIVE",
+                self.r.classify_contract([record], self.stores, self.obik)["type"])
+
+    def test_observed_stock_one_store_does_not_qualify_as_multi_market_B(self):
+        record = self.observed_stock_record(
+            [{"storeId": "003", "availableQuantity": 5}],
+            "storeIds=003",
+        )
+        self.assertTrue(
+            self.r.stock_request_coverage(record, self.stores)[
+                "everyRequestedStoreHasTrustedState"
+            ]
+        )
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([record], self.stores, self.obik)["type"])
+
+    def test_other_unrequested_store_is_not_silently_classified(self):
+        returned = [
+            {"storeId": "003", "availableQuantity": 2},
+            {"storeId": "019", "availableQuantity": 6},
+        ]
+        record = self.observed_stock_record(
+            returned, "storeIds=003%2C075"
+        )
+        coverage = self.r.stock_request_coverage(record, self.stores)
+        self.assertEqual(["075"], coverage["missingRequestedIds"])
+        self.assertEqual(["019"], coverage["unexpectedReturnedIds"])
+        self.assertFalse(coverage["returnedSubsetOfRequest"])
+        self.assertFalse(coverage["everyRequestedStoreHasTrustedState"])
+        self.assertEqual({},
+            self.r.product_bound_stock_rows(record, self.stores, self.obik))
+        self.assertEqual("F_INCONCLUSIVE",
+            self.r.classify_contract([record], self.stores, self.obik)["type"])
+
     def test_stock_after_open_remains_distinct_from_initial_sp_and_hd(self):
         r = self.r
         initial = self.observation(
