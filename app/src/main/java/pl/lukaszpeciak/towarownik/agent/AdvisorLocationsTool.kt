@@ -2,6 +2,7 @@ package pl.lukaszpeciak.towarownik.agent
 
 import java.text.Normalizer
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
@@ -39,6 +40,9 @@ internal class AdvisorLocationsTool(
             providerId, trustedId, "rejected", reason,
         )
         if (arguments.providerId != providerId) return rejected("wrong_provider")
+        // A hallucinated model tool call can never authorize a costly
+        // network-wide read for ordinary advice, mounting or product selection.
+        if (!hasExplicitLocationsIntent(userText)) return rejected("location_intent_required")
         if (providerId != OBI_PROVIDER_ID.value && providerId != KWANT_PROVIDER_ID.value) {
             return rejected("unsupported_provider")
         }
@@ -147,6 +151,7 @@ internal class AdvisorLocationsTool(
         var failedRequests = 0
         var earliestVerified: Long? = null
         var firstFailure: String? = null
+        val completedWithinBudget = withTimeoutOrNull(MAX_SCOPE_EXECUTION_MS) {
         for (batch in requested.chunked(20)) {
             val result = try {
                 locationsService.read(
@@ -199,6 +204,12 @@ internal class AdvisorLocationsTool(
                     firstFailure = firstFailure ?: "unsupported_provider"
                 }
             }
+        }
+            true
+        } ?: false
+        if (!completedWithinBudget) {
+            failedRequests++
+            firstFailure = firstFailure ?: "execution_timeout"
         }
         val missing = requested.filterNot { it in trusted }
         val returned = requested.filter { it in trusted }
@@ -274,6 +285,40 @@ internal class AdvisorLocationsTool(
         return trusted.takeIf { it.effectiveProductId == modelProductId }
     }
 
+    private companion object {
+        // A single OBI GET has a 15-second cap. The whole sequential
+        // operation has a smaller wall-clock bound than seven slow GETs.
+        const val MAX_SCOPE_EXECUTION_MS = 45_000L
+    }
+
+    /**
+     * Narrow *authorization* guard for location-inventory operations only.
+     * Not a global advisor intent classifier: it never chooses a product,
+     * provider, or location, and is deliberately conservative.
+     */
+    private fun hasExplicitLocationsIntent(userText: String): Boolean {
+        val text = norm(userText)
+        val multiLocation = Regex(
+            """\b(jeszcze|inne|innych|innym|pozostale|pozostalych|wszystkie|wszystkich|oddzialach|marketach)\b""",
+        ).containsMatchIn(text)
+        val stockOrAvailability = Regex(
+            """\b(stan|stany|stanow|zapas|zapasy|dostepnosc|dostepny|dostepne|dostepna|dostepnych|magazynach|maja|jest|sprawdz|sprawdzcie)\b""",
+        ).containsMatchIn(text)
+        val locationNoun = Regex(
+            """\b(market|markety|marketach|sklep|sklepy|sklepach|obi|oddzial|oddzialy|oddzialach|lokalizacjach)\b""",
+        ).containsMatchIn(text)
+        val check = Regex("""\b(sprawdz|sprawdzcie|zweryfikuj|weryfikuj|podaj|pokaz)\b""")
+            .containsMatchIn(text)
+        val where = Regex("""\b(gdzie|ktore|w ktorych|jakich)\b""")
+            .containsMatchIn(text)
+        val explicitlyLocated = Regex("""\b(?:w|we|dla)\s+[a-z0-9]""")
+            .containsMatchIn(text)
+        return (multiLocation && (stockOrAvailability || locationNoun || where)) ||
+            (locationNoun && (check || where) && stockOrAvailability) ||
+            (check && explicitlyLocated) ||
+            (where && stockOrAvailability && locationNoun)
+    }
+
     private sealed interface AuthorizedLocationScope {
         data class Accepted(
             val branches: List<BranchId>,
@@ -300,8 +345,11 @@ internal class AdvisorLocationsTool(
             return AuthorizedLocationScope.Rejected("directory_unavailable")
         }
         val normalized = norm(userText)
-        val numericIds = Regex("""(?<![0-9])[0-9]{3}(?![0-9])""")
-            .findAll(userText).map { it.value }.toSet()
+        // Only identifiers explicitly preceded by store/market/branch
+        // wording are location references. "listwa 100 cm" is NOT store 100.
+        val numericIds = Regex(
+            """\b(?:market\w*|sklep\w*|oddzial\w*|obi)(?:\s+obi)?(?:\s+(?:nr|numer))?\s+([0-9]{3})\b""",
+        ).findAll(normalized).map { it.groupValues[1] }.toSet()
         if (numericIds.any { id -> directory.none { it.branchId.value == id } }) {
             return AuthorizedLocationScope.Rejected("unknown_location")
         }
@@ -337,6 +385,11 @@ internal class AdvisorLocationsTool(
             )
         }
         val restricted = discovered.isNotEmpty()
+        // Explicit unknown city scopes must fail closed even when a model
+        // deliberately sends locations=[]; never infer a nationwide request.
+        if (!restricted && hasUnresolvedCityScope(normalized, groupedCities.keys)) {
+            return AuthorizedLocationScope.Rejected("unknown_location")
+        }
         if (restricted) {
             // A multi-city request must not silently drop an unrecognized
             // second city just because one of the cities is canonical.
@@ -369,18 +422,51 @@ internal class AdvisorLocationsTool(
                 fullNetwork = false,
             )
         }
-        // Without a known user-selected location, model hints must not
-        // magically authorize an unknown place. Broad "other locations"
-        // requests are explicitly nationwide and ignore model hints.
+        // A full-network scan requires user wording that actually
+        // requests other/all stores; model hints can neither authorize
+        // nor silently narrow it.
         val explicitOtherScope = listOf(
-            "jeszcze", "inne", "innych", "pozostal", "wszystk",
-            "ktore market", "gdzie jest", "jakich market",
+            "jeszcze", "inne", "innych", "innym", "pozostal",
+            "wszystk", "ktore market", "jakich market",
         ).any { normalized.contains(it) }
-        if (!explicitOtherScope && modelHints.isNotEmpty()) {
+        if (!explicitOtherScope) {
             return AuthorizedLocationScope.Rejected("unknown_location")
         }
         val allOther = directory.map { it.branchId }.filterNot { it == selected }
         return AuthorizedLocationScope.Accepted(allOther, fullNetwork = true)
+    }
+
+    /**
+     * Restriction-only parser: looks for an explicit locality after
+     * "sprawdź w/we", "dostępny w" or "sprawdź [city]".
+     * Unknown or unsupported localities are rejected even if the model
+     * supplies an empty locations[] array. No general intent inference.
+     */
+    private fun hasUnresolvedCityScope(
+        text: String,
+        knownCities: Set<String>,
+    ): Boolean {
+        val locativeOrCanonical = knownCities.flatMap { city ->
+            listOfNotNull(city, cityLocative(city))
+        }
+        val broadWords = setOf(
+            "innym", "innych", "inne", "pozostalych", "wszystkich",
+            "marketach", "marketach obi", "oddzialach", "sklepach", "lokalizacjach",
+        )
+        val directScope = Regex(
+            """\b(?:sprawdz|sprawdzcie|dostepny|dostepna|dostepne|stan|stany|dostepnosc)\s+(?:(?:ten|tego|produkt|produktu|stany|stan)\s+)?(?:w|we|dla)\s+([a-z][a-z0-9]*)\b""",
+        )
+        val plainScope = Regex(
+            """\b(?:sprawdz|sprawdzcie)\s+([a-z][a-z0-9]*)\b""",
+        )
+        val candidates = directScope.findAll(text).map { it.groupValues[1] }.toList() +
+            plainScope.findAll(text).map { it.groupValues[1] }.filterNot {
+                it in setOf("w", "we", "inne", "innych", "stany", "stan", "dostepnosc", "produkt", "produktu", "ten")
+            }.toList()
+        return candidates.any { candidate ->
+            candidate !in broadWords &&
+                locativeOrCanonical.none { it == candidate || it.startsWith("$" + "candidate ") }
+        }
     }
 
     /** Polish locative forms are only for scope matching, not a global
