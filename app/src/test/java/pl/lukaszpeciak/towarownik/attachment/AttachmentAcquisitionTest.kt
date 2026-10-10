@@ -43,6 +43,130 @@ class AttachmentAcquisitionTest {
     }
 
     @Test
+    fun androidPickerTextFamiliesImportWithStrictCanonicalMimeAndPrivateBytes() {
+        val cases = listOf(
+            Triple("note.txt", "text/plain", "text/plain"),
+            Triple("readme.md", "text/x-markdown", "text/markdown"),
+            Triple("prices.csv", "application/vnd.ms-excel", "text/csv"),
+            Triple("catalog.json", "text/plain", "application/json"),
+            Triple("install.xml", "application/octet-stream", "application/xml"),
+            Triple("rule.yaml", "application/x-yml", "application/yaml"),
+            Triple("rule.yml", "text/plain", "application/yaml"),
+            Triple("events.log", "application/octet-stream", "text/plain"),
+            Triple("settings.ini", "text/x-ini", "text/plain"),
+            Triple("other.conf", "binary/octet-stream", "text/plain"),
+        )
+        for ((name, pickerMime, canonicalMime) in cases) {
+            val bytes = "żółć\t12\n".toByteArray(Charsets.UTF_8)
+            val file = captureFile(name, bytes)
+            val result = importer.import(
+                uri(file).buildUpon().appendQueryParameter("mime", pickerMime).build(),
+            )
+            assertTrue(name, result is AttachmentImportResult.Success)
+            val part = (result as AttachmentImportResult.Success).attachment
+            assertEquals(AttachmentType.TEXT, part.type)
+            assertEquals(canonicalMime, part.mimeType)
+            assertEquals(name, part.displayName)
+            assertEquals(bytes.size.toLong(), part.byteSize)
+            assertTrue(storage.isReadable(part))
+            assertEquals(AttachmentRenderKind.TEXT, storage.renderKind(part))
+            assertEquals(bytes.toList(), storage.open(part.localId)!!.use { it.readBytes().toList() })
+        }
+        assertTrue(ADVISOR_FILE_PICKER_MIME_TYPES.contains("image/*"))
+        assertTrue(ADVISOR_FILE_PICKER_MIME_TYPES.contains("application/pdf"))
+        assertTrue(ADVISOR_FILE_PICKER_MIME_TYPES.contains("text/*"))
+        assertTrue(ADVISOR_FILE_PICKER_MIME_TYPES.contains("application/octet-stream"))
+    }
+
+    @Test
+    fun pickerMimeNormalizationRejectsUnrelatedTypesAndPreservesTextExtension() {
+        assertEquals("application/json", normalizedPickedTextMime("data.json", "text/plain"))
+        assertEquals("application/xml", normalizedPickedTextMime("data.xml", null))
+        assertEquals("application/yaml", normalizedPickedTextMime("settings.yml", "APPLICATION/OCTET-STREAM"))
+        assertNull(normalizedPickedTextMime("data.json", "application/pdf"))
+        assertNull(normalizedPickedTextMime("report.exe", "text/plain"))
+        assertNull(normalizedPickedTextMime("report.xlsx", "application/octet-stream"))
+        assertNull(normalizedPickedTextMime("report.zip", "application/octet-stream"))
+        assertEquals("bad.txt", sanitizedTextAttachmentName("../bad.txt"))
+        val longName = "x".repeat(200) + ".csv"
+        val sanitized = sanitizedTextAttachmentName(longName)!!
+        assertTrue(sanitized.length <= 128)
+        assertTrue(sanitized.endsWith(".csv"))
+        assertTrue(allowedTextAttachment(sanitized, "text/csv"))
+        val pdfNamedTxt = captureFile("misleading.txt", "%PDF-1.7".toByteArray())
+        assertEquals(
+            AttachmentImportResult.Failure(AttachmentImportError.UNSUPPORTED_TYPE),
+            importer.import(uri(pdfNamedTxt).buildUpon()
+                .appendQueryParameter("mime", "application/pdf").build()),
+        )
+    }
+
+    @Test
+    fun textImportRejectsInvalidUtf8BinaryAndOverLimitBeforePendingOwnerPublish() {
+        var staged = 0
+        val guarded = AttachmentImporter(context.contentResolver, storage) { staged++; true }
+        val bad = listOf(
+            "utf8.txt" to byteArrayOf(0xc3.toByte(), 0x28),
+            "zero.md" to byteArrayOf(0x61, 0x00, 0x62),
+            "zip.log" to byteArrayOf(0x50, 0x4b, 0x03, 0x04),
+            "control.ini" to byteArrayOf(0x41, 0x1b, 0x42),
+        )
+        for ((name, bytes) in bad) {
+            val result = guarded.import(uri(captureFile(name, bytes)))
+            assertEquals(
+                AttachmentImportResult.Failure(AttachmentImportError.INVALID_TEXT), result,
+            )
+        }
+        assertEquals(0, staged)
+        val over = guarded.import(uri(captureFile(
+            "huge.txt", ByteArray(1024 * 1024 + 1) { 65 },
+        )))
+        assertEquals(AttachmentImportResult.Failure(AttachmentImportError.TEXT_TOO_LARGE), over)
+        assertEquals(0, staged)
+        val boundary = guarded.import(uri(captureFile(
+            "exact.txt", ByteArray(1024 * 1024) { 65 },
+        )))
+        assertTrue(boundary is AttachmentImportResult.Success)
+        assertEquals(1, staged)
+    }
+
+    @Test
+    fun pendingTextAggregateRejectsOverOneMiBAndReplaceRemoveKeepsOtherItems() {
+        fun text(name: String, length: Int) = storage.importValidated(
+            type = AttachmentType.TEXT, displayName = name, mimeType = "text/plain",
+            byteSize = length.toLong(),
+            source = { ByteArrayInputStream(ByteArray(length) { 65 }) },
+        )
+        val first = text("one.txt", 512 * 1024)
+        val second = text("two.txt", 512 * 1024)
+        val excess = text("excess.txt", 512 * 1024 + 1)
+        val image = storedPdf("manual.pdf")
+        val owner = MultiPendingAttachmentOwnership(storage, pendingPreferences())
+        val initial = listOf(image, first)
+        assertTrue(owner.publishSelection(initial, emptyList()))
+        val full = appendOrReplaceAttachment(initial, second)!!
+        assertEquals(1024L * 1024, textAttachmentTotalBytes(full))
+        assertTrue(owner.publishSelection(full, emptyList()))
+        assertNull(appendOrReplaceAttachment(listOf(image, first), excess))
+        assertNull(appendOrReplaceAttachment(full, excess, second.localId))
+        assertTrue(canSendAdvisorComposer(true, false, "", full))
+        assertFalse(canSendAdvisorComposer(true, false, "", listOf(image, first, excess)))
+        assertEquals(1024L * 1024, textAttachmentTotalBytes(full))
+        assertTrue(owner.publishSelection(listOf(image, first), listOf(second)))
+        assertTrue(storage.exists(first.localId))
+        assertTrue(storage.exists(image.localId))
+        assertFalse(storage.exists(second.localId))
+        val replaced = appendOrReplaceAttachment(listOf(image, first), excess, first.localId)
+        assertEquals(listOf(image, excess), replaced)
+        assertTrue(owner.publishSelection(replaced!!, listOf(first)))
+        assertFalse(storage.exists(first.localId))
+        assertTrue(storage.exists(excess.localId))
+        assertTrue(owner.clearPending(replaced))
+        assertFalse(storage.exists(excess.localId))
+        assertFalse(storage.exists(image.localId))
+    }
+
+    @Test
     fun multiComposerAddsReplacesAndRemovesWithoutDeletingSiblings() {
         val owner = MultiPendingAttachmentOwnership(storage, pendingPreferences())
         val first = storedPdf("first.pdf")
@@ -597,11 +721,17 @@ class AttachmentAcquisitionTest {
     private class TestAttachmentProvider : ContentProvider() {
         override fun onCreate(): Boolean = true
 
-        override fun getType(uri: Uri): String =
-            when (uri.lastPathSegment?.substringAfterLast('.', "")) {
+        override fun getType(uri: Uri): String? =
+            uri.getQueryParameter("mime") ?: when (uri.lastPathSegment?.substringAfterLast('.', "")) {
                 "pdf" -> "application/pdf"
                 "jpg", "jpeg" -> "image/jpeg"
                 "png" -> "image/png"
+                "txt", "log", "ini", "conf" -> "text/plain"
+                "md" -> "text/markdown"
+                "csv" -> "text/csv"
+                "json" -> "application/json"
+                "xml" -> "application/xml"
+                "yaml", "yml" -> "application/yaml"
                 else -> "application/zip"
             }
 
