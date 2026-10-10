@@ -314,6 +314,7 @@ internal class AdvisorLocationsTool(
         return (multiLocation && (stockOrAvailability || locationNoun || where)) ||
             (locationNoun && (check || where) && stockOrAvailability) ||
             (check && explicitlyLocated) ||
+            (stockOrAvailability && explicitlyLocated) ||
             (where && stockOrAvailability && locationNoun)
     }
 
