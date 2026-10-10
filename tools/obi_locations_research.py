@@ -432,6 +432,75 @@ def structural_availability_container(
     return info
 
 
+def parse_observed_stock_rows(data: Any, stores: dict[str, Any]) -> dict[str, Any]:
+    """Run #6 exact /stock/{OBIK} schema: {storeId, availableQuantity}[].
+
+    Route/host/status/product/query authorization is a SEPARATE gate.
+    Never promote these keys to generic store or availability decoders.
+    All rows must be valid; one ambiguous/invalid row invalidates the
+    response's trusted coverage (rather than silently hiding it).
+    """
+    if type(data) is not list or len(data) > len(stores):
+        return {"status": "REJECTED_ROOT_OR_SIZE", "trustedRows": []}
+    seen: set[str] = set()
+    rows = []
+    for item in data:
+        if not isinstance(item, dict):
+            return {"status": "REJECTED_NON_OBJECT_ROW", "trustedRows": []}
+        ident = item.get("storeId")
+        if type(ident) is not str or not STORE_NUMBER.fullmatch(ident) or ident not in stores:
+            return {"status": "REJECTED_NONCANONICAL_STORE", "trustedRows": []}
+        if ident in seen:
+            return {"status": "REJECTED_DUPLICATE_STORE", "trustedRows": []}
+        if "availableQuantity" not in item:
+            return {"status": "REJECTED_MISSING_QUANTITY", "trustedRows": []}
+        quantity = item["availableQuantity"]
+        if type(quantity) is not int or quantity < 0:
+            return {"status": "REJECTED_INVALID_QUANTITY", "trustedRows": []}
+        seen.add(ident)
+        rows.append({
+            "storeNumber": ident, "storeIdField": "storeId",
+            "candidateField": "availableQuantity",
+            "state": "known_zero" if quantity == 0 else "known_positive",
+            "value": quantity,
+        })
+    return {"status": "TRUSTED", "trustedRows": rows}
+
+
+def trusted_observed_stock_rows(
+    record: dict[str, Any], stores: dict[str, Any], obik: str,
+) -> dict[str, dict[str, Any]]:
+    """Authoritative only for the observed exact product-bound GET response."""
+    match = OBSERVED_STOCK_PATH.fullmatch(record.get("path") or "")
+    if not match or match.group(1) != obik:
+        return {}
+    if (record.get("method") != "GET" or record.get("status") != 200
+            or product_identity(record, obik) in ("UNKNOWN", "CONFLICT")):
+        return {}
+    shape = record.get("shape") or {}
+    if shape.get("rootType") != "list" or shape.get("stockParseStatus") != "TRUSTED":
+        return {}
+    rows = shape.get("stockTrustedRows")
+    if not isinstance(rows, list) or len(rows) > len(stores):
+        return {}
+    trusted = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            return {}
+        ident = row.get("storeNumber")
+        value = row.get("value")
+        if (type(ident) is not str or ident not in stores or ident in trusted
+                or row.get("storeIdField") != "storeId"
+                or row.get("candidateField") != "availableQuantity"
+                or type(value) is not int or value < 0
+                or row.get("state") != (
+                    "known_zero" if value == 0 else "known_positive"
+                )):
+            return {}
+        trusted[ident] = row
+    return trusted
+
+
 def response_shape(data: Any, obik: str, stores: dict[str, Any],
                    request_path: str = "") -> dict[str, Any]:
     if isinstance(data, dict):
@@ -452,10 +521,19 @@ def response_shape(data: Any, obik: str, stores: dict[str, Any],
         row_owner = data.get("deliveryDataPerSeller") if (
             OBSERVED_HD_PATH.fullmatch(request_path).group(1) == obik
         ) else None
-    rows = candidate_rows(row_owner, stores) if row_owner is not None else []
+    stock_match = OBSERVED_STOCK_PATH.fullmatch(request_path)
+    observed_stock = bool(stock_match and stock_match.group(1) == obik)
+    # Generic field inference must not authorize stock batch rows. Only
+    # the exact observed route can decode storeId/availableQuantity.
+    rows = (candidate_rows(row_owner, stores)
+            if row_owner is not None and not stock_match else [])
     result = {"rootType": type(data).__name__, "rootFields": root_names,
               "rootProductId": root_id, "storeRows": rows[:MAX_ROWS],
               "storeRowCount": len(rows)}
+    if observed_stock:
+        parsed = parse_observed_stock_rows(data, stores)
+        result["stockParseStatus"] = parsed["status"]
+        result["stockTrustedRows"] = parsed["trustedRows"]
     # Distinct observed frontend routes: pickup and delivery are not merged.
     if isinstance(data, dict):
         if (OBSERVED_SP_PATH.fullmatch(request_path) and
@@ -539,7 +617,10 @@ def stock_request_coverage(
     """
     query = (record.get("query") or {}).get("storeIds") or {}
     requested = query.get("canonicalIds") or []
-    trusted_rows = verified_rows(record, stores)
+    stock_path = OBSERVED_STOCK_PATH.fullmatch(record.get("path") or "")
+    trusted_rows = (trusted_observed_stock_rows(
+        record, stores, stock_path.group(1)
+    ) if stock_path else verified_rows(record, stores))
     returned = list(trusted_rows)
     valid_request = (
         query.get("present") is True
@@ -581,7 +662,7 @@ def product_bound_stock_rows(
     coverage = stock_request_coverage(record, stores)
     if not coverage["requestIdsVerified"] or not coverage["returnedSubsetOfRequest"]:
         return {}
-    return verified_rows(record, stores)
+    return trusted_observed_stock_rows(record, stores, obik)
 
 
 def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any],
@@ -627,9 +708,14 @@ def classify_contract(observations: list[dict[str, Any]], stores: dict[str, Any]
         usable = [row for row in mapped.values()
                   if row["state"] in ("known_zero", "known_positive", "qualitative")]
         if len(usable) >= 2:
+            stock = OBSERVED_STOCK_PATH.fullmatch(record.get("path") or "")
+            coverage = stock_request_coverage(record, stores) if stock else None
+            reason = ("PRODUCT_BOUND_REQUESTED_STORE_BATCH"
+                      if coverage and coverage["everyRequestedStoreHasTrustedState"]
+                      else "PRODUCT_BOUND_PARTIAL_REQUESTED_STORE_BATCH"
+                      if stock else "PRODUCT_BOUND_VERIFIED_SUBSET_OMISSIONS_UNKNOWN")
             return {"type": "B_ONE_SHOT_SUBSET",
-                    "reason": "PRODUCT_BOUND_VERIFIED_SUBSET_OMISSIONS_UNKNOWN",
-                    "observedStoreCount": len(mapped)}
+                    "reason": reason, "observedStoreCount": len(mapped)}
     if 2 <= len(scoped) <= 5:
         usable_by_record = [
             {store for store, row in mapped.items()
