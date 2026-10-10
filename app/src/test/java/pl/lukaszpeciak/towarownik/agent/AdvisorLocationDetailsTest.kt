@@ -104,4 +104,21 @@ class AdvisorLocationDetailsTest {
         ))
     }
 
+
+    @Test fun kwantUnverifiedExtendedHasActionableUnavailableMessage() {
+        val evidence = AdvisorLocationEvidence(
+            providerId = "kwant-pl", productId = null,
+            status = "unavailable", reason = "unverified_request_contract",
+            coverage = "unknown", checkedIds = emptyList(),
+            returnedIds = emptyList(), missingIds = emptyList(),
+            locations = emptyList(), verifiedAtMillis = null,
+            centralStock = null,
+        )
+        val rendered = renderAdvisorLocationDetails(evidence)
+        assertTrue(rendered.contains("KWANT"))
+        assertTrue(rendered.contains("profilu pracy"))
+        assertTrue(rendered.contains("Nie wykonano sprawdzenia"))
+        assertFalse(rendered.contains("0 szt."))
+    }
+
 }

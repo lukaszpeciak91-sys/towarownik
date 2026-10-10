@@ -12,6 +12,16 @@ import pl.lukaszpeciak.towarownik.product.OBI_STORES
 internal fun renderAdvisorLocationDetails(
     evidence: AdvisorLocationEvidence,
 ): String {
+    if (evidence.providerId == "kwant-pl" &&
+        evidence.status == "unavailable" &&
+        evidence.reason == "unverified_request_contract"
+    ) {
+        return "Nie mogę potwierdzić stanów w innych oddziałach KWANT: " +
+            "sposób pobierania tych danych nie jest jeszcze zweryfikowany. " +
+            "Możesz wybrać konkretny oddział w profilu pracy i sprawdzić " +
+            "produkt osobno albo skontaktować się z hurtownią. " +
+            "Nie wykonano sprawdzenia stanów w innych oddziałach."
+    }
     // An exact city/ID mismatch requires confirmation, not a substituted
     // inventory read. Append this grounded clarification independently of
     // how the model phrases its final answer.
