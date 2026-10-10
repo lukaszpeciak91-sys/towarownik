@@ -258,14 +258,12 @@ class AdvisorLocationFollowUpReportsTest {
         assertTrue(inventory.http.isEmpty())
     }
 
-    @Test fun shortKwantIdsRejectUnknownAndAcceptOnlyAfterNewVerification() = runBlocking {
+    /** Synthetic KWANT adapter: never enables the production extended contract. */
+    private inner class ShortKwantFixture {
         val old = snapshot("7035", "kwant-pl", "921871")
         val newlyVerified = snapshot("7027", "kwant-pl", "921861")
         val adapterReads = mutableListOf<String>()
-        // This synthetic adapter does NOT activate production KWANT extended.
-        // A successfully authenticated identity reaches only its known
-        // unverified-contract response; failures never reach the adapter.
-        val adapter = object : ProductLocationsAdapter {
+        private val adapter = object : ProductLocationsAdapter {
             override val providerId = KWANT_PROVIDER_ID
             override suspend fun read(
                 ref: ProductRef,
@@ -278,7 +276,7 @@ class AdvisorLocationFollowUpReportsTest {
                 )
             }
         }
-        val tool = AdvisorLocationsTool(
+        private val tool = AdvisorLocationsTool(
             locationsService = ProductLocationsService(listOf(adapter)),
         )
         suspend fun check(
@@ -291,46 +289,57 @@ class AdvisorLocationFollowUpReportsTest {
             userText = message, currentVerified = emptyList(),
             historicalVerified = trusted,
         )
+    }
+
+    @Test fun shortKwantExplicitUnknownProductIdRejectsWithoutAdapter() = runBlocking {
+        val f = ShortKwantFixture()
         val request = "Sprawdź stan produktu 7027 w oddziale Zamość"
-        val rejected = check(request, listOf(old), "7035")
-        assertEquals("rejected", rejected.status)
-        assertEquals("untrusted_product", rejected.reason)
-        assertTrue(adapterReads.isEmpty())
+        val result = f.check(request, listOf(f.old), "7035")
+        assertEquals("rejected", result.status)
+        assertEquals("untrusted_product", result.reason)
+        assertTrue(f.adapterReads.isEmpty())
+    }
 
-        val unlabeled = check("Sprawdź 7027 w oddziale Zamość", listOf(old), "7035")
+    @Test fun shortKwantUnlabeledCheckAndUnknownArticleRejectWithoutAdapter() = runBlocking {
+        val f = ShortKwantFixture()
+        val unlabeled = f.check("Sprawdź 7027 w oddziale Zamość", listOf(f.old), "7035")
+        assertEquals("rejected", unlabeled.status)
         assertEquals("untrusted_product", unlabeled.reason)
-        assertTrue(adapterReads.isEmpty())
-        val article = check(
+        val article = f.check(
             "Sprawdź stan produktu o kodzie 921861 w oddziale Zamość",
-            listOf(old), "7035",
+            listOf(f.old), "7035",
         )
+        assertEquals("rejected", article.status)
         assertEquals("untrusted_product", article.reason)
-        assertTrue(adapterReads.isEmpty())
+        assertTrue(f.adapterReads.isEmpty())
+    }
 
-        // The product becomes trusted only after a new verified snapshot.
-        val after = check(request, listOf(old, newlyVerified), "7027")
+    @Test fun shortKwantAfterNewVerificationReevaluatesProductTrust() = runBlocking {
+        val f = ShortKwantFixture()
+        val request = "Sprawdź stan produktu 7027 w oddziale Zamość"
+        val after = f.check(request, listOf(f.old, f.newlyVerified), "7027")
         assertEquals("unavailable", after.status)
         assertEquals("unverified_request_contract", after.reason)
-        assertEquals(listOf("7027"), adapterReads)
-
-        // Previously selected 7035 cannot override a now-explicit 7027.
-        val mismatch = check(request, listOf(old, newlyVerified), "7035")
+        assertEquals(listOf("7027"), f.adapterReads)
+        val mismatch = f.check(request, listOf(f.old, f.newlyVerified), "7035")
         assertEquals("rejected", mismatch.status)
-        assertEquals(1, adapterReads.size)
+        assertEquals(1, f.adapterReads.size)
+    }
 
-        // Quantities and units are not treated as unknown product IDs.
-        val dimensions = check(
+    @Test fun shortKwantMeasurementsAreNotUntrustedProductIds() = runBlocking {
+        val f = ShortKwantFixture()
+        val dimensions = f.check(
             "Sprawdź stan produktu 7035 w oddziale Zamość, potrzebuję 1000 W, 25 m i 5 szt.",
-            listOf(old), "7035",
+            listOf(f.old), "7035",
         )
         assertEquals("unavailable", dimensions.status)
-        assertEquals(listOf("7027", "7035"), adapterReads)
-        val watts = check(
+        assertEquals(listOf("7035"), f.adapterReads)
+        val watts = f.check(
             "Sprawdź 1000 W w oddziale Zamość",
-            listOf(old), "7035",
+            listOf(f.old), "7035",
         )
         assertEquals("unavailable", watts.status)
-        assertEquals(listOf("7027", "7035", "7035"), adapterReads)
+        assertEquals(listOf("7035", "7035"), f.adapterReads)
     }
 
 
