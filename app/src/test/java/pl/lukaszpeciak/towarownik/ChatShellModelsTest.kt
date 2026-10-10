@@ -112,6 +112,7 @@ class ChatShellModelsTest {
             obik = "1234567",
             grossPrice = BigDecimal("12.30"),
             stock = 0,
+            stockUnit = "m",
             productUrl = "https://www.obi.pl/p/1234567/trusted-exact",
             primaryImageUrl =
                 "https://bilder.obi.pl/example/pr08A/image.jpeg",
@@ -133,6 +134,7 @@ class ChatShellModelsTest {
 
         assertEquals(completed, restored)
         assertEquals(77L, restored.messages.single().persistedMessageId)
+        assertEquals("m", restored.messages.single().products.single().stockUnit)
         assertEquals(
             "https://www.obi.pl/p/1234567/trusted-exact",
             verifiedProductOpenUrl(restored.messages.single().products.single()),
