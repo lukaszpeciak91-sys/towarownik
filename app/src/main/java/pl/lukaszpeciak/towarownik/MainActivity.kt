@@ -1716,6 +1716,53 @@ private fun AdvisorChatScreen(
 ) {
     val isRunning = state.isRunning()
     val composerEnabled = isAdvisorComposerEnabled(state)
+    val chatListState = rememberLazyListState()
+    val bottomTolerancePx = with(LocalDensity.current) { 48.dp.roundToPx() }
+    val bottomPaddingPx = with(LocalDensity.current) { 20.dp.roundToPx() }
+    val visibleItemCount = advisorCase.messages.size +
+        if (state is AdvisorUiState.Idle || state is AdvisorUiState.Success) 0 else 1
+    var followNewMessages by remember(conversationId, historyOpenSerial) {
+        mutableStateOf(true)
+    }
+
+    // User-driven scrolling away from the end disables following; scrolling back
+    // to the end re-enables it. New content alone must not change this preference.
+    LaunchedEffect(chatListState, conversationId, historyOpenSerial, bottomTolerancePx) {
+        snapshotFlow {
+            if (!chatListState.isScrollInProgress) null
+            else {
+                val layout = chatListState.layoutInfo
+                val last = layout.visibleItemsInfo.lastOrNull()
+                advisorListIsNearBottom(
+                    lastIndex = last?.index ?: -1,
+                    totalItems = layout.totalItemsCount,
+                    lastItemBottom = last?.let { it.offset + it.size } ?: 0,
+                    viewportEnd = layout.viewportEndOffset,
+                    tolerance = bottomTolerancePx,
+                )
+            }
+        }.collect { nearBottom ->
+            if (nearBottom != null) followNewMessages = nearBottom
+        }
+    }
+
+    // Covers first history load/reopen and live USER, progress, or ASSISTANT updates.
+    // Do not jump when the user has intentionally scrolled up to read older turns.
+    LaunchedEffect(
+        conversationId, historyOpenSerial, visibleItemCount,
+        advisorCase.messages.lastOrNull(), state::class,
+    ) {
+        if (visibleItemCount > 0 && followNewMessages) {
+            chatListState.scrollToItem(visibleItemCount - 1)
+            val last = chatListState.layoutInfo.visibleItemsInfo.lastOrNull()
+            if (last?.index == visibleItemCount - 1) {
+                chatListState.scrollBy(
+                    (last.offset + last.size + bottomPaddingPx -
+                        chatListState.layoutInfo.viewportEndOffset).coerceAtLeast(0).toFloat(),
+                )
+            }
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -1781,6 +1828,7 @@ private fun AdvisorChatScreen(
                 )
             } else {
                 LazyColumn(
+                    state = chatListState,
                     modifier = Modifier
                         .fillMaxSize()
                         .widthIn(max = 720.dp),
@@ -1845,6 +1893,20 @@ private fun AdvisorChatScreen(
         }
     }
 }
+
+/** True only when the last row is actually near the viewport end.
+ * A tall answer can be visible while its bottom is still far below the screen.
+ */
+internal fun advisorListIsNearBottom(
+    lastIndex: Int,
+    totalItems: Int,
+    lastItemBottom: Int,
+    viewportEnd: Int,
+    tolerance: Int,
+): Boolean =
+    totalItems > 0 &&
+        lastIndex == totalItems - 1 &&
+        lastItemBottom <= viewportEnd + tolerance
 
 @Composable
 private fun AdvisorTopBar(
