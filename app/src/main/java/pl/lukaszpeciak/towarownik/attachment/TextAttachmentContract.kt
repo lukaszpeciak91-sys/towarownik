@@ -60,7 +60,7 @@ internal fun normalizedPickedTextMime(filename: String, reportedMime: String?): 
     val extension = filename.substringAfterLast('.', "").lowercase(Locale.ROOT)
     val allowed = TEXT_MIME_BY_EXTENSION[extension] ?: return null
     val reported = reportedMime?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)
-    if (reported in allowed) return reported
+    if (reported != null && reported in allowed) return reported
     val generic = reported == null || reported.isEmpty() ||
         reported == "application/octet-stream" || reported == "binary/octet-stream"
     val alias = when (extension) {
