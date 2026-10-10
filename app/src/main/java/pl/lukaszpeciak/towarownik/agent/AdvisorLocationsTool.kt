@@ -274,14 +274,28 @@ internal class AdvisorLocationsTool(
         // long OBIK/EAN values. Four-to-six-digit numbers count only in
         // explicit product/identifier contexts or a direct "sprawdź 7027".
         // Ordinary measurements and three-digit OBI markets are not IDs.
+        // A quantity followed by a physical unit (1000 W, 25 m) is not
+        // a short product ID. A single "w" followed by a place remains a
+        // Polish location preposition rather than a watt unit.
+        fun hasMeasurementUnitAfter(endIndex: Int): Boolean {
+            val following = normalized.substring(endIndex + 1)
+            return Regex("""^\s*(?:mm|cm|m2|m3|m|kg|kw|kwh|v|a|l|ml|szt|opak)\b""")
+                .containsMatchIn(following) ||
+                Regex("""^\s*w\b(?:\s+w\b|\s*$|\s*[,.;!?])""")
+                    .containsMatchIn(following)
+        }
         val explicitProductNumbers = Regex(
             """\b(?:obik|ean|sku|id(?:\s+produktu)?|produkt(?:u|y|ow)?|""" +
                 """kod(?:u|zie)?|art\.?|artykul(?:u)?|indeks(?:u)?|""" +
                 """model(?:u)?|gniazd(?:a|o)|numer(?:\s+katalogowy)?|""" +
                 """nr(?:\s+katalogowy)?)\s*(?:nr\s*)?[:#-]?\s*([0-9]{4,13})\b""",
-        ).findAll(normalized).map { it.groupValues[1] }
+        ).findAll(normalized)
+            .filterNot { it.groupValues[1].length <= 6 && hasMeasurementUnitAfter(it.range.last) }
+            .map { it.groupValues[1] }
         val directCheckNumbers = Regex("""\bsprawdz(?:cie)?\s+([0-9]{4,6})\b""")
-            .findAll(normalized).map { it.groupValues[1] }
+            .findAll(normalized)
+            .filterNot { hasMeasurementUnitAfter(it.range.last) }
+            .map { it.groupValues[1] }
         val longNumbers = Regex("""(?<![0-9])[0-9]{7,13}(?![0-9])""")
             .findAll(normalized).map { it.value }
         val referencedNumbers = (explicitProductNumbers + directCheckNumbers + longNumbers)
