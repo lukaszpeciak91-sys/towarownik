@@ -1,5 +1,10 @@
 # Decisions
 
+## PR #102 — 2026-10-10 focused location authorization hardening
+
+An exact trusted product card is necessary but insufficient to authorize other-store stock HTTP. Android independently requires explicit location availability intent and interprets city/store tokens only in the current user text. The model's empty location list cannot convert `Sprawdź w Tarnowie` into an all-OBI scan. Isolated dimensions such as `100 cm` never become market IDs. The 45-second overall OBI deadline prevents seven sequential 15-second HTTP calls from yielding 105 seconds of cumulative delay; timeouts are reported as partial/unknown without fabricating zero. Nationwide partial presentation preserves the originally requested all-other scope. All other existing contracts, KWANT `extended` production disablement, and Worker capabilities remain unchanged.
+
+
 ## 2026-10-10 — PR 2 opt-in Advisor locations integration
 
 - One explicit-capability model function `find_product_locations` is registered only if `X-Taksula-Locations-Capability: 1` is supplied. Existing v2/v3/v4/v5 families remain stable; old Android versions without the capability header receive unchanged tools, so deploy Worker before shipping the Android version.

@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,12 +32,15 @@ class AdvisorLocationsNationwideTest {
     private inner class FakeInventory(
         private val failAtRequest: Int? = null,
         private val cancelAtRequest: Int? = null,
+        private val perHttpDelayMillis: Long = 0L,
+        private val totalBudgetMillis: Long = 45_000L,
     ) {
         val serviceReads = mutableListOf<List<BranchId>>()
         val httpBatches = mutableListOf<List<String>>()
         val wire = LocationsHttpFetcher { url: HttpUrl ->
             val ids = url.queryParameter("storeIds")!!.split(",")
             httpBatches += ids
+            if (perHttpDelayMillis > 0L) delay(perHttpDelayMillis)
             when (httpBatches.size) {
                 cancelAtRequest -> throw CancellationException("synthetic cancellation")
                 failAtRequest -> LocationsHttpResult.Failure(LocationFailure.TRANSPORT)
@@ -60,7 +64,10 @@ class AdvisorLocationsNationwideTest {
                 return adapter.read(ref, requested, trustedProduct)
             }
         }
-        val tool = AdvisorLocationsTool(ProductLocationsService(listOf(counter)))
+        val tool = AdvisorLocationsTool(
+            locationsService = ProductLocationsService(listOf(counter)),
+            scopeExecutionBudgetMillis = totalBudgetMillis,
+        )
 
         suspend fun run(
             message: String,
@@ -187,6 +194,73 @@ class AdvisorLocationsNationwideTest {
         assertEquals("all_other_locations", result.coverage)
         assertEquals(61, result.checkedIds.size)
         assertEquals(7, fake.httpBatches.size)
+    }
+
+    @Test fun `unknown city with empty model hints never scans network`() = runBlocking {
+        for (message in listOf(
+            "Sprawdź w Tarnowie",
+            "Sprawdź dostępność w Tarnowie",
+            "Sprawdź Tarnów",
+        )) {
+            val fake = FakeInventory()
+            val result = fake.run(message, hints = emptyList())
+            assertEquals(message, "rejected", result.status)
+            assertEquals(message, "unknown_location", result.reason)
+            assertEquals(message, 0, fake.serviceReads.size)
+            assertEquals(message, 0, fake.httpBatches.size)
+        }
+    }
+
+    @Test fun `model hallucinated location call during advice is rejected before HTTP`() = runBlocking {
+        for (message in listOf(
+            "Poleć odpowiednik tego produktu",
+            "Jak zamontować ten produkt?",
+            "Jak zamontować ten produkt w Krakowie?",
+        )) {
+            val fake = FakeInventory()
+            val result = fake.run(message)
+            assertEquals(message, "rejected", result.status)
+            assertEquals(message, "location_intent_required", result.reason)
+            assertEquals(message, 0, fake.serviceReads.size)
+            assertEquals(message, 0, fake.httpBatches.size)
+        }
+    }
+
+    @Test fun `user product dimension 100 cm never becomes an OBI store id`() = runBlocking {
+        val fake = FakeInventory()
+        val result = fake.run("Gdzie jeszcze jest listwa 100 cm?")
+        assertEquals("verified", result.status)
+        assertEquals("all_other_locations", result.coverage)
+        assertEquals(61, result.checkedIds.size)
+        assertEquals(7, fake.httpBatches.size)
+        assertEquals(4, fake.serviceReads.size)
+    }
+
+    @Test fun `explicit city with empty model hints checks every canonical city store`() = runBlocking {
+        val fake = FakeInventory()
+        val result = fake.run("Sprawdź w Krakowie", hints = emptyList())
+        assertEquals(setOf("019", "072", "003", "059"), result.checkedIds.toSet())
+        assertEquals("requested_subset", result.coverage)
+        assertEquals(1, fake.serviceReads.size)
+    }
+
+    @Test fun `seven individual fifteen second HTTP budgets cannot multiply into unbounded wait`() = runBlocking {
+        val fake = FakeInventory(
+            perHttpDelayMillis = 350L, totalBudgetMillis = 1_200L,
+        )
+        val began = System.nanoTime()
+        val result = fake.run("Gdzie jeszcze jest ten produkt?")
+        val elapsedMs = (System.nanoTime() - began) / 1_000_000L
+        assertTrue("Entire scoped operation must be bounded", elapsedMs < 5_000L)
+        assertEquals("partial", result.coverage)
+        assertEquals("execution_timeout", result.reason)
+        assertEquals(61, result.checkedIds.size)
+        assertEquals(20, result.returnedIds.size)
+        assertEquals(41, result.missingIds.size)
+        assertEquals(61, result.locations.size)
+        assertTrue(result.locations.filter { it.branchId in result.missingIds }.all { it.stock == null })
+        assertTrue(fake.httpBatches.size < 7)
+        assertTrue(fake.serviceReads.size <= 4)
     }
 
     @Test fun `cancellation propagates without retry or further HTTP`() = runBlocking {

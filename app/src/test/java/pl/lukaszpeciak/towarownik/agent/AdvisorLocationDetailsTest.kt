@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.lukaszpeciak.towarownik.product.OBI_STORES
 
 class AdvisorLocationDetailsTest {
     @Test fun `full checked OBI scope stays visible even when model output is short`() {
@@ -60,4 +61,25 @@ class AdvisorLocationDetailsTest {
         )
         assertEquals("", renderAdvisorLocationDetails(evidence))
     }
+    @Test fun `partial nationwide lookup is still explicitly labelled all other stores`() {
+        val ids = OBI_STORES.map { it.storeNumber }.filterNot { it == "075" }
+        assertEquals(61, ids.size)
+        val missing = ids.takeLast(10)
+        val evidence = AdvisorLocationEvidence(
+            providerId = "obi-pl", productId = "3496072",
+            status = "verified", reason = "partial_inventory",
+            coverage = "partial",
+            checkedIds = ids, returnedIds = ids.dropLast(10), missingIds = missing,
+            locations = ids.map { id ->
+                AdvisorLocationEntry(id, "Fixture market $"+ "id", if (id in missing) null else if (id == ids[0]) 0 else 4)
+            },
+            verifiedAtMillis = 1700000000000L, centralStock = null,
+        )
+        val rendered = renderAdvisorLocationDetails(evidence)
+        assertTrue(rendered.startsWith("Wszystkie pozostałe markety OBI — wyniki niepełne"))
+        assertTrue(rendered.contains("niepotwierdzone: 10"))
+        assertEquals(63, rendered.lines().size)
+        assertTrue(rendered.lines().any { it.startsWith("$"+"{missing[0]} —") && it.contains("stan nieznany") })
+    }
+
 }
