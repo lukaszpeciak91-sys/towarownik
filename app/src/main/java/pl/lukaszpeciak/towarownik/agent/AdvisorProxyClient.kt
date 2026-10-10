@@ -449,7 +449,10 @@ internal class AdvisorProxyClient(
                         (!isMulti || it.byteSize > TEXT_ATTACHMENT_MAX_BYTES ||
                             !allowedTextAttachment(it.displayName, it.mimeType)))
             } ||
-            attachments.sumOf { it.byteSize } > maxTotalBytes
+            attachments.sumOf { it.byteSize } > maxTotalBytes ||
+            // Separate text-only budget; image/PDF bytes do not count toward it.
+            attachments.filter { it.type == AttachmentType.TEXT }
+                .sumOf { it.byteSize } > TEXT_ATTACHMENT_MAX_BYTES
         ) {
             return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
         }
