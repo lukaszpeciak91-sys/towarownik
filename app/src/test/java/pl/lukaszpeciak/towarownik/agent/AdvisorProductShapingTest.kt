@@ -183,7 +183,6 @@ class AdvisorProductShapingTest {
         val provider = baseProduct(
             shortDescription = "  ten   sam opis  ",
             technicalFacts = facts,
-            stockUnit = "m²",
         ).toAdvisorVerifiedProduct("potrzebuję IP65")
         val obi = LocalProduct(
             obik = "1234567",
@@ -196,6 +195,7 @@ class AdvisorProductShapingTest {
             brand = "Marka",
             shortDescription = "  ten   sam opis  ",
             technicalFacts = facts,
+            stockUnit = "m²",
         ).toAdvisorVerifiedProduct("potrzebuję IP65")
 
         assertEquals(provider.shortDescription, obi.shortDescription)
