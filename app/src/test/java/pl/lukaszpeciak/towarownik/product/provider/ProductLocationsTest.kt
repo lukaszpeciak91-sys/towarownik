@@ -125,7 +125,7 @@ class ProductLocationsTest {
         val wanted = ids.take(3)
         val adapter = ObiProductLocationsAdapter(
             fetcher = LocationsHttpFetcher {
-                LocationsHttpResult.Success(obiPayload(wanted.take(2).map { id -> id.value })),
+                LocationsHttpResult.Success(obiPayload(wanted.take(2).map { id -> id.value }))
             },
         )
         val result = adapter.read(obiRef, wanted) as ProductLocationsResult.Available
