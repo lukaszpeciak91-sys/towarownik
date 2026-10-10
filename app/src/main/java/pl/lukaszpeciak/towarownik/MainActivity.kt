@@ -2724,97 +2724,62 @@ private fun AdvisorMessageBubble(
 private fun AdvisorAnswerText(
     message: AdvisorChatMessage,
 ) {
-    val mappedSources = message.sources.mapIndexedNotNull {
-            index,
-            source,
-        ->
-        val end = source.endIndex
-        if (
-            source.startIndex != null &&
-            end != null &&
-            end in 1..message.text.length
-        ) {
-            Triple(end, index + 1, source)
-        } else {
-            null
-        }
-    }.sortedWith(
-        compareBy<Triple<Int, Int, PersistedWebSource>> {
-            it.first
-        }.thenBy {
-            it.second
-        },
+    // Native Compose links remain clickable on a Text under SelectionContainer,
+    // while long-press selection and copy work on both cited and plain answers.
+    val annotated = advisorAnswerWithCitationLinks(
+        text = message.text,
+        sources = message.sources,
+        linkColor = MaterialTheme.colorScheme.primary,
     )
-
-    if (mappedSources.isEmpty()) {
+    SelectionContainer {
         Text(
-            text = message.text,
+            text = annotated,
             modifier = Modifier.padding(
                 horizontal = 14.dp,
                 vertical = 10.dp,
             ),
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
         )
-        return
     }
+}
 
-    val linkColor = MaterialTheme.colorScheme.primary
-    val annotated = buildAnnotatedString {
+internal fun advisorAnswerWithCitationLinks(
+    text: String,
+    sources: List<PersistedWebSource>,
+    linkColor: Color,
+): AnnotatedString {
+    val mappedSources = sources.mapIndexedNotNull { index, source ->
+        val end = source.endIndex
+        if (source.startIndex != null && end != null && end in 1..text.length) {
+            Triple(end, index + 1, source)
+        } else null
+    }.sortedWith(
+        compareBy<Triple<Int, Int, PersistedWebSource>> { it.first }
+            .thenBy { it.second },
+    )
+
+    return buildAnnotatedString {
         var cursor = 0
-        mappedSources
-            .groupBy { it.first }
-            .toSortedMap()
-            .forEach { (end, entries) ->
-                if (end > cursor) {
-                    append(message.text.substring(cursor, end))
-                    cursor = end
-                }
-                entries.forEach { (_, number, source) ->
-                    pushStringAnnotation(
-                        tag = "source_url",
-                        annotation = source.url,
-                    )
-                    pushStyle(
-                        SpanStyle(
-                            color = linkColor,
-                        ),
-                    )
+        mappedSources.groupBy { it.first }.toSortedMap().forEach { (end, entries) ->
+            if (end > cursor) {
+                append(text.substring(cursor, end))
+                cursor = end
+            }
+            entries.forEach { (_, number, source) ->
+                withLink(
+                    LinkAnnotation.Url(
+                        url = source.url,
+                        styles = TextLinkStyles(style = SpanStyle(color = linkColor)),
+                    ),
+                ) {
                     append(" [$number]")
-                    pop()
-                    pop()
                 }
             }
-        if (cursor < message.text.length) {
-            append(message.text.substring(cursor))
         }
+        if (cursor < text.length) append(text.substring(cursor))
     }
-
-    val uriHandler = LocalUriHandler.current
-    ClickableText(
-        text = annotated,
-        modifier = Modifier.padding(
-            horizontal = 14.dp,
-            vertical = 10.dp,
-        ),
-        style = MaterialTheme.typography.bodyLarge.copy(
-            color = MaterialTheme.colorScheme.onSurface,
-        ),
-        onClick = { offset ->
-            annotated
-                .getStringAnnotations(
-                    tag = "source_url",
-                    start = offset,
-                    end = offset,
-                )
-                .firstOrNull()
-                ?.item
-                ?.let { url ->
-                    runCatching {
-                        uriHandler.openUri(url)
-                    }
-                }
-        },
-    )
 }
 
 @Composable
