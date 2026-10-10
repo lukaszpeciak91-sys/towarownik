@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — Inventory conversation follow-up regression work
+
+Added a 12-message / four-user-turn history evidence contract and a bounded verified-product referent resolver for Advisor location tool calls; MainActivity passes only preceding persisted messages. Added Miejsce Piastowe alias, explicit 054/052 conflict reason, and relative-clause all-other stock request parsing. KWANT exactly-two-products "obu" remains typed unavailable before unverified extended HTTP. Added reconstructed OBI/KWANT report tests, an Android Controller duplicate-rejection budget test, and preserved all existing provider/parser and Worker protocols.
+
+
 ## 2026-10-10 — Verified stock units for OBI/KWANT cards
 
 Implemented optional stock-unit metadata from KWANT verified `unit` fields tied to exact product/branch evidence. OBI selected-store stock still has no adjacent unit, but exact PDP dedicated sales-unit facts are now accepted when explicit (for example `Sprzedaż: na metry` -> `m`); products without such evidence remain unitless. Unit travels through snapshots, Room v13 migration, chat saved state, manual search and Advisor cards; central KWANT stock uses the same verified unit. Numeric stock never falls back to "szt." and stock=0/null meanings are unchanged. Parser, unit-formatter, saved-state, migration and history-reopen regressions added.

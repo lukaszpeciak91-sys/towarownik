@@ -1,5 +1,12 @@
 # Architecture
 
+## Advisor inventory clarifications — bounded history (2026-10-10)
+
+Android now supplies the location tool with a bounded prior-conversation evidence window: at most 12 preceding messages, four preceding USER turns, and the existing last-three-assistant verified product snapshots. A standalone city, "a w…", or "obu" is inventory-authorized only when chained to a previous **USER-requested** stock/availability operation with no unrelated intervening USER turn. Assistant suggestions and model location/product IDs do not authorize scope. Explicit earlier user identifiers and a single newest verified assistant card may disambiguate product identity; the model's ID remains an equality guard. An exact two-product "obu" clarification is retained across immediate related turns; because KWANT's extended transport is unverified, it produces a typed unavailable result before inventory HTTP rather than selecting one product.
+
+OBI adds verified Miejsce Piastowe/Miejscu Piastowym alias, contextual city-vs-market ID conflict rejection (052 versus asserted 054, no silent substitution), and broad "markety w których…" relative clauses. The existing directory, 61-market coverage, four service reads / seven HTTP batches, 45-second budget, profile, Worker interface and trace semantics remain unchanged.
+
+
 ## Provider-verified stock unit in product cards
 
 `ProviderProduct.stockUnit` is nullable presentation metadata, propagated through OBI `LocalProduct`, `VerifiedProductSnapshot`, Room `message_products.stockUnit` (v13), Compose saved state and `VerifiedProductUiModel`. KWANT only obtains explicit `unit` from a matching product page or product-ID-and-department-matched current-stock payload. If both trusted unit fields conflict, unit is unknown. OBI selected-store `articleData` still has no stock-unit field. For the same exact verified product, the PDP may however expose an explicit dedicated sales-unit fact such as `Sprzedaż: na metry` or `Jednostka sprzedaży: m²`; only these unit-labeled product facts are accepted for stock presentation. Titles, categories, dimensions such as `Długość [m]`, and price-per-unit text are never used to infer a unit. A narrow safe unit normalizer renders known labels (`szt.`, `m`, `m²`, `m³`, `kg`, `l`, `opak.`) or bounded trusted labels and suppresses missing/unsafe labels. Branch and central stocks share the same **product-level** verified unit; stock zero, null and central/branch separation are unchanged. Legacy Room v12 rows migrate to `stockUnit=NULL` without rewriting history.
