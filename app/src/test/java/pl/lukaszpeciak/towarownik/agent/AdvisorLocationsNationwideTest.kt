@@ -327,6 +327,77 @@ class AdvisorLocationsNationwideTest {
             assertEquals(message, 1, fake.httpBatches.size)
         }
     }
+    @Test fun `Krakow and inflected Nowy Sacz both resolve with zero hints`() = runBlocking {
+        for (message in listOf(
+            "Sprawdź stany w Krakowie i Nowym Sączu",
+            "Sprawdź stany w Krakowie oraz Nowym Sączu, proszę",
+            "Sprawdź stany w Krakowie, Nowym Sączu",
+            "Sprawdź Kraków i Nowy Sącz",
+        )) {
+            val fake = FakeInventory()
+            val result = fake.run(message, hints = emptyList())
+            assertEquals(message, "verified", result.status)
+            assertEquals(message, "requested_subset", result.coverage)
+            assertEquals(message, setOf("019", "072", "003", "059", "075"),
+                result.checkedIds.toSet())
+            assertEquals(message, 1, fake.serviceReads.size)
+            assertEquals(message, 1, fake.httpBatches.size)
+        }
+    }
+
+    @Test fun `unsupported multiword city and trailing courtesy reject entire request`() = runBlocking {
+        for (message in listOf(
+            "Sprawdź stany w Krakowie i Nowym Mieście",
+            "Sprawdź stany w Krakowie oraz Nowym Mieście, proszę",
+            "Sprawdź stany w Krakowie i Tarnowie, proszę",
+            "Sprawdź stany w Krakowie oraz Tarnowie, proszę",
+            "Sprawdź stany w Krakowie, Tarnowie, proszę",
+            "Sprawdź stany w Krakowie, Nowym Sączu i Tarnowie, proszę",
+        )) {
+            val fake = FakeInventory()
+            val result = fake.run(message, hints = emptyList())
+            assertEquals(message, "rejected", result.status)
+            assertEquals(message, "unknown_location", result.reason)
+            assertEquals(message, 0, fake.serviceReads.size)
+            assertEquals(message, 0, fake.httpBatches.size)
+        }
+    }
+
+    @Test fun `comma i oraz market ID lists preserve every canonical ID`() = runBlocking {
+        for (message in listOf(
+            "Sprawdź markety 003, 059",
+            "Sprawdź markety 003, 059, 019",
+            "Sprawdź markety 003 i 059 i 019",
+            "Sprawdź markety 003 oraz 059 oraz 019",
+            "Sprawdź markety 003, 059 oraz 019",
+        )) {
+            val fake = FakeInventory()
+            val result = fake.run(message, hints = emptyList())
+            val expected = if (message == "Sprawdź markety 003, 059")
+                setOf("003", "059") else setOf("003", "059", "019")
+            assertEquals(message, "verified", result.status)
+            assertEquals(message, "requested_subset", result.coverage)
+            assertEquals(message, expected, result.checkedIds.toSet())
+            assertEquals(message, 1, fake.serviceReads.size)
+            assertEquals(message, 1, fake.httpBatches.size)
+        }
+    }
+
+    @Test fun `invalid or incomplete market ID lists fail closed before inventory HTTP`() = runBlocking {
+        for (message in listOf(
+            "Sprawdź markety 003, 999",
+            "Sprawdź markety 003 i nieznany",
+            "Sprawdź markety 003, 059, 999",
+            "Sprawdź markety 003, 059 oraz Tarnów",
+        )) {
+            val fake = FakeInventory()
+            val result = fake.run(message, hints = emptyList())
+            assertEquals(message, "rejected", result.status)
+            assertEquals(message, "unknown_location", result.reason)
+            assertEquals(message, 0, fake.serviceReads.size)
+            assertEquals(message, 0, fake.httpBatches.size)
+        }
+    }
     @Test fun `cancellation propagates without retry or further HTTP`() = runBlocking {
         val fake = FakeInventory(cancelAtRequest = 3)
         var propagated = false

@@ -1,5 +1,10 @@
 # Progress
 
+## PR #102 — location completeness (2026-10-10)
+
+Replaced partial city-suffix and numeric-ID extraction with one Android-side complete restricted-scope parser. Added regression cases for Kraków and inflected Nowy Sącz, unsupported multi-word cities, trailing polite text, comma/`i`/`oraz` lists of 2–3 market IDs, and unknown market IDs/malformed mixed lists (no HTTP). Existing 61-market batching, cancellation, partial results, 45-second deadline and provider integration remain unchanged.
+
+
 ## PR #102 — 2026-10-10 scope parser regression closure
 
 Replaced single-token unknown-city detection and `i`-only checks with complete named-locality phrase validation. Added deterministic tests for four generic all-other requests, seven known/unknown multi-city conjunction examples with empty model hints and canonical four-market Kraków scope. Existing 61-market batching, partial failure, execution deadline, trusted product, KWANT and WorkingProfile behavior remain untouched.

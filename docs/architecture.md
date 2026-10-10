@@ -1,5 +1,10 @@
 # Architecture
 
+## PR #102 — location-scope completeness and fail-closed lists (2026-10-10)
+
+Android scope authorization uses one constrained parser for user-mentioned city lists and market-ID lists. It preserves commas; contextualized IDs after `market/sklep/oddział/OBI` may be joined by comma, `i` or `oraz`. City references may appear inside a longer sentence and can include the canonical directory's multi-word names and deterministic inflections such as `Nowym Sączu`. Parsing resolves **every** explicitly named location before any inventory HTTP; unknown/malformed mixed scopes are typed `unknown_location` with zero HTTP. Generic inventory phrases remain broad all-other, model hints are nonauthoritative, and product dimensions are not location IDs. The existing explicit-intent guard, 61-market scans, service/HTTP batch limits, cancellation, partial coverage and 45-second deadline remain unchanged.
+
+
 ## PR #102 — 2026-10-10 location-scope parser regression gate
 
 Scope parsing only treats a **complete named-locality phrase** as a city request: a bare city chain after a location-check command, or a terminal `w/we/dla + city chain`. Conjunctions `i`, `oraz` and commas are validated together, and every locality must resolve against the canonical OBI directory before inventory HTTP. Generic stock, quantifier and store noun phrases (e.g. `Sprawdź stany w innych marketach`) are not interpreted as unknown cities. Model `locations=[]` cannot bypass user-scope authorization. Original batching, timeout and partial coverage are unchanged.

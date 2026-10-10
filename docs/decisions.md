@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-10 — PR #102 complete restricted-scope parsing
+
+Location authorization must never use a successful subset of a partially understood user request. Parse lists only in constrained, contextual syntax, resolve against the canonical directory including deterministic common city inflections, and reject the **whole** request if one city or market ID is unknown. Do not interpret free-standing three-digit dimensions or model hints as location grants. Ordinary generic inventory requests continue to mean all other OBI markets. No modifications to PR #101, Worker protocols/discovery, WorkingProfile, or KWANT `extended` fail-closed behavior.
+
+
 ## 2026-10-10 — PR #102 named-locality grammar
 
 Use an anchored, complete location phrase rather than classifying individual words after `sprawdź` or `w` as cities; avoid an ever-growing inventory-word blacklist. All named places in `i`, `oraz` and comma groups must resolve before stock HTTP. A single unsupported city rejects the complete restricted scope with typed `unknown_location`. Generic inventory requests remain all-other with the active market excluded, and the Worker/tool contracts are unchanged.
