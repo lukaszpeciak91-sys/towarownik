@@ -263,7 +263,7 @@ internal class AdvisorLocationsTool(
         if (candidates.isEmpty()) return null
         // An explicit new exact identifier must never silently resolve to an
         // unrelated older card just because the model supplied that card's ID.
-        val normalized = norm(userText)
+        val normalized = userText.lowercase()
         val explicit = candidates.filter { candidate ->
             boundedMention(normalized, candidate.effectiveProductId.lowercase()) ||
                 (candidate.articleNumber?.let { boundedMention(
@@ -292,7 +292,7 @@ internal class AdvisorLocationsTool(
         ).findAll(normalized)
             .filterNot { it.groupValues[1].length <= 6 && hasMeasurementUnitAfter(it.range.last) }
             .map { it.groupValues[1] }
-        val directCheckNumbers = Regex("""\bsprawdz(?:cie)?\s+([0-9]{4,6})\b""")
+        val directCheckNumbers = Regex("""\bsprawd[zź](?:cie)?\s+([0-9]{4,6})\b""")
             .findAll(normalized)
             .filterNot { hasMeasurementUnitAfter(it.range.last) }
             .map { it.groupValues[1] }
