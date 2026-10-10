@@ -296,6 +296,7 @@ internal class AdvisorLocationsTool(
      */
     private fun hasExplicitLocationsIntent(userText: String): Boolean {
         val text = norm(userText)
+        val locationText = normLocationScope(userText)
         // Advice plus a place name is NOT an inventory request.
         val adviceTopic = Regex(
             """\b(zamontowac|montaz|montazu|podlaczyc|podlaczenie|odpowiednik|zamiennik|polec|dobierz|kompatybilnosc|kompatybilny)\b""",
@@ -324,7 +325,7 @@ internal class AdvisorLocationsTool(
         // resolve each locality against the canonical directory.
         val explicitCityPhrase = Regex(
             """^(?:sprawdz|sprawdzcie)\s+[a-z]{4,}(?:\s*(?:,|i|oraz)\s+[a-z]{4,})*\s*$""",
-        ).containsMatchIn(text)
+        ).containsMatchIn(locationText)
         return (multiLocation && (stockOrAvailability || locationNoun || where)) ||
             (locationNoun && (check || where) && stockOrAvailability) ||
             (check && explicitlyLocated) ||
@@ -359,6 +360,7 @@ internal class AdvisorLocationsTool(
             return AuthorizedLocationScope.Rejected("directory_unavailable")
         }
         val normalized = norm(userText)
+        val normalizedScope = normLocationScope(userText)
         // Only identifiers explicitly preceded by store/market/branch
         // wording are location references. "listwa 100 cm" is NOT store 100.
         val contextualMarketGroup = Regex(
@@ -410,7 +412,7 @@ internal class AdvisorLocationsTool(
         val restricted = discovered.isNotEmpty()
         // Explicit unknown city scopes must fail closed even when a model
         // deliberately sends locations=[]; never infer a nationwide request.
-        if (hasUnresolvedCityScope(normalized, groupedCities.keys)) {
+        if (hasUnresolvedCityScope(normalizedScope, groupedCities.keys)) {
             return AuthorizedLocationScope.Rejected("unknown_location")
         }
         if (restricted) {
@@ -491,6 +493,16 @@ internal class AdvisorLocationsTool(
         canonical.endsWith("ansk") -> canonical + "u"
         else -> null
     }
+
+    /** Preserve commas only for explicit location-chain grammar. The
+     * normal product and branch normalization intentionally discards them.
+     */
+    private fun normLocationScope(text: String): String =
+        Normalizer.normalize(text.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
+            .replace(Regex("""\p{M}+"""), "")
+            .replace(Regex("""[^a-z0-9,]+"""), " ")
+            .replace(Regex("""\s*,\s*"""), ", ")
+            .trim()
 
     private fun norm(text: String): String =
         Normalizer.normalize(text.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
