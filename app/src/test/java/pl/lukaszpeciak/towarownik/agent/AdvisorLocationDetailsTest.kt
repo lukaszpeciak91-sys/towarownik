@@ -71,7 +71,7 @@ class AdvisorLocationDetailsTest {
             coverage = "partial",
             checkedIds = ids, returnedIds = ids.dropLast(10), missingIds = missing,
             locations = ids.map { id ->
-                AdvisorLocationEntry(id, "Fixture market $"+ "id", if (id in missing) null else if (id == ids[0]) 0 else 4)
+                AdvisorLocationEntry(id, "Fixture market " + id, if (id in missing) null else if (id == ids[0]) 0 else 4)
             },
             verifiedAtMillis = 1700000000000L, centralStock = null,
         )
@@ -79,7 +79,7 @@ class AdvisorLocationDetailsTest {
         assertTrue(rendered.startsWith("Wszystkie pozostałe markety OBI — wyniki niepełne"))
         assertTrue(rendered.contains("niepotwierdzone: 10"))
         assertEquals(63, rendered.lines().size)
-        assertTrue(rendered.lines().any { it.startsWith("$"+"{missing[0]} —") && it.contains("stan nieznany") })
+        assertTrue(rendered.lines().any { it.startsWith(missing[0] + " —") && it.contains("stan nieznany") })
     }
 
 }
