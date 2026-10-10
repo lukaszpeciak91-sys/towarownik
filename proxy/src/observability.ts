@@ -150,7 +150,9 @@ export function inputKindForAttachment(
   attachment?: AdvisorAttachment,
 ): AdvisorInputKind {
   if (!attachment) return "text";
-  return attachment.mimeType === "application/pdf" ? "pdf" : "image";
+  return attachment.textContent !== undefined
+    ? "text"
+    : attachment.mimeType === "application/pdf" ? "pdf" : "image";
 }
 
 export function resultSummary(
