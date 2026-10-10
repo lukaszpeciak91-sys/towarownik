@@ -324,7 +324,7 @@ internal class AdvisorLocationsTool(
         // It is NOT broad-network permission: authorization still has to
         // resolve each locality against the canonical directory.
         val explicitCityPhrase = Regex(
-            """^(?:sprawdz|sprawdzcie)\s+[a-z]{4,}(?:\s*(?:,|i|oraz)\s+[a-z]{4,})*\s*$""",
+            """^(?:sprawdz|sprawdzcie)\s+[a-z]{4,}(?:\s+[a-z]{3,})?(?:\s*(?:,|i|oraz)\s+[a-z]{4,}(?:\s+[a-z]{3,})?)*\s*$""",
         ).containsMatchIn(locationText)
         return (multiLocation && (stockOrAvailability || locationNoun || where)) ||
             (locationNoun && (check || where) && stockOrAvailability) ||
@@ -343,11 +343,9 @@ internal class AdvisorLocationsTool(
     }
 
     /**
-     * User-specified cities authorize ALL canonical market IDs in that city.
-     * Explicit market numbers authorize only those exact canonical IDs.
-     * No user-requested restriction => ALL OTHER canonical markets.
-     *
-     * Model hints may be checked for contradictions but never select the subset.
+     * User-owned location scope. Parse every explicit city or contextualized
+     * market ID BEFORE inventory; model hints can only contradict, not grant.
+     * A broad query is chosen only when no restricted locations were named.
      */
     private fun authorizedObiLocations(
         userText: String,
@@ -359,64 +357,29 @@ internal class AdvisorLocationsTool(
             directory.none { it.branchId == selected }) {
             return AuthorizedLocationScope.Rejected("directory_unavailable")
         }
-        val normalized = norm(userText)
-        val normalizedScope = normLocationScope(userText)
-        // Only identifiers explicitly preceded by store/market/branch
-        // wording are location references. "listwa 100 cm" is NOT store 100.
-        val contextualMarketGroup = Regex(
-            """\b(?:market\w*|sklep\w*|oddzial\w*|obi)(?:\s+obi)?(?:\s+(?:nr|numer))?\s+[0-9]{3}(?:\s*(?:,|i|oraz)\s*[0-9]{3})*\b""",
-        )
-        val numericIds = contextualMarketGroup.findAll(normalized)
-            .flatMap { group ->
-                Regex("""(?<![0-9])[0-9]{3}(?![0-9])""").findAll(group.value)
-                    .map { it.value }
-            }.toSet()
-        if (numericIds.any { id -> directory.none { it.branchId.value == id } }) {
-            return AuthorizedLocationScope.Rejected("unknown_location")
+        val text = normLocationScope(userText)
+        val requested = when (val scope = parseLocationScope(text, directory)) {
+            is ParsedLocationScope.Rejected ->
+                return AuthorizedLocationScope.Rejected("unknown_location")
+            is ParsedLocationScope.Restricted -> scope.branches
+            ParsedLocationScope.Broad -> emptySet()
         }
-        val discovered = linkedSetOf<BranchId>()
-        directory.filter { it.branchId.value in numericIds }
-            .forEach { discovered.add(it.branchId) }
-        val groupedCities = directory.groupBy { norm(it.name) }
-        for ((city, matches) in groupedCities) {
-            if (!cityMention(normalized, city)) continue
-            // An explicit street permits market-specific scoping; the bare city
-            // intentionally includes every store in that city.
-            val streetMatches = matches.filter { branch ->
-                val words = norm(branch.address.orEmpty()).split(" ")
-                    .filter { it.length >= 5 && it !in setOf("ulica", "aleja") }
-                words.any { boundedMention(normalized, it) }
-            }
-            val selectedInCity = if (streetMatches.isNotEmpty()) streetMatches else matches
-            selectedInCity.forEach { discovered.add(it.branchId) }
-        }
-        // Explicitly including the selected store in a broad all-other
-        // request must not turn the entire operation into a one-store check.
-        val explicitlyIncludedCurrent =
-            selected.value in numericIds ||
-                Regex("""\b(?:rowniez|takze|razem z)\s+(?:market(?:em)?\s+|obi\s+)?\b""" +
-                    Regex.escape(selected.value) + """\b""").containsMatchIn(normalized)
-        val includeCurrentWithOthers =
-            explicitlyIncludedCurrent &&
-                (boundedMention(normalized, "rowniez") ||
-                    boundedMention(normalized, "takze") ||
-                    normalized.contains("razem z")) &&
-                (normalized.contains("inne") ||
-                    normalized.contains("pozostal") ||
-                    normalized.contains("wszystk"))
-        if (includeCurrentWithOthers) {
+        val broadRequested = listOf(
+            "jeszcze", "inne", "innych", "innym", "pozostal",
+            "wszystk", "ktore market", "jakich market",
+        ).any { norm(userText).contains(it) }
+        val explicitCurrent = Regex(
+            """\b(?:rowniez|takze|razem z)\s+(?:(?:market\w*|obi)\s+)?""" +
+                Regex.escape(selected.value) + """\b""",
+        ).containsMatchIn(text)
+        if (broadRequested && explicitCurrent) {
             return AuthorizedLocationScope.Accepted(
                 directory.map { it.branchId }, fullNetwork = true,
             )
         }
-        val restricted = discovered.isNotEmpty()
-        // Explicit unknown city scopes must fail closed even when a model
-        // deliberately sends locations=[]; never infer a nationwide request.
-        if (hasUnresolvedCityScope(normalizedScope, groupedCities.keys)) {
-            return AuthorizedLocationScope.Rejected("unknown_location")
-        }
-        if (restricted) {
-            // Model-provided cities/IDs are NOT permission to expand scope.
+        if (requested.isNotEmpty()) {
+            // An explicit city expands to every canonical OBI store in that
+            // city; model hints can neither add cities nor reduce the scope.
             for (hint in modelHints) {
                 val name = norm(hint)
                 val candidates = directory.filter { branch ->
@@ -424,79 +387,156 @@ internal class AdvisorLocationsTool(
                         norm(branch.name) == name ||
                         norm(branch.address.orEmpty()) == name
                 }
-                if (candidates.isEmpty() || candidates.any { it.branchId !in discovered }) {
+                if (candidates.isEmpty() || candidates.any { it.branchId !in requested }) {
                     return AuthorizedLocationScope.Rejected("location_not_authorized")
                 }
             }
             return AuthorizedLocationScope.Accepted(
-                directory.map { it.branchId }.filter { it in discovered },
+                directory.map { it.branchId }.filter { it in requested },
                 fullNetwork = false,
             )
         }
-        // A full-network scan requires user wording that actually
-        // requests other/all stores; model hints can neither authorize
-        // nor silently narrow it.
-        val explicitOtherScope = listOf(
-            "jeszcze", "inne", "innych", "innym", "pozostal",
-            "wszystk", "ktore market", "jakich market",
-        ).any { normalized.contains(it) }
-        if (!explicitOtherScope) {
-            return AuthorizedLocationScope.Rejected("unknown_location")
-        }
-        val allOther = directory.map { it.branchId }.filterNot { it == selected }
-        return AuthorizedLocationScope.Accepted(allOther, fullNetwork = true)
+        if (!broadRequested) return AuthorizedLocationScope.Rejected("unknown_location")
+        return AuthorizedLocationScope.Accepted(
+            directory.map { it.branchId }.filterNot { it == selected },
+            fullNetwork = true,
+        )
+    }
+
+    private sealed interface ParsedLocationScope {
+        data object Broad : ParsedLocationScope
+        data class Restricted(val branches: Set<BranchId>) : ParsedLocationScope
+        data object Rejected : ParsedLocationScope
     }
 
     /**
-     * Recognize only complete named-locality phrases, never an arbitrary word
-     * after "sprawdz" or "w":
-     * - "sprawdz Krakow [i/oraz/, Tarnow]"
-     * - "... w Krakowie [i/oraz/, Tarnowie]"
+     * Constrained grammar, not a free-form Advisor intent classifier.
      *
-     * Generic inventory/store noun phrases do not fit the city-chain grammar.
-     * Every extracted locality must be canonical; one unknown rejects all.
+     * 1) A location number must follow an explicit market/OBI label;
+     *    commas, "i" and "oraz" repeat numeric IDs in that same list.
+     * 2) A city chain follows "w/we/dla" or a short bare-city command.
+     *    Aliases come ONLY from verified canonical cities and a small set
+     *    of deterministic inflections. The entire chain is consumed.
+     * 3) Ordinary "[modifier] marketach/oddzialach" noun phrases are
+     *    structurally generic and cannot become guessed city names.
+     *
+     * One unknown ID/city or unfinished connector rejects the WHOLE scope.
      */
-    private fun hasUnresolvedCityScope(
+    private fun parseLocationScope(
         text: String,
-        knownCities: Set<String>,
-    ): Boolean {
-        val aliases = knownCities.flatMap { city ->
-            listOfNotNull(city, cityLocative(city))
-        }.distinct()
-        // Canonical multi-word names remain single atoms; a previously
-        // unrecognized one-word name is parsed only for fail-closed rejection.
-        val names = aliases.sortedByDescending { it.length }
-            .joinToString("|") { Regex.escape(it) }
-        val atom = "(?:$names|[a-z][a-z0-9]*)"
-        val separator = """\s*(?:,|\bi\b|\boraz\b)\s*(?:(?:w|we)\s+)?"""
-        val chainPattern = "($atom(?:$separator$atom)*)"
-        val located = Regex("""\b(?:w|we|dla)\s+""" + chainPattern + """\s*$""")
-        val bare = Regex("""^(?:sprawdz|sprawdzcie)\s+""" + chainPattern + """\s*$""")
-        val chain = located.find(text)?.groupValues?.get(1)
-            ?: bare.matchEntire(text)?.groupValues?.get(1)
-            ?: return false
-        val cities = chain.split(Regex("""\s*(?:,|\bi\b|\boraz\b)\s*"""))
-            .map { it.replace(Regex("""^(?:w|we)\s+"""), "").trim() }
-        return cities.any { it !in aliases }
+        directory: List<ProviderBranch>,
+    ): ParsedLocationScope {
+        val ids = linkedSetOf<BranchId>()
+        val byId = directory.associateBy { it.branchId.value }
+        val cities = directory.groupBy { norm(it.name) }
+        val aliases = linkedMapOf<String, List<ProviderBranch>>()
+        for ((name, branches) in cities) {
+            aliases[name] = branches
+            cityLocative(name)?.let { aliases[it] = branches }
+        }
+        val knownNames = aliases.keys.sortedByDescending { it.length }
+        fun isBoundary(s: String, length: Int): Boolean =
+            length == s.length || !s[length].isLetterOrDigit()
+
+        fun resolveCityChain(source: String): Boolean {
+            var remaining = source.trimStart()
+            while (true) {
+                remaining = remaining.replaceFirst(Regex("""^(?:w|we)\s+"""), "")
+                val alias = knownNames.firstOrNull { name ->
+                    remaining.startsWith(name) && isBoundary(remaining, name.length)
+                } ?: return false
+                aliases.getValue(alias).forEach { ids.add(it.branchId) }
+                remaining = remaining.drop(alias.length).trimStart()
+                val connector = Regex("""^(?:,|\bi\b|\boraz\b)\s*""")
+                    .find(remaining)
+                if (connector == null) return true // trailing words do not erase earlier scope
+                val next = remaining.drop(connector.value.length).trimStart()
+                // A final courtesy is not a named locality (", proszę").
+                if (next == "prosze" || next.isEmpty() && connector.value.startsWith(",")) {
+                    return next.isNotEmpty()
+                }
+                remaining = next
+            }
+        }
+
+        // Market IDs require a preceding store label, not an arbitrary 3-digit
+        // product measurement. Commas must survive normalization.
+        val marketLabel = Regex(
+            """\b(?:market\w*|sklep\w*|oddzial\w*|obi)(?:\s+obi)?(?:\s+(?:nr|numer))?\s+""",
+        )
+        for (label in marketLabel.findAll(text)) {
+            var remaining = text.substring(label.range.last + 1).trimStart()
+            val first = Regex("""^([0-9]{3})\b""").find(remaining) ?: continue
+            var current = first
+            while (true) {
+                val id = current.groupValues[1]
+                val branch = byId[id] ?: return ParsedLocationScope.Rejected
+                ids.add(branch.branchId)
+                remaining = remaining.drop(current.value.length).trimStart()
+                val connector = Regex("""^(?:,|\bi\b|\boraz\b)\s*""")
+                    .find(remaining) ?: break
+                remaining = remaining.drop(connector.value.length).trimStart()
+                // Every joined market number is mandatory.
+                current = Regex("""^([0-9]{3})\b""").find(remaining)
+                    ?: return ParsedLocationScope.Rejected
+            }
+        }
+
+        // Common prepositional city syntax, at any point in the request.
+        // "w innych marketach" is a generic noun phrase, not a locality.
+        val placeNoun = Regex(
+            """^(?:[a-z]+\s+){0,2}(?:marketach|markecie|markety|sklepach|sklepie|oddzialach|oddziale|lokalizacjach|obi)\b""",
+        )
+        val prepositions = Regex("""\b(?:w|we|dla)\s+""")
+        for (match in prepositions.findAll(text)) {
+            val suffix = text.substring(match.range.last + 1)
+            if (placeNoun.containsMatchIn(suffix)) continue
+            if (!resolveCityChain(suffix)) return ParsedLocationScope.Rejected
+        }
+
+        // Bare "Sprawdź Tarnów" / "Sprawdź Kraków i Nowy Sącz".
+        // Bare stock and market noun phrases are NOT locality requests.
+        val command = Regex("""^(?:sprawdz|sprawdzcie)\s+""").find(text)
+        if (command != null) {
+            val suffix = text.substring(command.range.last + 1).trimStart()
+            val isInventoryPhrase = Regex(
+                """^(?:stany|stan|dostepnosc|inne|wszystkie|pozostale|markety|marketach|sklepy|oddzialy|oddzialach|produkt|produkty|w|we)\b""",
+            ).containsMatchIn(suffix)
+            val startsWithCity = knownNames.any {
+                suffix.startsWith(it) && isBoundary(suffix, it.length)
+            }
+            if (startsWithCity) {
+                if (!resolveCityChain(suffix)) return ParsedLocationScope.Rejected
+            } else if (!isInventoryPhrase &&
+                Regex("""^[a-z]{4,}(?:\s+[a-z]{3,})?(?:\s*(?:,|\bi\b|\boraz\b)\s+[a-z]{4,}(?:\s+[a-z]{3,})?)*\s*$""")
+                    .matches(suffix)
+            ) {
+                return ParsedLocationScope.Rejected // unknown bare city
+            }
+        }
+        return if (ids.isEmpty()) ParsedLocationScope.Broad
+            else ParsedLocationScope.Restricted(ids)
     }
 
-    /** Polish locative forms are only for scope matching, not a global
-     *  Advisor intent classifier or branch picker.
-     */
-    private fun cityMention(user: String, canonical: String): Boolean =
-        boundedMention(user, canonical) ||
-            cityLocative(canonical)?.let { boundedMention(user, it) } == true
-
-    private fun cityLocative(canonical: String): String? = when {
-        canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
-        canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
-        canonical.endsWith("ansk") -> canonical + "u"
-        else -> null
+    /** Only deterministic canonical name inflections: no fuzzy city guesses. */
+    private fun cityLocative(canonical: String): String? = when (canonical) {
+        "nowy sacz" -> "nowym saczu"
+        "lodz" -> "lodzi"
+        "wroclaw" -> "wroclawiu"
+        "gdansk" -> "gdansku"
+        "poznan" -> "poznaniu"
+        "torun" -> "toruniu"
+        "lublin" -> "lublinie"
+        "dabrowa gornicza" -> "dabrowie gorniczej"
+        "gorzow wielkopolski" -> "gorzowie wielkopolskim"
+        else -> when {
+            canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
+            canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
+            canonical.endsWith("ansk") -> canonical + "u"
+            else -> null
+        }
     }
 
-    /** Preserve commas only for explicit location-chain grammar. The
-     * normal product and branch normalization intentionally discards them.
-     */
     private fun normLocationScope(text: String): String =
         Normalizer.normalize(text.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
             .replace(Regex("""\p{M}+"""), "")
