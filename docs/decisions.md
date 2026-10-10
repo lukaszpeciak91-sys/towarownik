@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-10 — lightweight text attachments Phase A1
+
+- Permit exactly ten specified UTF-8 text-like extensions under v5 multipart, with a strict extension/MIME matrix and no generic octet-stream fallback; image/PDF validation and v4 remain identical.
+- Enforce 1 MiB per new text file and 1 MiB total TEXT bytes per v5 turn to limit decoded prompt/memory cost while preserving 3 files, 16 MiB image/PDF, and 24 MiB aggregate transport limits. Image/PDF bytes do not consume the separate text budget. Reject invalid UTF-8, binary signatures and control characters before OpenAI, even in a mixed multipart.
+- Insert accepted text as ordered, explicitly untrusted `input_text` with JSON-quoted sanitized filename. The Android transport supports TEXT type metadata/preflight, but image/PDF picker, Room v12, provider authority, and JSON-only continuation do not change.
+- Defer XLS/XLSX, DOCX, archives and user-facing text selection to separate phases.
+
+
 ## 2026-10-10 — PR #102 complete restricted-scope parsing
 
 Location authorization must never use a successful subset of a partially understood user request. Parse lists only in constrained, contextual syntax, resolve against the canonical directory including deterministic common city inflections, and reject the **whole** request if one city or market ID is unknown. Do not interpret free-standing three-digit dimensions or model hints as location grants. Ordinary generic inventory requests continue to mean all other OBI markets. No modifications to PR #101, Worker protocols/discovery, WorkingProfile, or KWANT `extended` fail-closed behavior.

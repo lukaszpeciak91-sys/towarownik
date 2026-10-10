@@ -6,9 +6,11 @@ export interface Env {
 export type AdvisorProtocolVersion = 1 | 2 | 3 | 4 | 5;
 
 export interface AdvisorAttachment {
-  mimeType: "image/jpeg" | "image/png" | "application/pdf";
+  mimeType: string;
   bytes: Uint8Array;
   filename: string;
+  /** Present only for strictly validated v5 text-like attachments. */
+  textContent?: string;
 }
 
 export interface ToolQuery {

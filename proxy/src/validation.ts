@@ -29,6 +29,7 @@ import {
   LOCATIONS_CAPABILITY_VALUE,
   MULTI_ATTACHMENT_TOTAL_MAX_BYTES,
 } from "./config.js";
+import { decodeTextAttachment, isAllowedTextAttachment, TEXT_ATTACHMENT_MAX_BYTES } from "./text-attachments.js";
 import type {
   AdvisorProtocolVersion,
   AdvisorAttachment,
@@ -856,10 +857,16 @@ async function parseMultipartRequest(
 
   const files = parts as File[];
   let totalBytes = 0;
+  let totalTextBytes = 0;
   for (const file of files) {
     if (file.size < 1) throw new InvalidRequestError();
     if (file.size > ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
     totalBytes += file.size;
+    if (isMulti && isAllowedTextAttachment(sanitizeAttachmentFilename(file.name), file.type)) {
+      totalTextBytes += file.size;
+      // Separate v5 lightweight-text budget; images/PDFs do not consume it.
+      if (totalTextBytes > TEXT_ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
+    }
   }
   if (totalBytes > (isMulti
     ? MULTI_ATTACHMENT_TOTAL_MAX_BYTES
@@ -892,12 +899,24 @@ async function parseMultipartRequest(
   const attachments: AdvisorAttachment[] = [];
   for (const file of files) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    validateAttachmentSignature(file.type, bytes, protocolVersion);
-    attachments.push({
-      mimeType: file.type as AdvisorAttachment["mimeType"],
-      bytes,
-      filename: sanitizeAttachmentFilename(file.name),
-    });
+    const filename = sanitizeAttachmentFilename(file.name);
+    if (
+      file.type === "image/jpeg" ||
+      file.type === "image/png" ||
+      file.type === "application/pdf"
+    ) {
+      validateAttachmentSignature(file.type, bytes, protocolVersion);
+      attachments.push({ mimeType: file.type, bytes, filename });
+    } else {
+      // Text files exist only under the opt-in v5 multipart protocol.
+      if (!isMulti || !isAllowedTextAttachment(filename, file.type)) {
+        throw new InvalidRequestError(protocolVersion);
+      }
+      if (bytes.byteLength > TEXT_ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
+      const textContent = decodeTextAttachment(bytes);
+      if (textContent === null) throw new InvalidRequestError(protocolVersion);
+      attachments.push({ mimeType: file.type, bytes, filename, textContent });
+    }
   }
   const base = {
     protocolVersion,

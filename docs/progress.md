@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — lightweight text files Phase A1
+
+Added strict v5 multipart support for ten allowlisted UTF-8 text extensions in the Worker and Android transport: extension/MIME validation, safe bounded decode, binary/control rejection, untrusted ordered Responses `input_text` with sanitized filename, and focused regression tests. Image/PDF v5, v4, Room v12 ownership, current pickers, provider evidence boundaries and JSON-only continuation remain unchanged. XLS/XLSX/DOCX/ZIP deferred.
+
+
 ## PR #102 — location completeness (2026-10-10)
 
 Replaced partial city-suffix and numeric-ID extraction with one Android-side complete restricted-scope parser. Added regression cases for Kraków and inflected Nowy Sącz, unsupported multi-word cities, trailing polite text, comma/`i`/`oraz` lists of 2–3 market IDs, and unknown market IDs/malformed mixed lists (no HTTP). Existing 61-market batching, cancellation, partial results, 45-second deadline and provider integration remain unchanged.

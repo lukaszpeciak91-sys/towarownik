@@ -3,6 +3,7 @@ package pl.lukaszpeciak.towarownik.attachment
 internal enum class AttachmentType {
     IMAGE,
     PDF,
+    TEXT,
 }
 
 internal data class AdvisorAttachment(
@@ -40,6 +41,16 @@ internal fun validatedAttachmentOrNull(
         }
         AttachmentType.PDF -> {
             if (mimeType != "application/pdf" || width != null || height != null) {
+                null
+            } else {
+                AdvisorAttachment(category, displayName, mimeType, localId, byteSize, null, null, createdAt)
+            }
+        }
+        AttachmentType.TEXT -> {
+            if (!allowedTextAttachment(displayName, mimeType) ||
+                byteSize < 1 || byteSize > TEXT_ATTACHMENT_MAX_BYTES ||
+                width != null || height != null
+            ) {
                 null
             } else {
                 AdvisorAttachment(category, displayName, mimeType, localId, byteSize, null, null, createdAt)
