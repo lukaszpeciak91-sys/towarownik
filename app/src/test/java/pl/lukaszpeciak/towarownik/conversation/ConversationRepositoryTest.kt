@@ -80,7 +80,7 @@ class ConversationRepositoryTest {
             loaded.map { attachmentStorage.renderKind(it) },
         )
         // Corrupt only the TEXT private bytes; other parts must remain visible and ordered.
-        val textFile = context.filesDir.resolve("advisor_attachments/undefined")
+        val textFile = context.filesDir.resolve("advisor_attachments/${text.localId}")
         textFile.writeBytes(ByteArray(textBytes.size) { 0 })
         val afterCorrupt = repository.load(started.conversationId)!!.messages.single().attachments
         assertEquals(3, afterCorrupt.size)
