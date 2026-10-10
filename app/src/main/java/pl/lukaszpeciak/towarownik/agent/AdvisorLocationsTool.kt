@@ -321,6 +321,21 @@ internal class AdvisorLocationsTool(
             val selectedInCity = if (streetMatches.isNotEmpty()) streetMatches else matches
             selectedInCity.forEach { discovered.add(it.branchId) }
         }
+        // Explicitly including the selected store in a broad all-other
+        // request must not turn the entire operation into a one-store check.
+        val includeCurrentWithOthers =
+            selected.value in numericIds &&
+                (boundedMention(normalized, "rowniez") ||
+                    boundedMention(normalized, "takze") ||
+                    normalized.contains("razem z")) &&
+                (normalized.contains("inne") ||
+                    normalized.contains("pozostal") ||
+                    normalized.contains("wszystk"))
+        if (includeCurrentWithOthers) {
+            return AuthorizedLocationScope.Accepted(
+                directory.map { it.branchId }, fullNetwork = true,
+            )
+        }
         val restricted = discovered.isNotEmpty()
         if (restricted) {
             // Model-provided cities/IDs are NOT permission to expand scope.

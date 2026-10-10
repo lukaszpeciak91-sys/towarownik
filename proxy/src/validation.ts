@@ -403,6 +403,8 @@ function validateLocationToolResult(value: unknown): LocationToolResult {
   }
   const verifiedAtMillis = obj.verifiedAtMillis === null ? null : stockInt64(obj.verifiedAtMillis);
   const centralStock = obj.centralStock === null ? null : stockInt(obj.centralStock);
+  if ((coverage === "all_other_locations" || coverage === "all_public_locations" ||
+       coverage === "requested_subset") && missingIds.length > 0) throw new InvalidRequestError();
   if (status !== "verified" &&
       (returnedIds.length > 0 || verifiedAtMillis !== null || centralStock !== null ||
        locations.some(x => x.stock !== null))) throw new InvalidRequestError();

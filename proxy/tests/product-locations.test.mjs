@@ -232,8 +232,8 @@ test("explicit legacy v1 cannot opt into a location function", async () => {
 test("full other-market OBI continuation returns all 61 canonical IDs and unknown rows within 16 KiB", async () => {
   const ids = Array.from({length: 61}, (_, i) => String(i + 1).padStart(3, "0"));
   const full = {
-    ...result, status: "verified", reason: null,
-    coverage: "all_other_locations", checkedIds: ids,
+    ...result, status: "verified", reason: "partial_inventory",
+    coverage: "partial", checkedIds: ids,
     returnedIds: ids.slice(0, 60), missingIds: ids.slice(60),
     locations: ids.map((id, i) => ({
       branchId: id, name: "Fixture market "+id+" — synthetic street",
@@ -271,3 +271,20 @@ test("malformed full-network results cannot falsely zero-fill missing branch", a
   assert.equal(reply.status, 400);
   assert.equal(f.captures.length, 0);
 });
+
+test("all 61 other markets can be fully confirmed with complete-coverage label", async () => {
+  const ids = Array.from({length:61}, (_,i) => String(i+1).padStart(3, "0"));
+  const complete = {
+    ...result, coverage: "all_other_locations",
+    checkedIds: ids, returnedIds: ids, missingIds: [],
+    locations: ids.map(id => ({branchId:id,name:"Fixture "+id,stock:0})),
+  };
+  const f = fake(answer);
+  const response = await createWorker(f.fetch).fetch(request("/v1/agent/continue", {
+    protocolVersion:2,responseId:"resp",callId:"call",storeNumber:"075",
+    tool:LOCATIONS_LOCAL_TOOL_NAME,result:complete,
+  }, true), env);
+  assert.equal(response.status, 200);
+  assert.equal(JSON.parse(f.captures[0].input[0].output).locations.length, 61);
+});
+
