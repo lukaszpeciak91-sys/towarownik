@@ -114,6 +114,7 @@ internal data class AdvisorVerifiedProduct(
     val name: String,
     val stock: Int?,
     val centralStock: Int? = null,
+    val stockUnit: String? = null,
     val price: BigDecimal?,
     val brand: String? = null,
     val productId: String = obik,
