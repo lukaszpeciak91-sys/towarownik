@@ -55,6 +55,7 @@ class ManualSearchWorkingProfileTest {
         assertEquals(KWANT_PROVIDER_ID.value, verified.providerId)
         assertEquals("205", verified.branchId)
         assertEquals("ART-580", verified.articleNumber)
+        assertEquals("m", verified.stockUnit)
     }
 
     @Test
@@ -171,6 +172,7 @@ class ManualSearchWorkingProfileTest {
                     branchId = branchId,
                     name = "Synthetic",
                     stock = 4,
+                    stockUnit = if (providerId == KWANT_PROVIDER_ID) "m" else null,
                     grossPrice = BigDecimal("14.55"),
                     priceScope =
                         if (providerId == KWANT_PROVIDER_ID) {

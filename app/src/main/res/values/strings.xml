@@ -96,12 +96,12 @@
     <string name="product_price_unknown">Cena: brak danych</string>
     <string name="product_online_price">Cena online (orientacyjna): %1$s zł</string>
     <string name="product_online_price_unknown">Cena online (orientacyjna): brak danych</string>
-    <string name="product_branch_stock_count">Stan wybranego oddziału: %1$d szt.</string>
-    <string name="product_branch_stock_zero">Stan wybranego oddziału: 0 szt. — brak na stanie</string>
+    <string name="product_branch_stock_count">Stan wybranego oddziału: %1$s</string>
+    <string name="product_branch_stock_zero">Stan wybranego oddziału: 0 — brak na stanie</string>
     <string name="product_branch_stock_unknown">Stan wybranego oddziału: brak danych</string>
-    <string name="product_central_stock">Stan centrali: %1$d szt.</string>
-    <string name="product_stock_count">Stan: %1$d szt.</string>
-    <string name="product_stock_zero">Stan: 0 szt. — brak na stanie</string>
+    <string name="product_central_stock">Stan centrali: %1$s</string>
+    <string name="product_stock_count">Stan: %1$s</string>
+    <string name="product_stock_zero">Stan: 0 — brak na stanie</string>
     <string name="product_stock_unknown">Stan: brak danych</string>
     <string name="product_verified_at">Sprawdzono %1$s</string>
     <string name="open_in_obi">Otwórz w OBI</string>

@@ -438,6 +438,7 @@ private fun ConversationWithMessages.toPersisted(
                                 productId = product.productId,
                                 branchId = product.branchId,
                                 articleNumber = product.articleNumber,
+                                stockUnit = product.stockUnit,
                                 priceScope =
                                     if (
                                         product.grossPrice != null &&

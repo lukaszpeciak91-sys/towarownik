@@ -3361,7 +3361,7 @@ private fun ManualSearchResults(
                         is ManualResultEnrichment.Verified -> {
                             val product = enrichment.product
                             Text(
-                                text = formatStoreStock(product.stock),
+                                text = formatStoreStock(product.stock, product.stockUnit),
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             Text(

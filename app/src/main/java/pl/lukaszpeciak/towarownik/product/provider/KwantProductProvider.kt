@@ -1,5 +1,7 @@
 package pl.lukaszpeciak.towarownik.product.provider
 
+import pl.lukaszpeciak.towarownik.product.verifiedStockUnitOrNull
+
 import java.math.BigDecimal
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -434,14 +436,14 @@ internal class KwantProductProvider(
                     failure = ProductProviderFailure.DATA,
                     reason = "KWANT product payload could not be parsed",
                 )
-                val selectedBranchStock = when (
+                val branchDetails = when (
                     val stockResponse = frontend.fetchCurrentProductStock(
                         productId = ref.productId,
                         departmentStockId = branch.departmentStockId,
                     )
                 ) {
                     is KwantFrontendResult.Success ->
-                        parser.parseSelectedBranchStock(
+                        parser.parseSelectedBranchDetails(
                             payload = stockResponse.html,
                             expectedProductId = ref.productId,
                             expectedDepartmentStockId =
@@ -455,7 +457,14 @@ internal class KwantProductProvider(
                     product.copy(
                         ref = ref,
                         branchId = branchId,
-                        stock = selectedBranchStock,
+                        stock = branchDetails?.stock,
+                        // Only verified product-id / department-matched data may supply
+                        // the unit. Conflicting explicit source labels fail closed.
+                        stockUnit = when {
+                            product.stockUnit != null && branchDetails?.unit != null &&
+                                product.stockUnit != branchDetails.unit -> null
+                            else -> branchDetails?.unit ?: product.stockUnit
+                        },
                     ),
                 )
             }
@@ -515,6 +524,8 @@ internal data class KwantSearchCandidate(
     val productUrl: String,
     val code: String?,
 )
+
+internal data class KwantSelectedBranchDetails(val stock: Int?, val unit: String?)
 
 internal class KwantFrontendParser(
     private val json: Json = Json { ignoreUnknownKeys = true },
@@ -626,6 +637,7 @@ internal class KwantFrontendParser(
             name = name,
             stock = null,
             centralStock = product.int("stock"),
+            stockUnit = verifiedStockUnitOrNull(product.string("unit")),
             grossPrice = price,
             priceScope = price?.let { ProviderPriceScope.ONLINE },
             productUrl = finalUrl.substringBefore("?"),
@@ -642,22 +654,25 @@ internal class KwantFrontendParser(
         payload: String,
         expectedProductId: String,
         expectedDepartmentStockId: Int,
-    ): Int? {
+    ): Int? = parseSelectedBranchDetails(
+        payload, expectedProductId, expectedDepartmentStockId,
+    )?.stock
+
+    fun parseSelectedBranchDetails(
+        payload: String,
+        expectedProductId: String,
+        expectedDepartmentStockId: Int,
+    ): KwantSelectedBranchDetails? {
         val root = runCatching {
             json.parseToJsonElement(payload).jsonObject
         }.getOrNull() ?: return null
-        val productId = root.int("product_id")?.toString() ?: return null
-        if (productId != expectedProductId) return null
-
-        val departmentStock =
-            root["department_stock"] as? JsonObject ?: return null
-        if (
-            departmentStock.int("department_id") !=
-            expectedDepartmentStockId
-        ) {
-            return null
-        }
-        return departmentStock.int("stock")
+        if (root.int("product_id")?.toString() != expectedProductId) return null
+        val departmentStock = root["department_stock"] as? JsonObject ?: return null
+        if (departmentStock.int("department_id") != expectedDepartmentStockId) return null
+        return KwantSelectedBranchDetails(
+            stock = departmentStock.int("stock"),
+            unit = verifiedStockUnitOrNull(root.string("unit")),
+        )
     }
 
     private fun pageProps(payload: String): JsonObject? {

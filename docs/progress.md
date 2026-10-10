@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — Verified stock units for OBI/KWANT cards
+
+Implemented optional stock-unit metadata from KWANT verified `unit` fields tied to exact product/branch evidence. OBI selected-store stock still has no adjacent unit, but exact PDP dedicated sales-unit facts are now accepted when explicit (for example `Sprzedaż: na metry` -> `m`); products without such evidence remain unitless. Unit travels through snapshots, Room v13 migration, chat saved state, manual search and Advisor cards; central KWANT stock uses the same verified unit. Numeric stock never falls back to "szt." and stock=0/null meanings are unchanged. Parser, unit-formatter, saved-state, migration and history-reopen regressions added.
+
+
 ## 2026-10-10 — Advisor chat selection and reopen-to-bottom
 
 Assistant answer text is selectable/copyable with native clickable inline citation links. Existing history opens at the newest message and live turns follow the tail while the reader remains near the bottom; scrolling back to older messages suspends automatic movement. Empty new chats, persisted citations, product cards, transport and Room are unchanged. Focused annotation and scroll-policy tests added.

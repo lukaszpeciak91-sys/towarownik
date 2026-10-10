@@ -29,6 +29,7 @@ internal fun ProviderProduct.toAdvisorVerifiedProduct(
         technicalFacts = shapedFacts.technicalFacts,
         stock = stock,
         centralStock = centralStock,
+        stockUnit = stockUnit,
         price = grossPrice,
         priceScope = when (priceScope) {
             ProviderPriceScope.BRANCH -> "branch"
@@ -53,6 +54,7 @@ internal fun LocalProduct.toAdvisorVerifiedProduct(
         shortDescription = shapedFacts.shortDescription,
         technicalFacts = shapedFacts.technicalFacts,
         stock = stock,
+        stockUnit = stockUnit,
         price = grossPrice,
     )
 }

@@ -342,6 +342,52 @@ class ObiPayloadParserTest {
         assertEquals(BigDecimal("123.45"), product.grossPrice)
         assertEquals("https://www.obi.pl/p/7313810", product.productUrl)
         assertEquals("5900007313810", product.ean)
+        // No trusted per-store inventory-unit field in the verified real fixture.
+        assertNull(product.stockUnit)
+    }
+
+    @Test
+    fun `live OBI store stock without explicit unit does not invent pieces`() {
+        val product = parser.parse(
+            fixture("live-3496072-store-075.html"), "3496072", STORE,
+        ).getOrThrow()
+        assertEquals(25, product.stock)
+        assertNull(product.stockUnit)
+    }
+
+    @Test
+    fun `OBI explicit sales unit fact maps store stock to meters without name inference`() {
+        val product = parser.parse(
+            optionalRichFixture(
+                """,
+                "productOverview":["Sprzedaż: na metry"],
+                "technicalData":{"productDetails":[{"key":"Długość [m]","value":"1"}]}
+                """.trimIndent(),
+            ),
+            "3496072",
+            STORE,
+        ).getOrThrow()
+
+        assertEquals(4, product.stock)
+        assertEquals("m", product.stockUnit)
+    }
+
+    @Test
+    fun `OBI explicit square meter sales unit is preserved and unrelated dimensions are ignored`() {
+        val product = parser.parse(
+            optionalRichFixture(
+                """,
+                "technicalData":{"productDetails":[
+                  {"key":"Jednostka sprzedaży","value":"m²"},
+                  {"key":"Szerokość","value":"100 cm"}
+                ]}
+                """.trimIndent(),
+            ),
+            "3496072",
+            STORE,
+        ).getOrThrow()
+
+        assertEquals("m²", product.stockUnit)
     }
 
     @Test

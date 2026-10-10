@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MessageSearchActionEntity::class,
         MessageAttachmentEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = false,
 )
 internal abstract class ConversationDatabase : RoomDatabase() {
@@ -45,12 +45,19 @@ internal abstract class ConversationDatabase : RoomDatabase() {
                         MIGRATION_9_10,
                         MIGRATION_10_11,
                         MIGRATION_11_12,
+                        MIGRATION_12_13,
                     )
                     .build()
                     .also { database ->
                         instance = database
                     }
             }
+    }
+}
+
+internal val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE message_products ADD COLUMN stockUnit TEXT")
     }
 }
 

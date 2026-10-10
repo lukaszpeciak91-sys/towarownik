@@ -227,6 +227,7 @@ class AdvisorProxyClientTest {
                                         name = "Wyłącznik",
                                         stock = 140,
                                         centralStock = 5918,
+                                        stockUnit = "m",
                                         price = BigDecimal("14.55"),
                                         priceScope = "online",
                                     ),
@@ -1097,6 +1098,7 @@ class AdvisorProxyClientTest {
                             ),
                         ),
                         stock = 0,
+                        stockUnit = "m²",
                         price = BigDecimal("14.99"),
                     ),
                 ),
@@ -1167,10 +1169,12 @@ class AdvisorProxyClientTest {
                     "shortDescription",
                     "technicalFacts",
                     "stock",
+                    "stockUnit",
                     "price",
                 ),
                 product.keys,
             )
+            assertEquals("m²", product["stockUnit"]?.jsonPrimitive?.content)
             assertFalse(raw.contains("html", ignoreCase = true))
             assertFalse(raw.contains("cookie", ignoreCase = true))
             assertEquals(

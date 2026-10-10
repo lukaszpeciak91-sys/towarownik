@@ -98,7 +98,7 @@ class LocalizationResourcesTest {
             english.getValue("product_stock_unknown"),
         )
         assertEquals(
-            "Stan: 0 szt. — brak na stanie",
+            "Stan: 0 — brak na stanie",
             polish.getValue("product_stock_zero"),
         )
         assertEquals(
@@ -107,11 +107,35 @@ class LocalizationResourcesTest {
         )
         assertEquals(
             "Stan: 7 szt.",
-            format(polish.getValue("product_stock_count"), 7),
+            format(polish.getValue("product_stock_count"), "7 szt."),
+        )
+        assertEquals(
+            "Stan: 7",
+            format(polish.getValue("product_stock_count"), "7"),
         )
         assertEquals(
             "Stock: 7",
             format(english.getValue("product_stock_count"), 7),
+        )
+        assertEquals(
+            "Stock: 7 m",
+            format(english.getValue("product_stock_count"), "7 m"),
+        )
+        assertEquals(
+            "Stan wybranego oddziału: 135 m",
+            format(polish.getValue("product_branch_stock_count"), "135 m"),
+        )
+        assertEquals(
+            "Selected branch stock: 135 m",
+            format(english.getValue("product_branch_stock_count"), "135 m"),
+        )
+        assertEquals(
+            "Stan centrali: 9000 m",
+            format(polish.getValue("product_central_stock"), "9000 m"),
+        )
+        assertEquals(
+            "Central stock: 9000 m",
+            format(english.getValue("product_central_stock"), "9000 m"),
         )
     }
 

@@ -23,6 +23,7 @@ import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.attachment.validatedAttachmentOrNull
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.verifiedStockUnitOrNull
 import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 internal enum class ChatMessageRole {
@@ -286,6 +287,10 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                                         ?.let(::JsonPrimitive)
                                                         ?: JsonNull,
                                                 )
+                                                put(
+                                                    "stockUnit",
+                                                    product.stockUnit?.let(::JsonPrimitive) ?: JsonNull,
+                                                )
                                                 put("productUrl", product.productUrl)
                                                 put(
                                                     "primaryImageUrl",
@@ -413,6 +418,8 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                                     else value.jsonPrimitive.intOrNull
                                 },
                             productUrl = productUrl,
+                            stockUnit = product["stockUnit"]?.jsonPrimitive?.contentOrNull
+                                ?.let(::verifiedStockUnitOrNull),
                             primaryImageUrl =
                                 product["primaryImageUrl"]
                                     ?.let { value ->

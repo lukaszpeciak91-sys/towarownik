@@ -1,5 +1,10 @@
 # Architecture
 
+## Provider-verified stock unit in product cards
+
+`ProviderProduct.stockUnit` is nullable presentation metadata, propagated through OBI `LocalProduct`, `VerifiedProductSnapshot`, Room `message_products.stockUnit` (v13), Compose saved state and `VerifiedProductUiModel`. KWANT only obtains explicit `unit` from a matching product page or product-ID-and-department-matched current-stock payload. If both trusted unit fields conflict, unit is unknown. OBI selected-store `articleData` still has no stock-unit field. For the same exact verified product, the PDP may however expose an explicit dedicated sales-unit fact such as `Sprzedaż: na metry` or `Jednostka sprzedaży: m²`; only these unit-labeled product facts are accepted for stock presentation. Titles, categories, dimensions such as `Długość [m]`, and price-per-unit text are never used to infer a unit. A narrow safe unit normalizer renders known labels (`szt.`, `m`, `m²`, `m³`, `kg`, `l`, `opak.`) or bounded trusted labels and suppresses missing/unsafe labels. Branch and central stocks share the same **product-level** verified unit; stock zero, null and central/branch separation are unchanged. Legacy Room v12 rows migrate to `stockUnit=NULL` without rewriting history.
+
+
 ## Advisor location model-hint equivalence (2026-10-10)
 
 The Android location tool first computes the full authorized canonical OBI market set from the current user message, independently of the model. For a restricted scope, model `locations[]` hints are resolved using **the same canonical city alias table and deterministic Polish locatives** as user-scope parsing. Bare verified market IDs, exact trusted addresses and explicit market references such as `OBI 003` resolve to canonical branch IDs; unsupported/contradictory hints reject before any inventory HTTP. Equivalent hints do not narrow or enlarge the user-authorized subset. Explicit broad all-other queries keep their pre-existing 61-market semantics, with an empty hint list. No model-driven branch permission is introduced.

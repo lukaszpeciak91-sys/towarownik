@@ -1,5 +1,8 @@
 # Taksula
 
+Product stock units are optional, provider-verified metadata. KWANT reads explicit `unit` from its product/current-stock payload after confirming product and department IDs. OBI has no unit beside selected-store `stock`, but exact PDP product data can explicitly declare a sales unit (for example `Sprzedaż: na metry`); only those dedicated sales-unit facts are mapped to stock presentation, never names, categories, dimensions or price-per-unit text. Cards show a verified label (`135 m`, `4 szt.`, `20 m²`) or the bare numeric quantity; zero/unknown availability semantics are unchanged. Room v13 adds nullable `message_products.stockUnit` with non-destructive 12→13 migration; previously persisted cards have unknown units.
+
+
 Taksula is a native Android retail/wholesale advisor and product-lookup utility. A persistent WorkingProfile selects the active provider and branch (currently OBI Poland or KWANT); product search and Advisor verification remain provider-owned, and current local stock/price facts come from Android-side provider integrations.
 
 ## Project status

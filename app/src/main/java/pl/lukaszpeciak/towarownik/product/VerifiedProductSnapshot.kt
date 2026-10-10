@@ -24,6 +24,7 @@ internal data class VerifiedProductSnapshot(
     val branchId: String = storeNumber,
     val articleNumber: String? = null,
     val priceScope: ProviderPriceScope? = null,
+    val stockUnit: String? = null,
 ) {
     val effectiveBranchId: String
         get() = if (providerId == "obi-pl") storeNumber else branchId
@@ -46,6 +47,7 @@ internal fun LocalProduct.toVerifiedProductSnapshot(
         obik = obik,
         name = name,
         stock = stock,
+        stockUnit = stockUnit,
         grossPrice = grossPrice,
         productUrl = productUrl,
         primaryImageUrl = primaryImageUrl,

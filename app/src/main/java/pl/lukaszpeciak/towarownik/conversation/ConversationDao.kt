@@ -366,6 +366,7 @@ internal abstract class ConversationDao {
                         productId = product.effectiveProductId,
                         branchId = product.effectiveBranchId,
                         articleNumber = product.articleNumber,
+                        stockUnit = product.stockUnit,
                     )
                 },
             )

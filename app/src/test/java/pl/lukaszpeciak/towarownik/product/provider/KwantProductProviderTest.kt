@@ -360,6 +360,40 @@ class KwantProductProviderTest {
     }
 
     @Test
+    fun `KWANT cable uses explicit meters from matched current product payload`() {
+        val cablePayload = currentProductData(stock = 135)
+            .replace("\"unit\": \"szt.\"", "\"unit\": \"m\"")
+        val provider = KwantProductProvider(
+            frontend = FakeFrontend(
+                productHtml = productHtml().replace(PRODUCT_NAME, "Przewód YDYp 3x2,5"),
+                currentProductData = cablePayload,
+            ),
+        )
+        val result = provider.lookup(ProductRef(KWANT_PROVIDER_ID, "580"), BranchId("205"))
+            as ProviderLookupResult.Found
+        assertEquals("Przewód YDYp 3x2,5", result.product.name)
+        assertEquals(135, result.product.stock)
+        assertEquals(10113, result.product.centralStock)
+        assertEquals("m", result.product.stockUnit)
+    }
+
+    @Test
+    fun `KWANT missing or mismatched unit never falls back to pieces`() {
+        val data = currentProductData(stock = 135)
+        val withoutUnit = data.replace("\"unit\": \"szt.\"", "\"unused\": \"szt.\"")
+        val wrongProduct = data.replace("\"product_id\": 580", "\"product_id\": 999")
+        val wrongBranch = currentProductData(stock = 135, departmentStockId = 216)
+        for (payload in listOf(withoutUnit, wrongProduct, wrongBranch)) {
+            val result = KwantProductProvider(
+                frontend = FakeFrontend(currentProductData = payload),
+            ).lookup(ProductRef(KWANT_PROVIDER_ID, "580"), BranchId("205"))
+                as ProviderLookupResult.Found
+            assertNull(result.product.stockUnit)
+            if (payload == withoutUnit) assertEquals(135, result.product.stock)
+        }
+    }
+
+    @Test
     fun `missing central stock remains unknown independently`() {
         val product = KwantFrontendParser().parseProduct(
             productHtml(centralStock = null),
@@ -511,6 +545,7 @@ class KwantProductProviderTest {
         assertEquals(BranchId("205"), result.product.branchId)
         assertEquals(362, result.product.stock)
         assertEquals(10113, result.product.centralStock)
+        assertEquals("szt.", result.product.stockUnit)
         assertEquals(BigDecimal("14.55"), result.product.grossPrice)
         assertEquals(ProviderPriceScope.ONLINE, result.product.priceScope)
         assertEquals("MBN116E/HAG", result.product.articleNumber)

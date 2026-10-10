@@ -15,6 +15,64 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class ConversationMigrationTest {
     @Test
+    fun migration12To13PreservesHistoricalProductRowsWithUnknownUnit() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "test-stock-unit-v12-to-v13.db"
+        context.deleteDatabase(name)
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(name)
+                .callback(object : SupportSQLiteOpenHelper.Callback(12) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        createV2Schema(db)
+                        MIGRATION_2_3.migrate(db)
+                        MIGRATION_3_4.migrate(db)
+                        MIGRATION_4_5.migrate(db)
+                        MIGRATION_5_6.migrate(db)
+                        MIGRATION_6_7.migrate(db)
+                        MIGRATION_7_8.migrate(db)
+                        MIGRATION_8_9.migrate(db)
+                        MIGRATION_9_10.migrate(db)
+                        MIGRATION_10_11.migrate(db)
+                        MIGRATION_11_12.migrate(db)
+                    }
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int,
+                    ) = Unit
+                }).build(),
+        )
+        try {
+            val db = helper.writableDatabase
+            db.execSQL(
+                "INSERT INTO conversations " +
+                    "(id,title,createdAt,updatedAt,lastResponseId,draft,storeNumber,providerId,branchId) " +
+                    "VALUES (1,'legacy',1,1,NULL,'','205','kwant-pl','205')",
+            )
+            db.execSQL(
+                "INSERT INTO messages (id,conversationId,role,text,createdAt) " +
+                    "VALUES (1,1,'ASSISTANT','answer',1)",
+            )
+            db.execSQL(
+                "INSERT INTO message_products " +
+                    "(messageId,position,obik,name,stock,centralStock,grossPrice," +
+                    "productUrl,verifiedAt,storeNumber,providerId,productId,branchId) " +
+                    "VALUES (1,0,'580','Cable',135,9000,'99.00'," +
+                    "'https://kwant.net.pl/produkt/580',1,'205','kwant-pl','580','205')",
+            )
+            MIGRATION_12_13.migrate(db)
+            assertEquals("135", queryText(db, "SELECT stock FROM message_products WHERE messageId=1"))
+            assertEquals("9000", queryText(db, "SELECT centralStock FROM message_products WHERE messageId=1"))
+            assertEquals("99.00", queryText(db, "SELECT grossPrice FROM message_products WHERE messageId=1"))
+            assertEquals("0", queryText(db, "SELECT COUNT(*) FROM message_products WHERE stockUnit IS NOT NULL"))
+            db.execSQL("UPDATE message_products SET stockUnit='m' WHERE messageId=1")
+            assertEquals("m", queryText(db, "SELECT stockUnit FROM message_products WHERE messageId=1"))
+        } finally {
+            helper.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
     fun migration11To12PreservesOldFileAndSupportsThreeOrderedRows() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val name = "test-conversation-v11-attachments.db"
