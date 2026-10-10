@@ -465,7 +465,18 @@ internal class AdvisorProxyClient(
             if (part.type != AttachmentType.TEXT) continue
             val bytes = runCatching {
                 storage.open(part.localId)?.use { input ->
-                    input.readNBytes((TEXT_ATTACHMENT_MAX_BYTES + 1).toInt())
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (output.size() <= TEXT_ATTACHMENT_MAX_BYTES) {
+                        val count = input.read(
+                            buffer, 0,
+                            minOf(buffer.size, (TEXT_ATTACHMENT_MAX_BYTES + 1 - output.size()).toInt()),
+                        )
+                        if (count < 0) break
+                        if (count == 0) continue
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
                 }
             }.getOrNull()
             if (bytes == null || bytes.size.toLong() != part.byteSize ||
