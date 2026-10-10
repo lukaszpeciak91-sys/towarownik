@@ -55,6 +55,88 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun mixedTextPdfImagePersistsInOrderAfterRestartAndBadTextFailsSoft() = runBlocking {
+        val image = attachmentStorage.importValidated(
+            AttachmentType.IMAGE, "photo.jpg", "image/jpeg", 3, width = 1, height = 1,
+            source = { ByteArrayInputStream(byteArrayOf(1, 2, 3)) },
+        )
+        val pdf = attachmentStorage.importValidated(
+            AttachmentType.PDF, "manual.pdf", "application/pdf", 5,
+            source = { ByteArrayInputStream("%PDF-".toByteArray()) },
+        )
+        val textBytes = "zażółć\n".toByteArray(Charsets.UTF_8)
+        val text = attachmentStorage.importValidated(
+            AttachmentType.TEXT, "quote.csv", "text/csv", textBytes.size.toLong(),
+            source = { ByteArrayInputStream(textBytes) },
+        )
+        val items = listOf(image, pdf, text)
+        val started = repository.beginUserTurn(null, "Inspect", 100, attachments = items)
+        database.close()
+        openDatabase()
+        val loaded = repository.load(started.conversationId)!!.messages.single().attachments
+        assertEquals(items.map { it.localId }, loaded.map { it.localId })
+        assertEquals(
+            listOf(AttachmentRenderKind.IMAGE, AttachmentRenderKind.PDF, AttachmentRenderKind.TEXT),
+            loaded.map { attachmentStorage.renderKind(it) },
+        )
+        // Corrupt only the TEXT private bytes; other parts must remain visible and ordered.
+        val textFile = context.filesDir.resolve("advisor_attachments/undefined")
+        textFile.writeBytes(ByteArray(textBytes.size) { 0 })
+        val afterCorrupt = repository.load(started.conversationId)!!.messages.single().attachments
+        assertEquals(3, afterCorrupt.size)
+        assertEquals(
+            listOf(AttachmentRenderKind.IMAGE, AttachmentRenderKind.PDF, AttachmentRenderKind.UNAVAILABLE),
+            afterCorrupt.map { attachmentStorage.renderKind(it) },
+        )
+    }
+
+    @Test
+    fun mixedTextFailedTurnRestoresAllOrderedFilesAndDraft() = runBlocking {
+        val image = attachmentStorage.importValidated(
+            AttachmentType.IMAGE, "label.jpg", "image/jpeg", 3, width = 1, height = 1,
+            source = { ByteArrayInputStream(byteArrayOf(1, 2, 3)) },
+        )
+        val pdf = attachmentStorage.importValidated(
+            AttachmentType.PDF, "manual.pdf", "application/pdf", 5,
+            source = { ByteArrayInputStream("%PDF-".toByteArray()) },
+        )
+        val text = attachmentStorage.importValidated(
+            AttachmentType.TEXT, "notes.txt", "text/plain", 4,
+            source = { ByteArrayInputStream("info".toByteArray()) },
+        )
+        val parts = listOf(image, pdf, text)
+        val started = repository.beginUserTurn(null, "Restore draft", 150, attachments = parts)
+        val owner = MultiPendingAttachmentOwnership(
+            attachmentStorage,
+            context.getSharedPreferences("mixed-text-recovery", Context.MODE_PRIVATE),
+        )
+        val result = repository.recoverFailedAdvisorTurn(
+            started.conversationId,
+            claimPendingAttachment = { owner.claimRecovered(listOf(it)) },
+            claimPendingAttachments = owner::claimRecovered,
+        )
+        assertEquals(parts, result.pendingAttachments)
+        assertEquals("Restore draft", result.conversation?.draft)
+        assertEquals(0, messageAttachmentCount(started.conversationId))
+        assertTrue(parts.all { attachmentStorage.exists(it.localId) })
+        assertEquals(AttachmentRenderKind.TEXT, attachmentStorage.renderKind(text))
+    }
+
+    @Test
+    fun repositoryRejectsTextSumAboveOneMiBBeforeRoomInsert() = runBlocking {
+        fun text(name: String, bytes: Int) = attachmentStorage.importValidated(
+            AttachmentType.TEXT, name, "text/plain", bytes.toLong(),
+            source = { ByteArrayInputStream(ByteArray(bytes) { 65 }) },
+        )
+        val first = text("first.txt", 512 * 1024)
+        val excess = text("second.txt", 512 * 1024 + 1)
+        assertTrue(runCatching {
+            repository.beginUserTurn(null, "invalid", attachments = listOf(first, excess))
+        }.isFailure)
+        assertTrue(repository.list().first().isEmpty())
+    }
+
+    @Test
     fun oneTwoAndThreeAttachmentsRoundTripWithOrderAfterDatabaseRestart() = runBlocking {
         fun make(name: String) = attachmentStorage.importValidated(
             AttachmentType.PDF, name, "application/pdf", 5, createdAt = 1,
