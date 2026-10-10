@@ -263,8 +263,16 @@ class AdvisorLocationsControllerTest {
             continueCall = { output ->
                 continuations++
                 val rejected = (output as AdvisorToolContinuation.Locations).evidence
-                assertEquals("unknown_location", rejected.reason)
-                if (continuations == 1) location(2) else answer()
+                assertEquals(
+                    if (continuations == 4) "local_tool_limit_reached" else "unknown_location",
+                    rejected.reason,
+                )
+                when (continuations) {
+                    1 -> location(2)
+                    2 -> location(3)
+                    3 -> location(4)
+                    else -> answer()
+                }
             },
             locationCall = { _, _, _, _, _, _ ->
                 requested++
@@ -289,8 +297,8 @@ class AdvisorLocationsControllerTest {
             historicalVerifiedProducts = listOf(snapshot),
         ) {}
         assertTrue(result is AdvisorUiState.Success)
-        assertEquals(1, requested)
-        assertEquals(2, continuations)
+        assertEquals(1, requested) // No repeated inventory/adapter work.
+        assertEquals(4, continuations) // Fourth logical model tool hits the hard cap.
     }
 
 
