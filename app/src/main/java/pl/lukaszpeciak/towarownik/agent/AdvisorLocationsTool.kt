@@ -193,7 +193,7 @@ internal class AdvisorLocationsTool(
         // explicit disambiguating street or canonical ID for each chosen one.
         val cities = directory.groupBy { norm(it.name) }
         for ((city, matches) in cities) {
-            if (!boundedMention(normalized, city)) continue
+            if (!cityMention(normalized, city)) continue
             if (matches.size == 1) {
                 discovered.add(matches.single().branchId)
             } else {
@@ -229,6 +229,20 @@ internal class AdvisorLocationsTool(
         return AuthorizedLocationScope.Accepted(
             directory.map { it.branchId }.filter { it in discovered }.take(20),
         )
+    }
+
+    /** Bounded Polish locative city forms, used ONLY for checking user scope.
+     *  A shared-city match remains ambiguous; it never picks a market.
+     */
+    private fun cityMention(user: String, canonical: String): Boolean {
+        if (boundedMention(user, canonical)) return true
+        val locative = when {
+            canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
+            canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
+            canonical.endsWith("ansk") -> canonical + "u"
+            else -> null
+        }
+        return locative != null && boundedMention(user, locative)
     }
 
     private fun norm(text: String): String =
