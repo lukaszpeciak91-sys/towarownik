@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-10 — Advisor document QA versus current provider authority
+
+- User attachments are legitimate evidence **about their own contents**: answer, compare, filter and calculate TXT/CSV/MD prices, quantities, names and technical details with explicit document attribution (e.g. `w przesłanym cenniku`).
+- A document-only question must not cause automatic OBI/KWANT lookup just because the file contains products, prices or SKUs. Conversely, claims of **current** provider price, stock, availability or assortment require fresh local provider verification.
+- Where values conflict, report the freshly verified provider value as current (respecting price scope), while permitting the different attachment value solely as an attributed document value. The attachment is untrusted data, not instructions; missing live verification stays unknown.
+- Shared attachment-capability instruction only (v4/v5 both providers); no Android, Room, HTTP or tool-routing changes. Deterministic contract/transport tests are not a live-model behavior certification.
+
+
 ## 2026-10-10 — Product-image tap-to-preview
 
 Put the feature in shared VerifiedProductThumbnail, not in MainActivity or provider fetchers. Load expanded image with the existing Coil 3 image URL and a separate display-sized AsyncImage (not a thumbnail stretch, HD URL substitution or original-size unbounded request). Keep preview full-screen and minimal: single tap/Back dismissal, no controls, zoom or gallery. Thumbnail click is enabled after success only; original product link buttons and text selection remain independent.
