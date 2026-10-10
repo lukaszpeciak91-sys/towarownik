@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-10 — lightweight text attachments Phase A2 Android picker and history
+
+- Reuse existing OpenMultipleDocuments and one-file replacement, ordered Room v12 metadata, private-file ownership journal and failed-turn recovery for .txt/.md/.csv/.json/.xml/.yaml/.yml/.log/.ini/.conf. No Room migration, Worker contract or provider-authority changes.
+- Accept only explicitly mapped Android document-provider MIME quirks for a known text extension; normalize to a strict Phase A1 MIME/extension pair after fatal UTF-8 and binary/control validation. Never pass through unknown or executable formats.
+- Enforce a separate 1 MiB per-TEXT-file and 1 MiB total TEXT budget through import, pending composer, send gating, persisted turn and Worker transport while retaining max three files and 24 MiB aggregate.
+- Present TEXT as a document badge with extension, filename and size in composer/history, never its contents; missing/corrupted text files show the existing unavailable state.
+
+
 ## 2026-10-10 — lightweight text attachments Phase A1
 
 - Permit exactly ten specified UTF-8 text-like extensions under v5 multipart, with a strict extension/MIME matrix and no generic octet-stream fallback; image/PDF validation and v4 remain identical.
