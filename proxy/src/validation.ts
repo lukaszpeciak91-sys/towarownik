@@ -24,6 +24,9 @@ import {
   MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION,
   MULTI_ATTACHMENT_PROTOCOL_HEADER,
   MAX_MULTI_ATTACHMENTS,
+  LOCATIONS_LOCAL_TOOL_NAME,
+  LOCATIONS_CAPABILITY_HEADER,
+  LOCATIONS_CAPABILITY_VALUE,
   MULTI_ATTACHMENT_TOTAL_MAX_BYTES,
 } from "./config.js";
 import type {
@@ -47,6 +50,8 @@ import type {
   VerifiedQueryResult,
   VerifiedToolResult,
   VersionedToolArguments,
+  LocationToolArguments,
+  LocationToolResult,
 } from "./types.js";
 
 export class InvalidRequestError extends Error {
@@ -90,7 +95,7 @@ export interface ContinueRequest {
   providerId: string;
   branchId: string;
   storeNumber: string;
-  tool: "find_obi_products" | "find_products";
+  tool: "find_obi_products" | "find_products" | "find_product_locations";
   result: ToolContinuationResult;
 }
 
@@ -241,7 +246,8 @@ export async function parseContinueRequest(
         ],
         ["protocolVersion"],
       );
-      if (object.tool !== "find_products") {
+      if (object.tool !== "find_products" &&
+          !(object.tool === LOCATIONS_LOCAL_TOOL_NAME && acceptsLocations(request))) {
         throw new InvalidRequestError(protocolVersion);
       }
       const providerId = validateProviderId(object.providerId);
@@ -259,11 +265,10 @@ export async function parseContinueRequest(
         providerId,
         branchId,
         storeNumber: branchId,
-        tool: "find_products",
-        result: validateToolContinuationResult(
-          object.result,
-          protocolVersion,
-        ),
+        tool: object.tool as "find_products" | "find_product_locations",
+        result: object.tool === LOCATIONS_LOCAL_TOOL_NAME
+          ? validateLocationToolResult(object.result)
+          : validateToolContinuationResult(object.result, protocolVersion),
       };
     }
 
@@ -272,7 +277,8 @@ export async function parseContinueRequest(
       ["responseId", "callId", "storeNumber", "tool", "result"],
       ["protocolVersion"],
     );
-    if (object.tool !== "find_obi_products") {
+    if (object.tool !== "find_obi_products" &&
+        !(object.tool === LOCATIONS_LOCAL_TOOL_NAME && acceptsLocations(request))) {
       throw new InvalidRequestError(protocolVersion);
     }
     const storeNumber = validateStoreNumber(object.storeNumber);
@@ -289,11 +295,10 @@ export async function parseContinueRequest(
       providerId: "obi-pl",
       branchId: storeNumber,
       storeNumber,
-      tool: "find_obi_products",
-      result: validateToolContinuationResult(
-        object.result,
-        protocolVersion,
-      ),
+      tool: object.tool as "find_obi_products" | "find_product_locations",
+      result: object.tool === LOCATIONS_LOCAL_TOOL_NAME
+        ? validateLocationToolResult(object.result)
+        : validateToolContinuationResult(object.result, protocolVersion),
     };
   });
 }
@@ -302,6 +307,7 @@ export function parseToolArguments(
   raw: string,
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
+  toolName?: string,
 ): VersionedToolArguments {
   let value: unknown;
   try {
@@ -311,6 +317,10 @@ export function parseToolArguments(
   }
 
   return withProtocolContext(protocolVersion, () => {
+    if (toolName === LOCATIONS_LOCAL_TOOL_NAME) {
+      if (protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION) throw new InvalidRequestError(protocolVersion);
+      return validateLocationToolArguments(value);
+    }
     if (protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION) {
       return validateLegacyToolArguments(value);
     }
@@ -319,6 +329,81 @@ export function parseToolArguments(
     }
     return validateProviderToolArguments(value);
   });
+}
+
+export function acceptsLocations(request: Request): boolean {
+  return request.headers.get(LOCATIONS_CAPABILITY_HEADER) === LOCATIONS_CAPABILITY_VALUE;
+}
+
+function validateLocationToolArguments(value: unknown): LocationToolArguments {
+  const obj = exactObject(value, ["providerId", "productId", "locations"]);
+  const providerId = validateProviderId(obj.providerId);
+  const productId = boundedString(obj.productId, 64);
+  if (!/^[A-Za-z0-9._-]+$/.test(productId)) throw new InvalidRequestError();
+  if (!Array.isArray(obj.locations) || obj.locations.length > 20) throw new InvalidRequestError();
+  const locations = obj.locations.map(item => boundedString(item, 100));
+  if (new Set(locations).size !== locations.length) throw new InvalidRequestError();
+  return { providerId, productId, locations };
+}
+
+function stockInt(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 2147483647) {
+    throw new InvalidRequestError();
+  }
+  return value;
+}
+
+function locationIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 100) throw new InvalidRequestError();
+  const ids = value.map(validateBranchId);
+  if (new Set(ids).size !== ids.length) throw new InvalidRequestError();
+  return ids;
+}
+
+function validateLocationToolResult(value: unknown): LocationToolResult {
+  const obj = exactObject(value, [
+    "providerId", "productId", "status", "reason", "coverage",
+    "checkedIds", "returnedIds", "missingIds", "locations",
+    "verifiedAtMillis", "centralStock",
+  ]);
+  const providerId = validateProviderId(obj.providerId);
+  const productId = obj.productId === null ? null : boundedString(obj.productId, 64);
+  const status = obj.status;
+  if (status !== "verified" && status !== "unavailable" && status !== "rejected") throw new InvalidRequestError();
+  const reason = obj.reason === null ? null : boundedString(obj.reason, 64);
+  const coverage = obj.coverage;
+  if (coverage !== "all_public_locations" && coverage !== "requested_subset" &&
+      coverage !== "partial" && coverage !== "unknown") throw new InvalidRequestError();
+  const checkedIds = locationIds(obj.checkedIds);
+  const returnedIds = locationIds(obj.returnedIds);
+  const missingIds = locationIds(obj.missingIds);
+  if (returnedIds.some(id => !checkedIds.includes(id)) ||
+      missingIds.some(id => !checkedIds.includes(id)) ||
+      returnedIds.some(id => missingIds.includes(id))) throw new InvalidRequestError();
+  if (!Array.isArray(obj.locations) || obj.locations.length > 100) throw new InvalidRequestError();
+  const locations = obj.locations.map(item => {
+    const row = exactObject(item, ["branchId", "name", "stock"]);
+    return {
+      branchId: validateBranchId(row.branchId),
+      name: boundedString(row.name, 100),
+      stock: row.stock === null ? null : stockInt(row.stock),
+    };
+  });
+  if (locations.length !== returnedIds.length || new Set(locations.map(x => x.branchId)).size !== locations.length ||
+      locations.some(x => !returnedIds.includes(x.branchId))) throw new InvalidRequestError();
+  const verifiedAtMillis = obj.verifiedAtMillis === null ? null : stockInt64(obj.verifiedAtMillis);
+  const centralStock = obj.centralStock === null ? null : stockInt(obj.centralStock);
+  if (status !== "verified" && (locations.length > 0 || returnedIds.length > 0 ||
+      verifiedAtMillis !== null || centralStock !== null)) throw new InvalidRequestError();
+  if (status === "verified" && (productId === null || verifiedAtMillis === null)) throw new InvalidRequestError();
+  return {
+    providerId, productId, status, reason, coverage,
+    checkedIds, returnedIds, missingIds, locations, verifiedAtMillis, centralStock,
+  };
+}
+function stockInt64(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new InvalidRequestError();
+  return value;
 }
 
 function validateLegacyToolArguments(
