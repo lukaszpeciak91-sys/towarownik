@@ -151,7 +151,7 @@ export const ATTACHMENT_CAPABILITY_APPENDIX =
 export const MULTI_ATTACHMENT_CAPABILITY_APPENDIX =
   ATTACHMENT_CAPABILITY_APPENDIX.replace(
     "one image or PDF",
-    "one to three images or PDFs",
+    "one to three images, PDFs, or lightweight UTF-8 text files",
   );
 
 export const OBI_V1_CONTRACT_SUFFIX =
