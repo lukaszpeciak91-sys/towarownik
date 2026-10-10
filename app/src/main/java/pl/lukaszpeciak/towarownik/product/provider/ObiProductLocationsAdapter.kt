@@ -118,8 +118,9 @@ internal fun parseObiStockBatch(
         if (record.keys != setOf("storeId", "availableQuantity")) return null
         val idValue = record["storeId"] as? JsonPrimitive ?: return null
         if (!idValue.isString) return null
+        if (idValue.content.length != 3 || idValue.content.any { !it.isDigit() }) return null
         val id = BranchId(idValue.content)
-        if (id.value.length != 3 || id.value.any { !it.isDigit() } ||
+        if (
             id !in requestedIds || !seen.add(id)) return null
         val branch = directory[id] ?: return null
         val stock = nonnegativeJsonInteger(record["availableQuantity"]) ?: return null
