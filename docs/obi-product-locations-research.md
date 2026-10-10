@@ -1,8 +1,8 @@
 # OBI product availability across markets — research
 
-**Status: B_ONE_SHOT_SUBSET — CONFIRMED OBI batch contract from live run #6 (10 October 2026). One exact product-bound request returned numeric stock for ten requested canonical OBI markets; whole-directory batching remains unproven.**
+**Status: B_ONE_SHOT_SUBSET — FINAL LIVE VALIDATION COMPLETE (run #7, 10 October 2026). The product-bound batch returned trusted numeric stock for all 10 requested canonical OBI markets; full 62-market one-shot coverage remains unproven.**
 Research only. A public frontend **10-market subset contract is verified**, but no production provider/tool integration or full-directory one-shot contract is implemented.
-Synthetic regression quantities are distinct from the real run #6 request/response **identity and schema** evidence; they are not actual market quantities.
+Synthetic regression quantities are distinct from the real runs #6–#7 request/response **identity, schema and coverage** evidence; they are not actual market quantities.
 
 ## CONFIRMED: existing foundations (not new cross-market evidence)
 
@@ -259,6 +259,30 @@ and returned one trustworthy numeric quantity per requested ID. This is
 **not** `A_ONE_SHOT_ALL_STORES`, which requires the *request itself*
 to cover the complete canonical directory, plus one trusted state per store.
 
+### FINAL VALIDATION: live run #7 — trusted 10-of-10 batch, machine B
+
+The final manual [OBI live contract probe #38028530589](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/38028530589)
+completed **successfully** on PR #100 HEAD
+`3bc167ec7d695695972ed7d2c6f4d529181dd9d7`.
+
+- The research classifier returned **`B_ONE_SHOT_SUBSET`**, reason
+  **`PRODUCT_BOUND_REQUESTED_STORE_BATCH`**, with
+  **`observedStoreCount=10`**.
+- Requested canonical stores: **10**; returned trusted stores: **10**.
+  **No missing requested IDs** and **no unexpected returned IDs**.
+  Every requested market has a **trusted numeric stock state**.
+- Run #7 is the **final live validation** of the product-bound ten-store
+  batch contract observed in run #6. The older run #6 machine
+  `F_INCONCLUSIVE` was a parser limitation; the corrected research
+  classifier now returns **B** on live data.
+- This is **not A**: only batch size **10** is live-proven, not a
+  single batch covering all **62** canonical OBI markets. The other
+  52 stores remain **unknown**, not zero or unavailable.
+- This PR remains **research-only**: production
+  `find_product_locations` is **not implemented**. Any future OBI
+  integration must keep `WorkingProfile` **read-only**.
+  **No additional live run is required for this research PR.**
+
 ### Strict research parser, coverage and limitations
 
 Only the exact observed
@@ -312,12 +336,12 @@ and its `storeId` / integer `availableQuantity` list are trusted for
 this research classification.
 
 The exact native `PdpLink` control and DOM fallback were confirmed in
-runs #4–#6. The fallback is used only after normal-click actionability
+runs #4–#7. The fallback is used only after normal-click actionability
 timeout on the one visible enabled control matching exact `innerText`.
-Run #6 proved post-open batch traffic, while the modal store rows were
+Run #6 proved post-open batch traffic (validated again in run #7), while the modal store rows were
 not individually actionable in the safe DOM investigation.
 
-## UNKNOWN / NOT PROVEN after run #6
+## UNKNOWN / NOT PROVEN after final run #7
 
 | Subject | Status |
 | --- | --- |
@@ -348,13 +372,13 @@ No cart/purchase/reservation/order or personal-data form interactions.
 No cookies, session identifiers, tokens, headers or arbitrary user
 scalars belong in safe artifacts.
 
-## Manual workflow and next run after PR #100 re-audit
+## Manual workflow — final run #7 completed
 
 Existing workflow: **OBI live contract probe**
 (.github/workflows/obi-live-contract.yml), dispatched manually against
 branch **research/obi-product-locations-contract**.
 
-| Workflow input | Next-run value |
+| Workflow input | Final run #7 value |
 | --- | --- |
 | obik | **3496072** |
 | store | **075** |
@@ -409,9 +433,11 @@ bodies, cookies or localStorage. Cookie/localStorage values are compared
 A change flag is not proof of which selected store changed.
 
 The manual job can technically succeed without confirming a contract
-(as in runs #2–#5). Run #6 instead confirmed the exact stock batch
-schema; the updated research classifier should now report
-**B_ONE_SHOT_SUBSET**, subject to a final live run on this branch.
+(as in runs #2–#5). Run #6 established the exact stock batch
+schema; final run #7 confirmed **B_ONE_SHOT_SUBSET** on live data,
+with all 10 requested canonical IDs covered by trusted numeric states
+and no missing or unexpected IDs. This completes the research PR's live
+validation; **no further manual workflow dispatch is needed**.
 No A/complete-directory behavior is claimed. Do not enlarge the
 live batch or guess extra URLs.
 
@@ -433,7 +459,7 @@ tools/test_obi_live_contract_probe.py for deterministic offline tests.
   for different canonical markets under the same product.
 - **F_INCONCLUSIVE:** insufficient or contradictory evidence.
 
-**B_ONE_SHOT_SUBSET** is now supported by run #6's live browser request/response and exact schema. A, C, D and E are not yet verified. Synthetic full-directory A cases do not prove real A.
+**B_ONE_SHOT_SUBSET** is supported by run #6's live browser request/response and exact schema, and independently confirmed by the final run #7 machine classifier. A, C, D and E are not yet verified. Synthetic full-directory A cases do not prove real A.
 Importantly, *initial:page* may now contribute to classification only for
 a trusted, exact product-bound observed availability route (including
 the verified `/api/pdp/v1/availability/sp/{OBIK}`), with canonical rows
@@ -490,9 +516,12 @@ For KWANT, use the independently verified
 read-only and never silently alter WorkingProfile. Production provider,
 Worker, Advisor, Room, Compose, prompts and protocols are unchanged.
 
-**Exit gate:** run #6 confirmed the requested 10-store batch and exact
-numeric response schema. The updated offline research classifier must now
-return **B_ONE_SHOT_SUBSET** for that observed shape. Audit its tests and one
-final live workflow run before accepting this research PR. Do not claim
-A/full 62-market coverage. Production remains separate.
-**Do not merge this research PR.**
+**Validation gate completed:** run #6 established the requested ten-store
+batch and exact numeric response schema; final live run #7 on the updated
+research classifier confirmed **B_ONE_SHOT_SUBSET**, trusted numeric states
+for all 10 requested stores, and no missing or unexpected IDs. The offline
+regressions and final manual live workflow are complete. **No additional
+live run is required for PR #100.** Do not claim A/full 62-market
+coverage. Production `find_product_locations` remains separate and
+unimplemented; future integration must never modify `WorkingProfile`.
+PR #100 is ready for final audit; merge is a separate decision.
