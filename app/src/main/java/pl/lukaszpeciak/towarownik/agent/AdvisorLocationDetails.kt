@@ -34,7 +34,7 @@ internal fun renderAdvisorLocationDetails(
             val branch = OBI_STORES.singleOrNull { it.storeNumber == canonical }
             if (branch != null) {
                 return "Podany numer marketu OBI $supplied nie zgadza się z lokalizacją " +
-                    "undefined (market OBI $canonical). " +
+                    branch.city + " (market OBI $canonical). " +
                     "Potwierdź, czy chodzi o OBI $canonical. " +
                     "Nie wykonano sprawdzenia stanów."
             }
