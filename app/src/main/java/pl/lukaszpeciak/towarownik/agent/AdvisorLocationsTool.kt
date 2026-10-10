@@ -296,6 +296,14 @@ internal class AdvisorLocationsTool(
      */
     private fun hasExplicitLocationsIntent(userText: String): Boolean {
         val text = norm(userText)
+        // Advice plus a place name is NOT an inventory request.
+        val adviceTopic = Regex(
+            """\b(zamontowac|montaz|montazu|podlaczyc|podlaczenie|odpowiednik|zamiennik|polec|dobierz|kompatybilnosc|kompatybilny)\b""",
+        ).containsMatchIn(text)
+        val explicitInventoryTerms = Regex(
+            """\b(stan|stany|dostepnosc|dostepny|dostepna|dostepne|zapasy|zapas|magazynach)\b""",
+        ).containsMatchIn(text)
+        if (adviceTopic && !explicitInventoryTerms) return false
         val multiLocation = Regex(
             """\b(jeszcze|inne|innych|innym|pozostale|pozostalych|wszystkie|wszystkich|oddzialach|marketach)\b""",
         ).containsMatchIn(text)

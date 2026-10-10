@@ -216,6 +216,8 @@ class AdvisorLocationsNationwideTest {
             "Poleć odpowiednik tego produktu",
             "Jak zamontować ten produkt?",
             "Jak zamontować ten produkt w Krakowie?",
+            "Sprawdź, jak zamontować ten produkt w Krakowie?",
+            "Sprawdź odpowiednik tego produktu w Krakowie",
         )) {
             val fake = FakeInventory()
             val result = fake.run(message)
