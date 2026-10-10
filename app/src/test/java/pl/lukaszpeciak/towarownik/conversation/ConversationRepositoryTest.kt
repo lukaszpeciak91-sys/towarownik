@@ -133,7 +133,10 @@ class ConversationRepositoryTest {
         assertTrue(runCatching {
             repository.beginUserTurn(null, "invalid", attachments = listOf(first, excess))
         }.isFailure)
-        assertTrue(repository.list().first().isEmpty())
+        database.openHelper.writableDatabase.query("SELECT COUNT(*) FROM conversations").use {
+            assertTrue(it.moveToFirst())
+            assertEquals(0, it.getInt(0))
+        }
     }
 
     @Test
