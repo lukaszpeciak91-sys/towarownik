@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-10 — PR #110 audit: restrict clarification, prioritize current verified IDs, avoid stale cache
+
+Do not treat arbitrary short USER phrases as stock authorization. Bare location-only clarifications require an exact canonical active-provider branch name and a still-pending prior USER inventory request; explicit structured follow-ups remain bounded. Resolve current explicit verified product ID or article before prior selections, preserving ambiguous/unknown fail-closed behavior. Cache only rejection reasons independent of future discovery, not product-trust or ambiguity outcomes. Preserve existing stock endpoints, all-other batching, provider isolation and tool budgets.
+
+
 ## 2026-10-10 — Bounded inventory-follow-up context, never model authority
 
 Only direct clarification turns following a previous user-origin stock request may borrow its inventory intent. Scope remains determined by the current user location text, or by their explicit preceding pending stock request; assistant suggestions cannot activate requests. Disambiguation from the last bounded user selection or newest single verified card may constrain, never expand, trusted product candidates. Explicit "both" is valid only for exactly two distinct provider-verified products and must not degenerate into a silent single-product lookup. While KWANT "extended" is unverified, respond unavailable, not fabricated inventory or a clarification loop. Cache duplicate deterministic rejection evidence within a USER turn to avoid repeated inventory HTTP; repeated model tool requests still count toward the hard three-call budget. Never auto-map the unsupported OBI market 054 onto canonical Miejsce Piastowe 052.

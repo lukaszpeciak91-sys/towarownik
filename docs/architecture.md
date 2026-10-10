@@ -1,5 +1,10 @@
 # Architecture
 
+## PR #110 audit hardening — bounded follow-up categories and current identity
+
+A pending inventory request survives only explicit clarification forms (`obu`/`oba`, constrained location-preposition follow-ups, supported market clarification or broad relative-market follow-up) or a bare location that exactly names a branch in the active provider's canonical directory. Generic short messages, including `pokaż ceny`, interrupt authorization even if a previous stock request exists. Current-message exact identifiers are resolved solely against previously verified snapshots and take precedence over older user selections; multiple explicit products stay ambiguous. Model IDs remain equality-only. Only location/provider denial categories invariant under newly verified product evidence are memoized in a turn; `untrusted_product` and `ambiguous_product` must be re-evaluated after discovery. Every model tool request still consumes the existing three-call budget.
+
+
 ## Advisor inventory clarifications — bounded history (2026-10-10)
 
 Android now supplies the location tool with a bounded prior-conversation evidence window: at most 12 preceding messages, four preceding USER turns, and up to three most recent assistant messages containing verified product cards in that 12-message window. A standalone city, "a w…", or "obu" is inventory-authorized only when chained to a previous **USER-requested** stock/availability operation with no unrelated intervening USER turn. Assistant suggestions and model location/product IDs do not authorize scope. Explicit earlier user identifiers and a single newest verified assistant card may disambiguate product identity; the model's ID remains an equality guard. An exact two-product "obu" clarification is retained across immediate related turns; because KWANT's extended transport is unverified, it produces a typed unavailable result before inventory HTTP rather than selecting one product.

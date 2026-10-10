@@ -63,7 +63,8 @@ class AdvisorLocationFollowUpReportsTest {
         val inventory = Inventory()
         val cards = history.asReversed().filter { it.role == "ASSISTANT" }.take(3)
             .flatMap { it.products }
-        val followUp = resolveAdvisorLocationFollowUp(message, history, cards)
+        val branches = (ObiProductProvider().branches() as ProviderBranchResult.Available).branches
+        val followUp = resolveAdvisorLocationFollowUp(message, history, cards, branches)
         val result = inventory.tool.execute(
             AdvisorLocationArguments("obi-pl", id, emptyList()),
             "obi-pl", "075", followUp.authorizedText,
@@ -125,26 +126,31 @@ class AdvisorLocationFollowUpReportsTest {
     @Test fun reportB_bothAndZamoscAndTarnowRetainUserAuthorizations() {
         val first = snapshot("7035", "kwant-pl", "921871")
         val second = snapshot("7027", "kwant-pl", "921861")
+        val kwantBranches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+        )
         val initial = listOf(
             assistant(first, second),
             user("a jaki jest stan tego gniazda 16 na 4 w oddziale w Zamościu?"),
             assistant(),
         )
-        val both = resolveAdvisorLocationFollowUp("obu", initial, listOf(first, second))
+        val both = resolveAdvisorLocationFollowUp("obu", initial, listOf(first, second), kwantBranches)
         assertEquals(setOf("7035", "7027"), both.bothProductIds)
         val afterBoth = initial + user("obu") + assistant()
-        val city = resolveAdvisorLocationFollowUp("Zamość", afterBoth, listOf(first, second))
+        val city = resolveAdvisorLocationFollowUp("Zamość", afterBoth, listOf(first, second), kwantBranches)
         assertEquals(setOf("7035", "7027"), city.bothProductIds)
         assertEquals("Sprawdź stan produktu w Zamość", city.authorizedText)
         val afterCity = afterBoth + user("Zamość") + assistant()
         val explicit = resolveAdvisorLocationFollowUp(
-            "sprawdź stan obu gniazd w Zamościu", afterCity, listOf(first, second),
+            "sprawdź stan obu gniazd w Zamościu", afterCity, listOf(first, second), kwantBranches,
         )
         assertEquals(setOf("7035", "7027"), explicit.bothProductIds)
         val tarnow = resolveAdvisorLocationFollowUp(
             "a w oddziale Tarnów?",
             afterCity + user("sprawdź stan obu gniazd w Zamościu") + assistant(),
             listOf(first, second),
+            kwantBranches,
         )
         assertEquals(setOf("7035", "7027"), tarnow.bothProductIds)
         assertTrue(tarnow.authorizedText.startsWith("Sprawdź stan produktu:"))
@@ -165,4 +171,57 @@ class AdvisorLocationFollowUpReportsTest {
             assertTrue(message, inventory.http.isEmpty())
         }
     }
+
+    @Test fun unrelatedShortPriceTurnBreaksPendingInventoryPermission() = runBlocking {
+        val unrelated = obiHistory + user("pokaż ceny") + assistant()
+        val (rejected, inventory) = lookup("a w Krakowie?", unrelated)
+        assertEquals("rejected", rejected.status)
+        assertEquals("location_intent_required", rejected.reason)
+        assertTrue(inventory.reads.isEmpty())
+        assertTrue(inventory.http.isEmpty())
+
+        // An ASSISTANT invitation to check a different store does not grant permission.
+        val suggestion = listOf(
+            assistant(portable),
+            AdvisorLocationHistoryMessage(
+                "ASSISTANT", "Mogę sprawdzić dostępność w Krakowie",
+            ),
+        )
+        val (unsolicited, noHttp) = lookup("a w Krakowie?", suggestion)
+        assertEquals("location_intent_required", unsolicited.reason)
+        assertTrue(noHttp.http.isEmpty())
+    }
+
+    @Test fun currentExactVerifiedProductOverridesOlderUserSelection() = runBlocking {
+        val (actual, inventory) = lookup(
+            "Sprawdź stan produktu OBIK 5524079 w market OBI 003",
+            obiHistory,
+            id = "5524079",
+        )
+        assertEquals("verified", actual.status)
+        assertEquals("5524079", actual.productId)
+        assertEquals(listOf("003"), actual.checkedIds)
+        assertEquals(listOf(listOf("003")), inventory.http)
+        val cards = listOf(portable, fixed)
+        val context = resolveAdvisorLocationFollowUp(
+            "Sprawdź stan produktu OBIK 5524079 w market OBI 003",
+            obiHistory, cards,
+            (ObiProductProvider().branches() as ProviderBranchResult.Available).branches,
+        )
+        assertEquals(listOf("5524079"), context.historicalProducts.map { it.effectiveProductId })
+    }
+
+    @Test fun currentUnknownProductAndTwoExplicitProductsCannotInheritOldSelection() = runBlocking {
+        for ((message, expected) in listOf(
+            "Sprawdź stan produktu OBIK 9999999 w market OBI 003" to "untrusted_product",
+            "Sprawdź stan produktów OBIK 6117543 i 5524079 w market OBI 003" to "ambiguous_product",
+        )) {
+            val (actual, inventory) = lookup(message, obiHistory, id = "6117543")
+            assertEquals(message, "rejected", actual.status)
+            assertEquals(message, expected, actual.reason)
+            assertTrue(message, inventory.http.isEmpty())
+        }
+    }
+
+
 }

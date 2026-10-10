@@ -424,4 +424,77 @@ class AdvisorLocationsControllerTest {
     }
 
 
+
+    @Test fun untrustedLocationRequestMustBeReevaluatedAfterDiscoveryInSameTurn() = runBlocking {
+        var locationCalls = 0
+        var inventoryReads = 0
+        val adapter = object : ProductLocationsAdapter {
+            override val providerId = OBI_PROVIDER_ID
+            override suspend fun read(
+                ref: ProductRef,
+                requested: List<BranchId>,
+                trustedProduct: ProviderProduct?,
+            ): ProductLocationsResult {
+                inventoryReads++
+                assertEquals("3496072", ref.productId)
+                assertEquals(listOf(BranchId("075")), requested)
+                return ProductLocationsResult.Available(
+                    ref, requested.map {
+                        LocationStock(ProviderBranch(it, "Nowy Sącz"), 3)
+                    },
+                    LocationCoverage(
+                        LocationCoverageKind.REQUESTED_SUBSET,
+                        requested, requested, 1,
+                    ),
+                    123L,
+                )
+            }
+        }
+        val realTool = AdvisorLocationsTool(
+            locationsService = ProductLocationsService(listOf(adapter)),
+        )
+        var continuations = 0
+        val c = controller(
+            initial = location(),
+            continueCall = { output ->
+                continuations++
+                when (continuations) {
+                    1 -> {
+                        val first = (output as AdvisorToolContinuation.Locations).evidence
+                        assertEquals("rejected", first.status)
+                        assertEquals("untrusted_product", first.reason)
+                        assertEquals(0, inventoryReads)
+                        discovery()
+                    }
+                    2 -> {
+                        assertTrue(output is AdvisorToolContinuation.Verified)
+                        location(2)
+                    }
+                    3 -> {
+                        val second = (output as AdvisorToolContinuation.Locations).evidence
+                        assertEquals("verified", second.status)
+                        assertEquals(listOf("075"), second.checkedIds)
+                        assertEquals(1, inventoryReads)
+                        answer()
+                    }
+                    else -> error("Unexpected fourth tool")
+                }
+            },
+            locationCall = { args, provider, selected, input, current, past ->
+                locationCalls++
+                realTool.execute(args, provider, selected, input, current, past)
+            },
+            onDiscovery = { verified() },
+        )
+        val result = c.runTurn(
+            input = "Sprawdź stan produktu w OBI 075",
+            previousResponseId = "resp_prior",
+        ) {}
+        assertTrue(result is AdvisorUiState.Success)
+        assertEquals(2, locationCalls) // First denied, second re-evaluated after verification.
+        assertEquals(1, inventoryReads)
+        assertEquals(3, continuations) // All three logical local calls accounted for.
+    }
+
+
 }

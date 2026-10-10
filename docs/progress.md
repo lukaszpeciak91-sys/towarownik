@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — PR #110 audit follow-up
+
+Closed three review findings: generic short unrelated requests break authorization, current explicit verified OBIK overrides prior history selection, and product-trust denials are not reused after in-turn discovery. Added positive and negative ordered-report tests plus a Controller location→discovery→location regression ensuring exactly one post-verification inventory read and all three logical requests counted. Report A/B regressions remain in place.
+
+
 ## 2026-10-10 — Inventory conversation follow-up regression work
 
 Added a 12-message / four-user-turn history evidence contract and a bounded verified-product referent resolver for Advisor location tool calls; MainActivity passes only preceding persisted messages. Added Miejsce Piastowe alias, explicit 054/052 conflict reason, and relative-clause all-other stock request parsing. KWANT exactly-two-products "obu" remains typed unavailable before unverified extended HTTP. Added reconstructed OBI/KWANT report tests, real Worker-envelope-to-Controller authorization with trace, deterministic 054/052 clarification presentation, a duplicate-rejection/fourth-call budget test, and preserved all existing provider/parser and Worker protocols.
