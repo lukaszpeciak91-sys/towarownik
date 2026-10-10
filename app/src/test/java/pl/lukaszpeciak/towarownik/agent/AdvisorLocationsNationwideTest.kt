@@ -265,6 +265,53 @@ class AdvisorLocationsNationwideTest {
         assertTrue(fake.serviceReads.size <= 4)
     }
 
+    @Test fun `generic inventory words cannot masquerade as cities`() = runBlocking {
+        for (message in listOf(
+            "Sprawdź stany w innych marketach",
+            "Sprawdź wszystkie markety",
+            "Sprawdź pozostałe markety",
+            "Sprawdź dostępność w pozostałych oddziałach",
+        )) {
+            val fake = FakeInventory()
+            val result = fake.run(message, hints = emptyList())
+            assertEquals(message, "verified", result.status)
+            assertEquals(message, "all_other_locations", result.coverage)
+            assertEquals(message, 61, result.checkedIds.size)
+            assertFalse(message, result.checkedIds.contains("075"))
+            assertEquals(message, listOf(20, 20, 20, 1), fake.serviceReads.map { it.size })
+            assertEquals(message, listOf(10, 10, 10, 10, 10, 10, 1),
+                fake.httpBatches.map { it.size })
+        }
+    }
+
+    @Test fun `conjunctions and commas never drop an unknown second locality`() = runBlocking {
+        for (message in listOf(
+            "Sprawdź stany w Krakowie oraz Tarnowie",
+            "Sprawdź stany w Krakowie i Tarnowie",
+            "Sprawdź stany w Krakowie, Tarnowie",
+            "Sprawdź stany w Krakowie oraz w Tarnowie",
+            "Sprawdź Kraków oraz Tarnów",
+            "Sprawdź Kraków, Tarnów",
+            "Sprawdź Kraków i Tarnów",
+        )) {
+            val fake = FakeInventory()
+            val result = fake.run(message, hints = emptyList())
+            assertEquals(message, "rejected", result.status)
+            assertEquals(message, "unknown_location", result.reason)
+            assertEquals(message, 0, fake.serviceReads.size)
+            assertEquals(message, 0, fake.httpBatches.size)
+        }
+    }
+
+    @Test fun `known named city after availability request remains canonical`() = runBlocking {
+        val fake = FakeInventory()
+        val result = fake.run("Sprawdź stany w Krakowie", hints = emptyList())
+        assertEquals("verified", result.status)
+        assertEquals("requested_subset", result.coverage)
+        assertEquals(setOf("019", "072", "003", "059"), result.checkedIds.toSet())
+        assertEquals(1, fake.serviceReads.size)
+        assertEquals(1, fake.httpBatches.size)
+    }
     @Test fun `cancellation propagates without retry or further HTTP`() = runBlocking {
         val fake = FakeInventory(cancelAtRequest = 3)
         var propagated = false

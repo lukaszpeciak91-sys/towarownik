@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-10 — PR #102 named-locality grammar
+
+Use an anchored, complete location phrase rather than classifying individual words after `sprawdź` or `w` as cities; avoid an ever-growing inventory-word blacklist. All named places in `i`, `oraz` and comma groups must resolve before stock HTTP. A single unsupported city rejects the complete restricted scope with typed `unknown_location`. Generic inventory requests remain all-other with the active market excluded, and the Worker/tool contracts are unchanged.
+
+
 ## PR #102 — 2026-10-10 focused location authorization hardening
 
 An exact trusted product card is necessary but insufficient to authorize other-store stock HTTP. Android independently requires explicit location availability intent and interprets city/store tokens only in the current user text. The model's empty location list cannot convert `Sprawdź w Tarnowie` into an all-OBI scan. Isolated dimensions such as `100 cm` never become market IDs. The 45-second overall OBI deadline prevents seven sequential 15-second HTTP calls from yielding 105 seconds of cumulative delay; timeouts are reported as partial/unknown without fabricating zero. Nationwide partial presentation preserves the originally requested all-other scope. All other existing contracts, KWANT `extended` production disablement, and Worker capabilities remain unchanged.

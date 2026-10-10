@@ -323,7 +323,7 @@ internal class AdvisorLocationsTool(
         // It is NOT broad-network permission: authorization still has to
         // resolve each locality against the canonical directory.
         val explicitCityPhrase = Regex(
-            """\b(?:sprawdz|sprawdzcie)\s+[a-z]{4,}(?:\s+i\s+[a-z]{4,})?\s*$""",
+            """^(?:sprawdz|sprawdzcie)\s+[a-z]{4,}(?:\s*(?:,|i|oraz)\s+[a-z]{4,})*\s*$""",
         ).containsMatchIn(text)
         return (multiLocation && (stockOrAvailability || locationNoun || where)) ||
             (locationNoun && (check || where) && stockOrAvailability) ||
@@ -410,24 +410,10 @@ internal class AdvisorLocationsTool(
         val restricted = discovered.isNotEmpty()
         // Explicit unknown city scopes must fail closed even when a model
         // deliberately sends locations=[]; never infer a nationwide request.
-        if (!restricted && hasUnresolvedCityScope(normalized, groupedCities.keys)) {
+        if (hasUnresolvedCityScope(normalized, groupedCities.keys)) {
             return AuthorizedLocationScope.Rejected("unknown_location")
         }
         if (restricted) {
-            // A multi-city request must not silently drop an unrecognized
-            // second city just because one of the cities is canonical.
-            val knownCityPhrases = groupedCities.keys.flatMap { city ->
-                listOfNotNull(city, cityLocative(city))
-            }.toSet()
-            val joinedLocations = Regex("""\bi (?:w |we )?([a-z0-9]+)\b""")
-                .findAll(normalized).map { it.groupValues[1] }.toList()
-            if (joinedLocations.any { next ->
-                next !in knownCityPhrases &&
-                    next !in numericIds &&
-                    directory.none { it.branchId.value == next }
-            }) {
-                return AuthorizedLocationScope.Rejected("unknown_location")
-            }
             // Model-provided cities/IDs are NOT permission to expand scope.
             for (hint in modelHints) {
                 val name = norm(hint)
@@ -460,40 +446,36 @@ internal class AdvisorLocationsTool(
     }
 
     /**
-     * Restriction-only parser: looks for an explicit locality after
-     * "sprawdź w/we", "dostępny w" or "sprawdź [city]".
-     * Unknown or unsupported localities are rejected even if the model
-     * supplies an empty locations[] array. No general intent inference.
+     * Recognize only complete named-locality phrases, never an arbitrary word
+     * after "sprawdz" or "w":
+     * - "sprawdz Krakow [i/oraz/, Tarnow]"
+     * - "... w Krakowie [i/oraz/, Tarnowie]"
+     *
+     * Generic inventory/store noun phrases do not fit the city-chain grammar.
+     * Every extracted locality must be canonical; one unknown rejects all.
      */
     private fun hasUnresolvedCityScope(
         text: String,
         knownCities: Set<String>,
     ): Boolean {
-        val knownAliases = knownCities.flatMap { city ->
+        val aliases = knownCities.flatMap { city ->
             listOfNotNull(city, cityLocative(city))
-        }
-        val generic = setOf(
-            "inne", "innych", "innym", "pozostalych", "wszystkich",
-            "marketach", "markecie", "market", "sklepie", "sklepach",
-            "oddzialach", "oddziale", "lokalizacjach", "obi",
-            "jakich", "ktorych", "tych",
-        )
-        // Restriction syntax only; the preceding intent gate already
-        // establishes that this is an availability operation.
-        val afterPreposition = Regex("""\b(?:w|we|dla)\s+([a-z][a-z0-9]*)\b""")
-            .findAll(text).map { it.groupValues[1] }
-        val afterCheck = Regex("""\b(?:sprawdz|sprawdzcie)\s+([a-z][a-z0-9]*)\b""")
-            .findAll(text).map { it.groupValues[1] }
-            .filterNot { it in setOf(
-                "w", "we", "inne", "innych", "stany", "stan", "dostepnosc",
-                "produkt", "produktu", "ten", "tego", "ta", "te",
-            ) }
-        return (afterPreposition + afterCheck).any { candidate ->
-            candidate !in generic &&
-                knownAliases.none { alias ->
-                    alias == candidate || alias.startsWith(candidate + " ")
-                }
-        }
+        }.distinct()
+        // Canonical multi-word names remain single atoms; a previously
+        // unrecognized one-word name is parsed only for fail-closed rejection.
+        val names = aliases.sortedByDescending { it.length }
+            .joinToString("|") { Regex.escape(it) }
+        val atom = "(?:$names|[a-z][a-z0-9]*)"
+        val separator = """\s*(?:,|\bi\b|\boraz\b)\s*(?:(?:w|we)\s+)?"""
+        val chainPattern = "($atom(?:$separator$atom)*)"
+        val located = Regex("""\b(?:w|we|dla)\s+""" + chainPattern + """\s*$""")
+        val bare = Regex("""^(?:sprawdz|sprawdzcie)\s+""" + chainPattern + """\s*$""")
+        val chain = located.find(text)?.groupValues?.get(1)
+            ?: bare.matchEntire(text)?.groupValues?.get(1)
+            ?: return false
+        val cities = chain.split(Regex("""\s*(?:,|\bi\b|\boraz\b)\s*"""))
+            .map { it.replace(Regex("""^(?:w|we)\s+"""), "").trim() }
+        return cities.any { it !in aliases }
     }
 
     /** Polish locative forms are only for scope matching, not a global

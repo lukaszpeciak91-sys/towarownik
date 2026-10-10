@@ -1,5 +1,10 @@
 # Architecture
 
+## PR #102 — 2026-10-10 location-scope parser regression gate
+
+Scope parsing only treats a **complete named-locality phrase** as a city request: a bare city chain after a location-check command, or a terminal `w/we/dla + city chain`. Conjunctions `i`, `oraz` and commas are validated together, and every locality must resolve against the canonical OBI directory before inventory HTTP. Generic stock, quantifier and store noun phrases (e.g. `Sprawdź stany w innych marketach`) are not interpreted as unknown cities. Model `locations=[]` cannot bypass user-scope authorization. Original batching, timeout and partial coverage are unchanged.
+
+
 ## PR #102 — 2026-10-10 focused location authorization hardening
 
 The location-inventory tool has an **Android-side, operation-specific authorization guard** independent of model tool choices. Routine product advice, replacements and installation questions do not trigger `find_product_locations` inventory reads even if the model hallucinates a call. City/market restriction parsing is based on current **USER** wording and the canonical directory, not model arguments: unknown explicit cities (including `Sprawdź w Tarnowie` with `locations=[]`) fail typed `unknown_location` with zero HTTP. A free three-digit product dimension (e.g. `listwa 100 cm`) is not a store reference; market IDs only match contextualized `market/OBI/sklep/oddział <id>` mentions. Broad explicitly authorized other-market requests still check 61 stores in 4 sequential service reads and up to 7 requests. The total OBI scan has a **45-second wall-clock budget** (injectable in tests), in addition to PR #101's per-request 15-second timeout. On that deadline the coroutine cancels the in-flight HTTP request; already confirmed results remain trusted and unchecked markets remain unknown with partial coverage. Genuine user/job cancellation propagates. Chat presentation reconstructs `all other markets — incomplete` from canonical requested IDs even though evidence quality is `partial`.

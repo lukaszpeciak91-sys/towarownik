@@ -1,5 +1,10 @@
 # Progress
 
+## PR #102 — 2026-10-10 scope parser regression closure
+
+Replaced single-token unknown-city detection and `i`-only checks with complete named-locality phrase validation. Added deterministic tests for four generic all-other requests, seven known/unknown multi-city conjunction examples with empty model hints and canonical four-market Kraków scope. Existing 61-market batching, partial failure, execution deadline, trusted product, KWANT and WorkingProfile behavior remain untouched.
+
+
 ## PR #102 — 2026-10-10 focused location authorization hardening
 
 Scope authorization hardened: focused explicit user inventory-intent gate before any location network access; unknown city without model hints rejected; store ID extraction requires explicit market context; partial 61-market headings state all-other scope and incomplete results; 45-second total bounded OBI scan with injectable fast deterministic timeout test and verified partial-result preservation. No WorkingProfile write, discovery regression or KWANT contract change.
