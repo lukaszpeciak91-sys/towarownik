@@ -324,6 +324,12 @@ class AdvisorLocationFollowUpReportsTest {
         )
         assertEquals("unavailable", dimensions.status)
         assertEquals(listOf("7027", "7035"), adapterReads)
+        val watts = check(
+            "Sprawdź 1000 W w oddziale Zamość",
+            listOf(old), "7035",
+        )
+        assertEquals("unavailable", watts.status)
+        assertEquals(listOf("7027", "7035", "7035"), adapterReads)
     }
 
 
