@@ -5,7 +5,7 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
-// Phase A1 transport contract; the current picker still selects images/PDFs only.
+// Shared Phase A1 wire contract and Phase A2 Android picker normalization.
 internal const val TEXT_ATTACHMENT_MAX_BYTES = 1024L * 1024L
 
 private val TEXT_MIME_BY_EXTENSION: Map<String, Set<String>> = mapOf(
@@ -52,3 +52,57 @@ internal fun decodedTextAttachmentOrNull(bytes: ByteArray): String? {
     }) return null
     return text
 }
+
+/** Android document-provider MIME labels vary; normalize only for known extensions.
+ * Wire metadata still uses the exact Phase A1 extension/MIME pair allowlist.
+ */
+internal fun normalizedPickedTextMime(filename: String, reportedMime: String?): String? {
+    val extension = filename.substringAfterLast('.', "").lowercase(Locale.ROOT)
+    val allowed = TEXT_MIME_BY_EXTENSION[extension] ?: return null
+    val reported = reportedMime?.substringBefore(';')?.trim()?.lowercase(Locale.ROOT)
+    if (reported != null && reported in allowed) return reported
+    val generic = reported == null || reported.isEmpty() ||
+        reported == "application/octet-stream" || reported == "binary/octet-stream"
+    val alias = when (extension) {
+        "json" -> reported in setOf("text/plain", "application/x-json", "text/x-json")
+        "xml" -> reported in setOf("text/plain", "application/x-xml")
+        "yaml", "yml" -> reported in setOf("text/plain", "application/x-yml", "text/x-yml")
+        "md" -> reported in setOf("text/x-markdown", "application/markdown")
+        "csv" -> reported in setOf("application/csv", "application/vnd.ms-excel")
+        "ini", "conf" -> reported in setOf("text/x-ini", "text/x-config")
+        "log" -> reported == "text/x-log"
+        else -> false
+    }
+    if (!generic && !alias) return null
+    return when (extension) {
+        "json" -> "application/json"
+        "xml" -> "application/xml"
+        "yaml", "yml" -> "application/yaml"
+        "md" -> "text/markdown"
+        "csv" -> "text/csv"
+        else -> "text/plain"
+    }
+}
+
+/** Preserve the final extension through sanitization and Worker's 128-char filename bound. */
+internal fun sanitizedTextAttachmentName(sourceName: String): String? {
+    val basename = sourceName.substringAfterLast('/').substringAfterLast('\\')
+        .replace(Regex("[\\u0000-\\u001f\\u007f]"), "").trim()
+    val extension = basename.substringAfterLast('.', "").lowercase(Locale.ROOT)
+    if (extension !in TEXT_MIME_BY_EXTENSION) return null
+    val suffix = ".$extension"
+    val stem = basename.dropLast(suffix.length).take(128 - suffix.length).trim()
+    if (stem.isBlank()) return null
+    return stem + suffix
+}
+
+internal fun textAttachmentExtension(filename: String): String =
+    filename.substringAfterLast('.', "").uppercase(Locale.ROOT)
+
+internal val ADVISOR_FILE_PICKER_MIME_TYPES = arrayOf(
+    "image/*", "application/pdf", "text/*", "application/json",
+    "application/xml", "application/x-xml", "application/yaml",
+    "application/x-yaml", "application/x-yml", "application/x-json",
+    "application/markdown", "application/csv", "application/vnd.ms-excel",
+    "application/octet-stream", "binary/octet-stream",
+)

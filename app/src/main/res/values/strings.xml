@@ -43,6 +43,9 @@
     <string name="attachment_error_missing_persisted">Załącznik nie jest już dostępny.</string>
     <string name="attachment_error_unsupported">Ten typ pliku nie jest obsługiwany.</string>
     <string name="attachment_error_too_large">Plik jest za duży.</string>
+    <string name="attachment_error_text_too_large">Plik tekstowy nie może przekroczyć 1 MiB.</string>
+    <string name="attachment_error_text_total_too_large">Pliki tekstowe mogą mieć łącznie maksymalnie 1 MiB.</string>
+    <string name="attachment_error_invalid_text">Nieprawidłowy plik tekstowy (UTF-8 lub dane binarne).</string>
     <string name="attachment_error_image">Nie udało się odczytać zdjęcia.</string>
     <string name="attachment_error_camera">Nie udało się zrobić zdjęcia.</string>
     <string name="attachment_error_open">Nie udało się otworzyć pliku.</string>

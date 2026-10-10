@@ -43,6 +43,9 @@
     <string name="attachment_error_missing_persisted">This attachment is no longer available.</string>
     <string name="attachment_error_unsupported">This file type is not supported.</string>
     <string name="attachment_error_too_large">The file is too large.</string>
+    <string name="attachment_error_text_too_large">Text files must not exceed 1 MiB each.</string>
+    <string name="attachment_error_text_total_too_large">Text files must total no more than 1 MiB.</string>
+    <string name="attachment_error_invalid_text">Invalid text file (UTF-8 or binary content).</string>
     <string name="attachment_error_image">The photo could not be read.</string>
     <string name="attachment_error_camera">The photo could not be taken.</string>
     <string name="attachment_error_open">The file could not be opened.</string>

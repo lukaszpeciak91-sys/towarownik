@@ -16,6 +16,10 @@ import pl.lukaszpeciak.towarownik.attachment.MultiPendingAttachmentOwnership
 import pl.lukaszpeciak.towarownik.attachment.PendingAttachmentsSaver
 import pl.lukaszpeciak.towarownik.attachment.MAX_ADVISOR_ATTACHMENTS
 import pl.lukaszpeciak.towarownik.attachment.MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+import pl.lukaszpeciak.towarownik.attachment.TEXT_ATTACHMENT_MAX_BYTES
+import pl.lukaszpeciak.towarownik.attachment.ADVISOR_FILE_PICKER_MIME_TYPES
+import pl.lukaszpeciak.towarownik.attachment.textAttachmentTotalBytes
+import pl.lukaszpeciak.towarownik.attachment.textAttachmentExtension
 import pl.lukaszpeciak.towarownik.attachment.appendOrReplaceAttachment
 import pl.lukaszpeciak.towarownik.attachment.canSendAdvisorComposer
 import androidx.activity.compose.BackHandler
@@ -395,6 +399,12 @@ private fun TowarownikApp() {
                                         replaceLocalId == null &&
                                         pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS
                                     ) AttachmentImportError.TOO_MANY
+                                    else if (
+                                        textAttachmentTotalBytes(pendingAttachments.filterNot {
+                                            it.localId == replaceLocalId
+                                        }) + (if (item.type == AttachmentType.TEXT) item.byteSize else 0L) >
+                                            TEXT_ATTACHMENT_MAX_BYTES
+                                    ) AttachmentImportError.TEXT_TOTAL_TOO_LARGE
                                     else AttachmentImportError.TOTAL_TOO_LARGE
                                     pendingAttachmentOwnership.discardImportedCandidate(item)
                                     break
@@ -703,6 +713,10 @@ private fun TowarownikApp() {
             submittedAttachments.sumOf { it.byteSize } > MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
         ) {
             attachmentError = AttachmentImportError.TOTAL_TOO_LARGE
+            return
+        }
+        if (textAttachmentTotalBytes(submittedAttachments) > TEXT_ATTACHMENT_MAX_BYTES) {
+            attachmentError = AttachmentImportError.TEXT_TOTAL_TOO_LARGE
             return
         }
         val turnProfile = selectedWorkingProfile
@@ -1115,7 +1129,7 @@ private fun TowarownikApp() {
                     onReplaceAttachment = { localId ->
                         replacementTarget = localId
                         pickerLaunchedAt = pickerEpoch
-                        replacePicker.launch(arrayOf("application/pdf", "image/*"))
+                        replacePicker.launch(ADVISOR_FILE_PICKER_MIME_TYPES)
                     },
                     onOpenCamera = {
                         if (pendingAttachments.size >= MAX_ADVISOR_ATTACHMENTS) {
@@ -1142,7 +1156,7 @@ private fun TowarownikApp() {
                             attachmentError = AttachmentImportError.TOO_MANY
                         } else {
                             pickerLaunchedAt = pickerEpoch
-                            filePicker.launch(arrayOf("application/pdf", "image/*"))
+                            filePicker.launch(ADVISOR_FILE_PICKER_MIME_TYPES)
                         }
                     },
                     onOpenProfileSelector = { profileMenuRequest++ },
@@ -2101,8 +2115,10 @@ private fun AdvisorComposer(
                                                 contentScale = ContentScale.Crop,
                                                 modifier = Modifier.size(40.dp),
                                             )
-                                        } else {
+                                        } else if (item.type == AttachmentType.PDF) {
                                             PdfAttachmentBadge(modifier = Modifier.size(38.dp))
+                                        } else {
+                                            TextAttachmentBadge(item.displayName, modifier = Modifier.size(38.dp))
                                         }
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
@@ -2111,7 +2127,9 @@ private fun AdvisorComposer(
                                                 style = MaterialTheme.typography.bodySmall,
                                             )
                                             Text(
-                                                text = formatAttachmentByteSize(item.byteSize),
+                                                text = if (item.type == AttachmentType.TEXT) {
+                                                    "${textAttachmentExtension(item.displayName)} · ${formatAttachmentByteSize(item.byteSize)}"
+                                                } else formatAttachmentByteSize(item.byteSize),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
@@ -2279,6 +2297,9 @@ private fun attachmentErrorText(error: AttachmentImportError): String = stringRe
     when (error) {
         AttachmentImportError.UNSUPPORTED_TYPE -> R.string.attachment_error_unsupported
         AttachmentImportError.TOO_LARGE -> R.string.attachment_error_too_large
+        AttachmentImportError.TEXT_TOO_LARGE -> R.string.attachment_error_text_too_large
+        AttachmentImportError.INVALID_TEXT -> R.string.attachment_error_invalid_text
+        AttachmentImportError.TEXT_TOTAL_TOO_LARGE -> R.string.attachment_error_text_total_too_large
         AttachmentImportError.TOO_MANY -> R.string.attachment_error_too_many
         AttachmentImportError.TOTAL_TOO_LARGE -> R.string.attachment_error_total_too_large
         AttachmentImportError.IMAGE_UNREADABLE -> R.string.attachment_error_image
@@ -2348,6 +2369,26 @@ private fun PdfAttachmentBadge(
     }
 }
 
+@Composable
+private fun TextAttachmentBadge(
+    filename: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(7.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = textAttachmentExtension(filename),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
 internal fun formatAttachmentByteSize(byteSize: Long): String {
     val value = when {
         byteSize < 1024L -> return "$byteSize B"
@@ -2390,7 +2431,14 @@ private fun UserAttachmentContent(
 ) {
     val context = LocalContext.current
     var imageFailed by remember(item.localId) { mutableStateOf(false) }
-    val renderKind = attachmentStorage.renderKind(item)
+    val renderKind = remember(
+        item.localId,
+        item.byteSize,
+        item.type,
+        item.mimeType,
+    ) {
+        attachmentStorage.renderKind(item)
+    }
     when {
         renderKind == AttachmentRenderKind.UNAVAILABLE ||
             imageFailed -> {
@@ -2459,9 +2507,11 @@ private fun UserAttachmentContent(
                         Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    PdfAttachmentBadge(
-                        modifier = Modifier.size(32.dp),
-                    )
+                    if (item.type == AttachmentType.TEXT) {
+                        TextAttachmentBadge(item.displayName, modifier = Modifier.size(32.dp))
+                    } else {
+                        PdfAttachmentBadge(modifier = Modifier.size(32.dp))
+                    }
                     Column {
                         Text(
                             text = item.displayName,
@@ -2470,9 +2520,9 @@ private fun UserAttachmentContent(
                                 MaterialTheme.typography.bodyMedium,
                         )
                         Text(
-                            text = formatAttachmentByteSize(
-                                item.byteSize,
-                            ),
+                            text = if (item.type == AttachmentType.TEXT) {
+                                "${textAttachmentExtension(item.displayName)} · ${formatAttachmentByteSize(item.byteSize)}"
+                            } else formatAttachmentByteSize(item.byteSize),
                             style =
                                 MaterialTheme.typography.bodySmall,
                             color =

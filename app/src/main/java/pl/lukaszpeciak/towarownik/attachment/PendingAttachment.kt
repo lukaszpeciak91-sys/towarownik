@@ -316,7 +316,8 @@ internal class MultiPendingAttachmentOwnership(
         candidate: AdvisorAttachment? = null,
     ): Boolean {
         if (next.size > 3 || next.map { it.localId }.distinct().size != next.size ||
-            next.sumOf { it.byteSize } > 24L * 1024 * 1024
+            next.sumOf { it.byteSize } > 24L * 1024 * 1024 ||
+            textAttachmentTotalBytes(next) > TEXT_ATTACHMENT_MAX_BYTES
         ) return false
         val nextIds = next.map { it.localId }.toSet()
         if (candidate != null && candidate.localId !in ids(STAGED)) return false
@@ -404,6 +405,9 @@ internal class MultiPendingAttachmentOwnership(
 internal const val MAX_ADVISOR_ATTACHMENTS = 3
 internal const val MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES = 24L * 1024 * 1024
 
+internal fun textAttachmentTotalBytes(items: List<AdvisorAttachment>): Long =
+    items.filter { it.type == AttachmentType.TEXT }.sumOf { it.byteSize }
+
 internal fun appendOrReplaceAttachment(
     items: List<AdvisorAttachment>,
     candidate: AdvisorAttachment,
@@ -417,7 +421,8 @@ internal fun appendOrReplaceAttachment(
     if (index >= 0) next[index] = candidate else next.add(candidate)
     return next.takeIf {
         it.size <= MAX_ADVISOR_ATTACHMENTS &&
-            it.sumOf { part -> part.byteSize } <= MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+            it.sumOf { part -> part.byteSize } <= MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES &&
+            textAttachmentTotalBytes(it) <= TEXT_ATTACHMENT_MAX_BYTES
     }
 }
 
@@ -430,7 +435,8 @@ internal fun canSendAdvisorComposer(
     enabled && !importInProgress &&
         (text.isNotBlank() || attachments.isNotEmpty()) &&
         attachments.size <= MAX_ADVISOR_ATTACHMENTS &&
-        attachments.sumOf { it.byteSize } <= MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES
+        attachments.sumOf { it.byteSize } <= MAX_ADVISOR_ATTACHMENT_TOTAL_BYTES &&
+        textAttachmentTotalBytes(attachments) <= TEXT_ATTACHMENT_MAX_BYTES
 
 internal val PendingAttachmentsSaver = Saver<MutableState<List<AdvisorAttachment>>, List<Any?>>(
     save = { state ->
