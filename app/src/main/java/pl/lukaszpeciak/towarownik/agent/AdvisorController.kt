@@ -386,9 +386,7 @@ internal class AdvisorController(
                     // identical retry, rather than spending a second local
                     // lookup budget (or performing duplicate provider work).
                     val priorDecision = deterministicLocationOutcomes[repeatKey]
-                    val evidence = if (priorDecision != null) {
-                        priorDecision
-                    } else if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
+                    val evidence = if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
                         if (localToolLimitContinuationSent) {
                             return AdvisorUiState.Error(AdvisorError.PROTOCOL).also(onState)
                         }
@@ -406,6 +404,11 @@ internal class AdvisorController(
                             verifiedAtMillis = null,
                             centralStock = null,
                         )
+                    } else if (priorDecision != null) {
+                        // Cached denials avoid duplicate provider work but still
+                        // count as logical model tool requests (hard budget = 3).
+                        toolCalls += 1
+                        priorDecision
                     } else {
                         toolCalls += 1
                         onState(AdvisorUiState.RunningLocalTool)
