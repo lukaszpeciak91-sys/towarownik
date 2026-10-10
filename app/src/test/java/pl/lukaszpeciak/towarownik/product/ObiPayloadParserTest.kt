@@ -356,6 +356,41 @@ class ObiPayloadParserTest {
     }
 
     @Test
+    fun `OBI explicit sales unit fact maps store stock to meters without name inference`() {
+        val product = parser.parse(
+            optionalRichFixture(
+                """,
+                "productOverview":["Sprzedaż: na metry"],
+                "technicalData":{"productDetails":[{"key":"Długość [m]","value":"1"}]}
+                """.trimIndent(),
+            ),
+            "3496072",
+            STORE,
+        ).getOrThrow()
+
+        assertEquals(4, product.stock)
+        assertEquals("m", product.stockUnit)
+    }
+
+    @Test
+    fun `OBI explicit square meter sales unit is preserved and unrelated dimensions are ignored`() {
+        val product = parser.parse(
+            optionalRichFixture(
+                """,
+                "technicalData":{"productDetails":[
+                  {"key":"Jednostka sprzedaży","value":"m²"},
+                  {"key":"Szerokość","value":"100 cm"}
+                ]}
+                """.trimIndent(),
+            ),
+            "3496072",
+            STORE,
+        ).getOrThrow()
+
+        assertEquals("m²", product.stockUnit)
+    }
+
+    @Test
     fun `real OBI structure does not use online seller price or shipping cost as local price`() {
         val product = parser.parse(fixture("real-7313810-store-075.html"), OBIK, STORE).getOrThrow()
 
