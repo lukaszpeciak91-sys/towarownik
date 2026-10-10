@@ -3,7 +3,7 @@
 ## 2026-10-10 — lightweight text attachments Phase A1
 
 - Permit exactly ten specified UTF-8 text-like extensions under v5 multipart, with a strict extension/MIME matrix and no generic octet-stream fallback; image/PDF validation and v4 remain identical.
-- Enforce 1 MiB per new text file to limit decoded prompt/memory cost while preserving 3 files, 16 MiB image/PDF, and 24 MiB aggregate limits. Reject invalid UTF-8, binary signatures and control characters before OpenAI, even in a mixed multipart.
+- Enforce 1 MiB per new text file and 1 MiB total TEXT bytes per v5 turn to limit decoded prompt/memory cost while preserving 3 files, 16 MiB image/PDF, and 24 MiB aggregate transport limits. Image/PDF bytes do not consume the separate text budget. Reject invalid UTF-8, binary signatures and control characters before OpenAI, even in a mixed multipart.
 - Insert accepted text as ordered, explicitly untrusted `input_text` with JSON-quoted sanitized filename. The Android transport supports TEXT type metadata/preflight, but image/PDF picker, Room v12, provider authority, and JSON-only continuation do not change.
 - Defer XLS/XLSX, DOCX, archives and user-facing text selection to separate phases.
 

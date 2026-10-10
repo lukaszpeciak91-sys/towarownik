@@ -76,7 +76,7 @@ npm test
 
 For later Cloudflare repository setup, use `proxy` as the root directory and `towarownik-proxy` as the Worker name. Future secret names are documented in `proxy/README.md`; no secret is required for `/health`.
 
-Phase A1 extends v5 transport (not the current picker) with strictly allowlisted `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.log`, `.ini`, and `.conf` data. These are validated UTF-8 and sent as untrusted `input_text` with sanitized filenames, up to 1 MiB each, within existing multipart bounds; image/PDF behavior and Room v12 remain unchanged. XLS/XLSX/DOCX/ZIP are still unsupported.
+Phase A1 extends v5 transport (not the current picker) with strictly allowlisted `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.log`, `.ini`, and `.conf` data. These are validated UTF-8 and sent as untrusted `input_text` with sanitized filenames, up to 1 MiB per text file and 1 MiB total across all text attachments in one v5 turn, within existing multipart bounds; image/PDF behavior and Room v12 remain unchanged. XLS/XLSX/DOCX/ZIP are still unsupported.
 
 ## AI usage baseline and local budget
 
