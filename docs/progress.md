@@ -2,7 +2,7 @@
 
 ## 2026-10-10 — Inventory conversation follow-up regression work
 
-Added a 12-message / four-user-turn history evidence contract and a bounded verified-product referent resolver for Advisor location tool calls; MainActivity passes only preceding persisted messages. Added Miejsce Piastowe alias, explicit 054/052 conflict reason, and relative-clause all-other stock request parsing. KWANT exactly-two-products "obu" remains typed unavailable before unverified extended HTTP. Added reconstructed OBI/KWANT report tests, an Android Controller duplicate-rejection budget test, and preserved all existing provider/parser and Worker protocols.
+Added a 12-message / four-user-turn history evidence contract and a bounded verified-product referent resolver for Advisor location tool calls; MainActivity passes only preceding persisted messages. Added Miejsce Piastowe alias, explicit 054/052 conflict reason, and relative-clause all-other stock request parsing. KWANT exactly-two-products "obu" remains typed unavailable before unverified extended HTTP. Added reconstructed OBI/KWANT report tests, real Worker-envelope-to-Controller authorization with trace, a duplicate-rejection/fourth-call budget test, and preserved all existing provider/parser and Worker protocols.
 
 
 ## 2026-10-10 — Verified stock units for OBI/KWANT cards
