@@ -402,8 +402,8 @@ private fun TowarownikApp() {
                                     else if (
                                         textAttachmentTotalBytes(pendingAttachments.filterNot {
                                             it.localId == replaceLocalId
-                                        }) + if (item.type == AttachmentType.TEXT) item.byteSize else 0L >
-                                        TEXT_ATTACHMENT_MAX_BYTES
+                                        }) + (if (item.type == AttachmentType.TEXT) item.byteSize else 0L) >
+                                            TEXT_ATTACHMENT_MAX_BYTES
                                     ) AttachmentImportError.TEXT_TOTAL_TOO_LARGE
                                     else AttachmentImportError.TOTAL_TOO_LARGE
                                     pendingAttachmentOwnership.discardImportedCandidate(item)
