@@ -51,6 +51,7 @@ import coil3.compose.AsyncImage
 import java.time.format.DateTimeFormatter
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.formatStockQuantity
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
@@ -72,6 +73,7 @@ internal data class VerifiedProductUiModel(
     val articleNumber: String? = null,
     val branchLabel: String? = null,
     val priceScope: ProviderPriceScope? = null,
+    val stockUnit: String? = null,
 )
 
 internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
@@ -82,6 +84,7 @@ internal fun VerifiedProductSnapshot.toVerifiedProductUiModel():
         grossPrice = grossPrice,
         stock = stock,
         centralStock = centralStock,
+        stockUnit = stockUnit,
         productUrl = productUrl,
         primaryImageUrl = primaryImageUrl,
         verifiedAt = verifiedAt,
@@ -125,20 +128,20 @@ internal fun formatVerifiedProductTimestampValue(
         .format(VERIFIED_AT_FORMATTER)
 
 @Composable
-internal fun formatStoreStock(stock: Int?): String {
+internal fun formatStoreStock(stock: Int?, stockUnit: String? = null): String {
     val resource = stockStringRes(stock)
     return if (stock != null && stock > 0) {
-        stringResource(resource, stock)
+        stringResource(resource, formatStockQuantity(stock, stockUnit))
     } else {
         stringResource(resource)
     }
 }
 
 @Composable
-internal fun kwantBranchStock(stock: Int?): String = when {
+internal fun kwantBranchStock(stock: Int?, stockUnit: String? = null): String = when {
     stock == null -> stringResource(R.string.product_branch_stock_unknown)
     stock == 0 -> stringResource(R.string.product_branch_stock_zero)
-    else -> stringResource(R.string.product_branch_stock_count, stock)
+    else -> stringResource(R.string.product_branch_stock_count, formatStockQuantity(stock, stockUnit))
 }
 
 @Composable
@@ -263,9 +266,9 @@ internal fun AdvisorVerifiedProductCard(
                             text = if (
                                 product.providerId == KWANT_PROVIDER_ID.value
                             ) {
-                                kwantBranchStock(product.stock)
+                                kwantBranchStock(product.stock, product.stockUnit)
                             } else {
-                                formatStoreStock(product.stock)
+                                formatStoreStock(product.stock, product.stockUnit)
                             },
                             style =
                                 MaterialTheme.typography.bodyLarge,
@@ -278,7 +281,7 @@ internal fun AdvisorVerifiedProductCard(
                             Text(
                                 text = stringResource(
                                     R.string.product_central_stock,
-                                    product.centralStock,
+                                    formatStockQuantity(product.centralStock, product.stockUnit),
                                 ),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -431,7 +434,7 @@ internal fun VerifiedProductCard(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = formatStoreStock(product.stock),
+                text = formatStoreStock(product.stock, product.stockUnit),
                 style = MaterialTheme.typography.bodyLarge,
                 color = stockColor,
             )
