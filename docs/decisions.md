@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-10 — Product stock units must be provider-verified, never inferred
+
+- KWANT: use the product `unit` only from trusted, product-ID-matched frontend product or branch-current payloads; for the latter also require the requested department ID. Explicit conflicts yield null. The same verified product unit applies to selected-branch and central stock amounts.
+- OBI: existing real PDP fixtures contain no store-tied stock unit. Leave units null until a trusted explicit store/product field is evidenced; do not infer "szt." from a product name, category or pricing.
+- Present positive stock as a numeric count plus a safe verified unit, otherwise just the count. Confirmed zero and unknown stock do not imply any unit.
+- Add nullable `stockUnit` to provider products, snapshots, manual/Advisor UI state and Room v13 via additive migration; historical cards remain readable with null unit. Do not alter inventory/lookup authority.
+
+
 ## 2026-10-10 — Advisor selectable answers and history tail positioning
 
 - Render plain and cited assistant answers as selectable Compose Text inside SelectionContainer. Inline numbered citations use native LinkAnnotation.Url so they remain clickable, with the existing clickable source list unchanged.
