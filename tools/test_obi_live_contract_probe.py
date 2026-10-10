@@ -1155,63 +1155,64 @@ class MultiMarketResearchTest(unittest.TestCase):
     def test_stock_batch_requested_vs_returned_rows_and_missing_unknown(self):
         r = self.r
         record = self.observed_stock_record([
-            {"storeNumber": "003", "stock": 0},
-            {"storeNumber": "075", "stock": None},
+            {"storeId": "003", "availableQuantity": 0},
+            {"storeId": "075", "availableQuantity": 12},
         ], "storeIds=003%2C075%2C074")
         coverage = r.stock_request_coverage(record, self.stores)
         self.assertTrue(coverage["requestIdsVerified"])
         self.assertEqual(["003", "075", "074"],
                          coverage["requestedCanonicalIds"])
-        self.assertEqual(["003", "075"],
-                         coverage["returnedTrustedIds"])
+        self.assertEqual(["003", "075"], coverage["returnedTrustedIds"])
         self.assertEqual(["074"], coverage["missingRequestedIds"])
         self.assertTrue(coverage["returnedSubsetOfRequest"])
         self.assertFalse(coverage["everyRequestedStoreHasTrustedState"])
         self.assertTrue(coverage["omittedIsUnknown"])
-        self.assertEqual(0, r.verified_rows(record, self.stores)["003"]["value"])
-        self.assertEqual("unknown_null",
-                         r.verified_rows(record, self.stores)["075"]["state"])
-        self.assertNotIn("074", r.verified_rows(record, self.stores))
-        self.assertEqual("F_INCONCLUSIVE",
-            r.classify_contract([record], self.stores, self.obik)["type"])
+        verified = r.product_bound_stock_rows(record, self.stores, self.obik)
+        self.assertEqual(0, verified["003"]["value"])
+        self.assertEqual(12, verified["075"]["value"])
+        self.assertNotIn("074", verified)
+        # Only two actually returned states; omitted requested 074 is not 0.
+        result = r.classify_contract([record], self.stores, self.obik)
+        self.assertEqual("B_ONE_SHOT_SUBSET", result["type"])
+        self.assertEqual("PRODUCT_BOUND_PARTIAL_REQUESTED_STORE_BATCH",
+                         result["reason"])
 
     def test_known_stock_batch_can_be_but_is_not_yet_live_classified(self):
         r = self.r
         record = self.observed_stock_record([
-            {"storeNumber": "003", "stock": 0},
-            {"storeNumber": "075", "stock": 12},
+            {"storeId": "003", "availableQuantity": 0},
+            {"storeId": "075", "availableQuantity": 12},
         ], "storeIds=003%2C075")
-        self.assertEqual("B_ONE_SHOT_SUBSET",
-            r.classify_contract([record], self.stores, self.obik)["type"])
+        outcome = r.classify_contract([record], self.stores, self.obik)
+        self.assertEqual("B_ONE_SHOT_SUBSET", outcome["type"])
+        self.assertEqual("PRODUCT_BOUND_REQUESTED_STORE_BATCH", outcome["reason"])
         unexpected = self.observed_stock_record([
-            {"storeNumber": "003", "stock": 0},
-            {"storeNumber": "074", "stock": 12},
+            {"storeId": "003", "availableQuantity": 0},
+            {"storeId": "074", "availableQuantity": 12},
         ], "storeIds=003%2C075")
         self.assertEqual("F_INCONCLUSIVE",
             r.classify_contract([unexpected], self.stores, self.obik)["type"])
         no_query = self.observation([
-            {"storeNumber": "003", "stock": 0},
-            {"storeNumber": "075", "stock": 12},
+            {"storeId": "003", "availableQuantity": 0},
+            {"storeId": "075", "availableQuantity": 12},
         ], path="/api/pdp/v1/stock/3496072", action="availability:open")
         self.assertEqual("F_INCONCLUSIVE",
             r.classify_contract([no_query], self.stores, self.obik)["type"])
         all_ids = ",".join(self.stores)
         full = self.observed_stock_record([
-            {"storeNumber": sid, "stock": idx}
+            {"storeId": sid, "availableQuantity": idx}
             for idx, sid in enumerate(self.stores)
         ], "storeIds=" + all_ids)
         self.assertEqual("A_ONE_SHOT_ALL_STORES",
             r.classify_contract([full], self.stores, self.obik)["type"])
         subset_of_full = self.observed_stock_record([
-            {"storeNumber": "003", "stock": 0},
-            {"storeNumber": "075", "stock": 5},
+            {"storeId": "003", "availableQuantity": 0},
+            {"storeId": "075", "availableQuantity": 5},
         ], "storeIds=" + all_ids)
         self.assertEqual("B_ONE_SHOT_SUBSET",
             r.classify_contract([subset_of_full], self.stores, self.obik)["type"])
-        # Even complete response cannot be A unless the request also
-        # explicitly covered every canonical OBI market.
         not_requested = self.observed_stock_record([
-            {"storeNumber": sid, "stock": idx}
+            {"storeId": sid, "availableQuantity": idx}
             for idx, sid in enumerate(self.stores)
         ], "storeIds=003%2C075")
         self.assertEqual("F_INCONCLUSIVE",
