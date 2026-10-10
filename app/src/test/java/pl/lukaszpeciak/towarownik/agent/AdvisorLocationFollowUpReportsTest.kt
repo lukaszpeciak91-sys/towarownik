@@ -129,6 +129,7 @@ class AdvisorLocationFollowUpReportsTest {
         val kwantBranches = listOf(
             ProviderBranch(BranchId("205"), "Nowy Sącz"),
             ProviderBranch(BranchId("128"), "Zamość"),
+            ProviderBranch(BranchId("216"), "Tarnów"),
         )
         val initial = listOf(
             assistant(first, second),
