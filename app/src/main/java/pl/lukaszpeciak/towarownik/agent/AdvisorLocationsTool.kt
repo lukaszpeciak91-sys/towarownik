@@ -319,10 +319,17 @@ internal class AdvisorLocationsTool(
             .containsMatchIn(text)
         val explicitlyLocated = Regex("""\b(?:w|we|dla)\s+[a-z0-9]""")
             .containsMatchIn(text)
+        // A short "Sprawdź Kraków [i Tarnów]" is a location-scoped check.
+        // It is NOT broad-network permission: authorization still has to
+        // resolve each locality against the canonical directory.
+        val explicitCityPhrase = Regex(
+            """\b(?:sprawdz|sprawdzcie)\s+[a-z]{4,}(?:\s+i\s+[a-z]{4,})?\s*$""",
+        ).containsMatchIn(text)
         return (multiLocation && (stockOrAvailability || locationNoun || where)) ||
             (locationNoun && (check || where) && stockOrAvailability) ||
             (check && explicitlyLocated) ||
             (stockOrAvailability && explicitlyLocated) ||
+            (check && explicitCityPhrase) ||
             (where && stockOrAvailability && locationNoun)
     }
 
