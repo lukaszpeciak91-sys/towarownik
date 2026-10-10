@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — Advisor chat selection and reopen-to-bottom
+
+Assistant answer text is selectable/copyable with native clickable inline citation links. Existing history opens at the newest message and live turns follow the tail while the reader remains near the bottom; scrolling back to older messages suspends automatic movement. Empty new chats, persisted citations, product cards, transport and Room are unchanged. Focused annotation and scroll-policy tests added.
+
+
 ## 2026-10-10 — Location hint equivalence fix
 
 Reused canonical-city aliases and existing market-label matching when validating model location hints in Android. Added regressions for Kraków/Krakowie/empty hints and four canonical stores; Nowy Sącz/Nowym Sączu/OBI 075; contextual OBI 003; contradictory/unknown hints; unknown user city; full-network empty hints and 100 cm product dimension. Added a Worker-compatible JSON envelope → Android proxy parse → typed locations execution integration test with synthetic stock. No Worker, product transport, Room, WorkingProfile or UI changes.
