@@ -90,7 +90,7 @@ class ProductLocationsTest {
         assertEquals(10, result.coverage.returnedIds.size)
         assertTrue(result.coverage.missingIds.isEmpty())
         assertEquals(0, result.locations.single { it.branch.branchId == wanted[0] }.stock)
-        assertEquals(777, result.verifiedAtMillis)
+        assertEquals(777L, result.verifiedAtMillis)
         assertNull(result.centralStock)
     }
 
