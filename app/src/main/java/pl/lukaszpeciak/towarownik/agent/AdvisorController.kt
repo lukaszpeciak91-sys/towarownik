@@ -92,6 +92,7 @@ internal class AdvisorController(
         AdvisorLocationArguments,
         String,
         String,
+        String,
         Collection<VerifiedProductSnapshot>,
         List<VerifiedProductSnapshot>,
     ) -> AdvisorLocationEvidence)? = null,
@@ -386,6 +387,7 @@ internal class AdvisorController(
                             executeLocationsTool?.invoke(
                                 locationRequest.arguments,
                                 conversationProviderId,
+                                conversationStoreNumber,
                                 normalizedInput,
                                 verifiedByKey.values.toList(),
                                 historicalVerifiedProducts,

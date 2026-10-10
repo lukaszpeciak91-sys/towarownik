@@ -66,7 +66,7 @@ class AdvisorLocationsControllerTest {
         initial: AdvisorProxyCallResult,
         continueCall: suspend (AdvisorToolContinuation) -> AdvisorProxyCallResult,
         locationCall: suspend (
-            AdvisorLocationArguments, String, String,
+            AdvisorLocationArguments, String, String, String,
             Collection<VerifiedProductSnapshot>, List<VerifiedProductSnapshot>,
         ) -> AdvisorLocationEvidence,
         onDiscovery: () -> AdvisorToolExecutionResult = { verified() },
@@ -100,7 +100,7 @@ class AdvisorLocationsControllerTest {
                     else -> error("Unexpected tool")
                 }
             },
-            locationCall = { _, _, _, current, _ ->
+            locationCall = { _, _, _, _, current, _ ->
                 trustedCurrent = current.toList()
                 evidence
             },
@@ -123,7 +123,8 @@ class AdvisorLocationsControllerTest {
                 assertTrue(output is AdvisorToolContinuation.Locations)
                 answer()
             },
-            locationCall = { args, provider, input, current, past ->
+            locationCall = { args, provider, selected, input, current, past ->
+                assertEquals("075", selected)
                 called++
                 assertEquals(ref, args)
                 assertEquals("obi-pl", provider)
@@ -163,7 +164,7 @@ class AdvisorLocationsControllerTest {
                     else -> error("Extra tool")
                 }
             },
-            locationCall = { _, _, _, _, _ ->
+            locationCall = { _, _, _, _, _, _ ->
                 locations++
                 evidence
             },
@@ -183,7 +184,7 @@ class AdvisorLocationsControllerTest {
         val c = controller(
             initial = answer(),
             continueCall = { error("No tool") },
-            locationCall = { _, _, _, _, _ -> locations++; evidence },
+            locationCall = { _, _, _, _, _, _ -> locations++; evidence },
             onDiscovery = { error("No discovery") },
         )
         assertTrue(c.runTurn(input = "Jak dobrać kabel?", previousResponseId = null) {} is AdvisorUiState.Success)
