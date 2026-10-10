@@ -270,12 +270,27 @@ internal class AdvisorLocationsTool(
                     normalized, it.lowercase(),
                 ) } == true)
         }
-        val allNumericIds = Regex("""(?<![0-9])[0-9]{7,13}(?![0-9])""")
-            .findAll(normalized).map { it.value }.toList()
-        if (allNumericIds.isNotEmpty() &&
-            allNumericIds.any { number -> candidates.none {
-                it.effectiveProductId == number || it.articleNumber == number
-            } }) return null
+        // Short KWANT IDs need the same fail-closed identity boundary as
+        // long OBIK/EAN values. Four-to-six-digit numbers count only in
+        // explicit product/identifier contexts or a direct "sprawdź 7027".
+        // Ordinary measurements and three-digit OBI markets are not IDs.
+        val explicitProductNumbers = Regex(
+            """\b(?:obik|ean|sku|id(?:\s+produktu)?|produkt(?:u|y|ow)?|""" +
+                """kod(?:u)?|art\.?|artykul(?:u)?|indeks(?:u)?|""" +
+                """model(?:u)?|gniazd(?:a|o)|numer(?:\s+katalogowy)?|""" +
+                """nr(?:\s+katalogowy)?)\s*(?:nr\s*)?[:#-]?\s*([0-9]{4,13})\b""",
+        ).findAll(normalized).map { it.groupValues[1] }
+        val directCheckNumbers = Regex("""\bsprawdz(?:cie)?\s+([0-9]{4,6})\b""")
+            .findAll(normalized).map { it.groupValues[1] }
+        val longNumbers = Regex("""(?<![0-9])[0-9]{7,13}(?![0-9])""")
+            .findAll(normalized).map { it.value }
+        val referencedNumbers = (explicitProductNumbers + directCheckNumbers + longNumbers)
+            .toSet()
+        if (referencedNumbers.any { number -> candidates.none {
+                it.effectiveProductId.equals(number, ignoreCase = true) ||
+                    it.articleNumber?.equals(number, ignoreCase = true) == true
+            } }
+        ) return null
 
         val trusted = when {
             explicit.size == 1 -> explicit.single()
@@ -377,7 +392,7 @@ internal class AdvisorLocationsTool(
         // measurements such as "listwa 100 cm" are not location identifiers.
         val cityAliases = obiCityAliases(directory)
         val marketCityNumber = Regex(
-            """\b(?:market\w*|obi)\s+w\s+([a-z ]+?)\s+([0-9]{3})(?:\s+bodajze)?\s*$""",
+            """\b(?:a\s+w|(?:market\w*|obi)\s+w)\s+([a-z ]+?)\s+([0-9]{3})(?:\s+bodajze)?\s*$""",
         ).find(text)
         if (marketCityNumber != null) {
             val city = marketCityNumber.groupValues[1].trim()
@@ -434,7 +449,7 @@ internal class AdvisorLocationsTool(
         val aliases = linkedMapOf<String, List<ProviderBranch>>()
         for ((name, branches) in cities) {
             aliases[name] = branches
-            cityLocative(name)?.let { aliases[it] = branches }
+            advisorCityLocative(name)?.let { aliases[it] = branches }
         }
         return aliases
     }
@@ -577,25 +592,6 @@ internal class AdvisorLocationsTool(
             else ParsedLocationScope.Restricted(ids)
     }
 
-    /** Only deterministic canonical name inflections: no fuzzy city guesses. */
-    private fun cityLocative(canonical: String): String? = when (canonical) {
-        "nowy sacz" -> "nowym saczu"
-        "miejsce piastowe" -> "miejscu piastowym"
-        "lodz" -> "lodzi"
-        "wroclaw" -> "wroclawiu"
-        "gdansk" -> "gdansku"
-        "poznan" -> "poznaniu"
-        "torun" -> "toruniu"
-        "lublin" -> "lublinie"
-        "dabrowa gornicza" -> "dabrowie gorniczej"
-        "gorzow wielkopolski" -> "gorzowie wielkopolskim"
-        else -> when {
-            canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
-            canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
-            canonical.endsWith("ansk") -> canonical + "u"
-            else -> null
-        }
-    }
 
     private fun normLocationScope(text: String): String =
         Normalizer.normalize(text.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
@@ -642,4 +638,25 @@ internal class AdvisorLocationsTool(
         verifiedAtMillis = null,
         centralStock = null,
     )
+}
+
+/** Only deterministic canonical name inflections: no fuzzy city guesses. */
+internal fun advisorCityLocative(canonical: String): String? = when (canonical) {
+    "nowy sacz" -> "nowym saczu"
+    "miejsce piastowe" -> "miejscu piastowym"
+    "zamosc" -> "zamosciu"
+    "lodz" -> "lodzi"
+    "wroclaw" -> "wroclawiu"
+    "gdansk" -> "gdansku"
+    "poznan" -> "poznaniu"
+    "torun" -> "toruniu"
+    "lublin" -> "lublinie"
+    "dabrowa gornicza" -> "dabrowie gorniczej"
+    "gorzow wielkopolski" -> "gorzowie wielkopolskim"
+    else -> when {
+        canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
+        canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
+        canonical.endsWith("ansk") -> canonical + "u"
+        else -> null
+    }
 }
