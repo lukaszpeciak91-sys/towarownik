@@ -96,11 +96,11 @@
     <string name="product_price_unknown">Price: no data</string>
     <string name="product_online_price">Online price (indicative): %1$s zł</string>
     <string name="product_online_price_unknown">Online price (indicative): no data</string>
-    <string name="product_branch_stock_count">Selected branch stock: %1$d</string>
+    <string name="product_branch_stock_count">Selected branch stock: %1$s</string>
     <string name="product_branch_stock_zero">Selected branch stock: 0 — unavailable</string>
     <string name="product_branch_stock_unknown">Selected branch stock: no data</string>
-    <string name="product_central_stock">Central stock: %1$d</string>
-    <string name="product_stock_count">Stock: %1$d</string>
+    <string name="product_central_stock">Central stock: %1$s</string>
+    <string name="product_stock_count">Stock: %1$s</string>
     <string name="product_stock_zero">Stock: 0 — unavailable</string>
     <string name="product_stock_unknown">Stock: no data</string>
     <string name="product_verified_at">Checked %1$s</string>
