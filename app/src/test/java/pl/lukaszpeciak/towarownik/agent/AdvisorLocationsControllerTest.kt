@@ -1,6 +1,8 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import kotlinx.coroutines.runBlocking
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,6 +11,15 @@ import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ObiProductProvider
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
+import pl.lukaszpeciak.towarownik.product.provider.LocationCoverage
+import pl.lukaszpeciak.towarownik.product.provider.LocationCoverageKind
+import pl.lukaszpeciak.towarownik.product.provider.LocationStock
+import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsAdapter
+import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsResult
+import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsService
+import pl.lukaszpeciak.towarownik.product.provider.ProductRef
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
+import pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
 
 /** Offline orchestration: synthetic IDs and quantities, no upstream or provider HTTP. */
 class AdvisorLocationsControllerTest {
@@ -70,15 +81,28 @@ class AdvisorLocationsControllerTest {
             Collection<VerifiedProductSnapshot>, List<VerifiedProductSnapshot>,
         ) -> AdvisorLocationEvidence,
         onDiscovery: () -> AdvisorToolExecutionResult = { verified() },
+        onProviderDiscovery: (AdvisorToolArguments) -> AdvisorToolExecutionResult = {
+            onDiscovery()
+        },
     ) = AdvisorController(
         isConfigured = { true },
         startAgent = { _, _, _ -> initial },
         messageAgent = { _, _, _, _ -> initial },
         continueAgent = { _, _, _, _, _, continuation -> continueCall(continuation) },
         executeObiTool = { onDiscovery() },
-        executeProviderTool = { onDiscovery() },
+        executeProviderTool = { onProviderDiscovery(it) },
         executeLocationsTool = locationCall,
-        branchDirectory = { ObiProductProvider().branches() },
+        branchDirectory = { provider ->
+            if (provider.value == "kwant-pl") {
+                ProviderBranchResult.Available(listOf(
+                    ProviderBranch(BranchId("205"), "Nowy Sącz"),
+                    ProviderBranch(BranchId("128"), "Zamość"),
+                    ProviderBranch(BranchId("216"), "Tarnów"),
+                ))
+            } else {
+                ObiProductProvider().branches()
+            }
+        },
     )
 
     @Test fun `discovery then locations uses two local calls and historical card not promoted`() = runBlocking {
@@ -190,4 +214,382 @@ class AdvisorLocationsControllerTest {
         assertTrue(c.runTurn(input = "Jak dobrać kabel?", previousResponseId = null) {} is AdvisorUiState.Success)
         assertEquals(0, locations)
     }
+
+    @Test fun reportB_bothClarificationReturnsKwantUnavailableWithoutAnyInventoryCall() = runBlocking {
+        val kwantOne = snapshot.copy(
+            obik = "7035", productId = "7035", providerId = "kwant-pl",
+            articleNumber = "921871", storeNumber = "205", branchId = "205",
+        )
+        val kwantTwo = kwantOne.copy(
+            obik = "7027", productId = "7027", articleNumber = "921861",
+        )
+        val prior = listOf(
+            AdvisorLocationHistoryMessage("ASSISTANT", "Two cards", listOf(kwantOne, kwantTwo)),
+            AdvisorLocationHistoryMessage(
+                "USER", "a jaki jest stan tego gniazda 16 na 4 w oddziale w Zamościu?",
+            ),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Którego produktu?"),
+            AdvisorLocationHistoryMessage("USER", "obu"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Który oddział?"),
+        )
+        var inventoryCalls = 0
+        val response = AdvisorProxyCallResult.Success(
+            AdvisorProxyResult.LocationToolRequest(
+                responseId = "resp_kwant",
+                callId = "call_kwant",
+                arguments = AdvisorLocationArguments(
+                    "kwant-pl", "7035", listOf("Zamość"),
+                ),
+            ),
+        )
+        val c = controller(
+            initial = response,
+            continueCall = { output ->
+                val e = (output as AdvisorToolContinuation.Locations).evidence
+                assertEquals("unavailable", e.status)
+                assertEquals("unverified_request_contract", e.reason)
+                assertTrue(e.productId == null)
+                answer()
+            },
+            locationCall = { _, _, _, _, _, _ ->
+                inventoryCalls++
+                error("KWANT extended must remain disabled")
+            },
+        )
+        val result = c.runTurn(
+            input = "Zamość",
+            previousResponseId = "resp_prior",
+            conversationProviderId = "kwant-pl",
+            conversationStoreNumber = "205",
+            historicalVerifiedProducts = listOf(kwantOne, kwantTwo),
+            locationHistory = prior,
+        ) {}
+        assertTrue(result is AdvisorUiState.Success)
+        assertEquals(0, inventoryCalls)
+    }
+
+    @Test fun repeatedDeterministicLocationRejectionDoesNotConsumeSecondToolCall() = runBlocking {
+        var requested = 0
+        var continuations = 0
+        val c = controller(
+            initial = location(),
+            continueCall = { output ->
+                continuations++
+                val rejected = (output as AdvisorToolContinuation.Locations).evidence
+                assertEquals(
+                    if (continuations == 4) "local_tool_limit_reached" else "unknown_location",
+                    rejected.reason,
+                )
+                when (continuations) {
+                    1 -> location(2)
+                    2 -> location(3)
+                    3 -> location(4)
+                    else -> answer()
+                }
+            },
+            locationCall = { _, _, _, _, _, _ ->
+                requested++
+                AdvisorLocationEvidence(
+                    providerId = "obi-pl",
+                    productId = null,
+                    status = "rejected",
+                    reason = "unknown_location",
+                    coverage = "unknown",
+                    checkedIds = emptyList(),
+                    returnedIds = emptyList(),
+                    missingIds = emptyList(),
+                    locations = emptyList(),
+                    verifiedAtMillis = null,
+                    centralStock = null,
+                )
+            },
+        )
+        val result = c.runTurn(
+            input = "Sprawdź w Tarnowie",
+            previousResponseId = "previous",
+            historicalVerifiedProducts = listOf(snapshot),
+        ) {}
+        assertTrue(result is AdvisorUiState.Success)
+        assertEquals(1, requested) // No repeated inventory/adapter work.
+        assertEquals(4, continuations) // Fourth logical model tool hits the hard cap.
+    }
+
+
+
+    @Test fun workerCompatibleEnvelopeUsesBoundedHistoryAndPreservesTrace() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setHeader(
+                        "X-Taksula-Trace-Id",
+                        "33333333-3333-4333-8333-333333333333",
+                    )
+                    .setBody(
+                        """
+                        {
+                          "type":"tool_request",
+                          "responseId":"resp_stock",
+                          "tool":{
+                            "name":"find_product_locations",
+                            "callId":"call_stock",
+                            "arguments":{
+                              "providerId":"obi-pl",
+                              "productId":"6117543",
+                              "locations":["Miejscu Piastowym"]
+                            }
+                          },
+                          "webSearchCalls":0
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+            val proxy = AdvisorProxyClient(
+                appToken = "test-token",
+                baseUrl = server.url("/"),
+            )
+            val parsed = proxy.start(
+                message = "a w Miejscu Piastowym?",
+                providerId = "obi-pl",
+                branchId = "075",
+            )
+            assertTrue(parsed is AdvisorProxyCallResult.Success)
+            val product = snapshot.copy(
+                obik = "6117543", productId = "6117543",
+                storeNumber = "003", branchId = "003",
+            )
+            val old = snapshot.copy(
+                obik = "5524079", productId = "5524079",
+                storeNumber = "003", branchId = "003",
+            )
+            var locationCalls = 0
+            var inventoryReads = 0
+            val stockAdapter = object : ProductLocationsAdapter {
+                override val providerId = OBI_PROVIDER_ID
+                override suspend fun read(
+                    ref: ProductRef,
+                    requested: List<BranchId>,
+                    trustedProduct: ProviderProduct?,
+                ): ProductLocationsResult {
+                    inventoryReads++
+                    assertEquals(listOf(BranchId("052")), requested)
+                    assertEquals("6117543", ref.productId)
+                    return ProductLocationsResult.Available(
+                        ref,
+                        requested.map { LocationStock(
+                            ProviderBranch(it, "Miejsce Piastowe"), 4,
+                        ) },
+                        LocationCoverage(
+                            LocationCoverageKind.REQUESTED_SUBSET,
+                            requested, requested, 1,
+                        ),
+                        123L,
+                    )
+                }
+            }
+            val realTool = AdvisorLocationsTool(
+                locationsService = ProductLocationsService(listOf(stockAdapter)),
+            )
+            val c = controller(
+                initial = parsed,
+                continueCall = { continuation ->
+                    val evidence = (continuation as AdvisorToolContinuation.Locations).evidence
+                    assertEquals("6117543", evidence.productId)
+                    assertEquals("verified", evidence.status)
+                    assertEquals(listOf("052"), evidence.checkedIds)
+                    answer()
+                },
+                locationCall = { args, provider, selected, input, current, past ->
+                    locationCalls++
+                    assertEquals("6117543", args.productId)
+                    assertEquals("obi-pl", provider)
+                    assertEquals("075", selected)
+                    assertTrue(input.startsWith("Sprawdź stan produktu:"))
+                    assertTrue(current.isEmpty())
+                    assertEquals(listOf(product), past)
+                    realTool.execute(args, provider, selected, input, current, past)
+                },
+            )
+            val final = c.runTurn(
+                input = "a w Miejscu Piastowym?",
+                previousResponseId = "resp_prior",
+                historicalVerifiedProducts = listOf(product, old),
+                locationHistory = listOf(
+                    AdvisorLocationHistoryMessage(
+                        "ASSISTANT", "Two verified products", listOf(product, old),
+                    ),
+                    AdvisorLocationHistoryMessage(
+                        "USER", "Sprawdź OBIK 6117543 w market OBI 003",
+                    ),
+                    AdvisorLocationHistoryMessage(
+                        "ASSISTANT", "Verified selected", listOf(product),
+                    ),
+                ),
+            ) {}
+            assertTrue(final is AdvisorUiState.Success)
+            assertEquals(1, locationCalls)
+            assertEquals(1, inventoryReads)
+            assertEquals(
+                "33333333-3333-4333-8333-333333333333",
+                (final as AdvisorUiState.Success).traceId,
+            )
+        }
+    }
+
+
+
+    @Test fun untrustedLocationRequestMustBeReevaluatedAfterDiscoveryInSameTurn() = runBlocking {
+        var locationCalls = 0
+        var inventoryReads = 0
+        val adapter = object : ProductLocationsAdapter {
+            override val providerId = OBI_PROVIDER_ID
+            override suspend fun read(
+                ref: ProductRef,
+                requested: List<BranchId>,
+                trustedProduct: ProviderProduct?,
+            ): ProductLocationsResult {
+                inventoryReads++
+                assertEquals("3496072", ref.productId)
+                assertEquals(listOf(BranchId("075")), requested)
+                return ProductLocationsResult.Available(
+                    ref, requested.map {
+                        LocationStock(ProviderBranch(it, "Nowy Sącz"), 3)
+                    },
+                    LocationCoverage(
+                        LocationCoverageKind.REQUESTED_SUBSET,
+                        requested, requested, 1,
+                    ),
+                    123L,
+                )
+            }
+        }
+        val realTool = AdvisorLocationsTool(
+            locationsService = ProductLocationsService(listOf(adapter)),
+        )
+        var continuations = 0
+        val c = controller(
+            initial = location(),
+            continueCall = { output ->
+                continuations++
+                when (continuations) {
+                    1 -> {
+                        val first = (output as AdvisorToolContinuation.Locations).evidence
+                        assertEquals("rejected", first.status)
+                        assertEquals("untrusted_product", first.reason)
+                        assertEquals(0, inventoryReads)
+                        discovery()
+                    }
+                    2 -> {
+                        assertTrue(output is AdvisorToolContinuation.Verified)
+                        location(2)
+                    }
+                    3 -> {
+                        val second = (output as AdvisorToolContinuation.Locations).evidence
+                        assertEquals("verified", second.status)
+                        assertEquals(listOf("075"), second.checkedIds)
+                        assertEquals(1, inventoryReads)
+                        answer()
+                    }
+                    else -> error("Unexpected fourth tool")
+                }
+            },
+            locationCall = { args, provider, selected, input, current, past ->
+                locationCalls++
+                realTool.execute(args, provider, selected, input, current, past)
+            },
+            onDiscovery = { verified() },
+        )
+        val result = c.runTurn(
+            input = "Sprawdź stan produktu w OBI 075",
+            previousResponseId = "resp_prior",
+        ) {}
+        assertTrue(result is AdvisorUiState.Success)
+        assertEquals(2, locationCalls) // First denied, second re-evaluated after verification.
+        assertEquals(1, inventoryReads)
+        assertEquals(3, continuations) // All three logical local calls accounted for.
+    }
+
+
+
+    @Test fun kwantFindProductsSelectedAndOtherBranchNeverRequiresLocations() = runBlocking {
+        for ((userRequest, expectedBranch) in listOf(
+            "Sprawdź gniazda w oddziale Nowy Sącz" to "205",
+            "Sprawdź gniazda w oddziale Zamość" to "128",
+        )) {
+            var discoveries = 0
+            var locationCalls = 0
+            var continuations = 0
+            val request = AdvisorToolArguments(
+                storeNumber = expectedBranch,
+                providerId = "kwant-pl",
+                requestedBranch = expectedBranch,
+                queries = listOf(AdvisorToolQuery("gniazdo 16A 4P", 2)),
+            )
+            val initial = AdvisorProxyCallResult.Success(
+                AdvisorProxyResult.ToolRequest(
+                    responseId = "resp_kwant_discovery",
+                    callId = "call_kwant_discovery",
+                    arguments = request,
+                ),
+            )
+            val kwantSnapshot = snapshot.copy(
+                obik = "7027", productId = "7027",
+                providerId = "kwant-pl", articleNumber = "921861",
+                storeNumber = expectedBranch, branchId = expectedBranch,
+            )
+            val c = controller(
+                initial = initial,
+                continueCall = { output ->
+                    continuations++
+                    assertTrue(output is AdvisorToolContinuation.Verified)
+                    val verifiedResult = (output as AdvisorToolContinuation.Verified).result
+                    assertEquals("kwant-pl", verifiedResult.providerId)
+                    assertEquals(expectedBranch, verifiedResult.branchId)
+                    assertEquals("7027", verifiedResult.results.single().products.single().productId)
+                    answer()
+                },
+                locationCall = { _, _, _, _, _, _ ->
+                    locationCalls++
+                    error("find_product_locations must remain independent")
+                },
+                onProviderDiscovery = { arguments ->
+                    discoveries++
+                    assertEquals("kwant-pl", arguments.providerId)
+                    assertEquals(expectedBranch, arguments.storeNumber)
+                    assertEquals(expectedBranch, arguments.branchId)
+                    assertTrue(arguments.requestedBranch == null)
+                    AdvisorToolExecutionResult.Success(
+                        result = AdvisorVerifiedToolResult(
+                            storeNumber = expectedBranch,
+                            results = listOf(AdvisorVerifiedQueryResult(
+                                query = "gniazdo 16A 4P",
+                                status = AdvisorQueryResultStatus.VERIFIED,
+                                products = listOf(AdvisorVerifiedProduct(
+                                    obik = "7027",
+                                    productId = "7027",
+                                    name = "Fixture KWANT gniazdo",
+                                    stock = 4,
+                                    price = null,
+                                )),
+                            )),
+                            providerId = "kwant-pl",
+                        ),
+                        snapshots = listOf(kwantSnapshot),
+                    )
+                },
+            )
+            val state = c.runTurn(
+                input = userRequest,
+                previousResponseId = "resp_before",
+                conversationProviderId = "kwant-pl",
+                conversationStoreNumber = "205",
+            ) {}
+            assertTrue(userRequest, state is AdvisorUiState.Success)
+            assertEquals(userRequest, 1, discoveries)
+            assertEquals(userRequest, 1, continuations)
+            assertEquals(userRequest, 0, locationCalls)
+        }
+    }
+
+
 }

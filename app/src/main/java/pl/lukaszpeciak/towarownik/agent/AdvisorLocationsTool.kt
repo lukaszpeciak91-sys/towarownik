@@ -270,12 +270,41 @@ internal class AdvisorLocationsTool(
                     normalized, it.lowercase(),
                 ) } == true)
         }
-        val allNumericIds = Regex("""(?<![0-9])[0-9]{7,13}(?![0-9])""")
-            .findAll(normalized).map { it.value }.toList()
-        if (allNumericIds.isNotEmpty() &&
-            allNumericIds.any { number -> candidates.none {
-                it.effectiveProductId == number || it.articleNumber == number
-            } }) return null
+        // Short KWANT IDs need the same fail-closed identity boundary as
+        // long OBIK/EAN values. Four-to-six-digit numbers count only in
+        // explicit product/identifier contexts or a direct "sprawdź 7027".
+        // Ordinary measurements and three-digit OBI markets are not IDs.
+        // A quantity followed by a physical unit (1000 W, 25 m) is not
+        // a short product ID. A single "w" followed by a place remains a
+        // Polish location preposition rather than a watt unit.
+        fun hasMeasurementUnitAfter(endIndex: Int): Boolean {
+            val following = normalized.substring(endIndex + 1)
+            return Regex("""^\s*(?:mm|cm|m2|m3|m|kg|kw|kwh|v|a|l|ml|szt|opak)\b""")
+                .containsMatchIn(following) ||
+                Regex("""^\s*w\b(?:\s+w\b|\s*$|\s*[,.;!?])""")
+                    .containsMatchIn(following)
+        }
+        val explicitProductNumbers = Regex(
+            """\b(?:obik|ean|sku|id(?:\s+produktu)?|produkt(?:u|y|ow)?|""" +
+                """kod(?:u|zie)?|art\.?|artykul(?:u)?|indeks(?:u)?|""" +
+                """model(?:u)?|gniazd(?:a|o)|numer(?:\s+katalogowy)?|""" +
+                """nr(?:\s+katalogowy)?)\s*(?:nr\s*)?[:#-]?\s*([0-9]{4,13})\b""",
+        ).findAll(normalized)
+            .filterNot { it.groupValues[1].length <= 6 && hasMeasurementUnitAfter(it.range.last) }
+            .map { it.groupValues[1] }
+        val directCheckNumbers = Regex("""\bsprawd[zź](?:cie)?\s+([0-9]{4,6})\b""")
+            .findAll(normalized)
+            .filterNot { hasMeasurementUnitAfter(it.range.last) }
+            .map { it.groupValues[1] }
+        val longNumbers = Regex("""(?<![0-9])[0-9]{7,13}(?![0-9])""")
+            .findAll(normalized).map { it.value }
+        val referencedNumbers = (explicitProductNumbers + directCheckNumbers + longNumbers)
+            .toSet()
+        if (referencedNumbers.any { number -> candidates.none {
+                it.effectiveProductId.equals(number, ignoreCase = true) ||
+                    it.articleNumber?.equals(number, ignoreCase = true) == true
+            } }
+        ) return null
 
         val trusted = when {
             explicit.size == 1 -> explicit.single()
@@ -364,10 +393,31 @@ internal class AdvisorLocationsTool(
             is ParsedLocationScope.Restricted -> scope.branches
             ParsedLocationScope.Broad -> emptySet()
         }
+        // "Podaj markety w których jest dostępny" is a relative-clause
+        // network request, not a city beginning with "w których".
         val broadRequested = listOf(
             "jeszcze", "inne", "innych", "innym", "pozostal",
             "wszystk", "ktore market", "jakich market",
+            "markety w ktorych", "marketach jest dostepny",
         ).any { norm(userText).contains(it) }
+        // A city + an adjacent purported market number must agree exactly.
+        // "market w Miejscu Piastowym 054" cannot silently resolve to 052.
+        // Require the market context AND adjacent numeric suffix: free product
+        // measurements such as "listwa 100 cm" are not location identifiers.
+        val cityAliases = obiCityAliases(directory)
+        val marketCityNumber = Regex(
+            """\b(?:a\s+w|(?:market\w*|obi)\s+w)\s+([a-z ]+?)\s+([0-9]{3})(?:\s+bodajze)?\s*$""",
+        ).find(text)
+        if (marketCityNumber != null) {
+            val city = marketCityNumber.groupValues[1].trim()
+            val number = marketCityNumber.groupValues[2]
+            val cityIds = cityAliases[city]?.map { it.branchId.value }?.toSet()
+            if (cityIds != null && number !in cityIds) {
+                return AuthorizedLocationScope.Rejected(
+                    "location_conflict_${number}_vs_${cityIds.sorted().joinToString("_")}",
+                )
+            }
+        }
         val explicitCurrent = Regex(
             """\b(?:rowniez|takze|razem z)\s+(?:(?:market\w*|obi)\s+)?""" +
                 Regex.escape(selected.value) + """\b""",
@@ -413,7 +463,7 @@ internal class AdvisorLocationsTool(
         val aliases = linkedMapOf<String, List<ProviderBranch>>()
         for ((name, branches) in cities) {
             aliases[name] = branches
-            cityLocative(name)?.let { aliases[it] = branches }
+            advisorCityLocative(name)?.let { aliases[it] = branches }
         }
         return aliases
     }
@@ -526,7 +576,9 @@ internal class AdvisorLocationsTool(
         val prepositions = Regex("""\b(?:w|we|dla)\s+""")
         for (match in prepositions.findAll(text)) {
             val suffix = text.substring(match.range.last + 1)
-            if (placeNoun.containsMatchIn(suffix)) continue
+            if (placeNoun.containsMatchIn(suffix) ||
+                Regex("""^ktorych\b""").containsMatchIn(suffix)
+            ) continue
             if (!resolveCityChain(suffix)) return ParsedLocationScope.Rejected
         }
 
@@ -554,24 +606,6 @@ internal class AdvisorLocationsTool(
             else ParsedLocationScope.Restricted(ids)
     }
 
-    /** Only deterministic canonical name inflections: no fuzzy city guesses. */
-    private fun cityLocative(canonical: String): String? = when (canonical) {
-        "nowy sacz" -> "nowym saczu"
-        "lodz" -> "lodzi"
-        "wroclaw" -> "wroclawiu"
-        "gdansk" -> "gdansku"
-        "poznan" -> "poznaniu"
-        "torun" -> "toruniu"
-        "lublin" -> "lublinie"
-        "dabrowa gornicza" -> "dabrowie gorniczej"
-        "gorzow wielkopolski" -> "gorzowie wielkopolskim"
-        else -> when {
-            canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
-            canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
-            canonical.endsWith("ansk") -> canonical + "u"
-            else -> null
-        }
-    }
 
     private fun normLocationScope(text: String): String =
         Normalizer.normalize(text.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
@@ -618,4 +652,25 @@ internal class AdvisorLocationsTool(
         verifiedAtMillis = null,
         centralStock = null,
     )
+}
+
+/** Only deterministic canonical name inflections: no fuzzy city guesses. */
+internal fun advisorCityLocative(canonical: String): String? = when (canonical) {
+    "nowy sacz" -> "nowym saczu"
+    "miejsce piastowe" -> "miejscu piastowym"
+    "zamosc" -> "zamosciu"
+    "lodz" -> "lodzi"
+    "wroclaw" -> "wroclawiu"
+    "gdansk" -> "gdansku"
+    "poznan" -> "poznaniu"
+    "torun" -> "toruniu"
+    "lublin" -> "lublinie"
+    "dabrowa gornicza" -> "dabrowie gorniczej"
+    "gorzow wielkopolski" -> "gorzowie wielkopolskim"
+    else -> when {
+        canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
+        canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
+        canonical.endsWith("ansk") -> canonical + "u"
+        else -> null
+    }
 }

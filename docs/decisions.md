@@ -1,5 +1,20 @@
 # Decisions
 
+## 2026-10-10 — PR #110 follow-up re-audit: exact canonical clarifications and short-ID fail-closed
+
+Carry inventory permission only through complete canonical location clarification phrases, not arbitrary `a w ...` text. In particular price, compatibility and installation questions must remain ordinary turns. Reuse deterministic provider city inflections for authorization and location scope. Treat explicitly named KWANT short IDs and article numbers as exact product identities; an unknown 4-digit ID cannot inherit a previous verified product, while unlabeled measurements and OBI store numbers must not be mistaken for products. A city with an adjacent contradictory 3-digit OBI market identifier must ask for confirmation, even when phrased `a w ... 054?`. Preserve disabled KWANT extended, independent normal `find_products`, and the three-logical-tool-call cap.
+
+
+## 2026-10-10 — PR #110 audit: restrict clarification, prioritize current verified IDs, avoid stale cache
+
+Do not treat arbitrary short USER phrases as stock authorization. Bare location-only clarifications require an exact canonical active-provider branch name and a still-pending prior USER inventory request; explicit structured follow-ups remain bounded. Resolve current explicit verified product ID or article before prior selections, preserving ambiguous/unknown fail-closed behavior. Cache only rejection reasons independent of future discovery, not product-trust or ambiguity outcomes. Preserve existing stock endpoints, all-other batching, provider isolation and tool budgets.
+
+
+## 2026-10-10 — Bounded inventory-follow-up context, never model authority
+
+Only direct clarification turns following a previous user-origin stock request may borrow its inventory intent. Scope remains determined by the current user location text, or by their explicit preceding pending stock request; assistant suggestions cannot activate requests. Disambiguation from the last bounded user selection or newest single verified card may constrain, never expand, trusted product candidates. Explicit "both" is valid only for exactly two distinct provider-verified products and must not degenerate into a silent single-product lookup. While KWANT "extended" is unverified, respond unavailable, not fabricated inventory or a clarification loop. Cache duplicate deterministic rejection evidence within a USER turn to avoid repeated inventory HTTP; repeated model tool requests still count toward the hard three-call budget. Never auto-map the unsupported OBI market 054 onto canonical Miejsce Piastowe 052.
+
+
 ## 2026-10-10 — Product stock units must be provider-verified, never inferred
 
 - KWANT: use the product `unit` only from trusted, product-ID-matched frontend product or branch-current payloads; for the latter also require the requested department ID. Explicit conflicts yield null. The same verified product unit applies to selected-branch and central stock amounts.
