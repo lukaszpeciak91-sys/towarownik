@@ -28,7 +28,7 @@ class StockUnitTest {
         assertEquals("4 szt.", formatStockQuantity(4, "szt."))
         assertEquals("3 opak.", formatStockQuantity(3, "opakowanie"))
         assertEquals("135", formatStockQuantity(135, null))
-        assertEquals("135", formatStockQuantity(135, "\nunknown"))
+        assertEquals("135", formatStockQuantity(135, "bad\nunit"))
         assertEquals("0", formatStockQuantity(0, null))
     }
 }
