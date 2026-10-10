@@ -15,6 +15,7 @@ internal const val MULTIMODAL_ADVISOR_PROTOCOL_VERSION = 4
 internal const val MULTI_ATTACHMENT_ADVISOR_PROTOCOL_VERSION = 5
 internal const val FIND_OBI_PRODUCTS = "find_obi_products"
 internal const val FIND_PRODUCTS = "find_products"
+internal const val FIND_PRODUCT_LOCATIONS = "find_product_locations"
 
 internal enum class AdvisorTransportContract(
     val protocolVersion: Int,
@@ -194,7 +195,35 @@ internal data class AdvisorUsage(
     val pricingVersion: String?,
 )
 
+internal data class AdvisorLocationArguments(
+    val providerId: String,
+    val productId: String,
+    val locations: List<String>,
+)
+
+internal data class AdvisorLocationEntry(
+    val branchId: String,
+    val name: String,
+    val stock: Int?,
+)
+
+internal data class AdvisorLocationEvidence(
+    val providerId: String,
+    val productId: String?,
+    val status: String,
+    val reason: String?,
+    val coverage: String,
+    val checkedIds: List<String>,
+    val returnedIds: List<String>,
+    val missingIds: List<String>,
+    val locations: List<AdvisorLocationEntry>,
+    val verifiedAtMillis: Long?,
+    val centralStock: Int?,
+)
+
 internal sealed interface AdvisorToolContinuation {
+    data class Locations(val evidence: AdvisorLocationEvidence) : AdvisorToolContinuation
+
     data class Verified(
         val result: AdvisorVerifiedToolResult,
     ) : AdvisorToolContinuation
@@ -245,6 +274,14 @@ internal sealed interface AdvisorToolContinuation {
 }
 
 internal sealed interface AdvisorProxyResult {
+    data class LocationToolRequest(
+        val responseId: String,
+        val callId: String,
+        val arguments: AdvisorLocationArguments,
+        val webSearchCalls: Long = 0,
+        val usage: AdvisorUsage? = null,
+    ) : AdvisorProxyResult
+
     data class Answer(
         val responseId: String,
         val text: String,
