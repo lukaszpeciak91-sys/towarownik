@@ -224,4 +224,107 @@ class AdvisorLocationFollowUpReportsTest {
     }
 
 
+
+    @Test fun priceAndAdviceLocationQuestionsCannotBorrowStockAuthority() = runBlocking {
+        for (message in listOf(
+            "a w Krakowie ile kosztuje?",
+            "a w Krakowie cena?",
+            "a w Krakowie jak zamontować?",
+            "a w Krakowie kompatybilność?",
+        )) {
+            val (result, inventory) = lookup(message, obiHistory)
+            assertEquals(message, "rejected", result.status)
+            assertEquals(message, "location_intent_required", result.reason)
+            assertTrue(message, inventory.reads.isEmpty())
+            assertTrue(message, inventory.http.isEmpty())
+            val aliases = (ObiProductProvider().branches() as ProviderBranchResult.Available).branches
+            val context = resolveAdvisorLocationFollowUp(
+                message, obiHistory, listOf(portable, fixed), aliases,
+            )
+            assertEquals(message, message, context.authorizedText)
+        }
+        val (allowed, inventory) = lookup("a w Krakowie?", obiHistory)
+        assertEquals("verified", allowed.status)
+        assertTrue(allowed.checkedIds.isNotEmpty())
+        assertTrue(inventory.http.isNotEmpty())
+    }
+
+    @Test fun shorthandMiejscePiastowe054MustNotRead052() = runBlocking {
+        val (result, inventory) = lookup("a w Miejscu Piastowym 054?", obiHistory)
+        assertEquals("rejected", result.status)
+        assertEquals("location_conflict_054_vs_052", result.reason)
+        assertTrue(inventory.reads.isEmpty())
+        assertTrue(inventory.http.isEmpty())
+    }
+
+    @Test fun shortKwantIdsRejectUnknownAndAcceptOnlyAfterNewVerification() = runBlocking {
+        val old = snapshot("7035", "kwant-pl", "921871")
+        val newlyVerified = snapshot("7027", "kwant-pl", "921861")
+        val adapterReads = mutableListOf<String>()
+        // This synthetic adapter does NOT activate production KWANT extended.
+        // A successfully authenticated identity reaches only its known
+        // unverified-contract response; failures never reach the adapter.
+        val adapter = object : ProductLocationsAdapter {
+            override val providerId = KWANT_PROVIDER_ID
+            override suspend fun read(
+                ref: ProductRef,
+                requested: List<BranchId>,
+                trustedProduct: ProviderProduct?,
+            ): ProductLocationsResult {
+                adapterReads += ref.productId
+                return ProductLocationsResult.Unavailable(
+                    LocationFailure.UNVERIFIED_REQUEST_CONTRACT,
+                )
+            }
+        }
+        val tool = AdvisorLocationsTool(
+            locationsService = ProductLocationsService(listOf(adapter)),
+        )
+        suspend fun check(
+            message: String,
+            trusted: List<VerifiedProductSnapshot>,
+            modelId: String,
+        ): AdvisorLocationEvidence = tool.execute(
+            arguments = AdvisorLocationArguments("kwant-pl", modelId, emptyList()),
+            providerId = "kwant-pl", currentBranchId = "205",
+            userText = message, currentVerified = emptyList(),
+            historicalVerified = trusted,
+        )
+        val request = "Sprawdź stan produktu 7027 w oddziale Zamość"
+        val rejected = check(request, listOf(old), "7035")
+        assertEquals("rejected", rejected.status)
+        assertEquals("untrusted_product", rejected.reason)
+        assertTrue(adapterReads.isEmpty())
+
+        val unlabeled = check("Sprawdź 7027 w oddziale Zamość", listOf(old), "7035")
+        assertEquals("untrusted_product", unlabeled.reason)
+        assertTrue(adapterReads.isEmpty())
+        val article = check(
+            "Sprawdź stan produktu o kodu 921861 w oddziale Zamość",
+            listOf(old), "7035",
+        )
+        assertEquals("untrusted_product", article.reason)
+        assertTrue(adapterReads.isEmpty())
+
+        // The product becomes trusted only after a new verified snapshot.
+        val after = check(request, listOf(old, newlyVerified), "7027")
+        assertEquals("unavailable", after.status)
+        assertEquals("unverified_request_contract", after.reason)
+        assertEquals(listOf("7027"), adapterReads)
+
+        // Previously selected 7035 cannot override a now-explicit 7027.
+        val mismatch = check(request, listOf(old, newlyVerified), "7035")
+        assertEquals("rejected", mismatch.status)
+        assertEquals(1, adapterReads.size)
+
+        // Quantities and units are not treated as unknown product IDs.
+        val dimensions = check(
+            "Sprawdź stan produktu 7035 w oddziale Zamość, potrzebuję 1000 W, 25 m i 5 szt.",
+            listOf(old), "7035",
+        )
+        assertEquals("unavailable", dimensions.status)
+        assertEquals(listOf("7027", "7035"), adapterReads)
+    }
+
+
 }
