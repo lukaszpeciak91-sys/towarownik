@@ -81,13 +81,16 @@ class AdvisorLocationsControllerTest {
             Collection<VerifiedProductSnapshot>, List<VerifiedProductSnapshot>,
         ) -> AdvisorLocationEvidence,
         onDiscovery: () -> AdvisorToolExecutionResult = { verified() },
+        onProviderDiscovery: (AdvisorToolArguments) -> AdvisorToolExecutionResult = {
+            onDiscovery()
+        },
     ) = AdvisorController(
         isConfigured = { true },
         startAgent = { _, _, _ -> initial },
         messageAgent = { _, _, _, _ -> initial },
         continueAgent = { _, _, _, _, _, continuation -> continueCall(continuation) },
         executeObiTool = { onDiscovery() },
-        executeProviderTool = { onDiscovery() },
+        executeProviderTool = { onProviderDiscovery(it) },
         executeLocationsTool = locationCall,
         branchDirectory = { provider ->
             if (provider.value == "kwant-pl") {
@@ -504,6 +507,73 @@ class AdvisorLocationsControllerTest {
         assertEquals(2, locationCalls) // First denied, second re-evaluated after verification.
         assertEquals(1, inventoryReads)
         assertEquals(3, continuations) // All three logical local calls accounted for.
+    }
+
+
+
+    @Test fun kwantFindProductsSelectedAndOtherBranchNeverRequiresLocations() = runBlocking {
+        for ((userRequest, expectedBranch) in listOf(
+            "Sprawdź gniazda w oddziale Nowy Sącz" to "205",
+            "Sprawdź gniazda w oddziale Zamość" to "128",
+        )) {
+            var discoveries = 0
+            var locationCalls = 0
+            var continuations = 0
+            val request = AdvisorToolArguments(
+                storeNumber = expectedBranch,
+                providerId = "kwant-pl",
+                requestedBranch = expectedBranch,
+                queries = listOf(AdvisorToolQuery("gniazdo 16A 4P", 2)),
+            )
+            val initial = AdvisorProxyCallResult.Success(
+                AdvisorProxyResult.ToolRequest(
+                    responseId = "resp_kwant_discovery",
+                    callId = "call_kwant_discovery",
+                    arguments = request,
+                ),
+            )
+            val kwantSnapshot = snapshot.copy(
+                obik = "7027", productId = "7027",
+                providerId = "kwant-pl", articleNumber = "921861",
+                storeNumber = expectedBranch, branchId = expectedBranch,
+            )
+            val c = controller(
+                initial = initial,
+                continueCall = { output ->
+                    continuations++
+                    assertTrue(output is AdvisorToolContinuation.Verified)
+                    answer()
+                },
+                locationCall = { _, _, _, _, _, _ ->
+                    locationCalls++
+                    error("find_product_locations must remain independent")
+                },
+                onProviderDiscovery = { arguments ->
+                    discoveries++
+                    assertEquals("kwant-pl", arguments.providerId)
+                    assertEquals(expectedBranch, arguments.storeNumber)
+                    assertEquals(expectedBranch, arguments.branchId)
+                    assertTrue(arguments.requestedBranch == null)
+                    AdvisorToolExecutionResult.Success(
+                        result = AdvisorVerifiedToolResult(
+                            storeNumber = expectedBranch,
+                            results = emptyList(),
+                        ),
+                        snapshots = listOf(kwantSnapshot),
+                    )
+                },
+            )
+            val state = c.runTurn(
+                input = userRequest,
+                previousResponseId = "resp_before",
+                conversationProviderId = "kwant-pl",
+                conversationStoreNumber = "205",
+            ) {}
+            assertTrue(userRequest, state is AdvisorUiState.Success)
+            assertEquals(userRequest, 1, discoveries)
+            assertEquals(userRequest, 1, continuations)
+            assertEquals(userRequest, 0, locationCalls)
+        }
     }
 
 
