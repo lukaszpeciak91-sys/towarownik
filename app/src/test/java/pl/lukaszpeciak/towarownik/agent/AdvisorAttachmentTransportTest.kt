@@ -75,6 +75,109 @@ class AdvisorAttachmentTransportTest {
         .setHeader("Content-Type", "application/json")
         .setBody("""{"type":"answer","responseId":"resp_multi","text":"ok","productRefs":[]}""")
 
+    private fun textPart(
+        storage: AttachmentStorage, name: String, mimeType: String,
+        content: ByteArray = "zażółć,12\n".toByteArray(Charsets.UTF_8),
+    ) = storage.importValidated(
+        type = AttachmentType.TEXT,
+        displayName = name,
+        mimeType = mimeType,
+        byteSize = content.size.toLong(),
+        source = { ByteArrayInputStream(content) },
+    )
+
+    @Test
+    fun v5AllowsEveryTextFamilyInOrderedMultipartWithoutChangingImagePdf() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        val families = listOf(
+            "notes.txt" to "text/plain",
+            "guide.md" to "text/markdown",
+            "stock.csv" to "text/csv",
+            "data.json" to "application/json",
+            "device.xml" to "application/xml",
+            "settings.yaml" to "application/yaml",
+            "settings.yml" to "text/x-yaml",
+            "events.log" to "text/plain",
+            "config.ini" to "text/plain",
+            "app.conf" to "text/plain",
+        )
+        MockWebServer().use { server ->
+            repeat(families.size + 1) { server.enqueue(multiAnswer()) }
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            for ((name, mime) in families) {
+                val file = textPart(storage, name, mime)
+                assertTrue(client.start("", "kwant-pl", "205", listOf(file))
+                    is AdvisorProxyCallResult.Success)
+                val request = server.takeRequest()
+                assertEquals("5", request.getHeader("X-Taksula-Attachment-Protocol"))
+                val body = request.body.readUtf8()
+                assertTrue(body.contains("filename=\"$name\""))
+                assertTrue(body.contains("Content-Type: $mime"))
+                assertTrue(body.contains("zażółć,12"))
+            }
+            val image = importPart(storage, "photo.jpg", AttachmentType.IMAGE)
+            val pdf = importPart(storage, "datasheet.pdf", AttachmentType.PDF)
+            val text = textPart(storage, "notes.md", "text/markdown")
+            val mixed = listOf(image, pdf, text)
+            assertTrue(client.start("Compare", "kwant-pl", "205", mixed)
+                is AdvisorProxyCallResult.Success)
+            val request = server.takeRequest()
+            val body = request.body.readUtf8()
+            var position = -1
+            for (part in mixed) {
+                val found = body.indexOf(part.displayName)
+                assertTrue(found > position)
+                position = found
+            }
+            assertEquals(3, Regex("name=\"attachment\"; filename=").findAll(body).count())
+        }
+    }
+
+    @Test
+    fun v5RejectsWrongTextMetadataAndBinaryBytesBeforeNetwork() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        val invalidUtf8 = textPart(
+            storage, "broken.txt", "text/plain", byteArrayOf(0xc3.toByte(), 0x28),
+        )
+        val binary = textPart(
+            storage, "binary.log", "text/plain", byteArrayOf(0x61, 0x00, 0x62),
+        )
+        val zip = textPart(
+            storage, "archive.txt", "text/plain",
+            byteArrayOf(0x50, 0x4b, 0x03, 0x04, 0x20),
+        )
+        val good = textPart(storage, "ok.csv", "text/csv")
+        MockWebServer().use { server ->
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            val variants = listOf(
+                listOf(invalidUtf8),
+                listOf(binary),
+                listOf(zip),
+                listOf(good.copy(displayName = "ok.exe")),
+                listOf(good.copy(displayName = "ok.docx")),
+                listOf(good.copy(displayName = "ok.zip")),
+                listOf(good.copy(displayName = "ok.json")),
+                listOf(good.copy(mimeType = "application/octet-stream")),
+                listOf(good.copy(byteSize = 1024L * 1024L + 1)),
+            )
+            for (files in variants) {
+                assertEquals(
+                    AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL),
+                    client.start("", "kwant-pl", "205", files),
+                )
+            }
+            assertEquals(
+                AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL),
+                client.start("", "kwant-pl", "205", attachment = good),
+            )
+            assertEquals(0, server.requestCount)
+        }
+    }
+
     @Test
     fun v5ListTransportsOneTwoAndThreeOrderedMixedFiles() = runBlocking {
         val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
