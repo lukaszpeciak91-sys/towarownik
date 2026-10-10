@@ -857,10 +857,16 @@ async function parseMultipartRequest(
 
   const files = parts as File[];
   let totalBytes = 0;
+  let totalTextBytes = 0;
   for (const file of files) {
     if (file.size < 1) throw new InvalidRequestError();
     if (file.size > ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
     totalBytes += file.size;
+    if (isMulti && isAllowedTextAttachment(sanitizeAttachmentFilename(file.name), file.type)) {
+      totalTextBytes += file.size;
+      // Separate v5 lightweight-text budget; images/PDFs do not consume it.
+      if (totalTextBytes > TEXT_ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
+    }
   }
   if (totalBytes > (isMulti
     ? MULTI_ATTACHMENT_TOTAL_MAX_BYTES
