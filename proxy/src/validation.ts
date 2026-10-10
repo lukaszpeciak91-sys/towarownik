@@ -372,7 +372,8 @@ function validateLocationToolResult(value: unknown): LocationToolResult {
   if (status !== "verified" && status !== "unavailable" && status !== "rejected") throw new InvalidRequestError();
   const reason = obj.reason === null ? null : boundedString(obj.reason, 64);
   const coverage = obj.coverage;
-  if (coverage !== "all_public_locations" && coverage !== "requested_subset" &&
+  if (coverage !== "all_public_locations" && coverage !== "all_other_locations" &&
+      coverage !== "requested_subset" &&
       coverage !== "partial" && coverage !== "unknown") throw new InvalidRequestError();
   const checkedIds = locationIds(obj.checkedIds);
   const returnedIds = locationIds(obj.returnedIds);
@@ -389,13 +390,24 @@ function validateLocationToolResult(value: unknown): LocationToolResult {
       stock: row.stock === null ? null : stockInt(row.stock),
     };
   });
-  if (locations.length !== returnedIds.length || new Set(locations.map(x => x.branchId)).size !== locations.length ||
-      locations.some(x => !returnedIds.includes(x.branchId))) throw new InvalidRequestError();
+  if (locations.length !== checkedIds.length ||
+      new Set(locations.map(x => x.branchId)).size !== locations.length ||
+      locations.some(x => !checkedIds.includes(x.branchId)) ||
+      checkedIds.some(id => !locations.some(x => x.branchId === id))) throw new InvalidRequestError();
+  // A missing row must remain stock=null; a confirmed row needs a value.
+  if (locations.some(x =>
+    (missingIds.includes(x.branchId) && x.stock !== null) ||
+    (returnedIds.includes(x.branchId) && x.stock === null))) throw new InvalidRequestError();
+  if (missingIds.length + returnedIds.length !== checkedIds.length) {
+    throw new InvalidRequestError();
+  }
   const verifiedAtMillis = obj.verifiedAtMillis === null ? null : stockInt64(obj.verifiedAtMillis);
   const centralStock = obj.centralStock === null ? null : stockInt(obj.centralStock);
-  if (status !== "verified" && (locations.length > 0 || returnedIds.length > 0 ||
-      verifiedAtMillis !== null || centralStock !== null)) throw new InvalidRequestError();
-  if (status === "verified" && (productId === null || verifiedAtMillis === null)) throw new InvalidRequestError();
+  if (status !== "verified" &&
+      (returnedIds.length > 0 || verifiedAtMillis !== null || centralStock !== null ||
+       locations.some(x => x.stock !== null))) throw new InvalidRequestError();
+  if (status === "verified" && (productId === null || verifiedAtMillis === null ||
+      returnedIds.length === 0)) throw new InvalidRequestError();
   return {
     providerId, productId, status, reason, coverage,
     checkedIds, returnedIds, missingIds, locations, verifiedAtMillis, centralStock,

@@ -44,7 +44,7 @@ export interface LocationToolResult {
   productId: string | null;
   status: "verified" | "unavailable" | "rejected";
   reason: string | null;
-  coverage: "all_public_locations" | "requested_subset" | "partial" | "unknown";
+  coverage: "all_public_locations" | "all_other_locations" | "requested_subset" | "partial" | "unknown";
   checkedIds: string[];
   returnedIds: string[];
   missingIds: string[];

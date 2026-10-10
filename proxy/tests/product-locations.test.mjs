@@ -78,6 +78,8 @@ test("locations function is a distinct bounded strict schema", () => {
   ]);
   assert.equal(LOCATIONS_TOOL.parameters.additionalProperties, false);
   assert.equal(LOCATIONS_TOOL.parameters.properties.locations.maxItems, 20);
+  assert.equal(LOCATIONS_TOOL.parameters.properties.locations.minItems, 0);
+  assert.match(LOCATIONS_TOOL.parameters.properties.locations.description, /ALL OTHER/i);
 });
 
 test("old v2 and v3 clients are not offered location tool", async () => {
@@ -113,6 +115,8 @@ test("v2 opt-in requests one new function and preserves original discovery tool"
   assert.deepEqual(f.captures[0].tools.filter(t => t.type === "function").map(t => t.name),
     ["find_obi_products", LOCATIONS_LOCAL_TOOL_NAME]);
   assert.match(f.captures[0].instructions, /only for explicit/i);
+  assert.match(f.captures[0].instructions, /ALL OTHER canonical OBI markets/i);
+  assert.match(f.captures[0].instructions, /locations=\[\]/);
 });
 
 test("v2 opt-in continuation accepts typed zero and retains version", async () => {
@@ -223,4 +227,47 @@ test("explicit legacy v1 cannot opt into a location function", async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(f.captures[0].tools.filter(t => t.type === "function").map(t => t.name),
     ["find_obi_products"]);
+});
+
+test("full other-market OBI continuation returns all 61 canonical IDs and unknown rows within 16 KiB", async () => {
+  const ids = Array.from({length: 61}, (_, i) => String(i + 1).padStart(3, "0"));
+  const full = {
+    ...result, status: "verified", reason: null,
+    coverage: "all_other_locations", checkedIds: ids,
+    returnedIds: ids.slice(0, 60), missingIds: ids.slice(60),
+    locations: ids.map((id, i) => ({
+      branchId: id, name: "Fixture market "+id+" — synthetic street",
+      stock: i === 60 ? null : i % 3 === 0 ? 0 : i+1,
+    })),
+  };
+  const body = {
+    protocolVersion: 2, responseId: "resp_locations", callId: "call_locations",
+    storeNumber: "075", tool: LOCATIONS_LOCAL_TOOL_NAME, result: full,
+  };
+  assert.ok(Buffer.byteLength(JSON.stringify(body), "utf8") < 16*1024);
+  const f = fake(answer);
+  const reply = await createWorker(f.fetch).fetch(
+    request("/v1/agent/continue", body, true), env);
+  assert.equal(reply.status, 200);
+  const forwarded = JSON.parse(f.captures[0].input[0].output);
+  assert.equal(forwarded.locations.length, 61);
+  assert.equal(forwarded.locations[60].stock, null);
+  assert.deepEqual(forwarded.missingIds, ["061"]);
+});
+
+test("malformed full-network results cannot falsely zero-fill missing branch", async () => {
+  const corrupted = {
+    ...result, coverage: "partial",
+    missingIds: ["075"], returnedIds: [],
+    locations: [{branchId:"075", name:"Fixture", stock:0}],
+  };
+  const f = fake(answer);
+  const reply = await createWorker(f.fetch).fetch(
+    request("/v1/agent/continue", {
+      protocolVersion: 2, responseId: "r", callId: "c", storeNumber: "075",
+      tool: LOCATIONS_LOCAL_TOOL_NAME, result: corrupted,
+    }, true), env,
+  );
+  assert.equal(reply.status, 400);
+  assert.equal(f.captures.length, 0);
 });

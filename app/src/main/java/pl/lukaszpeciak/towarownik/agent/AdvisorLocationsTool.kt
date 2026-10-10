@@ -214,7 +214,10 @@ internal class AdvisorLocationsTool(
             val branch = requireNotNull(directoryById[id])
             AdvisorLocationEntry(
                 branchId = id.value,
-                name = branch.name,
+                name = listOfNotNull(
+                    branch.name,
+                    branch.address?.takeIf { it.isNotBlank() },
+                ).joinToString(" — ").take(100),
                 stock = trusted[id],
             )
         }.sortedWith(

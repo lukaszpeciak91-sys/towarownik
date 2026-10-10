@@ -51,8 +51,12 @@ export const LOCATIONS_INSTRUCTIONS =
   "Use find_product_locations ONLY for explicit other-location stock requests about one exact trusted product. " +
   "Model productId and location names are hints, not authorization. Android accepts exact verified current-turn products or verified assistant cards in THIS conversation only. " +
   "If user supplies a NEW product identifier not yet verified, first use the regular discovery tool, then locations within the shared tool budget. " +
-  "When several verified products remain plausible, ask ONE concise product clarification. For OBI require precise user-named canonical markets; ambiguous cities or broad other-market requests need ONE location clarification. " +
-  "Never scan all OBI markets, arbitrarily select 20 or imply subset means nationwide. KWANT inventory may be temporarily unavailable due to unverified public extended query. Never treat unavailable or missing as zero. " +
+  "When several verified products remain plausible, ask ONE concise product clarification. " +
+  "For OBI a broad other-location request ('Gdzie jeszcze jest ten produkt?', 'Sprawdź inne markety') authorizes ALL OTHER canonical OBI markets: send locations=[]; Android derives the full scope and excludes the selected store automatically. Do NOT enumerate market IDs. " +
+  "When the current user explicitly restricts the request to a city or exact market, send that requested city/market in locations[]. Android expands a named city to ALL canonical markets in that city, never picks one arbitrarily. " +
+  "For a broad check, up to 61 other markets are checked through at most four bounded Android service calls (20 markets per read, 10 per HTTP request), still ONE logical local tool invocation. " +
+  "If any market or batch is missing, clearly state partial coverage and list those markets as UNKNOWN, not zero. Even on a complete other-market check do not claim the selected store was checked unless explicitly included. " +
+  "KWANT inventory may be temporarily unavailable due to unverified public extended query. Never treat unavailable or missing as zero. " +
   "Summarize known positive stock first, then confirmed zeros, unknowns and coverage. Historical products authorize identity only, not fresh stock or new structured productRefs. " +
   "Central stock is separate. A local_tool_limit_reached result means no further local tools.";
 
@@ -423,7 +427,7 @@ export const LOCATIONS_TOOL = {
       productId: { type: "string", minLength: 1, maxLength: 64 },
       locations: {
         type: "array", minItems: 0, maxItems: 20,
-        description: "Exact user-named market/branch hints; empty only for KWANT all-branches.",
+        description: "Empty [] = check ALL OTHER canonical locations of the active provider. For an explicit user-restricted check, list user-named cities or exact markets only; Android resolves them and never trusts model-selected IDs.",
         items: { type: "string", minLength: 1, maxLength: 100 },
       },
     },
