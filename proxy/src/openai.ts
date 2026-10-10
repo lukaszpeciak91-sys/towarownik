@@ -185,8 +185,10 @@ export async function continueAgent(
   locationsEnabled = false,
 ): Promise<AgentResult> {
   const localToolAvailable =
-    !("rejection" in result) ||
-    result.rejection !== "local_tool_limit_reached";
+    (!("rejection" in result) ||
+      result.rejection !== "local_tool_limit_reached") &&
+    (!("status" in result) ||
+      result.reason !== "local_tool_limit_reached");
 
   return requestOpenAI(
     {
