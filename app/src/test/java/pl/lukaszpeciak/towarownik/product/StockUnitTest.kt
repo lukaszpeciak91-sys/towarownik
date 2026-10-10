@@ -7,6 +7,10 @@ import org.junit.Test
 class StockUnitTest {
     @Test fun `normalizes a small known safe set and preserves verified uncommon units`() {
         assertEquals("m", verifiedStockUnitOrNull(" m "))
+        assertEquals("m", verifiedStockUnitOrNull("na metry"))
+        assertEquals("m²", verifiedStockUnitOrNull("m2"))
+        assertEquals("m²", verifiedStockUnitOrNull("na metry kwadratowe"))
+        assertEquals("m³", verifiedStockUnitOrNull("m³"))
         assertEquals("kg", verifiedStockUnitOrNull("KG"))
         assertEquals("l", verifiedStockUnitOrNull("litr"))
         assertEquals("szt.", verifiedStockUnitOrNull("szt."))
