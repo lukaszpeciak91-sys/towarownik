@@ -117,6 +117,26 @@ class LocalizationResourcesTest {
             "Stock: 7",
             format(english.getValue("product_stock_count"), 7),
         )
+        assertEquals(
+            "Stock: 7 m",
+            format(english.getValue("product_stock_count"), "7 m"),
+        )
+        assertEquals(
+            "Stan wybranego oddziału: 135 m",
+            format(polish.getValue("product_branch_stock_count"), "135 m"),
+        )
+        assertEquals(
+            "Selected branch stock: 135 m",
+            format(english.getValue("product_branch_stock_count"), "135 m"),
+        )
+        assertEquals(
+            "Stan centrali: 9000 m",
+            format(polish.getValue("product_central_stock"), "9000 m"),
+        )
+        assertEquals(
+            "Central stock: 9000 m",
+            format(english.getValue("product_central_stock"), "9000 m"),
+        )
     }
 
     @Test
