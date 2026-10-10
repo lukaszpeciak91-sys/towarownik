@@ -364,10 +364,14 @@ class KwantProductProviderTest {
         val cablePayload = currentProductData(stock = 135)
             .replace("\"unit\": \"szt.\"", "\"unit\": \"m\"")
         val provider = KwantProductProvider(
-            frontend = FakeFrontend(currentProductData = cablePayload),
+            frontend = FakeFrontend(
+                productHtml = productHtml().replace(PRODUCT_NAME, "Przewód YDYp 3x2,5"),
+                currentProductData = cablePayload,
+            ),
         )
         val result = provider.lookup(ProductRef(KWANT_PROVIDER_ID, "580"), BranchId("205"))
             as ProviderLookupResult.Found
+        assertEquals("Przewód YDYp 3x2,5", result.product.name)
         assertEquals(135, result.product.stock)
         assertEquals(10113, result.product.centralStock)
         assertEquals("m", result.product.stockUnit)
