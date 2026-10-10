@@ -142,6 +142,18 @@ class AdvisorLocationsNationwideTest {
         assertEquals(0, fake.httpBatches.size)
     }
 
+    @Test fun `explicit inclusion of currently selected market checks all 62`() = runBlocking {
+        val fake = FakeInventory()
+        val result = fake.run("Sprawdź wszystkie inne markety, także 075")
+        assertEquals("verified", result.status)
+        assertEquals("all_public_locations", result.coverage)
+        assertEquals(62, result.checkedIds.size)
+        assertTrue(result.checkedIds.contains("075"))
+        assertEquals(4, fake.serviceReads.size)
+        assertEquals(listOf(20, 20, 20, 2), fake.serviceReads.map { it.size })
+        assertEquals(7, fake.httpBatches.size)
+    }
+
     @Test fun `explicit 075 checks only selected market`() = runBlocking {
         val fake = FakeInventory()
         val result = fake.run("Sprawdź market OBI 075", hints = listOf("075"))
