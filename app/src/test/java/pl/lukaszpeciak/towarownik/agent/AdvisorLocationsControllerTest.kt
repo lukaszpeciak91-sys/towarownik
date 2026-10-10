@@ -89,7 +89,17 @@ class AdvisorLocationsControllerTest {
         executeObiTool = { onDiscovery() },
         executeProviderTool = { onDiscovery() },
         executeLocationsTool = locationCall,
-        branchDirectory = { ObiProductProvider().branches() },
+        branchDirectory = { provider ->
+            if (provider.value == "kwant-pl") {
+                ProviderBranchResult.Available(listOf(
+                    ProviderBranch(BranchId("205"), "Nowy Sącz"),
+                    ProviderBranch(BranchId("128"), "Zamość"),
+                    ProviderBranch(BranchId("216"), "Tarnów"),
+                ))
+            } else {
+                ObiProductProvider().branches()
+            }
+        },
     )
 
     @Test fun `discovery then locations uses two local calls and historical card not promoted`() = runBlocking {
