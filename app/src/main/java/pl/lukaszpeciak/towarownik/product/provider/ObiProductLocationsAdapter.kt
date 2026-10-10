@@ -76,7 +76,7 @@ internal class ObiProductLocationsAdapter(
                 LocationCoverageKind.UNKNOWN
             },
             requestedIds = requested,
-            returnedIds = found.keys.toList(),
+            returnedIds = requested.filter { it in found },
             requestCount = attempts,
             failedRequests = failed,
         )
@@ -85,10 +85,7 @@ internal class ObiProductLocationsAdapter(
         }
         return ProductLocationsResult.Available(
             ref = ref,
-            locations = found.values.sortedWith(
-                compareByDescending<LocationStock> { (it.stock ?: -1) > 0 }
-                    .thenByDescending { it.stock ?: -1 },
-            ),
+            locations = requested.mapNotNull(found::get),
             coverage = coverage,
             verifiedAtMillis = now(),
         )

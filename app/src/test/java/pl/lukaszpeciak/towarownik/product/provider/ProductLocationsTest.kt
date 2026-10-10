@@ -1,5 +1,8 @@
 package pl.lukaszpeciak.towarownik.product.provider
 
+import java.util.concurrent.Executors
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -87,7 +90,8 @@ class ProductLocationsTest {
         assertEquals(1, requests)
         assertEquals(LocationCoverageKind.REQUESTED_SUBSET, result.coverage.kind)
         assertEquals(10, result.coverage.requestedIds.size)
-        assertEquals(10, result.coverage.returnedIds.size)
+        assertEquals(wanted, result.coverage.returnedIds)
+        assertEquals(wanted, result.locations.map { it.branch.branchId })
         assertTrue(result.coverage.missingIds.isEmpty())
         assertEquals(0, result.locations.single { it.branch.branchId == wanted[0] }.stock)
         assertEquals(777L, result.verifiedAtMillis)
@@ -101,11 +105,13 @@ class ProductLocationsTest {
                 fetcher = LocationsHttpFetcher { url ->
                     val segment = url.queryParameter("storeIds")!!.split(",")
                     calls.add(segment)
-                    LocationsHttpResult.Success(obiPayload(segment))
+                    LocationsHttpResult.Success(obiPayload(segment.reversed()))
                 },
             )
             val result = adapter.read(obiRef, ids.take(size)) as ProductLocationsResult.Available
             assertEquals(size, result.locations.size)
+            assertEquals(ids.take(size), result.locations.map { it.branch.branchId })
+            assertEquals(ids.take(size), result.coverage.returnedIds)
             assertEquals(expectedCalls, calls.size)
             assertTrue(calls.all { it.size <= 10 && it.isNotEmpty() })
             assertEquals(expectedCalls, result.coverage.requestCount)
@@ -221,7 +227,9 @@ class ProductLocationsTest {
                 assertTrue(trustedLocationsEndpoint(url))
                 assertEquals("/api/front/products/580/departments", url.encodedPath)
                 assertEquals("fixtureOnly", url.queryParameter("extended"))
-                LocationsHttpResult.Success(kwantPayload())
+                LocationsHttpResult.Success(
+                    kwantPayload(branchIds = (201..221).toList().reversed()),
+                )
             },
         )
         val trusted = ProviderProduct(
@@ -233,6 +241,8 @@ class ProductLocationsTest {
             as ProductLocationsResult.Available
         assertEquals(1, requests)
         assertEquals(21, result.locations.size)
+        assertEquals(kwantBranches.map { it.branchId }, result.locations.map { it.branch.branchId })
+        assertEquals(kwantBranches.map { it.branchId }, result.coverage.returnedIds)
         assertEquals(LocationCoverageKind.ALL_PUBLIC_LOCATIONS, result.coverage.kind)
         assertEquals(0, result.locations.single { it.branch.branchId == BranchId("205") }.stock)
         assertEquals(9375, result.centralStock)
@@ -353,4 +363,72 @@ class ProductLocationsTest {
             assertTrue(OkHttpLocationsFetcher(client).get(url) is LocationsHttpResult.Failure)
         }
     }
+
+    @Test fun `KWANT blocking directory lookup runs on injected IO dispatcher`() = runBlocking {
+        val dispatcher = Executors.newSingleThreadExecutor { task ->
+            Thread(task, "kwant-locations-directory-test")
+        }.asCoroutineDispatcher()
+        try {
+            val callerThread = Thread.currentThread().name
+            var directoryThread: String? = null
+            var fetchCount = 0
+            val adapter = KwantProductLocationsAdapter(
+                fetcher = LocationsHttpFetcher {
+                    fetchCount++
+                    LocationsHttpResult.Success(kwantPayload())
+                },
+                directory = {
+                    directoryThread = Thread.currentThread().name
+                    directory
+                },
+                directoryDispatcher = dispatcher,
+                // Fixture-only shape, not a known production extended value.
+                verifiedExtendedValue = "fixtureOnly",
+            )
+            assertTrue(adapter.read(kwantRef, emptyList()) is ProductLocationsResult.Available)
+            assertEquals("kwant-locations-directory-test", directoryThread)
+            assertFalse(callerThread == directoryThread)
+            assertEquals(1, fetchCount)
+        } finally {
+            dispatcher.close()
+        }
+    }
+
+    @Test fun `KWANT directory exceptions become unavailable without inventory GET`() = runBlocking {
+        var fetchCount = 0
+        val adapter = KwantProductLocationsAdapter(
+            fetcher = LocationsHttpFetcher {
+                fetchCount++
+                LocationsHttpResult.Success(kwantPayload())
+            },
+            directory = { throw IllegalStateException("synthetic directory failure") },
+            verifiedExtendedValue = "fixtureOnly",
+        )
+        assertEquals(
+            ProductLocationsResult.Unavailable(LocationFailure.DIRECTORY_UNAVAILABLE),
+            adapter.read(kwantRef, emptyList()),
+        )
+        assertEquals(0, fetchCount)
+    }
+
+    @Test fun `KWANT directory cancellation propagates without inventory GET`() = runBlocking {
+        var fetchCount = 0
+        val adapter = KwantProductLocationsAdapter(
+            fetcher = LocationsHttpFetcher {
+                fetchCount++
+                LocationsHttpResult.Success(kwantPayload())
+            },
+            directory = { throw CancellationException("synthetic cancellation") },
+            verifiedExtendedValue = "fixtureOnly",
+        )
+        var cancelled = false
+        try {
+            adapter.read(kwantRef, emptyList())
+        } catch (_: CancellationException) {
+            cancelled = true
+        }
+        assertTrue("Directory cancellation must propagate", cancelled)
+        assertEquals(0, fetchCount)
+    }
+
 }

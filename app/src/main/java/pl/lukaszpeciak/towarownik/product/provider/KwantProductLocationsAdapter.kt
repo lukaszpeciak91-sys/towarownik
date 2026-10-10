@@ -1,5 +1,9 @@
 package pl.lukaszpeciak.towarownik.product.provider
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -16,6 +20,7 @@ import okhttp3.HttpUrl
 internal class KwantProductLocationsAdapter(
     private val fetcher: LocationsHttpFetcher = OkHttpLocationsFetcher(),
     private val directory: () -> ProviderBranchResult = KwantProductProvider()::branches,
+    private val directoryDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val verifiedExtendedValue: String? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ProductLocationsAdapter {
@@ -44,8 +49,17 @@ internal class KwantProductLocationsAdapter(
                 LocationFailure.UNVERIFIED_REQUEST_CONTRACT,
             )
 
-        val branches = canonicalDirectoryOrNull(directory(), providerId)
-            ?: return ProductLocationsResult.Unavailable(LocationFailure.DIRECTORY_UNAVAILABLE)
+        // KwantProductProvider.branches() performs synchronous network I/O.
+        // Never execute it on the caller/UI thread. Do not swallow cancellation.
+        val branches = try {
+            withContext(directoryDispatcher) {
+                canonicalDirectoryOrNull(directory(), providerId)
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
+        } ?: return ProductLocationsResult.Unavailable(LocationFailure.DIRECTORY_UNAVAILABLE)
         if (branches.keys.any { !it.value.matches(DEPARTMENT_ID) } ||
             requested.any { it !in branches }) {
             return ProductLocationsResult.Invalid(LocationFailure.INVALID_LOCATION_IDS)
@@ -81,7 +95,9 @@ internal class KwantProductLocationsAdapter(
                         LocationCoverageKind.PARTIAL
                     },
                     requestedIds = branches.keys.toList(),
-                    returnedIds = rows.map { it.branch.branchId },
+                    returnedIds = branches.keys.filter { id ->
+                        rows.any { it.branch.branchId == id }
+                    },
                     requestCount = 1,
                 )
                 if (rows.isEmpty()) {
@@ -92,10 +108,9 @@ internal class KwantProductLocationsAdapter(
                 } else {
                     ProductLocationsResult.Available(
                         ref = ref,
-                        locations = rows.sortedWith(
-                            compareByDescending<LocationStock> { (it.stock ?: -1) > 0 }
-                                .thenByDescending { it.stock ?: -1 },
-                        ),
+                        locations = rows.associateBy { it.branch.branchId }.let { byId ->
+                            branches.keys.mapNotNull(byId::get)
+                        },
                         coverage = coverage,
                         verifiedAtMillis = now(),
                         centralStock = separateTrustedCentralStock(ref, trustedProduct),
