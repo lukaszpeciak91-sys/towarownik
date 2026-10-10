@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-10 — Product locations transport PR 1 (isolated, no Advisor integration)
+
+- Introduced a single Android internal `ProductLocationsService` dispatching the existing provider-owned `ProductRef` to separate OBI and KWANT readers, with typed invalid/unavailable/unsupported outcomes, location stock, exact zero, explicit requested/returned/missing coverage, and optional separately verified matching-product central stock. No products or locations are invented and no WorkingProfile is mutated.
+- OBI transport follows independently live-observed `GET /api/pdp/v1/stock/{OBIK}?storeIds=...`, strict storeId/availableQuantity rows, canonical IDs, max **10** IDs/request and max **20** requested IDs/logical call (two batches). Partial batch failures do not masquerade as complete national inventory. Full 62-store batching remains unproven.
+- KWANT browser observation independently confirmed one-shot 21/21 branch inventory from `GET /api/front/products/{id}/departments`, but the sanitized capture retained only the `extended` query parameter **name**, not its value. Production requests are **disabled** behind `UNVERIFIED_REQUEST_CONTRACT` until its exact value is evidenced; no speculative request omission or value is allowed. Strict parser/one-GET adapter are offline-testable with an explicitly labeled synthetic fixture query. `total_stock` stays uninterpreted, central stock stays separate.
+- PR 1 intentionally adds **no model-facing tool, Worker/protocol/prompt change, Room change, UI change, search fanout or background refresh**. PR 2 must enforce exact product/trusted-reference authorization before calling this service and decide explicit location intent independently. Remaining blocker: authoritative reproducible `extended` query value for KWANT. Research evidence files remain historical and unchanged.
+
+
 ## 2026-10-09 — multi-attachment phase 2 Android UX and ownership
 
 - Room v12 replaces the single attachment/message key with `(messageId,position)` and preserves every v11 row at position 0. No blob storage; private file IDs and metadata remain unchanged.

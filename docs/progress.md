@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — Product locations transport PR 1
+
+Read-only Android internal `ProductLocationsService` now dispatches to isolated OBI and KWANT adapters, independently of current Advisor and manual search. OBI canonical requested subsets use max-10 market batches and max-20 logical budget, strict JSON trust checks and partial-coverage semantics. KWANT one-shot 21-branch parser and transport are implemented behind a **fail-closed missing-`extended` contract gate**: original live research redacted the query value, and production does **not** send unverified requests. Until an exact reproducible value is established, do not claim production-ready two-provider support. No existing normal-turn network cost changes. Dedicated offline regression tests cover quantities, product/store IDs, request budgets and malformed/partial responses; only final checks/CI can establish their pass status. Future PR 2 will connect the service to Advisor/Worker with trusted references.
+
+
 ## Current phase
 
 Multi-attachment phase 2: Android composer, Room v12 ordered relations and 11→12 migration, multi-picker/camera, private-file ownership reconciliation, per-file remove/replace, 24 MiB total guard and failed-turn restoration. All attachment turns select v5; text-only behavior remains unchanged.
