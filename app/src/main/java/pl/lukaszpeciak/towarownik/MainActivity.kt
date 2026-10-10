@@ -52,10 +52,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -86,6 +87,8 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -97,16 +100,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import java.time.Instant
@@ -114,6 +123,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -283,6 +293,8 @@ private fun TowarownikApp() {
     var activeConversationId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
+    // A fresh open event (including reopening the same history row) resets chat scroll.
+    var historyOpenSerial by remember { mutableIntStateOf(0) }
     var globalWorkingProfile by remember {
         mutableStateOf(workingProfileRepository.load())
     }
@@ -551,6 +563,7 @@ private fun TowarownikApp() {
         activeConversationId = conversation.id
         selectedWorkingProfile = conversation.workingProfile
         advisorCase = conversation.toAdvisorCaseUiState()
+        historyOpenSerial++
     }
 
     suspend fun cancelAndRecoverActiveTurn(
@@ -1118,6 +1131,8 @@ private fun TowarownikApp() {
             ) {
                 AdvisorChatScreen(
                     advisorCase = advisorCase,
+                    conversationId = activeConversationId,
+                    historyOpenSerial = historyOpenSerial,
                     state = advisorState,
                     onDraftChange = ::updateAdvisorDraft,
                     onSubmit = ::submitAdvisorTurn,
@@ -1670,6 +1685,8 @@ private fun Modifier.bottomComposerSafeArea(): Modifier =
 @Composable
 private fun AdvisorChatScreen(
     advisorCase: AdvisorCaseUiState,
+    conversationId: Long?,
+    historyOpenSerial: Int,
     state: AdvisorUiState,
     onDraftChange: (String) -> Unit,
     onSubmit: () -> Unit,
