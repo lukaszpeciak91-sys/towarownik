@@ -29,6 +29,7 @@ import {
   LOCATIONS_CAPABILITY_VALUE,
   MULTI_ATTACHMENT_TOTAL_MAX_BYTES,
 } from "./config.js";
+import { decodeTextAttachment, isAllowedTextAttachment, TEXT_ATTACHMENT_MAX_BYTES } from "./text-attachments.js";
 import type {
   AdvisorProtocolVersion,
   AdvisorAttachment,
@@ -892,12 +893,24 @@ async function parseMultipartRequest(
   const attachments: AdvisorAttachment[] = [];
   for (const file of files) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    validateAttachmentSignature(file.type, bytes, protocolVersion);
-    attachments.push({
-      mimeType: file.type as AdvisorAttachment["mimeType"],
-      bytes,
-      filename: sanitizeAttachmentFilename(file.name),
-    });
+    const filename = sanitizeAttachmentFilename(file.name);
+    if (
+      file.type === "image/jpeg" ||
+      file.type === "image/png" ||
+      file.type === "application/pdf"
+    ) {
+      validateAttachmentSignature(file.type, bytes, protocolVersion);
+      attachments.push({ mimeType: file.type, bytes, filename });
+    } else {
+      // Text files exist only under the opt-in v5 multipart protocol.
+      if (!isMulti || !isAllowedTextAttachment(filename, file.type)) {
+        throw new InvalidRequestError(protocolVersion);
+      }
+      if (bytes.byteLength > TEXT_ATTACHMENT_MAX_BYTES) throw new RequestTooLargeError();
+      const textContent = decodeTextAttachment(bytes);
+      if (textContent === null) throw new InvalidRequestError(protocolVersion);
+      attachments.push({ mimeType: file.type, bytes, filename, textContent });
+    }
   }
   const base = {
     protocolVersion,
