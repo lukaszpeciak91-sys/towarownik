@@ -197,6 +197,7 @@ internal class FindProviderProductsTool(
         name = name,
         stock = stock,
         centralStock = centralStock,
+        stockUnit = stockUnit,
         grossPrice = grossPrice,
         productUrl = productUrl,
         primaryImageUrl = primaryImageUrl,
