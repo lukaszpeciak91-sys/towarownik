@@ -98,7 +98,7 @@ class LocalizationResourcesTest {
             english.getValue("product_stock_unknown"),
         )
         assertEquals(
-            "Stan: 0 szt. — brak na stanie",
+            "Stan: 0 — brak na stanie",
             polish.getValue("product_stock_zero"),
         )
         assertEquals(
@@ -107,7 +107,11 @@ class LocalizationResourcesTest {
         )
         assertEquals(
             "Stan: 7 szt.",
-            format(polish.getValue("product_stock_count"), 7),
+            format(polish.getValue("product_stock_count"), "7 szt."),
+        )
+        assertEquals(
+            "Stan: 7",
+            format(polish.getValue("product_stock_count"), "7"),
         )
         assertEquals(
             "Stock: 7",
