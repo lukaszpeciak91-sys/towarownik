@@ -107,7 +107,7 @@ class AdvisorLocationsNationwideTest {
         assertEquals(7, fake.httpBatches.size)
     }
 
-    @Test fun `all service batches fail honestly without fabricating zero`() = runBlocking {
+    @Test fun `failed first batch remains unknown while later batches prove stock`() = runBlocking {
         val fake = FakeInventory(failAtRequest = 1)
         // One failed batch only; the rest may still prove stock.
         val first = fake.run("Gdzie jeszcze jest?")
@@ -137,7 +137,7 @@ class AdvisorLocationsNationwideTest {
             hints = listOf("Kraków", "Tarnów"),
         )
         assertEquals("rejected", result.status)
-        assertEquals("location_not_authorized", result.reason)
+        assertEquals("unknown_location", result.reason)
         assertEquals(0, fake.serviceReads.size)
         assertEquals(0, fake.httpBatches.size)
     }
@@ -152,6 +152,22 @@ class AdvisorLocationsNationwideTest {
         assertEquals(4, fake.serviceReads.size)
         assertEquals(listOf(20, 20, 20, 2), fake.serviceReads.map { it.size })
         assertEquals(7, fake.httpBatches.size)
+    }
+
+    @Test fun `unrecognized second city cannot be silently dropped even without model hints`() = runBlocking {
+        val fake = FakeInventory()
+        val result = fake.run("Sprawdź Kraków i Tarnów")
+        assertEquals("rejected", result.status)
+        assertEquals("unknown_location", result.reason)
+        assertEquals(0, fake.serviceReads.size)
+    }
+
+    @Test fun `unknown city alone does not expand to the whole network from model hints`() = runBlocking {
+        val fake = FakeInventory()
+        val result = fake.run("Sprawdź Tarnów", hints = listOf("Tarnów"))
+        assertEquals("rejected", result.status)
+        assertEquals("unknown_location", result.reason)
+        assertEquals(0, fake.httpBatches.size)
     }
 
     @Test fun `explicit 075 checks only selected market`() = runBlocking {
