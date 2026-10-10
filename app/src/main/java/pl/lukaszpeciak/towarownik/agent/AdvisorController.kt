@@ -88,6 +88,13 @@ internal class AdvisorController(
     private val branchDirectory: suspend (
         ProviderId,
     ) -> ProviderBranchResult,
+    private val executeLocationsTool: (suspend (
+        AdvisorLocationArguments,
+        String,
+        String,
+        Collection<VerifiedProductSnapshot>,
+        List<VerifiedProductSnapshot>,
+    ) -> AdvisorLocationEvidence)? = null,
     private val startAgentWithAttachment: (suspend (
         String,
         String,
@@ -115,6 +122,7 @@ internal class AdvisorController(
         conversationProviderId: String = OBI_PROVIDER_ID.value,
         attachment: AdvisorAttachment? = null,
         attachments: List<AdvisorAttachment> = emptyList(),
+        historicalVerifiedProducts: List<VerifiedProductSnapshot> = emptyList(),
         onOpenAiResponse: (AdvisorUsage?, Long) -> Unit = { _, _ -> },
         onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
@@ -345,6 +353,101 @@ internal class AdvisorController(
                         searchActions = searchActionsByKey.values.toList(),
                         traceId = turnTraceId,
                     ).also(onState)
+                }
+
+                is AdvisorProxyResult.LocationToolRequest -> {
+                    val locationRequest = proxyResult
+                    if (!toolAssistedObserved) {
+                        toolAssistedObserved = true
+                        observeToolSafely(onToolRequestObserved)
+                    }
+                    val evidence = if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
+                        if (localToolLimitContinuationSent) {
+                            return AdvisorUiState.Error(AdvisorError.PROTOCOL).also(onState)
+                        }
+                        localToolLimitContinuationSent = true
+                        AdvisorLocationEvidence(
+                            providerId = conversationProviderId,
+                            productId = null,
+                            status = "rejected",
+                            reason = "local_tool_limit_reached",
+                            coverage = "unknown",
+                            checkedIds = emptyList(),
+                            returnedIds = emptyList(),
+                            missingIds = emptyList(),
+                            locations = emptyList(),
+                            verifiedAtMillis = null,
+                            centralStock = null,
+                        )
+                    } else {
+                        toolCalls += 1
+                        onState(AdvisorUiState.RunningLocalTool)
+                        try {
+                            executeLocationsTool?.invoke(
+                                locationRequest.arguments,
+                                conversationProviderId,
+                                normalizedInput,
+                                verifiedByKey.values.toList(),
+                                historicalVerifiedProducts,
+                            ) ?: AdvisorLocationEvidence(
+                                providerId = conversationProviderId,
+                                productId = null,
+                                status = "unavailable",
+                                reason = "location_service_unavailable",
+                                coverage = "unknown",
+                                checkedIds = emptyList(),
+                                returnedIds = emptyList(),
+                                missingIds = emptyList(),
+                                locations = emptyList(),
+                                verifiedAtMillis = null,
+                                centralStock = null,
+                            )
+                        } catch (cancel: CancellationException) {
+                            throw cancel
+                        } catch (_: Exception) {
+                            AdvisorLocationEvidence(
+                                providerId = conversationProviderId,
+                                productId = null,
+                                status = "unavailable",
+                                reason = "transport",
+                                coverage = "unknown",
+                                checkedIds = emptyList(),
+                                returnedIds = emptyList(),
+                                missingIds = emptyList(),
+                                locations = emptyList(),
+                                verifiedAtMillis = null,
+                                centralStock = null,
+                            )
+                        }
+                    }
+                    onState(AdvisorUiState.WaitingForFinalAnswer)
+                    proxyResult = when (
+                        val continued = safeProxyCall {
+                            continueProxyTurn(
+                                responseId = locationRequest.responseId,
+                                callId = locationRequest.callId,
+                                providerId = conversationProviderId,
+                                branchId = conversationStoreNumber,
+                                contract = turnContract,
+                                continuation = AdvisorToolContinuation.Locations(evidence),
+                                traceId = turnTraceId,
+                            )
+                        }
+                    ) {
+                        is AdvisorProxyCallResult.Success -> {
+                            turnTraceId = advisorTraceIdOrNull(continued.traceId) ?: turnTraceId
+                            observeUsageSafely(
+                                usage = continued.result.usageOrNull(),
+                                webSearchCalls = continued.result.webSearchCalls(),
+                                callback = onOpenAiResponse,
+                            )
+                            continued.result
+                        }
+                        is AdvisorProxyCallResult.Failure ->
+                            return continued.toUiError(
+                                fallbackTraceId = turnTraceId,
+                            ).also(onState)
+                    }
                 }
 
                 is AdvisorProxyResult.ToolRequest -> {
@@ -585,6 +688,7 @@ internal class AdvisorController(
             val proxyClient = AdvisorProxyClient(attachmentStorage = attachmentStorage)
             val providers = ProductProviderRegistry.production()
             val obiTool = FindObiProductsTool()
+            val locationsTool = AdvisorLocationsTool()
             val providerTool = FindProviderProductsTool(
                 providers = providers,
             )
@@ -667,6 +771,7 @@ internal class AdvisorController(
                     )
                 },
                 executeObiTool = obiTool::execute,
+                executeLocationsTool = locationsTool::execute,
                 executeProviderTool = providerTool::execute,
                 branchDirectory = { providerId ->
                     withContext(Dispatchers.IO) {
@@ -780,12 +885,14 @@ private fun AdvisorProxyResult.usageOrNull(): AdvisorUsage? =
     when (this) {
         is AdvisorProxyResult.Answer -> usage
         is AdvisorProxyResult.ToolRequest -> usage
+        is AdvisorProxyResult.LocationToolRequest -> usage
     }
 
 private fun AdvisorProxyResult.webSearchCalls(): Long =
     when (this) {
         is AdvisorProxyResult.Answer -> webSearchCalls
         is AdvisorProxyResult.ToolRequest -> webSearchCalls
+        is AdvisorProxyResult.LocationToolRequest -> webSearchCalls
     }
 
 private fun AdvisorProxyCallResult.Failure.toUiError(
