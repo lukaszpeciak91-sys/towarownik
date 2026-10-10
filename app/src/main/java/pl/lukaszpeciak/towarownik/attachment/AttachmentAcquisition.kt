@@ -21,6 +21,9 @@ private const val JPEG_QUALITY = 92
 internal enum class AttachmentImportError {
     UNSUPPORTED_TYPE,
     TOO_LARGE,
+    TEXT_TOO_LARGE,
+    INVALID_TEXT,
+    TEXT_TOTAL_TOO_LARGE,
     TOO_MANY,
     TOTAL_TOO_LARGE,
     IMAGE_UNREADABLE,
@@ -40,15 +43,50 @@ internal class AttachmentImporter(
 ) {
     fun import(uri: Uri, suggestedName: String? = null): AttachmentImportResult {
         val metadata = queryMetadata(uri)
+        val name = metadata.name ?: suggestedName ?: "attachment"
+        val resolvedType = resolver.getType(uri)?.substringBefore(';')?.trim()?.lowercase()
+        // Filename is required for text, never infer type from a generic provider MIME alone.
+        val textName = sanitizedTextAttachmentName(name)
+        if (textName != null) {
+            val textMime = normalizedPickedTextMime(textName, resolvedType)
+                ?: return AttachmentImportResult.Failure(AttachmentImportError.UNSUPPORTED_TYPE)
+            if (metadata.size != null && metadata.size > TEXT_ATTACHMENT_MAX_BYTES) {
+                return AttachmentImportResult.Failure(AttachmentImportError.TEXT_TOO_LARGE)
+            }
+            return importText(uri, textName, textMime)
+        }
         if (metadata.size != null && metadata.size > ATTACHMENT_LOCAL_STORAGE_MAX_BYTES) {
             return AttachmentImportResult.Failure(AttachmentImportError.TOO_LARGE)
         }
-        val resolvedType = resolver.getType(uri)?.lowercase()
         return when {
-            resolvedType == "application/pdf" -> importPdf(uri, metadata.name ?: suggestedName ?: "document.pdf")
-            resolvedType?.startsWith("image/") == true -> importImage(uri, metadata.name ?: suggestedName ?: "photo")
+            resolvedType == "application/pdf" -> importPdf(uri, name)
+            resolvedType?.startsWith("image/") == true -> importImage(uri, name)
             else -> AttachmentImportResult.Failure(AttachmentImportError.UNSUPPORTED_TYPE)
         }
+    }
+
+    private fun importText(uri: Uri, name: String, mimeType: String): AttachmentImportResult {
+        val bytes = readBounded(uri, TEXT_ATTACHMENT_MAX_BYTES)
+            ?: return AttachmentImportResult.Failure(AttachmentImportError.CANNOT_OPEN)
+        if (bytes.size > TEXT_ATTACHMENT_MAX_BYTES) {
+            return AttachmentImportResult.Failure(AttachmentImportError.TEXT_TOO_LARGE)
+        }
+        if (decodedTextAttachmentOrNull(bytes) == null) {
+            return AttachmentImportResult.Failure(AttachmentImportError.INVALID_TEXT)
+        }
+        return runCatching {
+            storage.importValidated(
+                type = AttachmentType.TEXT,
+                displayName = name,
+                mimeType = mimeType,
+                byteSize = bytes.size.toLong(),
+                source = { ByteArrayInputStream(bytes) },
+                beforePublish = beforePublish,
+            )
+        }.fold(
+            onSuccess = { AttachmentImportResult.Success(it) },
+            onFailure = { AttachmentImportResult.Failure(AttachmentImportError.CANNOT_OPEN) },
+        )
     }
 
     private fun importPdf(uri: Uri, name: String): AttachmentImportResult {
@@ -101,7 +139,10 @@ internal class AttachmentImporter(
         )
     }
 
-    private fun readBounded(uri: Uri): ByteArray? = runCatching {
+    private fun readBounded(
+        uri: Uri,
+        maxBytes: Long = ATTACHMENT_LOCAL_STORAGE_MAX_BYTES,
+    ): ByteArray? = runCatching {
         resolver.openInputStream(uri)?.use { input ->
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -110,8 +151,8 @@ internal class AttachmentImporter(
                 val count = input.read(buffer)
                 if (count < 0) break
                 total += count
-                if (total > ATTACHMENT_LOCAL_STORAGE_MAX_BYTES) {
-                    return@use ByteArray((ATTACHMENT_LOCAL_STORAGE_MAX_BYTES + 1).toInt())
+                if (total > maxBytes) {
+                    return@use ByteArray((maxBytes + 1).toInt())
                 }
                 output.write(buffer, 0, count)
             }
