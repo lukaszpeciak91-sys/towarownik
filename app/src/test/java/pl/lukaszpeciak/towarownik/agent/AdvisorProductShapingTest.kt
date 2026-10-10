@@ -31,6 +31,7 @@ class AdvisorProductShapingTest {
         assertEquals("Hager", shaped.brand)
         assertEquals(362, shaped.stock)
         assertEquals(10113, shaped.centralStock)
+        assertEquals("m", shaped.stockUnit)
         assertEquals(BigDecimal("14.55"), shaped.price)
         assertEquals("online", shaped.priceScope)
 
@@ -88,6 +89,7 @@ class AdvisorProductShapingTest {
         )
         assertEquals(source.stock, shaped.stock)
         assertEquals(source.centralStock, shaped.centralStock)
+        assertEquals(source.stockUnit, shaped.stockUnit)
         assertEquals(source.grossPrice, shaped.price)
     }
 
@@ -181,6 +183,7 @@ class AdvisorProductShapingTest {
         val provider = baseProduct(
             shortDescription = "  ten   sam opis  ",
             technicalFacts = facts,
+            stockUnit = "m²",
         ).toAdvisorVerifiedProduct("potrzebuję IP65")
         val obi = LocalProduct(
             obik = "1234567",
@@ -205,6 +208,7 @@ class AdvisorProductShapingTest {
         assertEquals("online", provider.priceScope)
         assertEquals("1234567", obi.obik)
         assertEquals(4, obi.stock)
+        assertEquals("m²", obi.stockUnit)
         assertEquals(BigDecimal("19.99"), obi.price)
     }
 
@@ -273,6 +277,7 @@ class AdvisorProductShapingTest {
 
                 assertEquals("580", product["productId"]!!.jsonPrimitive.content)
                 assertEquals("362", product["stock"]!!.jsonPrimitive.content)
+                assertEquals("m", product["stockUnit"]!!.jsonPrimitive.content)
                 assertEquals(
                     "10113",
                     product["centralStock"]!!.jsonPrimitive.content,
@@ -349,6 +354,7 @@ class AdvisorProductShapingTest {
             name = "Wyłącznik nadprądowy B16",
             stock = 362,
             centralStock = 10113,
+            stockUnit = "m",
             grossPrice = BigDecimal("14.55"),
             priceScope = ProviderPriceScope.ONLINE,
             productUrl = "https://kwant.net.pl/produkt/test-580",
