@@ -1,6 +1,7 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
 
 /**
  * Bounded, same-conversation evidence supplied by Android; never model text.
@@ -29,6 +30,7 @@ internal fun resolveAdvisorLocationFollowUp(
     input: String,
     history: List<AdvisorLocationHistoryMessage>,
     historicalProducts: List<VerifiedProductSnapshot>,
+    branches: List<ProviderBranch> = emptyList(),
 ): AdvisorLocationFollowUp {
     val recent = history.takeLast(12)
     val candidates = historicalProducts.distinctBy { it.providerId to it.effectiveProductId }
@@ -39,16 +41,21 @@ internal fun resolveAdvisorLocationFollowUp(
         .replace(Regex("""[^a-z0-9]+"""), " ")
         .trim()
     val current = normalized(input)
+    // Explicit and bounded continuation forms. A random short message ("pokaż
+    // ceny", "dobierz kabel", etc.) is NOT a location clarification. A bare
+    // city must exactly name a canonical provider branch; no fuzzy inference.
+    fun isBareCanonicalLocation(s: String): Boolean {
+        val text = normalized(s)
+        if (text.isBlank()) return false
+        return branches.any { normalized(it.name) == text }
+    }
     fun isClarification(s: String): Boolean {
         val t = normalized(s)
-        return t == "obu" || t == "oba" ||
-            // A user-supplied city, not an untrusted model-provided city.
-            (t.length in 3..45 && t.split(" ").size <= 3 &&
-                t.split(" ").all { it.length >= 3 } &&
-                !Regex("""\b(jak|dlaczego|polec|montaz|zamontowac|dobierz)\b""")
-                    .containsMatchIn(t)) ||
-            t.startsWith("a w ") || t.startsWith("no jak market ") ||
-            t.startsWith("ok podaj markety ")
+        return t in setOf("obu", "oba") ||
+            t.matches(Regex("""a w [a-z0-9]+(?: [a-z0-9]+){0,3}""")) ||
+            t.matches(Regex("""no jak market w [a-z0-9]+(?: [a-z0-9]+){0,4}""")) ||
+            t.startsWith("ok podaj markety w ktorych ") ||
+            isBareCanonicalLocation(s)
     }
     // Explicit inventory must mention a requested stock/availability check or
     // a requested store; merely mentioning a city in technical advice is not one.
@@ -67,15 +74,7 @@ internal fun resolveAdvisorLocationFollowUp(
     val anchor = userHistory.indexOfLast { isInventoryRequest(it.text) }
     val continuation = anchor >= 0 &&
         userHistory.drop(anchor + 1).all { isClarification(it.text) }
-    val currentIsShortFollowUp =
-        current == "obu" || current == "oba" ||
-            current.startsWith("a w ") || current.startsWith("no jak market ") ||
-            current.startsWith("ok podaj markety ") ||
-            (current.length in 3..45 && current.split(" ").size <= 3 &&
-                current.split(" ").all { it.length >= 3 } &&
-                !isInventoryRequest(input) &&
-                !Regex("""\b(jak|dlaczego|polec|montaz|zamontowac|dobierz)\b""")
-                    .containsMatchIn(current))
+    val currentIsShortFollowUp = isClarification(input)
     val pending = continuation && currentIsShortFollowUp &&
         candidates.isNotEmpty()
 
@@ -93,11 +92,25 @@ internal fun resolveAdvisorLocationFollowUp(
         }.map { it.effectiveProductId }
     }
     val selectedId = recentSelections.firstOrNull()
+    // A current explicit product ID or article always takes precedence over
+    // prior selections. It must match an already verified snapshot; unknown
+    // numbers are still rejected by the downstream trusted-product guard.
+    val currentMatches = candidates.filter { candidate ->
+        listOfNotNull(candidate.effectiveProductId, candidate.articleNumber)
+            .any { identifier ->
+                Regex("""(?<![a-z0-9])""" + Regex.escape(normalized(identifier)) +
+                    """(?![a-z0-9])""").containsMatchIn(current)
+            }
+    }.distinctBy { it.providerId to it.effectiveProductId }
     val newestCard = recent.asReversed()
         .firstOrNull { it.role == "ASSISTANT" && it.products.isNotEmpty() }
         ?.products?.distinctBy { it.effectiveProductId }
         ?.singleOrNull()?.effectiveProductId
-    val provenId = selectedId ?: newestCard
+    val provenId = when (currentMatches.size) {
+        1 -> currentMatches.single().effectiveProductId
+        0 -> selectedId ?: newestCard
+        else -> null // Explicitly named multiple candidates remain ambiguous.
+    }
     val bothSelectedByUser = Regex("""\b(?:obu|oba)\b""").containsMatchIn(current) ||
         userHistory.drop(anchor.coerceAtLeast(0)).any {
             Regex("""\b(?:obu|oba)\b""").containsMatchIn(normalized(it.text))
@@ -105,7 +118,7 @@ internal fun resolveAdvisorLocationFollowUp(
     val both = if (bothSelectedByUser && continuation && candidates.size == 2) {
         candidates.map { it.effectiveProductId }.toSet()
     } else emptySet()
-    val selectedHistory = if (both.isEmpty() && provenId != null) {
+    val selectedHistory = if (both.isEmpty() && currentMatches.size <= 1 && provenId != null) {
         candidates.filter { it.effectiveProductId == provenId }
             .takeIf { it.isNotEmpty() } ?: candidates
     } else candidates
