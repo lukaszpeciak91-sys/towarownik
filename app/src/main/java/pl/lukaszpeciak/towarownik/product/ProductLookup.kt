@@ -21,6 +21,7 @@ data class LocalProduct(
     val shortDescription: String? = null,
     val technicalFacts: List<TechnicalFact> = emptyList(),
     val primaryImageUrl: String? = null,
+    val stockUnit: String? = null,
 )
 
 enum class ProductLookupFailure {
