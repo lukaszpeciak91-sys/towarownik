@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — Shared product-image preview
+
+Added a full-screen, warm-dark click-to-enlarge Dialog in VerifiedProductThumbnail across OBI/KWANT Advisor, manual-search and conversation-history card surfaces. Coil displays a larger Fit image within the actual dialog bounds; image failures stay safe and noninteractive for missing thumbnails. Added localized PL/EN accessibility/error labels and provider snapshot preservation regression. No modifications to Worker, provider parser, Room, attachments or WorkingProfile.
+
+
 ## 2026-10-10 — lightweight text files Phase A2
 
 Android document picker and replacement now select ten allowlisted text-like formats alongside image/PDF. TEXT is checked and normalized from bounded provider MIME quirks to strict Phase A1 MIME contracts, validated as UTF-8 before ownership publication, and persisted in existing Room v12 message_attachments rows. Composer and USER history show distinct filename/type/size badges without file contents. Multi-file order, replace/remove, failed-turn recovery, restart, 1 MiB per-file + aggregate text budget, 24 MiB total and private-file cleanup are retained. No Worker/provider changes or Office/archive support.

@@ -52,4 +52,36 @@ class VerifiedProductUiModelTest {
         assertEquals("3496072", ui.productId)
         assertEquals(null, ui.centralStock)
     }
+    @Test
+    fun verifiedLocalPrimaryImagePreservedForObiAndKwant() {
+        for (provider in listOf("obi-pl", "kwant-pl")) {
+            val url = if (provider == "obi-pl") {
+                "https://bilder.obi.pl/fixture.jpg"
+            } else {
+                "https://kwant.net.pl/media/fixture.jpg"
+            }
+            val snapshot = VerifiedProductSnapshot(
+                obik = "3496072",
+                name = "Fixture",
+                stock = 4,
+                grossPrice = null,
+                productUrl = if (provider == "obi-pl") {
+                    "https://www.obi.pl/p/3496072"
+                } else {
+                    "https://kwant.net.pl/produkt/3496072"
+                },
+                verifiedAt = 1L,
+                storeNumber = if (provider == "obi-pl") "075" else "205",
+                providerId = provider,
+                primaryImageUrl = url,
+            )
+            val ui = snapshot.toVerifiedProductUiModel()
+            assertEquals(provider, ui.providerId)
+            assertEquals(url, ui.primaryImageUrl)
+            assertEquals(snapshot.productUrl, verifiedProductOpenUrl(ui))
+            assertEquals(null, snapshot.copy(primaryImageUrl = null)
+                .toVerifiedProductUiModel().primaryImageUrl)
+        }
+    }
+
 }

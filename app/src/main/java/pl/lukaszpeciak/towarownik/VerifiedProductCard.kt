@@ -3,6 +3,10 @@ package pl.lukaszpeciak.towarownik
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +32,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -483,18 +491,26 @@ internal fun VerifiedProductThumbnail(
         .fillMaxWidth()
         .height(96.dp),
 ) {
+    // Only an existing Android-verified primary image URL is used.
     val imageUrl = product.primaryImageUrl ?: return
-    var loadFailed by remember(imageUrl) {
-        mutableStateOf(false)
-    }
+    var loadFailed by remember(imageUrl) { mutableStateOf(false) }
+    var thumbnailLoaded by remember(imageUrl) { mutableStateOf(false) }
+    var previewOpen by remember(imageUrl) { mutableStateOf(false) }
     if (loadFailed) return
 
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(
-            alpha = 0.35f,
+        modifier = modifier.then(
+            if (thumbnailLoaded) {
+                Modifier.clickable(
+                    onClickLabel = stringResource(R.string.product_image_open),
+                    role = Role.Button,
+                ) { previewOpen = true }
+            } else {
+                Modifier
+            },
         ),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
     ) {
         AsyncImage(
             model = imageUrl,
@@ -503,10 +519,79 @@ internal fun VerifiedProductThumbnail(
                 .fillMaxSize()
                 .padding(8.dp),
             contentScale = ContentScale.Fit,
+            onSuccess = { thumbnailLoaded = true },
             onError = {
                 loadFailed = true
+                previewOpen = false
             },
         )
+    }
+
+    if (previewOpen) {
+        VerifiedProductImagePreview(
+            imageUrl = imageUrl,
+            productName = product.name,
+            onDismiss = { previewOpen = false },
+        )
+    }
+}
+
+/**
+ * Separate full-bounds Coil request/decode, not an upscaled thumbnail bitmap.
+ * Dialog remains on the current surface; Back and tapping anywhere dismiss.
+ */
+@Composable
+private fun VerifiedProductImagePreview(
+    imageUrl: String,
+    productName: String,
+    onDismiss: () -> Unit,
+) {
+    var loaded by remember(imageUrl) { mutableStateOf(false) }
+    var failed by remember(imageUrl) { mutableStateOf(false) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClickLabel = stringResource(R.string.product_image_close),
+                    role = Role.Button,
+                    onClick = onDismiss,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (!failed) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = productName,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { loaded = true },
+                    onError = { failed = true },
+                )
+            }
+            if (!loaded && !failed) {
+                CircularProgressIndicator()
+            }
+            if (failed) {
+                Text(
+                    text = stringResource(R.string.product_image_load_failed),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+        }
     }
 }
 
