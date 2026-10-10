@@ -376,6 +376,8 @@ internal class AdvisorController(
                         history = locationHistory,
                         historicalProducts = historicalVerifiedProducts
                             .filter { it.providerId == conversationProviderId },
+                        branches = (loadTurnBranches() as? ProviderBranchResult.Available)
+                            ?.branches.orEmpty(),
                     )
                     val repeatKey = Triple(
                         locationRequest.arguments.providerId,
@@ -473,9 +475,12 @@ internal class AdvisorController(
                             )
                         }
                     }
+                    // Product-trust and ambiguity decisions may change after
+                    // a local discovery call in this same USER turn. Cache only
+                    // scope/provider denials invariant under new verified cards.
                     if (priorDecision == null &&
-                        (evidence.status == "rejected" ||
-                            evidence.reason == "unverified_request_contract")
+                        evidence.status == "rejected" &&
+                        isInvariantLocationDenial(evidence.reason)
                     ) {
                         deterministicLocationOutcomes[repeatKey] = evidence
                     }
@@ -741,6 +746,16 @@ internal class AdvisorController(
                 AdvisorProxyFailureKind.NETWORK,
             )
         }
+
+    private fun isInvariantLocationDenial(reason: String?): Boolean =
+        reason in setOf(
+            "location_intent_required",
+            "unknown_location",
+            "location_not_authorized",
+            "wrong_provider",
+            "unsupported_provider",
+        ) || reason?.startsWith("location_conflict_") == true
+
 
     companion object {
         fun production(context: android.content.Context): AdvisorController {
