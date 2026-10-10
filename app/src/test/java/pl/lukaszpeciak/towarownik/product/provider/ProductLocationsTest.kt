@@ -386,7 +386,11 @@ class ProductLocationsTest {
                 verifiedExtendedValue = "fixtureOnly",
             )
             assertTrue(adapter.read(kwantRef, emptyList()) is ProductLocationsResult.Available)
-            assertEquals("kwant-locations-directory-test", directoryThread)
+            // Coroutine debug mode may append a coroutine id to the thread name.
+            assertTrue(
+                "Directory must execute on the injected dispatcher",
+                directoryThread?.startsWith("kwant-locations-directory-test") == true,
+            )
             assertFalse(callerThread == directoryThread)
             assertEquals(1, fetchCount)
         } finally {
