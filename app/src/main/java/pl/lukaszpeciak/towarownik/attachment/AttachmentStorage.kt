@@ -85,7 +85,9 @@ internal class AttachmentStorage private constructor(
     }
 
     fun renderKind(attachment: AdvisorAttachment): AttachmentRenderKind =
-        if (!isReadable(attachment)) {
+        if (!isReadable(attachment) ||
+            (attachment.type == AttachmentType.TEXT && !isReadableText(attachment))
+        ) {
             AttachmentRenderKind.UNAVAILABLE
         } else {
             when (attachment.type) {
@@ -94,6 +96,12 @@ internal class AttachmentStorage private constructor(
                 AttachmentType.TEXT -> AttachmentRenderKind.TEXT
             }
         }
+
+    private fun isReadableText(attachment: AdvisorAttachment): Boolean = runCatching {
+        open(attachment.localId)?.use { input ->
+            decodedTextAttachmentOrNull(input.readBytes()) != null
+        } == true
+    }.getOrDefault(false)
 
     fun delete(localId: String): Boolean {
         val target = file(localId) ?: return false
