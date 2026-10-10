@@ -22,6 +22,7 @@ class VerifiedProductUiModelTest {
             productId = "580",
             branchId = "205",
             articleNumber = "MBN116E/HAG",
+            stockUnit = "m",
         ).toVerifiedProductUiModel()
 
         assertEquals(ProviderPriceScope.ONLINE, ui.priceScope)
@@ -31,6 +32,7 @@ class VerifiedProductUiModelTest {
         assertEquals("MBN116E/HAG", ui.articleNumber)
         assertEquals(140, ui.stock)
         assertEquals(5918, ui.centralStock)
+        assertEquals("m", ui.stockUnit)
         assertEquals(BigDecimal("14.55"), ui.grossPrice)
     }
 
@@ -51,6 +53,7 @@ class VerifiedProductUiModelTest {
         assertEquals("075", ui.branchId)
         assertEquals("3496072", ui.productId)
         assertEquals(null, ui.centralStock)
+        assertEquals(null, ui.stockUnit)
     }
     @Test
     fun verifiedLocalPrimaryImagePreservedForObiAndKwant() {
