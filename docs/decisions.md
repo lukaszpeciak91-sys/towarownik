@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-10-10 — Canonical model hints are compatibility checks, never authority
+
+Do not maintain separate name-matching rules for user-scoped OBI city parsing versus `find_product_locations.locations[]` validation. Share one canonical/inflected alias table derived only from the verified store directory, plus the existing explicit market-label grammar. Hints may name canonical cities, deterministic Polish inflections, exact IDs, or `OBI <ID>`, but must resolve wholly inside the already authorized market set. Empty hints are valid and never reduce user scope; unknown or contradictory hints on restricted requests fail closed before HTTP. Provider adapters, Worker schema, trust, rollout and nationwide batching are unchanged.
+
+
+
 ## 2026-10-10 — Advisor document QA versus current provider authority
 
 - User attachments are legitimate evidence **about their own contents**: answer, compare, filter and calculate TXT/CSV/MD prices, quantities, names and technical details with explicit document attribution (e.g. `w przesłanym cenniku`).

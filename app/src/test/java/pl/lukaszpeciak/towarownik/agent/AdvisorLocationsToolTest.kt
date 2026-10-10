@@ -220,4 +220,106 @@ class AdvisorLocationsToolTest {
         assertEquals(0, httpCalls)
         assertNull(evidence.centralStock)
     }
+    @Test fun `Krakow canonical inflected and empty model hints preserve four stores`() = runBlocking {
+        val expected = setOf("019", "072", "003", "059")
+        for (hints in listOf(
+            listOf("Kraków"),
+            listOf("Krakowie"),
+            emptyList(),
+            listOf("OBI 003"),
+        )) {
+            val fake = StockAdapter()
+            val result = tool(fake).execute(
+                AdvisorLocationArguments("obi-pl", "3496072", hints),
+                "obi-pl", "075", "Sprawdź w Krakowie",
+                emptyList(), listOf(one),
+            )
+            assertEquals(hints.toString(), "verified", result.status)
+            assertEquals(hints.toString(), "requested_subset", result.coverage)
+            assertEquals(hints.toString(), expected, result.checkedIds.toSet())
+            assertEquals(hints.toString(), 1, fake.calls)
+        }
+    }
+
+    @Test fun `Nowy Sacz canonical and inflected model hints resolve selected market`() = runBlocking {
+        for (hint in listOf("Nowy Sącz", "Nowym Sączu", "075", "OBI 075")) {
+            val fake = StockAdapter()
+            val result = tool(fake).execute(
+                AdvisorLocationArguments("obi-pl", "3496072", listOf(hint)),
+                "obi-pl", "075", "Sprawdź w Nowym Sączu",
+                emptyList(), listOf(one),
+            )
+            assertEquals(hint, "verified", result.status)
+            assertEquals(hint, listOf("075"), result.checkedIds)
+            assertEquals(hint, 1, fake.calls)
+        }
+    }
+
+    @Test fun `explicit OBI 003 user scope accepts contextual model market hint only`() = runBlocking {
+        for (hint in listOf("003", "OBI 003", "market OBI 003", "market nr 003")) {
+            val fake = StockAdapter()
+            val result = tool(fake).execute(
+                AdvisorLocationArguments("obi-pl", "3496072", listOf(hint)),
+                "obi-pl", "075", "Sprawdź market OBI 003",
+                emptyList(), listOf(one),
+            )
+            assertEquals(hint, "verified", result.status)
+            assertEquals(hint, listOf("003"), result.checkedIds)
+            assertEquals(hint, 1, fake.calls)
+        }
+    }
+
+    @Test fun `out-of-scope unknown and contradictory model hints reject before inventory`() = runBlocking {
+        val cases = listOf(
+            "Sprawdź w Krakowie" to listOf("OBI 075"),
+            "Sprawdź w Krakowie" to listOf("Nowy Sącz"),
+            "Sprawdź w Krakowie" to listOf("Kraków", "OBI 999"),
+            "Sprawdź market OBI 003" to listOf("OBI 059"),
+            "Sprawdź market OBI 003" to listOf("100 cm"),
+        )
+        for ((message, hints) in cases) {
+            val fake = StockAdapter()
+            val result = tool(fake).execute(
+                AdvisorLocationArguments("obi-pl", "3496072", hints),
+                "obi-pl", "075", message,
+                emptyList(), listOf(one),
+            )
+            assertEquals(message + hints, "rejected", result.status)
+            assertEquals(message + hints, "location_not_authorized", result.reason)
+            assertEquals(message + hints, 0, fake.calls)
+        }
+    }
+
+    @Test fun `unknown user city cannot be repaired with canonical model hints`() = runBlocking {
+        val fake = StockAdapter()
+        val result = tool(fake).execute(
+            AdvisorLocationArguments("obi-pl", "3496072", listOf("Kraków")),
+            "obi-pl", "075", "Sprawdź w Tarnowie",
+            emptyList(), listOf(one),
+        )
+        assertEquals("rejected", result.status)
+        assertEquals("unknown_location", result.reason)
+        assertEquals(0, fake.calls)
+    }
+
+    @Test fun `nationwide empty hints keep 61 others and dimensions do not become market IDs`() = runBlocking {
+        for (message in listOf(
+            "Gdzie jeszcze jest ten produkt?",
+            "Gdzie jeszcze jest listwa 100 cm?",
+        )) {
+            val fake = StockAdapter()
+            val result = tool(fake).execute(
+                AdvisorLocationArguments("obi-pl", "3496072", emptyList()),
+                "obi-pl", "075", message,
+                emptyList(), listOf(one),
+            )
+            assertEquals(message, "verified", result.status)
+            assertEquals(message, "all_other_locations", result.coverage)
+            assertEquals(message, 61, result.checkedIds.size)
+            assertTrue(message, "075" !in result.checkedIds)
+            assertEquals(message, 4, fake.calls)
+        }
+    }
+
+
 }

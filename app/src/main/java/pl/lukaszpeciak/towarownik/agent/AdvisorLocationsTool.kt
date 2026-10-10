@@ -380,14 +380,13 @@ internal class AdvisorLocationsTool(
         if (requested.isNotEmpty()) {
             // An explicit city expands to every canonical OBI store in that
             // city; model hints can neither add cities nor reduce the scope.
+            val cityAliases = obiCityAliases(directory)
             for (hint in modelHints) {
-                val name = norm(hint)
-                val candidates = directory.filter { branch ->
-                    branch.branchId.value == hint ||
-                        norm(branch.name) == name ||
-                        norm(branch.address.orEmpty()) == name
-                }
-                if (candidates.isEmpty() || candidates.any { it.branchId !in requested }) {
+                // Hints are untrusted; normalizing a city or labelled market
+                // only establishes equivalence to the *already* user-authorized
+                // canonical branches. It never adds or removes requested IDs.
+                val candidates = resolveModelLocationHint(hint, directory, cityAliases)
+                if (candidates.isNullOrEmpty() || !requested.containsAll(candidates)) {
                     return AuthorizedLocationScope.Rejected("location_not_authorized")
                 }
             }
@@ -402,6 +401,51 @@ internal class AdvisorLocationsTool(
             fullNetwork = true,
         )
     }
+
+    /**
+     * Single canonical-city alias source, reused by user restriction parsing
+     * and model-hint compatibility checks. Never inferred from the model.
+     */
+    private fun obiCityAliases(
+        directory: List<ProviderBranch>,
+    ): Map<String, List<ProviderBranch>> {
+        val cities = directory.groupBy { norm(it.name) }
+        val aliases = linkedMapOf<String, List<ProviderBranch>>()
+        for ((name, branches) in cities) {
+            aliases[name] = branches
+            cityLocative(name)?.let { aliases[it] = branches }
+        }
+        return aliases
+    }
+
+    private fun resolveModelLocationHint(
+        rawHint: String,
+        directory: List<ProviderBranch>,
+        cityAliases: Map<String, List<ProviderBranch>>,
+    ): Set<BranchId>? {
+        val hint = norm(rawHint)
+        // A city hint refers to every canonical store in that city, whether
+        // canonical or inflected; this does not narrow the user scope.
+        cityAliases[hint]?.let { return it.mapTo(linkedSetOf()) { branch -> branch.branchId } }
+        val byId = directory.associateBy { it.branchId.value }
+        byId[hint]?.let { return setOf(it.branchId) }
+        // Use the *same* explicit market-label grammar as user-scope parsing.
+        // "OBI 003" is a store hint, whereas a product's "100 cm" is not.
+        val marketLabel = marketLabelPattern.find(hint)
+        if (marketLabel != null && marketLabel.range.first == 0) {
+            val id = hint.substring(marketLabel.range.last + 1).trim()
+            if (!Regex("""[0-9]{3}""").matches(id)) return null
+            return byId[id]?.let { setOf(it.branchId) }
+        }
+        // Keep previous exact-address compatibility; no substring guessing.
+        val matchingAddresses = directory.filter { norm(it.address.orEmpty()) == hint }
+        return matchingAddresses.takeIf { it.isNotEmpty() }
+            ?.mapTo(linkedSetOf()) { it.branchId }
+    }
+
+    private val marketLabelPattern = Regex(
+        """\b(?:market\w*|sklep\w*|oddzial\w*|obi)(?:\s+obi)?(?:\s+(?:nr|numer))?\s+""",
+    )
 
     private sealed interface ParsedLocationScope {
         data object Broad : ParsedLocationScope
@@ -428,12 +472,7 @@ internal class AdvisorLocationsTool(
     ): ParsedLocationScope {
         val ids = linkedSetOf<BranchId>()
         val byId = directory.associateBy { it.branchId.value }
-        val cities = directory.groupBy { norm(it.name) }
-        val aliases = linkedMapOf<String, List<ProviderBranch>>()
-        for ((name, branches) in cities) {
-            aliases[name] = branches
-            cityLocative(name)?.let { aliases[it] = branches }
-        }
+        val aliases = obiCityAliases(directory)
         val knownNames = aliases.keys.sortedByDescending { it.length }
         fun isBoundary(s: String, length: Int): Boolean =
             length == s.length || !s[length].isLetterOrDigit()
@@ -461,10 +500,7 @@ internal class AdvisorLocationsTool(
 
         // Market IDs require a preceding store label, not an arbitrary 3-digit
         // product measurement. Commas must survive normalization.
-        val marketLabel = Regex(
-            """\b(?:market\w*|sklep\w*|oddzial\w*|obi)(?:\s+obi)?(?:\s+(?:nr|numer))?\s+""",
-        )
-        for (label in marketLabel.findAll(text)) {
+        for (label in marketLabelPattern.findAll(text)) {
             var remaining = text.substring(label.range.last + 1).trimStart()
             val first = Regex("""^([0-9]{3})\b""").find(remaining) ?: continue
             var current = first

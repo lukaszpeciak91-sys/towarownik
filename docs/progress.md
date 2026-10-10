@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — Location hint equivalence fix
+
+Reused canonical-city aliases and existing market-label matching when validating model location hints in Android. Added regressions for Kraków/Krakowie/empty hints and four canonical stores; Nowy Sącz/Nowym Sączu/OBI 075; contextual OBI 003; contradictory/unknown hints; unknown user city; full-network empty hints and 100 cm product dimension. Added a Worker-compatible JSON envelope → Android proxy parse → typed locations execution integration test with synthetic stock. No Worker, product transport, Room, WorkingProfile or UI changes.
+
+
 ## 2026-10-10 — Shared product-image preview
 
 Added a full-screen, warm-dark click-to-enlarge Dialog in VerifiedProductThumbnail across OBI/KWANT Advisor, manual-search and conversation-history card surfaces. Coil displays a larger Fit image within the actual dialog bounds; image failures stay safe and noninteractive for missing thumbnails. Added localized PL/EN accessibility/error labels and provider snapshot preservation regression. No modifications to Worker, provider parser, Room, attachments or WorkingProfile.
