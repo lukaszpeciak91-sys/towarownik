@@ -3573,6 +3573,8 @@ private fun AdvisorChatPreview() {
                 ),
             ),
             state = AdvisorUiState.Idle,
+            conversationId = null,
+            historyOpenSerial = 0,
             onDraftChange = {},
             onSubmit = {},
             pendingAttachments = emptyList(),
