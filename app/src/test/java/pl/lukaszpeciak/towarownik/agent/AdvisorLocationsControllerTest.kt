@@ -190,4 +190,97 @@ class AdvisorLocationsControllerTest {
         assertTrue(c.runTurn(input = "Jak dobrać kabel?", previousResponseId = null) {} is AdvisorUiState.Success)
         assertEquals(0, locations)
     }
+
+    @Test fun reportB_bothClarificationReturnsKwantUnavailableWithoutAnyInventoryCall() = runBlocking {
+        val kwantOne = snapshot.copy(
+            obik = "7035", productId = "7035", providerId = "kwant-pl",
+            articleNumber = "921871", storeNumber = "205", branchId = "205",
+        )
+        val kwantTwo = kwantOne.copy(
+            obik = "7027", productId = "7027", articleNumber = "921861",
+        )
+        val prior = listOf(
+            AdvisorLocationHistoryMessage("ASSISTANT", "Two cards", listOf(kwantOne, kwantTwo)),
+            AdvisorLocationHistoryMessage(
+                "USER", "a jaki jest stan tego gniazda 16 na 4 w oddziale w Zamościu?",
+            ),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Którego produktu?"),
+            AdvisorLocationHistoryMessage("USER", "obu"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Który oddział?"),
+        )
+        var inventoryCalls = 0
+        val response = AdvisorProxyCallResult.Success(
+            AdvisorProxyResult.LocationToolRequest(
+                responseId = "resp_kwant",
+                callId = "call_kwant",
+                arguments = AdvisorLocationArguments(
+                    "kwant-pl", "7035", listOf("Zamość"),
+                ),
+            ),
+        )
+        val c = controller(
+            initial = response,
+            continueCall = { output ->
+                val e = (output as AdvisorToolContinuation.Locations).evidence
+                assertEquals("unavailable", e.status)
+                assertEquals("unverified_request_contract", e.reason)
+                assertTrue(e.productId == null)
+                answer()
+            },
+            locationCall = { _, _, _, _, _, _ ->
+                inventoryCalls++
+                error("KWANT extended must remain disabled")
+            },
+        )
+        val result = c.runTurn(
+            input = "Zamość",
+            previousResponseId = "resp_prior",
+            conversationProviderId = "kwant-pl",
+            conversationStoreNumber = "205",
+            historicalVerifiedProducts = listOf(kwantOne, kwantTwo),
+            locationHistory = prior,
+        ) {}
+        assertTrue(result is AdvisorUiState.Success)
+        assertEquals(0, inventoryCalls)
+    }
+
+    @Test fun repeatedDeterministicLocationRejectionDoesNotConsumeSecondToolCall() = runBlocking {
+        var requested = 0
+        var continuations = 0
+        val c = controller(
+            initial = location(),
+            continueCall = { output ->
+                continuations++
+                val rejected = (output as AdvisorToolContinuation.Locations).evidence
+                assertEquals("unknown_location", rejected.reason)
+                if (continuations == 1) location(2) else answer()
+            },
+            locationCall = { _, _, _, _, _, _ ->
+                requested++
+                AdvisorLocationEvidence(
+                    providerId = "obi-pl",
+                    productId = null,
+                    status = "rejected",
+                    reason = "unknown_location",
+                    coverage = "unknown",
+                    checkedIds = emptyList(),
+                    returnedIds = emptyList(),
+                    missingIds = emptyList(),
+                    locations = emptyList(),
+                    verifiedAtMillis = null,
+                    centralStock = null,
+                )
+            },
+        )
+        val result = c.runTurn(
+            input = "Sprawdź w Tarnowie",
+            previousResponseId = "previous",
+            historicalVerifiedProducts = listOf(snapshot),
+        ) {}
+        assertTrue(result is AdvisorUiState.Success)
+        assertEquals(1, requested)
+        assertEquals(2, continuations)
+    }
+
+
 }
