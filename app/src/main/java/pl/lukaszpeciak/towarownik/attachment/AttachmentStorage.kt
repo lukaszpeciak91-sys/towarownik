@@ -13,6 +13,7 @@ internal const val ATTACHMENT_LOCAL_STORAGE_MAX_BYTES =
 internal enum class AttachmentRenderKind {
     IMAGE,
     PDF,
+    TEXT,
     UNAVAILABLE,
 }
 
@@ -90,6 +91,7 @@ internal class AttachmentStorage private constructor(
             when (attachment.type) {
                 AttachmentType.IMAGE -> AttachmentRenderKind.IMAGE
                 AttachmentType.PDF -> AttachmentRenderKind.PDF
+                AttachmentType.TEXT -> AttachmentRenderKind.TEXT
             }
         }
 
