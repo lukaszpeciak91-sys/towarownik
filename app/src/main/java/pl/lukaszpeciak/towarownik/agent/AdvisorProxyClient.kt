@@ -1233,6 +1233,7 @@ internal class AdvisorProxyClient(
                 },
             )
             put("stock", stock?.let(::JsonPrimitive) ?: JsonNull)
+            put("stockUnit", stockUnit?.let(::JsonPrimitive) ?: JsonNull)
             put(
                 "centralStock",
                 centralStock?.let(::JsonPrimitive) ?: JsonNull,
@@ -1303,6 +1304,7 @@ internal class AdvisorProxyClient(
                 },
             )
             put("stock", stock?.let(::JsonPrimitive) ?: JsonNull)
+            put("stockUnit", stockUnit?.let(::JsonPrimitive) ?: JsonNull)
             put("price", price?.let(::JsonPrimitive) ?: JsonNull)
         }
 
