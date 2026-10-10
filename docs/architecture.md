@@ -394,6 +394,12 @@ Advisor-facing upstream failures retain the public `502 {"error":"upstream_failu
 - V5 START/MESSAGE sends `X-Taksula-Attachment-Protocol: 5` and a JSON `payload` declaring `protocolVersion: 5`, followed by 1–3 repeated `attachment` file parts in stable order. The header chooses the larger pre-formData size guard; mismatched marker/payload versions reject. Legacy v4 retains its original single part and 16 MiB + 16 KiB declared-length guard; v5 permits at most 24 MiB of aggregate attachment bytes plus 16 KiB of multipart overhead, while every file retains the existing 16 MiB bound and MIME/magic validation.
 - The Worker validates all parts before forwarding them together in one Responses USER message. Optional text comes first, then ordered high-detail `input_image` or named PDF `input_file`. One-file v4, v2/v3 JSON text, JSON-only `/continue` (including v5), provider-aware `find_products`, local verification authority, observability schema, and response chaining remain intact.
 
+## Phase A1 — lightweight text attachment contract
+
+Provider-aware v5 supports ten additional **text-only** extensions: `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.log`, `.ini`, `.conf`. Worker checks both the sanitized final filename extension and strict extension-specific MIME allowlist. A fatal UTF-8 decode rejects malformed sequences; C0/C1 control characters (apart from tab/CR/LF), NUL, and common binary-container signatures reject. Text parts have a conservative 1 MiB additional cap; existing 16 MiB image/PDF per-file, maximum three attachments and 24 MiB aggregate multipart limits are unchanged.
+
+Validated text is represented as **untrusted USER `input_text`** that quotes the sanitized filename and includes content as data, in the original position relative to USER message text, images, and PDFs. It never uses `input_file`/image handling; no file content is authoritative for provider facts, system instructions, or stock/price. Android gains a TEXT metadata category and bounded transport preflight only. This stage does not change current image/PDF picker behavior, Room tables, saved-file ownership, the product tool, or JSON-only `/continue`. Office/spreadsheet/archive binaries remain unsupported.
+
 ## Multi-attachment Android lifecycle (Room v12)
 
 - Room 11→12 migrates the single `message_attachments` row into `(messageId,position=0)` without rewriting private file IDs; composite `(messageId,position)` keys persist up to 3 ordered rows, with unique localId and CASCADE cleanup.
