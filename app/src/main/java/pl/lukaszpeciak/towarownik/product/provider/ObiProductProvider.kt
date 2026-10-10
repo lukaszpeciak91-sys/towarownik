@@ -175,6 +175,7 @@ private fun LocalProduct.toProviderProduct(): ProviderProduct =
         branchId = BranchId(storeNumber),
         name = name,
         stock = stock,
+        stockUnit = stockUnit,
         grossPrice = grossPrice,
         priceScope = grossPrice?.let { ProviderPriceScope.BRANCH },
         productUrl = productUrl,
