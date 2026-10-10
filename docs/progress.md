@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — lightweight text files Phase A2
+
+Android document picker and replacement now select ten allowlisted text-like formats alongside image/PDF. TEXT is checked and normalized from bounded provider MIME quirks to strict Phase A1 MIME contracts, validated as UTF-8 before ownership publication, and persisted in existing Room v12 message_attachments rows. Composer and USER history show distinct filename/type/size badges without file contents. Multi-file order, replace/remove, failed-turn recovery, restart, 1 MiB per-file + aggregate text budget, 24 MiB total and private-file cleanup are retained. No Worker/provider changes or Office/archive support.
+
+
 ## 2026-10-10 — lightweight text files Phase A1
 
 Added strict v5 multipart support for ten allowlisted UTF-8 text extensions in the Worker and Android transport: extension/MIME validation, safe bounded decode, binary/control rejection, untrusted ordered Responses `input_text` with sanitized filename, and focused regression tests. Image/PDF v5, v4, Room v12 ownership, current pickers, provider evidence boundaries and JSON-only continuation remain unchanged. XLS/XLSX/DOCX/ZIP deferred.
