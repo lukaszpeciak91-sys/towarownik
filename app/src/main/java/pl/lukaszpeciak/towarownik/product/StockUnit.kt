@@ -10,11 +10,16 @@ internal fun verifiedStockUnitOrNull(raw: String?): String? {
     val unit = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     if (unit.length > 20 || !UNIT_LABEL.matches(unit)) return null
     return when (unit.lowercase(Locale.ROOT)) {
-        "szt", "szt.", "sztuka", "sztuki", "pcs", "pc" -> "szt."
-        "m", "metr", "metry" -> "m"
-        "kg", "kilogram" -> "kg"
-        "l", "litr", "litry" -> "l"
-        "opak", "opak.", "opakowanie", "op." -> "opak."
+        "m", "metr", "metry", "na metr", "na metry" -> "m"
+        "m²", "m2", "metr kwadratowy", "metry kwadratowe",
+        "na m²", "na m2", "na metr kwadratowy", "na metry kwadratowe" -> "m²"
+        "m³", "m3", "metr sześcienny", "metry sześcienne",
+        "na m³", "na m3", "na metr sześcienny", "na metry sześcienne" -> "m³"
+        "kg", "kilogram", "kilogramy", "na kg", "na kilogram", "na kilogramy" -> "kg"
+        "l", "litr", "litry", "na litr", "na litry" -> "l"
+        "opak", "opak.", "opakowanie", "opakowania", "op.",
+        "na opakowanie", "na opakowania" -> "opak."
+        "szt", "szt.", "sztuka", "sztuki", "pcs", "pc", "na sztukę", "na sztuki" -> "szt."
         else -> unit // Preserve other bounded, verified unit labels as provided.
     }
 }
