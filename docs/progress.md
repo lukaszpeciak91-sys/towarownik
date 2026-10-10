@@ -2,7 +2,7 @@
 
 ## 2026-10-10 — Verified stock units for OBI/KWANT cards
 
-Implemented optional stock-unit metadata from KWANT verified `unit` fields tied to exact product/branch evidence; OBI has no evidenced store-specific unit in existing live fixtures and remains null. Unit travels through snapshots, Room v13 migration, chat saved state, manual search and Advisor cards; central KWANT stock uses the same verified unit. Numeric stock never falls back to "szt." and stock=0/null meanings are unchanged. Parser, unit-formatter, saved-state, migration and history-reopen regressions added.
+Implemented optional stock-unit metadata from KWANT verified `unit` fields tied to exact product/branch evidence. OBI selected-store stock still has no adjacent unit, but exact PDP dedicated sales-unit facts are now accepted when explicit (for example `Sprzedaż: na metry` -> `m`); products without such evidence remain unitless. Unit travels through snapshots, Room v13 migration, chat saved state, manual search and Advisor cards; central KWANT stock uses the same verified unit. Numeric stock never falls back to "szt." and stock=0/null meanings are unchanged. Parser, unit-formatter, saved-state, migration and history-reopen regressions added.
 
 
 ## 2026-10-10 — Advisor chat selection and reopen-to-bottom
