@@ -8,6 +8,8 @@ import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.agent.advisorTraceIdOrNull
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.validatedAttachmentOrNull
+import pl.lukaszpeciak.towarownik.attachment.textAttachmentTotalBytes
+import pl.lukaszpeciak.towarownik.attachment.TEXT_ATTACHMENT_MAX_BYTES
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.isSupportedObiStoreNumber
@@ -217,6 +219,7 @@ internal class ConversationRepository(
         require(attachments.size <= 3)
         require(attachments.map { it.localId }.distinct().size == attachments.size)
         require(attachments.sumOf { it.byteSize } <= 24L * 1024 * 1024)
+        require(textAttachmentTotalBytes(attachments) <= TEXT_ATTACHMENT_MAX_BYTES)
 
         return if (conversationId == null) {
             val (newId, previousResponseId) =
