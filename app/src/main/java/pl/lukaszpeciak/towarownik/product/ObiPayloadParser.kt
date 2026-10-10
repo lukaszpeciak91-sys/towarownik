@@ -109,6 +109,7 @@ class ObiPayloadParser(
             val brand = parseBrand(product)
             val shortDescription = parseShortDescription(product)
             val technicalFacts = parseTechnicalFacts(product)
+            val stockUnit = parseExplicitSalesUnit(product)
             val primaryImageUrl = parsePrimaryImageUrl(
                 html = html,
                 obik = expectedObik,
@@ -148,6 +149,7 @@ class ObiPayloadParser(
                 shortDescription = shortDescription,
                 technicalFacts = technicalFacts,
                 primaryImageUrl = primaryImageUrl,
+                stockUnit = stockUnit,
             )
         }
 
@@ -246,6 +248,23 @@ class ObiPayloadParser(
             product.richString("productDescription")
                 ?.stripPresentationMarkup()
                 ?.normalizeRichText(MAX_DESCRIPTION_CHARS)
+        }.getOrNull()
+
+    private fun parseExplicitSalesUnit(product: JsonObject): String? =
+        runCatching {
+            buildList<TechnicalFact> {
+                (product["productOverview"] as? JsonArray)
+                    ?.mapNotNull(::overviewFact)
+                    ?.forEach(::add)
+                val technicalData = product["technicalData"] as? JsonObject
+                appendFactObjects(this, technicalData?.get("productDetails"))
+            }.firstNotNullOfOrNull { fact ->
+                if (fact.label.lowercase() in EXPLICIT_SALES_UNIT_LABELS) {
+                    verifiedStockUnitOrNull(fact.value)
+                } else {
+                    null
+                }
+            }
         }.getOrNull()
 
     private fun parseTechnicalFacts(
@@ -386,6 +405,11 @@ class ObiPayloadParser(
         val PRODUCT_NUMBER_KEYS = listOf("skuId", "obik", "productNumber", "articleNumber", "sku")
         val PRODUCT_NAME_KEYS = listOf("productTitle", "productTitleTab", "name", "productName")
         val EAN_KEYS = listOf("articleEanEcms", "ean", "gtin13", "gtin")
+        val EXPLICIT_SALES_UNIT_LABELS = setOf(
+            "sprzedaż",
+            "jednostka sprzedaży",
+            "jednostka",
+        )
         const val TRUSTED_PRODUCT_IMAGE_HOST = "bilder.obi.pl"
         const val MAX_BRAND_CHARS = 80
         const val MAX_DESCRIPTION_CHARS = 220
