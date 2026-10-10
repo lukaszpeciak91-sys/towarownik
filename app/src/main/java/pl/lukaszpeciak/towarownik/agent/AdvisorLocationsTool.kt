@@ -346,9 +346,14 @@ internal class AdvisorLocationsTool(
         val normalized = norm(userText)
         // Only identifiers explicitly preceded by store/market/branch
         // wording are location references. "listwa 100 cm" is NOT store 100.
-        val numericIds = Regex(
-            """\b(?:market\w*|sklep\w*|oddzial\w*|obi)(?:\s+obi)?(?:\s+(?:nr|numer))?\s+([0-9]{3})\b""",
-        ).findAll(normalized).map { it.groupValues[1] }.toSet()
+        val contextualMarketGroup = Regex(
+            """\b(?:market\w*|sklep\w*|oddzial\w*|obi)(?:\s+obi)?(?:\s+(?:nr|numer))?\s+[0-9]{3}(?:\s*(?:,|i|oraz)\s*[0-9]{3})*\b""",
+        )
+        val numericIds = contextualMarketGroup.findAll(normalized)
+            .flatMap { group ->
+                Regex("""(?<![0-9])[0-9]{3}(?![0-9])""").findAll(group.value)
+                    .map { it.value }
+            }.toSet()
         if (numericIds.any { id -> directory.none { it.branchId.value == id } }) {
             return AuthorizedLocationScope.Rejected("unknown_location")
         }
@@ -370,8 +375,12 @@ internal class AdvisorLocationsTool(
         }
         // Explicitly including the selected store in a broad all-other
         // request must not turn the entire operation into a one-store check.
+        val explicitlyIncludedCurrent =
+            selected.value in numericIds ||
+                Regex("""\b(?:rowniez|takze|razem z)\s+(?:market(?:em)?\s+|obi\s+)?\b""" +
+                    Regex.escape(selected.value) + """\b""").containsMatchIn(normalized)
         val includeCurrentWithOthers =
-            selected.value in numericIds &&
+            explicitlyIncludedCurrent &&
                 (boundedMention(normalized, "rowniez") ||
                     boundedMention(normalized, "takze") ||
                     normalized.contains("razem z")) &&
