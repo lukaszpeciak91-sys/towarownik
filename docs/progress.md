@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-10 — PR #110 final security regressions
+
+Narrowed cross-turn inventory clarifications to complete canonical city/location forms so prices, mounting and compatibility prompts cannot inherit stock intent. Added short KWANT ID/article fail-closed checks with synthetic rejection-to-newly-verified transition; made unlabeled location questions with contradictory OBI market numbers reject without HTTP. Added targeted price/advice/market tests and Controller KWANT `find_products` selected/other-branch regression asserting no dependence on disabled `find_product_locations`. Existing 052/054, 61-store bounded read, KWANT `obu` and logical-call-limit tests are retained.
+
+
 ## 2026-10-10 — PR #110 audit follow-up
 
 Closed three review findings: generic short unrelated requests break authorization, current explicit verified OBIK overrides prior history selection, and product-trust denials are not reused after in-turn discovery. Added positive and negative ordered-report tests plus a Controller location→discovery→location regression ensuring exactly one post-verification inventory read and all three logical requests counted. Report A/B regressions remain in place.
