@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-10 — PR #110 follow-up re-audit: exact canonical clarifications and short-ID fail-closed
+
+Carry inventory permission only through complete canonical location clarification phrases, not arbitrary `a w ...` text. In particular price, compatibility and installation questions must remain ordinary turns. Reuse deterministic provider city inflections for authorization and location scope. Treat explicitly named KWANT short IDs and article numbers as exact product identities; an unknown 4-digit ID cannot inherit a previous verified product, while unlabeled measurements and OBI store numbers must not be mistaken for products. A city with an adjacent contradictory 3-digit OBI market identifier must ask for confirmation, even when phrased `a w ... 054?`. Preserve disabled KWANT extended, independent normal `find_products`, and the three-logical-tool-call cap.
+
+
 ## 2026-10-10 — PR #110 audit: restrict clarification, prioritize current verified IDs, avoid stale cache
 
 Do not treat arbitrary short USER phrases as stock authorization. Bare location-only clarifications require an exact canonical active-provider branch name and a still-pending prior USER inventory request; explicit structured follow-ups remain bounded. Resolve current explicit verified product ID or article before prior selections, preserving ambiguous/unknown fail-closed behavior. Cache only rejection reasons independent of future discovery, not product-trust or ambiguity outcomes. Preserve existing stock endpoints, all-other batching, provider isolation and tool budgets.
