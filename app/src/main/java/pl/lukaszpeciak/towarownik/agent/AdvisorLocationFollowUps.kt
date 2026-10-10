@@ -54,8 +54,13 @@ internal fun resolveAdvisorLocationFollowUp(
     // a requested store; merely mentioning a city in technical advice is not one.
     fun isInventoryRequest(s: String): Boolean {
         val t = normalized(s)
-        return Regex("""\b(stan|stany|dostepnosc|dostepny|dostepna|dostepne|sprawdz|gdzie jeszcze)\b""")
-            .containsMatchIn(t) &&
+        val inventory = Regex(
+            """\b(stan|stany|dostepnosc|dostepny|dostepna|dostepne|gdzie jeszcze)\b""",
+        ).containsMatchIn(t)
+        val explicitStoreCheck = Regex(
+            """\bsprawdz\b.*\b(?:w|we|market|markety|sklep|obi|oddzial)\b""",
+        ).containsMatchIn(t)
+        return (inventory || explicitStoreCheck) &&
             !Regex("""\b(zamontowac|montaz|podlaczyc|odpowiednik|zamiennik|dobierz)\b""")
                 .containsMatchIn(t)
     }
@@ -93,10 +98,13 @@ internal fun resolveAdvisorLocationFollowUp(
         ?.products?.distinctBy { it.effectiveProductId }
         ?.singleOrNull()?.effectiveProductId
     val provenId = selectedId ?: newestCard
-    val both = if ((current == "obu" || current == "oba" ||
-            userHistory.lastOrNull()?.let { normalized(it.text) in setOf("obu", "oba") } == true) &&
-        continuation && candidates.size == 2
-    ) candidates.map { it.effectiveProductId }.toSet() else emptySet()
+    val bothSelectedByUser = Regex("""\b(?:obu|oba)\b""").containsMatchIn(current) ||
+        userHistory.drop(anchor.coerceAtLeast(0)).any {
+            Regex("""\b(?:obu|oba)\b""").containsMatchIn(normalized(it.text))
+        }
+    val both = if (bothSelectedByUser && continuation && candidates.size == 2) {
+        candidates.map { it.effectiveProductId }.toSet()
+    } else emptySet()
     val selectedHistory = if (both.isEmpty() && provenId != null) {
         candidates.filter { it.effectiveProductId == provenId }
             .takeIf { it.isNotEmpty() } ?: candidates
