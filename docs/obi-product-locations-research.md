@@ -137,71 +137,71 @@ is claimed until a later live run actually supplies such evidence.**
 ## CONFIRMED: live run #5 — frontend-issued stock batch request after DOM click
 
 Manual [OBI live contract probe #37999536515](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/37999536515) succeeded on HEAD
-\`6b4f56e748ad59c78fcfb7c5cf0c386804fe7d88\`.
+`6b4f56e748ad59c78fcfb7c5cf0c386804fe7d88`.
 Android checks on the same HEAD were successful. The machine correctly
 reported **F_INCONCLUSIVE**.
 
 - Exact OBIK **3496072**, current store **075** and product-owned Nuxt
   context were verified, as in previous runs.
 - Only the exact, unambiguous, visible and enabled
-  \`button[data-component="PdpLink"]\` with exact normalized
-  \`innerText="Sprawdź dostępność w innym sklepie"\` was targeted.
+  `button[data-component="PdpLink"]` with exact normalized
+  `innerText="Sprawdź dostępność w innym sklepie"` was targeted.
   Playwright normal click timed out; an **identity-revalidated native
   DOM click** was successfully dispatched with mode
   **DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT**. No force/coordinate click,
   cart, reservation or purchase action was performed.
 - **Immediately after that action, the real browser issued**
-  \`GET /api/pdp/v1/stock/3496072?storeIds=...\` on trusted
-  \`www.obi.pl\` with action phase **availability:open**.
+  `GET /api/pdp/v1/stock/3496072?storeIds=...` on trusted
+  `www.obi.pl` with action phase **availability:open**.
   Response was **HTTP 200**, JSON root **list**. The singular exact
   OBIK in the real request path is deterministic product identity.
   This route was **observed**, **not guessed or manually called**.
 - The old event-effect checker did not recognize this newly observed
-  stock path and incorrectly returned \`DOM_CLICK_NO_OBSERVABLE_EFFECT\`.
+  stock path and incorrectly returned `DOM_CLICK_NO_OBSERVABLE_EFFECT`.
   This is a **probe false negative**: the frontend request itself proves
   the availability-button event had an observable effect. It does not
   establish that stock rows have been decoded.
-- The old safe sanitizer exposed the \`storeIds\` **field name** but not
+- The old safe sanitizer exposed the `storeIds` **field name** but not
   its canonical ID values. Its response parser found no trusted rows
   within the list. Neither request coverage nor response store IDs /
   stock state have been semantically established. **No A/B/D/E result
   is justified yet.**
 - Independently, initial-page
-  \`/api/pdp/v1/availability/sp/3496072\` returned
-  **\`pickupStores=[]\`**. Initial preloading and post-open stock are
+  `/api/pdp/v1/availability/sp/3496072` returned
+  **`pickupStores=[]`**. Initial preloading and post-open stock are
   separate observations. Initial empty list is **not zero stock** in
-  omitted markets. Initial \`/availability/hd/3496072\` retains its
-  delivery-only \`deliveryDataPerSeller\` structure.
+  omitted markets. Initial `/availability/hd/3496072` retains its
+  delivery-only `deliveryDataPerSeller` structure.
 
 ### Run #5 corrective research instrumentation — no new live result yet
 
-- Recognize **only** exact observed \`/api/pdp/v1/stock/{7-digit OBIK}\`
+- Recognize **only** exact observed `/api/pdp/v1/stock/{7-digit OBIK}`
   for product binding, safe response shape, availability action effect
   and classification eligibility. Wrong ID/generic routes fail closed.
-- For **this observed stock route only**, safely parse \`storeIds\` from
+- For **this observed stock route only**, safely parse `storeIds` from
   bounded comma-separated and repeated parameter occurrences; preserve
   canonical three-digit values (including leading zeroes), the occurrence
   sequence and duplicates, an independent deduplicated coverage set,
   and a flag for unknown/invalid/truncated tokens. Never emit an
   unknown token or full query string. Other unobserved encodings
   remain UNKNOWN, not fabricated.
-- Record a **structural-only** \`stockResponseStructure\` for the response
+- Record a **structural-only** `stockResponseStructure` for the response
   root LIST: length, representative safe field names/types, explicit
   canonical ID scalar + owning field name, stock/quantity candidate
   field types and strictly allowed numeric / qualitative candidates.
   An unfamiliar store identifier field is **not** promoted to
-  \`STORE_KEYS\`; field-name similarity alone does not prove availability.
+  `STORE_KEYS`; field-name similarity alone does not prove availability.
 - Correlate validated requested IDs against only trusted response rows:
-  \`requestedCanonicalIds\`, \`returnedTrustedIds\`,
-  \`missingRequestedIds\`, \`unexpectedReturnedIds\`,
-  \`returnedSubsetOfRequest\`. Every omitted requested market stays
+  `requestedCanonicalIds`, `returnedTrustedIds`,
+  `missingRequestedIds`, `unexpectedReturnedIds`,
+  `returnedSubsetOfRequest`. Every omitted requested market stays
   UNKNOWN, not 0. A future **A** requires the request itself to cover
   the complete canonical directory and every store to have usable
   verified state; a future **B** requires multiple usable verified
   requested stores without complete directory coverage.
   Neither is claimed on run #5.
 - DOM click effect now recognizes an exact browser-generated
-  \`availability:open\` stock request without requiring a visible modal
+  `availability:open` stock request without requiring a visible modal
   to appear. Strict product/store/availability classification gates
   remain independent of that event-effect finding.
 - This remains **research only**; no production endpoint, providers,
@@ -211,32 +211,32 @@ reported **F_INCONCLUSIVE**.
 
 **Authoritative browser evidence:** manual
 [OBI live contract probe #38000880352](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/38000880352),
-HEAD \`ee4555f0d5be454c7d87bbdf901569f1d4ed5280\`. Android checks and
+HEAD `ee4555f0d5be454c7d87bbdf901569f1d4ed5280`. Android checks and
 manual live research completed **green**. The old machine classifier still
-reported \`F_INCONCLUSIVE\` because \`candidate_rows()\` did **not** recognize
-the actual \`storeId\` / \`availableQuantity\` schema. That was a research
+reported `F_INCONCLUSIVE` because `candidate_rows()` did **not** recognize
+the actual `storeId` / `availableQuantity` schema. That was a research
 parser limitation, **not** a lack of authoritative frontend data.
 
 The real public browser, after activating the exact harmless availability
-button with \`DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT\`, issued:
+button with `DOM_CLICK_AFTER_ACTIONABILITY_TIMEOUT`, issued:
 
-\`\`\`text
+```text
 GET /api/pdp/v1/stock/3496072?storeIds=...
-\`\`\`
+```
 
 - Trusted OBI HTTPS host, HTTP 200; exact seven-digit OBIK **3496072**
   bound by the *singular observed path*. **No endpoint was guessed.**
-- Exact canonical store IDs in \`storeIds\`: **037, 038, 078, 073, 008,
-  053, 061, 022, 029, 070**. \`canonicalCount=10\`, \`tokenCount=10\`,
-  \`duplicatesPresent=false\`, \`invalidOrUnknownPresent=false\`.
+- Exact canonical store IDs in `storeIds`: **037, 038, 078, 073, 008,
+  053, 061, 022, 029, 070**. `canonicalCount=10`, `tokenCount=10`,
+  `duplicatesPresent=false`, `invalidOrUnknownPresent=false`.
 - JSON root **list of exactly 10 objects**. Every observed object had
-  precisely two fields: **\`storeId\`** (canonical three-digit market
-  identifier) and **\`availableQuantity\`** (non-negative integer stock).
-- The 10 returned canonical \`storeId\` values matched **exactly** the ten
+  precisely two fields: **`storeId`** (canonical three-digit market
+  identifier) and **`availableQuantity`** (non-negative integer stock).
+- The 10 returned canonical `storeId` values matched **exactly** the ten
   requested IDs, regardless of row order. The request **did not** include
   all **62** canonical OBI stores. **No** availability is implied for
   the other 52 stores.
-- \`selectedStoreMutation=COOKIE_STATE_UNCHANGED\` after this observed
+- `selectedStoreMutation=COOKIE_STATE_UNCHANGED` after this observed
   interaction: querying other-store availability **did not require changing
   the selected browser store cookie**. The future Taksula operation must
   remain read-only and **must not mutate WorkingProfile**.
@@ -246,38 +246,38 @@ GET /api/pdp/v1/stock/3496072?storeIds=...
   This does **not** weaken the successfully observed ten-store network batch.
   Do not keep forcing per-market UI clicks to prove a batching ability that
   the actual browser network already demonstrates.
-- Initial \`GET /api/pdp/v1/availability/sp/3496072\` remained
-  \`pickupStores=[]\` (not a zero for any omitted store).
-  \`/availability/hd/3496072\` stayed separately delivery-related
-  via \`deliveryDataPerSeller\` and is **not** stock inventory.
+- Initial `GET /api/pdp/v1/availability/sp/3496072` remained
+  `pickupStores=[]` (not a zero for any omitted store).
+  `/availability/hd/3496072` stayed separately delivery-related
+  via `deliveryDataPerSeller` and is **not** stock inventory.
 
 **Classification after promoting the exact observed schema:**
-\`B_ONE_SHOT_SUBSET\` with research reason
-\`PRODUCT_BOUND_REQUESTED_STORE_BATCH\`.
+`B_ONE_SHOT_SUBSET` with research reason
+`PRODUCT_BOUND_REQUESTED_STORE_BATCH`.
 Exactly one product-bound request covered ten explicitly requested markets
 and returned one trustworthy numeric quantity per requested ID. This is
-**not** \`A_ONE_SHOT_ALL_STORES\`, which requires the *request itself*
+**not** `A_ONE_SHOT_ALL_STORES`, which requires the *request itself*
 to cover the complete canonical directory, plus one trusted state per store.
 
 ### Strict research parser, coverage and limitations
 
 Only the exact observed
-\`/api/pdp/v1/stock/{7-digit OBIK}\` response uses a special
-\`parse_observed_stock_rows()\` decoder. It never broadens generic
-\`candidate_rows()\` or production parsers. The trust gate requires:
+`/api/pdp/v1/stock/{7-digit OBIK}` response uses a special
+`parse_observed_stock_rows()` decoder. It never broadens generic
+`candidate_rows()` or production parsers. The trust gate requires:
 
 - exact request/product identity, trusted host, HTTP 200 and GET;
-- JSON root list; each row a map with canonical three-digit \`storeId\`
-  and present **integer >= 0** \`availableQuantity\`;
+- JSON root list; each row a map with canonical three-digit `storeId`
+  and present **integer >= 0** `availableQuantity`;
 - no unknown or duplicate market IDs, invalid/null/negative/float/string/
   boolean quantities, or missing quantities;
-- an explicitly decoded valid canonical \`storeIds\` request and returned
+- an explicitly decoded valid canonical `storeIds` request and returned
   response IDs restricted to those requested. Request coverage comparison
-  reports \`requestedCount\`, \`returnedTrustedCount\`,
-  \`missingRequestedIds\`, \`unexpectedReturnedIds\` and
-  \`everyRequestedStoreHasTrustedState\` without fabricating any omitted row.
+  reports `requestedCount`, `returnedTrustedCount`,
+  `missingRequestedIds`, `unexpectedReturnedIds` and
+  `everyRequestedStoreHasTrustedState` without fabricating any omitted row.
 
-A literal integer **0** is trusted known zero, not \`null\` or a missing
+A literal integer **0** is trusted known zero, not `null` or a missing
 store; missing requested or non-requested stores are **unknown**.
 Invalid/ambiguous rows cause the batch's trusted state to fail closed.
 Response ordering is not assumed to have semantics.
@@ -288,51 +288,51 @@ Do **not** assume a higher maximum or fan out to 62 individual requests.
 
 ### Production-facing design recommendation — NOT IMPLEMENTED
 
-One shared future model-facing **\`find_product_locations\`** tool should
+One shared future model-facing **`find_product_locations`** tool should
 have provider-specific adapters with one provider-neutral response.
 For **OBI**, use exact verified OBIK and **bounded canonical store IDs**
 (choose no more than the live-observed **10** in one batch without further
 evidence); use the real frontend-observed
-\`/api/pdp/v1/stock/{OBIK}?storeIds=...\` contract to read
-\`storeId\` and integer \`availableQuantity\`. The query is read-only and
-must not alter \`WorkingProfile\`. For **KWANT**, the already independently
-verified transport is \`/api/front/products/{productId}/departments\`.
+`/api/pdp/v1/stock/{OBIK}?storeIds=...` contract to read
+`storeId` and integer `availableQuantity`. The query is read-only and
+must not alter `WorkingProfile`. For **KWANT**, the already independently
+verified transport is `/api/front/products/{productId}/departments`.
 Do not impose KWANT's all-branch response shape or transport assumptions
 on OBI. The model-facing tool is shared; **this PR implements neither
 adapter nor the tool**.
 
 ## OBSERVED BUT NOT YET PRODUCTION-TRUSTED
 
-The two `/api/pdp/v1/availability/{sp,hd}/3496072` calls are **real
-frontend-generated requests**, not guessed endpoints, but their nested
-payload schemas, coverage, store ID fields, zero semantics and persistence
-effects are not yet established. The updated safe diagnostic will disclose
-only bounded **structural** evidence inside `pickupStores` and, separately,
-`deliveryDataPerSeller`; it will **not** automatically promote a matching
-store-shaped object to known availability.
+The initial `/api/pdp/v1/availability/sp/3496072` (empty `pickupStores`)
+and separate `/availability/hd/3496072` (delivery fields) are real
+frontend calls, but neither proves stock in other markets. Their
+unknown deeper semantics are not promoted to the **independently verified
+stock batch** contract. Only the exact `/api/pdp/v1/stock/{OBIK}` route
+and its `storeId` / integer `availableQuantity` list are trusted for
+this research classification.
 
-The run-2 exact accessible-name selector was tested in run #3 and
-failed because nested SVG accessibility differs from visible innerText.
-The **current** selector requires one visible and enabled exact
-`button[data-component="PdpLink"]` with precisely matching normalized
-`innerText`. Run #4 successfully resolved the corrected exact control, but the normal
-Playwright click timed out. Only the subsequent audited research run may
-exercise the timeout-specific DOM fallback described above. Click failures
-produce bounded categories, never raw exception text.
+The exact native `PdpLink` control and DOM fallback were confirmed in
+runs #4–#6. The fallback is used only after normal-click actionability
+timeout on the one visible enabled control matching exact `innerText`.
+Run #6 proved post-open batch traffic, while the modal store rows were
+not individually actionable in the safe DOM investigation.
 
-## UNKNOWN: research gates after run #4
+## UNKNOWN / NOT PROVEN after run #6
 
-| Subject | Current status |
+| Subject | Status |
 | --- | --- |
-| Exact harmless opener | **CONFIRMED** exact unique visible enabled control in run #4; normal Playwright click timed out; native DOM fallback not yet live-verified |
-| Real product-bound availability request | **CONFIRMED** `/api/pdp/v1/availability/sp/3496072`; nested `pickupStores` schema **UNKNOWN** |
-| Separate delivery response | **CONFIRMED** `/api/pdp/v1/availability/hd/3496072`; `deliveryDataPerSeller` meaning **UNKNOWN** |
-| Store ID field inside `pickupStores` | UNKNOWN; must map exact three-digit canonical OBI_STORES number |
-| A/B/D/E request coverage, request-count economics | UNKNOWN; no trustworthy store rows yet |
-| Numeric versus qualitative store availability | UNKNOWN; no usable verified state field |
-| Zero/unavailable/null/omitted store behavior | UNKNOWN; do not invent values |
-| Persistent selected-store mutation during interaction | UNKNOWN; run #4 actionability timeout prevented observed post-open UI and other-market checks |
-| Product-owned initial Nuxt multi-store preload | **NOT OBSERVED** for control product 3496072 in runs #2–#4 |
+| Exact product-bound `/stock/{OBIK}` query | **CONFIRMED**, ten canonical `storeIds` in one request |
+| Exact `storeId` / integer `availableQuantity` response list | **CONFIRMED**, ten rows matching requested IDs |
+| Contract classification | **B_ONE_SHOT_SUBSET**, not complete-directory A |
+| Product identity / selected market | **CONFIRMED**, OBIK 3496072 / 075 |
+| Market stock values outside the 10 requested IDs | **UNKNOWN**; never zero-filled |
+| More than 10 market IDs in one request | **NOT PROVEN**; do not assume support |
+| All 62 markets in one request | **NOT PROVEN**, A must not be claimed |
+| Generic `sp` preload | **CONFIRMED EMPTY** (`pickupStores=[]`) in run #6 |
+| `hd` delivery rows | **CONFIRMED SEPARATE**, never used as store stock |
+| Cookie state after availability interaction | **CONFIRMED UNCHANGED** in run #6 |
+| WorkingProfile production behavior | **NOT IMPLEMENTED**; future shared tool must be read-only |
+| Exact UI DOM store rows / search | Unresolved; does not negate observed network batch |
 
 ## REJECTED / UNSAFE ASSUMPTIONS
 
@@ -408,10 +408,12 @@ bodies, cookies or localStorage. Cookie/localStorage values are compared
 **in ephemeral memory only**, exporting change flags, not values.
 A change flag is not proof of which selected store changed.
 
-The manual job may technically succeed while output classification
-remains F_INCONCLUSIVE. Runs #2, #3 and #4 are such cases. The next run should
-capture newly opened UI and post-open network traffic after the fixed innerText opener;
-do not report any A–E result without verified store IDs and usable states.
+The manual job can technically succeed without confirming a contract
+(as in runs #2–#5). Run #6 instead confirmed the exact stock batch
+schema; the updated research classifier should now report
+**B_ONE_SHOT_SUBSET**, subject to a final live run on this branch.
+No A/complete-directory behavior is claimed. Do not enlarge the
+live batch or guess extra URLs.
 
 ## Offline analyzer and A–F classification
 
@@ -461,7 +463,7 @@ names remain separate from the exploratory candidate field list.
 ## Request economics — confirmed bounded OBI batching
 
 The observed OBI frontend issued **one** exact-product batch request with
-**10** canonical \`storeIds\` and received **10** matching numeric stock
+**10** canonical `storeIds` and received **10** matching numeric stock
 rows. Cost for this proven set: **1 public frontend request per product
 and bounded requested subset**, not 10 separate market requests.
 
@@ -476,15 +478,17 @@ coverage still require verification.
 
 ## Future shared tool: DESIGN SKETCH ONLY
 
-A single provider-neutral find_product_locations tool should accept
-an already verified provider/product reference and return bounded,
-identity-verified locations (canonical branchId and display name),
-nullable numeric stock and/or typed qualitative availability,
-coverage and verifiedAt. KWANT's known numeric quantities cannot
-force OBI into fictitious numbers. Exact schema and cost limit await
-real OBI evidence. No production provider, parser, Worker, Advisor,
-protocol, Room, UI, prompt, WorkingProfile or endpoint call changes
-are included in this PR.
+One shared provider-neutral `find_product_locations` should receive a
+verified product reference and requested canonical locations, returning
+location-specific numeric stock (nullable when genuinely unknown),
+coverage and verification time. For OBI, use only bounded
+`/api/pdp/v1/stock/{OBIK}?storeIds=...` batch requests (live-proven
+batch size **10**) and exact `storeId` / `availableQuantity` fields.
+For KWANT, use the independently verified
+`/api/front/products/{productId}/departments` transport. This is
+**architecture advice**, not production support. Keep queries
+read-only and never silently alter WorkingProfile. Production provider,
+Worker, Advisor, Room, Compose, prompts and protocols are unchanged.
 
 **Exit gate:** run #6 confirmed the requested 10-store batch and exact
 numeric response schema. The updated offline research classifier must now
