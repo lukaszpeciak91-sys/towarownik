@@ -222,6 +222,12 @@ Allowed MIME/signatures: `image/jpeg`, `image/png`, `application/pdf`. Each file
 Android `AdvisorProxyClient` accepts the explicit `attachments: List<AdvisorAttachment>` overload for v5; the existing nullable `attachment` overload and UI remain v4. No multi-picker, Room/attachment ownership, or rendered history change is included.
 
 
+### Phase A1 — lightweight UTF-8 text attachments (v5 only)
+
+V5 additionally accepts `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.log`, `.ini`, and `.conf` as text **only**. MIME and final extension must agree: TXT/LOG/INI/CONF use `text/plain`; MD accepts `text/markdown` or `text/plain`; CSV accepts `text/csv` or `text/plain`; JSON uses `application/json` or `text/json`; XML uses `application/xml` or `text/xml`; YAML/YML accept `application/yaml`, `application/x-yaml`, `text/yaml`, or `text/x-yaml`. No octet-stream fallback, Office or archive support.
+
+Lightweight text is additionally limited to **1 MiB per file**, within the existing 3-file and 24 MiB v5 aggregate caps. Worker rejects invalid UTF-8, NUL/control bytes, and common binary signatures before any OpenAI request. Accepted text uses ordered Responses `input_text` with the sanitized filename and an untrusted-user-data prefix; **never** image or PDF `input_file`. Image/PDF and legacy v4 multipart remain unchanged. Continuation remains JSON only. Android Phase A1 adds type/MIME/UTF-8 transport preflight but does **not** enable text file selection in the current picker; that UX is deferred.
+
 ## Advisor structured observability
 
 Protected Advisor requests emit one privacy-safe structured `advisor_protocol` event to Cloudflare logs. START and MESSAGE create a new opaque user-turn trace and return it in `X-Taksula-Trace-Id`; CONTINUE reuses a syntactically valid inbound trace header so one tool-assisted user turn can be correlated across multiple HTTP requests. Missing or invalid CONTINUE trace headers fail soft to a new trace. An internal requestId identifies the individual Worker request and is not returned to Android.
