@@ -338,6 +338,20 @@ internal class AdvisorLocationsTool(
         }
         val restricted = discovered.isNotEmpty()
         if (restricted) {
+            // A multi-city request must not silently drop an unrecognized
+            // second city just because one of the cities is canonical.
+            val knownCityPhrases = groupedCities.keys.flatMap { city ->
+                listOfNotNull(city, cityLocative(city))
+            }.toSet()
+            val joinedLocations = Regex("""\\bi (?:w |we )?([a-z0-9]+)\\b""")
+                .findAll(normalized).map { it.groupValues[1] }.toList()
+            if (joinedLocations.any { next ->
+                next !in knownCityPhrases &&
+                    next !in numericIds &&
+                    directory.none { it.branchId.value == next }
+            }) {
+                return AuthorizedLocationScope.Rejected("unknown_location")
+            }
             // Model-provided cities/IDs are NOT permission to expand scope.
             for (hint in modelHints) {
                 val name = norm(hint)
@@ -355,8 +369,16 @@ internal class AdvisorLocationsTool(
                 fullNetwork = false,
             )
         }
-        // With no explicit user-scoped city or market, hints MUST NOT narrow
-        // the search. Empty hints are recommended; ignore untrusted suggestions.
+        // Without a known user-selected location, model hints must not
+        // magically authorize an unknown place. Broad "other locations"
+        // requests are explicitly nationwide and ignore model hints.
+        val explicitOtherScope = listOf(
+            "jeszcze", "inne", "innych", "pozostal", "wszystk",
+            "ktore market", "gdzie jest", "jakich market",
+        ).any { normalized.contains(it) }
+        if (!explicitOtherScope && modelHints.isNotEmpty()) {
+            return AuthorizedLocationScope.Rejected("unknown_location")
+        }
         val allOther = directory.map { it.branchId }.filterNot { it == selected }
         return AuthorizedLocationScope.Accepted(allOther, fullNetwork = true)
     }
@@ -364,15 +386,15 @@ internal class AdvisorLocationsTool(
     /** Polish locative forms are only for scope matching, not a global
      *  Advisor intent classifier or branch picker.
      */
-    private fun cityMention(user: String, canonical: String): Boolean {
-        if (boundedMention(user, canonical)) return true
-        val locative = when {
-            canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
-            canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
-            canonical.endsWith("ansk") -> canonical + "u"
-            else -> null
-        }
-        return locative != null && boundedMention(user, locative)
+    private fun cityMention(user: String, canonical: String): Boolean =
+        boundedMention(user, canonical) ||
+            cityLocative(canonical)?.let { boundedMention(user, it) } == true
+
+    private fun cityLocative(canonical: String): String? = when {
+        canonical.endsWith("ow") -> canonical.dropLast(2) + "owie"
+        canonical.endsWith("awa") -> canonical.dropLast(1) + "ie"
+        canonical.endsWith("ansk") -> canonical + "u"
+        else -> null
     }
 
     private fun norm(text: String): String =
