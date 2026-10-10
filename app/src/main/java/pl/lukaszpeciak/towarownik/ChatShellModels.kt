@@ -286,6 +286,10 @@ internal fun saveAdvisorCase(state: AdvisorCaseUiState): String =
                                                         ?.let(::JsonPrimitive)
                                                         ?: JsonNull,
                                                 )
+                                                put(
+                                                    "stockUnit",
+                                                    product.stockUnit?.let(::JsonPrimitive) ?: JsonNull,
+                                                )
                                                 put("productUrl", product.productUrl)
                                                 put(
                                                     "primaryImageUrl",
@@ -413,6 +417,8 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                                     else value.jsonPrimitive.intOrNull
                                 },
                             productUrl = productUrl,
+                            stockUnit = product["stockUnit"]?.jsonPrimitive?.contentOrNull
+                                ?.let(pl.lukaszpeciak.towarownik.product::verifiedStockUnitOrNull),
                             primaryImageUrl =
                                 product["primaryImageUrl"]
                                     ?.let { value ->
