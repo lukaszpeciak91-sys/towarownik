@@ -41,21 +41,35 @@ internal fun resolveAdvisorLocationFollowUp(
         .replace(Regex("""[^a-z0-9]+"""), " ")
         .trim()
     val current = normalized(input)
-    // Explicit and bounded continuation forms. A random short message ("pokaż
-    // ceny", "dobierz kabel", etc.) is NOT a location clarification. A bare
-    // city must exactly name a canonical provider branch; no fuzzy inference.
-    fun isBareCanonicalLocation(s: String): Boolean {
-        val text = normalized(s)
-        if (text.isBlank()) return false
-        return branches.any { normalized(it.name) == text }
+    // A follow-up inherits inventory intent only if its COMPLETE location
+    // expression matches a canonical provider city (or deterministic locative).
+    // A price, installation or compatibility suffix is never a clarification.
+    val canonicalLocations = branches.flatMap { branch ->
+        val name = normalized(branch.name)
+        listOfNotNull(name, advisorCityLocative(name))
+    }.filter { it.isNotBlank() }.toSet()
+    fun isCanonicalLocationWithOptionalMarketNumber(value: String): Boolean {
+        val match = Regex("""^(.+?)(?: ([0-9]{3})(?: bodajze)?)?$""")
+            .matchEntire(value) ?: return false
+        return match.groupValues[1] in canonicalLocations
     }
     fun isClarification(s: String): Boolean {
         val t = normalized(s)
-        return t in setOf("obu", "oba") ||
-            t.matches(Regex("""a w [a-z0-9]+(?: [a-z0-9]+){0,3}""")) ||
-            t.matches(Regex("""no jak market w [a-z0-9]+(?: [a-z0-9]+){0,4}""")) ||
-            t.startsWith("ok podaj markety w ktorych ") ||
-            isBareCanonicalLocation(s)
+        if (t in setOf("obu", "oba")) return true
+        if (t in canonicalLocations) return true
+        val preposition = Regex(
+            """^a w (?:(?:oddziale|markecie|sklepie)(?: obi)? )?(.+)$""",
+        ).matchEntire(t)
+        if (preposition != null) {
+            return isCanonicalLocationWithOptionalMarketNumber(preposition.groupValues[1])
+        }
+        val market = Regex("""^no jak market w (.+)$""").matchEntire(t)
+        if (market != null) {
+            return isCanonicalLocationWithOptionalMarketNumber(market.groupValues[1])
+        }
+        return Regex(
+            """^ok podaj markety w ktorych (?:jest|sa) dostepn(?:y|e)(?: ten produkt)?$""",
+        ).matches(t)
     }
     // Explicit inventory must mention a requested stock/availability check or
     // a requested store; merely mentioning a city in technical advice is not one.
