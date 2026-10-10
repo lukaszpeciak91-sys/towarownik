@@ -82,4 +82,26 @@ class AdvisorLocationDetailsTest {
         assertTrue(rendered.lines().any { it.startsWith(missing[0] + " —") && it.contains("stan nieznany") })
     }
 
+
+    @Test fun rejectedMiejscePiastowe054RendersPreciseNoHttpClarification() {
+        val evidence = AdvisorLocationEvidence(
+            providerId = "obi-pl", productId = "6117543",
+            status = "rejected",
+            reason = "location_conflict_054_vs_052",
+            coverage = "unknown",
+            checkedIds = emptyList(), returnedIds = emptyList(),
+            missingIds = emptyList(), locations = emptyList(),
+            verifiedAtMillis = null, centralStock = null,
+        )
+        val explanation = renderAdvisorLocationDetails(evidence)
+        assertTrue(explanation.contains("054"))
+        assertTrue(explanation.contains("052"))
+        assertTrue(explanation.contains("Miejsce Piastowe"))
+        assertTrue(explanation.contains("Potwierdź"))
+        assertTrue(explanation.contains("Nie wykonano sprawdzenia stanów"))
+        assertEquals("", renderAdvisorLocationDetails(
+            evidence.copy(reason = "unknown_location"),
+        ))
+    }
+
 }

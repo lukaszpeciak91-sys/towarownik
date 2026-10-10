@@ -12,6 +12,24 @@ import pl.lukaszpeciak.towarownik.product.OBI_STORES
 internal fun renderAdvisorLocationDetails(
     evidence: AdvisorLocationEvidence,
 ): String {
+    // An exact city/ID mismatch requires confirmation, not a substituted
+    // inventory read. Append this grounded clarification independently of
+    // how the model phrases its final answer.
+    if (evidence.status == "rejected" && evidence.providerId == "obi-pl") {
+        val conflict = Regex("""^location_conflict_([0-9]{3})_vs_([0-9]{3})$""")
+            .matchEntire(evidence.reason.orEmpty())
+        if (conflict != null) {
+            val supplied = conflict.groupValues[1]
+            val canonical = conflict.groupValues[2]
+            val branch = OBI_STORES.singleOrNull { it.storeNumber == canonical }
+            if (branch != null) {
+                return "Podany numer marketu OBI $supplied nie zgadza się z lokalizacją " +
+                    "undefined (market OBI $canonical). " +
+                    "Potwierdź, czy chodzi o OBI $canonical. " +
+                    "Nie wykonano sprawdzenia stanów."
+            }
+        }
+    }
     if (evidence.locations.isEmpty()) return ""
     val checked = evidence.checkedIds.toSet()
     if (checked.size != evidence.checkedIds.size ||
