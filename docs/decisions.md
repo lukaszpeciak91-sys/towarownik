@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-10 — Canonical model hints are compatibility checks, never authority
+
+Do not maintain separate name-matching rules for user-scoped OBI city parsing versus `find_product_locations.locations[]` validation. Share one canonical/inflected alias table derived only from the verified store directory, plus the existing explicit market-label grammar. Hints may name canonical cities, deterministic Polish inflections, exact IDs, or `OBI <ID>`, but must resolve wholly inside the already authorized market set. Empty hints are valid and never reduce user scope; unknown or contradictory hints on restricted requests fail closed before HTTP. Provider adapters, Worker schema, trust, rollout and nationwide batching are unchanged.
+
+
 ## 2026-10-10 — Product-image tap-to-preview
 
 Put the feature in shared VerifiedProductThumbnail, not in MainActivity or provider fetchers. Load expanded image with the existing Coil 3 image URL and a separate display-sized AsyncImage (not a thumbnail stretch, HD URL substitution or original-size unbounded request). Keep preview full-screen and minimal: single tap/Back dismissal, no controls, zoom or gallery. Thumbnail click is enabled after success only; original product link buttons and text selection remain independent.

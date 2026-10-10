@@ -1,5 +1,10 @@
 # Architecture
 
+## Advisor location model-hint equivalence (2026-10-10)
+
+The Android location tool first computes the full authorized canonical OBI market set from the current user message, independently of the model. For a restricted scope, model `locations[]` hints are resolved using **the same canonical city alias table and deterministic Polish locatives** as user-scope parsing. Bare verified market IDs, exact trusted addresses and explicit market references such as `OBI 003` resolve to canonical branch IDs; unsupported/contradictory hints reject before any inventory HTTP. Equivalent hints do not narrow or enlarge the user-authorized subset. Explicit broad all-other queries keep their pre-existing 61-market semantics, with an empty hint list. No model-driven branch permission is introduced.
+
+
 ## Shared product-image preview (2026-10-10)
 
 The existing VerifiedProductThumbnail provides click-to-preview for Advisor cards, restored conversation cards, exact manual-search results, and enriched search-result thumbnails, for OBI and KWANT. Only Coil-successful thumbnails are clickable; a null or failed primaryImageUrl leaves no interactive empty target. A full-screen in-app Compose Dialog opens the original trusted primaryImageUrl using a second AsyncImage constrained to the expanded display area and ContentScale.Fit, preserving Coil caching and memory-bounded decoding without enlarging a thumbnail bitmap. Tapping anywhere or Android Back dismisses the preview; loading/error states are presentation-only. No external navigation or changes to provider image URL validation, persisted data, or product actions.
