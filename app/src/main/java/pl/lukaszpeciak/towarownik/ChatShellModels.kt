@@ -23,6 +23,7 @@ import pl.lukaszpeciak.towarownik.agent.AdvisorWebSource
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.attachment.validatedAttachmentOrNull
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
+import pl.lukaszpeciak.towarownik.product.verifiedStockUnitOrNull
 import pl.lukaszpeciak.towarownik.product.provider.ProviderPriceScope
 
 internal enum class ChatMessageRole {
@@ -418,7 +419,7 @@ internal fun restoreAdvisorCase(raw: String): AdvisorCaseUiState =
                                 },
                             productUrl = productUrl,
                             stockUnit = product["stockUnit"]?.jsonPrimitive?.contentOrNull
-                                ?.let(pl.lukaszpeciak.towarownik.product::verifiedStockUnitOrNull),
+                                ?.let(::verifiedStockUnitOrNull),
                             primaryImageUrl =
                                 product["primaryImageUrl"]
                                     ?.let { value ->
