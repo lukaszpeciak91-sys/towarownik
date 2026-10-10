@@ -1,8 +1,8 @@
 # OBI product availability across markets — research
 
 **Status: B_ONE_SHOT_SUBSET — CONFIRMED OBI batch contract from live run #6 (10 October 2026). One exact product-bound request returned numeric stock for ten requested canonical OBI markets; whole-directory batching remains unproven.**
-Research only. There is no verified OBI all-market or subset API in this PR.
-The A–F test fixtures are synthetic and must never be interpreted as live findings.
+Research only. A public frontend **10-market subset contract is verified**, but no production provider/tool integration or full-directory one-shot contract is implemented.
+Synthetic regression quantities are distinct from the real run #6 request/response **identity and schema** evidence; they are not actual market quantities.
 
 ## CONFIRMED: existing foundations (not new cross-market evidence)
 
@@ -433,7 +433,7 @@ tools/test_obi_live_contract_probe.py for deterministic offline tests.
   for different canonical markets under the same product.
 - **F_INCONCLUSIVE:** insufficient or contradictory evidence.
 
-These are research hypotheses; no type A–E is claimed for live OBI.
+**B_ONE_SHOT_SUBSET** is now supported by run #6's live browser request/response and exact schema. A, C, D and E are not yet verified. Synthetic full-directory A cases do not prove real A.
 Importantly, *initial:page* may now contribute to classification only for
 a trusted, exact product-bound observed availability route (including
 the verified `/api/pdp/v1/availability/sp/{OBIK}`), with canonical rows
