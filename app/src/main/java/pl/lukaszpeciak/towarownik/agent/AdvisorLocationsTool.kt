@@ -27,7 +27,11 @@ import pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
 internal class AdvisorLocationsTool(
     private val locationsService: ProductLocationsService = ProductLocationsService.production(),
     private val obiBranches: () -> ProviderBranchResult = ObiProductProvider()::branches,
+    private val scopeExecutionBudgetMillis: Long = 45_000L,
 ) {
+    init {
+        require(scopeExecutionBudgetMillis in 1L..60_000L)
+    }
     suspend fun execute(
         arguments: AdvisorLocationArguments,
         providerId: String,
@@ -151,7 +155,7 @@ internal class AdvisorLocationsTool(
         var failedRequests = 0
         var earliestVerified: Long? = null
         var firstFailure: String? = null
-        val completedWithinBudget = withTimeoutOrNull(MAX_SCOPE_EXECUTION_MS) {
+        val completedWithinBudget = withTimeoutOrNull(scopeExecutionBudgetMillis) {
         for (batch in requested.chunked(20)) {
             val result = try {
                 locationsService.read(
@@ -283,12 +287,6 @@ internal class AdvisorLocationsTool(
             else -> return null
         } ?: return null
         return trusted.takeIf { it.effectiveProductId == modelProductId }
-    }
-
-    private companion object {
-        // A single OBI GET has a 15-second cap. The whole sequential
-        // operation has a smaller wall-clock bound than seven slow GETs.
-        const val MAX_SCOPE_EXECUTION_MS = 45_000L
     }
 
     /**
@@ -446,26 +444,30 @@ internal class AdvisorLocationsTool(
         text: String,
         knownCities: Set<String>,
     ): Boolean {
-        val locativeOrCanonical = knownCities.flatMap { city ->
+        val knownAliases = knownCities.flatMap { city ->
             listOfNotNull(city, cityLocative(city))
         }
-        val broadWords = setOf(
-            "innym", "innych", "inne", "pozostalych", "wszystkich",
-            "marketach", "marketach obi", "oddzialach", "sklepach", "lokalizacjach",
+        val generic = setOf(
+            "inne", "innych", "innym", "pozostalych", "wszystkich",
+            "marketach", "markecie", "market", "sklepie", "sklepach",
+            "oddzialach", "oddziale", "lokalizacjach", "obi",
+            "jakich", "ktorych", "tych",
         )
-        val directScope = Regex(
-            """\b(?:sprawdz|sprawdzcie|dostepny|dostepna|dostepne|stan|stany|dostepnosc)\s+(?:(?:ten|tego|produkt|produktu|stany|stan)\s+)?(?:w|we|dla)\s+([a-z][a-z0-9]*)\b""",
-        )
-        val plainScope = Regex(
-            """\b(?:sprawdz|sprawdzcie)\s+([a-z][a-z0-9]*)\b""",
-        )
-        val candidates = directScope.findAll(text).map { it.groupValues[1] }.toList() +
-            plainScope.findAll(text).map { it.groupValues[1] }.filterNot {
-                it in setOf("w", "we", "inne", "innych", "stany", "stan", "dostepnosc", "produkt", "produktu", "ten")
-            }.toList()
-        return candidates.any { candidate ->
-            candidate !in broadWords &&
-                locativeOrCanonical.none { it == candidate || it.startsWith("$" + "candidate ") }
+        // Restriction syntax only; the preceding intent gate already
+        // establishes that this is an availability operation.
+        val afterPreposition = Regex("""\b(?:w|we|dla)\s+([a-z][a-z0-9]*)\b""")
+            .findAll(text).map { it.groupValues[1] }
+        val afterCheck = Regex("""\b(?:sprawdz|sprawdzcie)\s+([a-z][a-z0-9]*)\b""")
+            .findAll(text).map { it.groupValues[1] }
+            .filterNot { it in setOf(
+                "w", "we", "inne", "innych", "stany", "stan", "dostepnosc",
+                "produkt", "produktu", "ten", "tego", "ta", "te",
+            ) }
+        return (afterPreposition + afterCheck).any { candidate ->
+            candidate !in generic &&
+                knownAliases.none { alias ->
+                    alias == candidate || alias.startsWith(candidate + " ")
+                }
         }
     }
 
