@@ -179,6 +179,98 @@ class AdvisorAttachmentTransportTest {
     }
 
     @Test
+    fun v5TextAggregateAcceptsExactOneMiBAndMultipleFilesWithinTotal() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        fun text(name: String, size: Int) = textPart(
+            storage, name, "text/plain", ByteArray(size) { 'a'.code.toByte() },
+        )
+        val one = text("full.txt", 1024 * 1024)
+        val many = listOf(
+            text("part1.txt", 256 * 1024),
+            text("part2.txt", 256 * 1024),
+            text("part3.txt", 512 * 1024),
+        )
+        val under = listOf(text("small1.txt", 100), text("small2.txt", 200))
+        MockWebServer().use { server ->
+            repeat(3) { server.enqueue(multiAnswer()) }
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            for (parts in listOf(listOf(one), many, under)) {
+                assertTrue(
+                    client.start("", "kwant-pl", "205", parts) is AdvisorProxyCallResult.Success,
+                )
+                val request = server.takeRequest()
+                assertEquals("5", request.getHeader("X-Taksula-Attachment-Protocol"))
+                val body = request.body.readUtf8()
+                assertEquals(parts.size, Regex("name=\"attachment\"; filename=").findAll(body).count())
+                var preceding = -1
+                for (part in parts) {
+                    val current = body.indexOf(part.displayName)
+                    assertTrue(current > preceding)
+                    preceding = current
+                }
+            }
+            assertEquals(3, server.requestCount)
+        }
+    }
+
+    @Test
+    fun v5TextAggregateRejectsOverOneMiBBeforeNetworkIncludingMixedMedia() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        fun text(name: String, size: Int) = textPart(
+            storage, name, "text/plain", ByteArray(size) { 'b'.code.toByte() },
+        )
+        val first = text("first.txt", 512 * 1024)
+        val second = text("second.txt", 512 * 1024 + 1)
+        val image = importPart(storage, "photo.jpg", AttachmentType.IMAGE)
+        val pdf = importPart(storage, "manual.pdf", AttachmentType.PDF)
+        MockWebServer().use { server ->
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            for (parts in listOf(
+                listOf(first, second),
+                listOf(image, first, second),
+                listOf(pdf, first, second),
+            )) {
+                assertEquals(
+                    AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL),
+                    client.start("", "kwant-pl", "205", parts),
+                )
+            }
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun v5MixedImagePdfAndFullOneMiBTextStillSendsSuccessfully() = runBlocking {
+        val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
+        val image = importPart(storage, "front.jpg", AttachmentType.IMAGE)
+        val pdf = importPart(storage, "spec.pdf", AttachmentType.PDF)
+        val text = textPart(
+            storage, "full.txt", "text/plain",
+            ByteArray(1024 * 1024) { 'c'.code.toByte() },
+        )
+        MockWebServer().use { server ->
+            server.enqueue(multiAnswer())
+            val client = AdvisorProxyClient(
+                appToken = "token", baseUrl = server.url("/"), attachmentStorage = storage,
+            )
+            assertTrue(
+                client.start("", "kwant-pl", "205", listOf(image, pdf, text))
+                    is AdvisorProxyCallResult.Success,
+            )
+            val request = server.takeRequest()
+            assertEquals("5", request.getHeader("X-Taksula-Attachment-Protocol"))
+            val body = request.body.readUtf8()
+            assertTrue(body.indexOf("front.jpg") < body.indexOf("spec.pdf"))
+            assertTrue(body.indexOf("spec.pdf") < body.indexOf("full.txt"))
+            assertEquals(3, Regex("name=\"attachment\"; filename=").findAll(body).count())
+        }
+    }
+
+    @Test
     fun v5ListTransportsOneTwoAndThreeOrderedMixedFiles() = runBlocking {
         val storage = AttachmentStorage(ApplicationProvider.getApplicationContext())
         val first = importPart(storage, "one.pdf", AttachmentType.PDF)
