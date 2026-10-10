@@ -300,7 +300,7 @@ class AdvisorLocationFollowUpReportsTest {
         assertEquals("untrusted_product", unlabeled.reason)
         assertTrue(adapterReads.isEmpty())
         val article = check(
-            "Sprawdź stan produktu o kodu 921861 w oddziale Zamość",
+            "Sprawdź stan produktu o kodzie 921861 w oddziale Zamość",
             listOf(old), "7035",
         )
         assertEquals("untrusted_product", article.reason)
