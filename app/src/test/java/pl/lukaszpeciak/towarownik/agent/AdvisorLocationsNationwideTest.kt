@@ -28,7 +28,7 @@ class AdvisorLocationsNationwideTest {
         grossPrice = null, productUrl = "https://www.obi.pl/p/3496072",
         verifiedAt = 1700L, storeNumber = "075",
     )
-    private class FakeInventory(
+    private inner class FakeInventory(
         private val failAtRequest: Int? = null,
         private val cancelAtRequest: Int? = null,
     ) {
