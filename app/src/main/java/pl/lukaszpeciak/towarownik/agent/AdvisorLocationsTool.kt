@@ -343,7 +343,7 @@ internal class AdvisorLocationsTool(
             val knownCityPhrases = groupedCities.keys.flatMap { city ->
                 listOfNotNull(city, cityLocative(city))
             }.toSet()
-            val joinedLocations = Regex("""\\bi (?:w |we )?([a-z0-9]+)\\b""")
+            val joinedLocations = Regex("""\bi (?:w |we )?([a-z0-9]+)\b""")
                 .findAll(normalized).map { it.groupValues[1] }.toList()
             if (joinedLocations.any { next ->
                 next !in knownCityPhrases &&
