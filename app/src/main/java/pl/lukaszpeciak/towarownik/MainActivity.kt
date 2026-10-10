@@ -2431,7 +2431,14 @@ private fun UserAttachmentContent(
 ) {
     val context = LocalContext.current
     var imageFailed by remember(item.localId) { mutableStateOf(false) }
-    val renderKind = attachmentStorage.renderKind(item)
+    val renderKind = remember(
+        item.localId,
+        item.byteSize,
+        item.type,
+        item.mimeType,
+    ) {
+        attachmentStorage.renderKind(item)
+    }
     when {
         renderKind == AttachmentRenderKind.UNAVAILABLE ||
             imageFailed -> {
