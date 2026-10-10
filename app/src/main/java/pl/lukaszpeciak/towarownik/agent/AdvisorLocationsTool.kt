@@ -276,7 +276,7 @@ internal class AdvisorLocationsTool(
         // Ordinary measurements and three-digit OBI markets are not IDs.
         val explicitProductNumbers = Regex(
             """\b(?:obik|ean|sku|id(?:\s+produktu)?|produkt(?:u|y|ow)?|""" +
-                """kod(?:u)?|art\.?|artykul(?:u)?|indeks(?:u)?|""" +
+                """kod(?:u|zie)?|art\.?|artykul(?:u)?|indeks(?:u)?|""" +
                 """model(?:u)?|gniazd(?:a|o)|numer(?:\s+katalogowy)?|""" +
                 """nr(?:\s+katalogowy)?)\s*(?:nr\s*)?[:#-]?\s*([0-9]{4,13})\b""",
         ).findAll(normalized).map { it.groupValues[1] }
