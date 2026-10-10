@@ -71,6 +71,7 @@ class AdvisorLocationsToolTest {
         val fake = StockAdapter()
         val evidence = tool(fake).execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
+            "obi-pl",
             "Sprawdź w markecie OBI 075 ten produkt",
             emptyList(), listOf(one),
         )
@@ -86,6 +87,7 @@ class AdvisorLocationsToolTest {
         val fake = StockAdapter()
         val result = tool(fake).execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
+            "obi-pl",
             "Czy ten produkt jest dostępny w OBI 075?",
             listOf(one), emptyList(),
         )
@@ -98,6 +100,7 @@ class AdvisorLocationsToolTest {
         val svc = tool(fake)
         val ambiguous = svc.execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
+            "obi-pl",
             "Gdzie jeszcze jest ten produkt? OBI 075",
             emptyList(), listOf(one, two),
         )
@@ -105,6 +108,7 @@ class AdvisorLocationsToolTest {
         assertEquals("ambiguous_product", ambiguous.reason)
         val invented = svc.execute(
             AdvisorLocationArguments("obi-pl", "9999999", listOf("075")),
+            "obi-pl",
             "Gdzie jeszcze jest 9999999? OBI 075",
             emptyList(), listOf(one),
         )
@@ -112,6 +116,7 @@ class AdvisorLocationsToolTest {
         assertEquals("untrusted_product", invented.reason)
         val cross = svc.execute(
             AdvisorLocationArguments("kwant-pl", "3496072", emptyList()),
+            "kwant-pl",
             "Sprawdź inne oddziały",
             emptyList(), listOf(one),
         )
@@ -124,12 +129,14 @@ class AdvisorLocationsToolTest {
         val svc = tool(fake)
         val invented = svc.execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("003")),
+            "obi-pl",
             "Sprawdź w OBI 075",
             emptyList(), listOf(one),
         )
         assertEquals("location_not_authorized", invented.reason)
         val broad = svc.execute(
             AdvisorLocationArguments("obi-pl", "3496072", emptyList()),
+            "obi-pl",
             "Gdzie jeszcze jest ten produkt?",
             emptyList(), listOf(one),
         )
@@ -141,6 +148,7 @@ class AdvisorLocationsToolTest {
         val fake = StockAdapter()
         val evidence = tool(fake).execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("Kraków")),
+            "obi-pl",
             "Sprawdź w Krakowie",
             emptyList(), listOf(one),
         )
@@ -152,6 +160,7 @@ class AdvisorLocationsToolTest {
         val fake = StockAdapter()
         val evidence = tool(fake).execute(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("003", "075")),
+            "obi-pl",
             "Sprawdź ten produkt w OBI 003 i 075",
             emptyList(), listOf(one),
         )
@@ -185,6 +194,7 @@ class AdvisorLocationsToolTest {
         )
         val evidence = tool.execute(
             AdvisorLocationArguments("kwant-pl", "580", emptyList()),
+            "kwant-pl",
             "Sprawdź ten produkt w innych oddziałach",
             emptyList(), listOf(kwant),
         )
