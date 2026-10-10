@@ -35,7 +35,7 @@ export type LocalResultKind =
 export interface ContinuationResultSummary {
   localResultKind: LocalResultKind;
   localResultProviderId: string;
-  localResultBranchId: string;
+  localResultBranchId: string | null;
   resultQueryCount: number;
   verifiedProductCount: number;
   verifiedQueryCount: number;
@@ -199,6 +199,13 @@ function summarizeToolArguments(
   requestedProductLimitTotal: number;
   requestedBranchPresent: boolean | null;
 } {
+  if ("locations" in args) {
+    return {
+      localQueryCount: 0,
+      requestedProductLimitTotal: 0,
+      requestedBranchPresent: args.locations.length > 0,
+    };
+  }
   if ("queries" in args) {
     return {
       localQueryCount: args.queries.length,
@@ -240,6 +247,21 @@ export function summarizeContinuationResult(
     };
   }
 
+  if ("checkedIds" in result) {
+    return {
+      localResultKind: result.status === "verified" ? "verified" :
+        result.status === "rejected" ? "rejected" : "unavailable",
+      localResultProviderId: result.providerId,
+      localResultBranchId: null,
+      resultQueryCount: 0,
+      verifiedProductCount: 0,
+      verifiedQueryCount: 0,
+      notFoundQueryCount: 0,
+      unavailableQueryCount: result.status === "unavailable" ? 1 : 0,
+      rejectionCategory: result.reason === "local_tool_limit_reached"
+        ? "local_tool_limit_reached" : null,
+    };
+  }
   if ("products" in result) {
     return {
       localResultKind: "verified",

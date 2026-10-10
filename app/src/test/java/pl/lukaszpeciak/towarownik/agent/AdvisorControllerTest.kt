@@ -1931,6 +1931,8 @@ class AdvisorControllerTest {
                         callId,
                         continuation,
                     )
+                is AdvisorToolContinuation.Locations ->
+                    error("Locations not used in discovery-only controller fixture")
             }
         },
         continueAgentWithTrace = {
@@ -1963,6 +1965,8 @@ class AdvisorControllerTest {
                         callId,
                         continuation,
                     )
+                is AdvisorToolContinuation.Locations ->
+                    error("Locations not used in discovery-only controller fixture")
             }
         },
         executeObiTool = obiTool,

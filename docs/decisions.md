@@ -1,9 +1,32 @@
 # Decisions
 
+## 2026-10-10 — PR #102 complete restricted-scope parsing
+
+Location authorization must never use a successful subset of a partially understood user request. Parse lists only in constrained, contextual syntax, resolve against the canonical directory including deterministic common city inflections, and reject the **whole** request if one city or market ID is unknown. Do not interpret free-standing three-digit dimensions or model hints as location grants. Ordinary generic inventory requests continue to mean all other OBI markets. No modifications to PR #101, Worker protocols/discovery, WorkingProfile, or KWANT `extended` fail-closed behavior.
+
+
+## 2026-10-10 — PR #102 named-locality grammar
+
+Use an anchored, complete location phrase rather than classifying individual words after `sprawdź` or `w` as cities; avoid an ever-growing inventory-word blacklist. All named places in `i`, `oraz` and comma groups must resolve before stock HTTP. A single unsupported city rejects the complete restricted scope with typed `unknown_location`. Generic inventory requests remain all-other with the active market excluded, and the Worker/tool contracts are unchanged.
+
+
+## PR #102 — 2026-10-10 focused location authorization hardening
+
+An exact trusted product card is necessary but insufficient to authorize other-store stock HTTP. Android independently requires explicit location availability intent and interprets city/store tokens only in the current user text. The model's empty location list cannot convert `Sprawdź w Tarnowie` into an all-OBI scan. Isolated dimensions such as `100 cm` never become market IDs. The 45-second overall OBI deadline prevents seven sequential 15-second HTTP calls from yielding 105 seconds of cumulative delay; timeouts are reported as partial/unknown without fabricating zero. Nationwide partial presentation preserves the originally requested all-other scope. All other existing contracts, KWANT `extended` production disablement, and Worker capabilities remain unchanged.
+
+
+## 2026-10-10 — PR 2 opt-in Advisor locations integration
+
+- One explicit-capability model function `find_product_locations` is registered only if `X-Taksula-Locations-Capability: 1` is supplied. Existing v2/v3/v4/v5 families remain stable; old Android versions without the capability header receive unchanged tools, so deploy Worker before shipping the Android version.
+- Android alone authorizes product identity from exact current-turn verification or recent assistant product cards from the **same persisted conversation**. The model's ID and location list remain hints. A single unambiguous historical product supports natural follow-ups; multiple cards require an exact reference/clarification. Historical snapshots never auto-promote to current-turn output product cards.
+- An explicit user request for *other-market availability of one already verified product* authorizes all **other** canonical OBI markets by default; model `locations=[]` is correct and Android independently derives 61 IDs from the canonical 62-market directory, excluding the selected market. Explicit user-named cities include **all** canonical markets in each city; exact market requests restrict the scope. Contradictory/model-invented locations are rejected rather than used as authority; canonical unknown cities are never invented. Four sequential max-20 service calls issue at most seven 10-market HTTP requests for 61 markets; this is **one** logical Advisor tool invocation. Failures yield explicit missing `stock=null` rows, and full-other coverage is not all-public-market coverage. Render positive-first **above** transport. KWANT still returns typed production unavailability until `extended` is evidenced.
+- Model requests are counted against the existing three local calls per user turn (independent of HTTP batch count), without modifying normal search, profile, Room or UI. Rejection and unavailable remain typed safe tool facts; Worker strict JSON validation and continuation budget remain in force.
+
+
 ## 2026-10-10 — Product locations transport PR 1 (isolated, no Advisor integration)
 
 - Introduced a single Android internal `ProductLocationsService` dispatching the existing provider-owned `ProductRef` to separate OBI and KWANT readers, with typed invalid/unavailable/unsupported outcomes, location stock, exact zero, explicit requested/returned/missing coverage, and optional separately verified matching-product central stock. No products or locations are invented and no WorkingProfile is mutated.
-- OBI transport follows independently live-observed `GET /api/pdp/v1/stock/{OBIK}?storeIds=...`, strict storeId/availableQuantity rows, canonical IDs, max **10** IDs/request and max **20** requested IDs/logical call (two batches). Partial batch failures do not masquerade as complete national inventory. Full 62-store batching remains unproven.
+- OBI PR #101 transport follows independently live-observed `GET /api/pdp/v1/stock/{OBIK}?storeIds=...`, strict storeId/availableQuantity rows, canonical IDs, max **10** IDs/HTTP request and max **20** requested IDs/**service read** (two batches). PR #102 composes multiple sequential bounded reads **above** transport to check all other markets. Partial batch failures do not masquerade as complete national inventory. A one-shot 62-store provider request remains unproven.
 - KWANT browser observation independently confirmed one-shot 21/21 branch inventory from `GET /api/front/products/{id}/departments`, but the sanitized capture retained only the `extended` query parameter **name**, not its value. Production requests are **disabled** behind `UNVERIFIED_REQUEST_CONTRACT` until its exact value is evidenced; no speculative request omission or value is allowed. Strict parser/one-GET adapter are offline-testable with an explicitly labeled synthetic fixture query. `total_stock` stays uninterpreted, central stock stays separate.
 - PR 1 intentionally adds **no model-facing tool, Worker/protocol/prompt change, Room change, UI change, search fanout or background refresh**. PR 2 must enforce exact product/trusted-reference authorization before calling this service and decide explicit location intent independently. Remaining blocker: authoritative reproducible `extended` query value for KWANT. Research evidence files remain historical and unchanged.
 

@@ -233,6 +233,11 @@ internal class AdvisorProxyClient(
         }
 
         val body = when (continuation) {
+            is AdvisorToolContinuation.Locations ->
+                buildLocationContinueBody(
+                    responseId, callId, OBI_PROVIDER_ID.value, storeNumber,
+                    OBI_ADVISOR_PROTOCOL_VERSION, continuation.evidence,
+                ).takeIf(::fitsContinueByteBudget)
             is AdvisorToolContinuation.Verified ->
                 buildBudgetedVerifiedContinueBody(
                     responseId = responseId,
@@ -307,6 +312,11 @@ internal class AdvisorProxyClient(
         }
 
         val body = when (continuation) {
+            is AdvisorToolContinuation.Locations ->
+                buildLocationContinueBody(
+                    responseId, callId, providerId, branchId,
+                    protocolVersion, continuation.evidence,
+                ).takeIf(::fitsContinueByteBudget)
             is AdvisorToolContinuation.Verified ->
                 buildBudgetedVerifiedContinueBodyV3(
                     responseId = responseId,
@@ -373,6 +383,7 @@ internal class AdvisorProxyClient(
             .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
             .header("Authorization", "Bearer $appToken")
             .header("Content-Type", JSON_MEDIA_TYPE.toString())
+            .header("X-Taksula-Locations-Capability", "1")
         advisorTraceIdOrNull(traceId)?.let {
             requestBuilder.header(ADVISOR_TRACE_HEADER, it)
         }
@@ -480,6 +491,7 @@ internal class AdvisorProxyClient(
             .url(baseUrl.newBuilder().addPathSegments(endpoint).build())
             .post(multipart)
             .header("Authorization", "Bearer $appToken")
+            .header("X-Taksula-Locations-Capability", "1")
         if (isMulti) {
             requestBuilder.header("X-Taksula-Attachment-Protocol", "5")
         }
@@ -704,13 +716,45 @@ internal class AdvisorProxyClient(
                         ?: error("Missing tool name")
                 require(
                     toolName == FIND_OBI_PRODUCTS ||
-                        toolName == FIND_PRODUCTS,
+                        toolName == FIND_PRODUCTS ||
+                        toolName == FIND_PRODUCT_LOCATIONS,
                 )
                 val callId = tool["callId"]?.jsonPrimitive?.contentOrNull
                     ?.takeIf { it.isNotBlank() && it.length <= MAX_ID_CHARS }
                     ?: error("Invalid call id")
                 val arguments = tool["arguments"] as? JsonObject
                     ?: error("Missing tool arguments")
+
+                if (toolName == FIND_PRODUCT_LOCATIONS) {
+                    requireExactKeys(
+                        arguments,
+                        setOf("providerId", "productId", "locations"),
+                    )
+                    val providerId = arguments["providerId"]
+                        ?.jsonPrimitive?.contentOrNull
+                        ?.takeIf(PROVIDER_ID_PATTERN::matches)
+                        ?: error("Invalid locations provider")
+                    val productId = arguments["productId"]
+                        ?.jsonPrimitive?.contentOrNull
+                        ?.takeIf { it.matches(Regex("""[A-Za-z0-9._-]{1,64}""")) }
+                        ?: error("Invalid locations product")
+                    val locations = arguments["locations"]?.jsonArray
+                        ?.map { item ->
+                            item.jsonPrimitive.contentOrNull
+                                ?.takeIf { it.isNotBlank() && it.length <= 100 }
+                                ?: error("Invalid locations hint")
+                        }?.takeIf { it.size <= 20 && it.distinct().size == it.size }
+                        ?: error("Invalid locations scope")
+                    return AdvisorProxyResult.LocationToolRequest(
+                        responseId = responseId,
+                        callId = callId,
+                        arguments = AdvisorLocationArguments(
+                            providerId, productId, locations,
+                        ),
+                        webSearchCalls = root.requireWebSearchCallCount(),
+                        usage = parseUsageOrNull(root["usage"]),
+                    )
+                }
 
                 val providerId: String
                 val branchId: String
@@ -807,6 +851,52 @@ internal class AdvisorProxyClient(
 
             else -> error("Unknown response type")
         }
+    }
+
+    private fun buildLocationContinueBody(
+        responseId: String,
+        callId: String,
+        providerId: String,
+        branchId: String,
+        protocolVersion: Int,
+        evidence: AdvisorLocationEvidence,
+    ): JsonObject = buildJsonObject {
+        put("protocolVersion", protocolVersion)
+        put("responseId", responseId)
+        put("callId", callId)
+        if (protocolVersion == OBI_ADVISOR_PROTOCOL_VERSION) {
+            put("storeNumber", branchId)
+        } else {
+            put("providerId", providerId)
+            put("branchId", branchId)
+        }
+        put("tool", FIND_PRODUCT_LOCATIONS)
+        put("result", buildJsonObject {
+            put("providerId", evidence.providerId)
+            if (evidence.productId == null) put("productId", JsonNull)
+            else put("productId", evidence.productId)
+            put("status", evidence.status)
+            if (evidence.reason == null) put("reason", JsonNull)
+            else put("reason", evidence.reason)
+            put("coverage", evidence.coverage)
+            put("checkedIds", buildJsonArray { evidence.checkedIds.forEach { add(JsonPrimitive(it)) } })
+            put("returnedIds", buildJsonArray { evidence.returnedIds.forEach { add(JsonPrimitive(it)) } })
+            put("missingIds", buildJsonArray { evidence.missingIds.forEach { add(JsonPrimitive(it)) } })
+            put("locations", buildJsonArray {
+                evidence.locations.forEach { location ->
+                    add(buildJsonObject {
+                        put("branchId", location.branchId)
+                        put("name", location.name.take(100))
+                        if (location.stock == null) put("stock", JsonNull)
+                        else put("stock", location.stock)
+                    })
+                }
+            })
+            if (evidence.verifiedAtMillis == null) put("verifiedAtMillis", JsonNull)
+            else put("verifiedAtMillis", evidence.verifiedAtMillis)
+            if (evidence.centralStock == null) put("centralStock", JsonNull)
+            else put("centralStock", evidence.centralStock)
+        })
     }
 
     private fun buildBudgetedVerifiedContinueBodyV3(

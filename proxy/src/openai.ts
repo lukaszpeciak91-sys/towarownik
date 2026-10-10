@@ -4,6 +4,9 @@ import {
   finalAnswerFormatForProtocol,
   LOCAL_TOOL_NAME,
   PROVIDER_LOCAL_TOOL_NAME,
+  LOCATIONS_LOCAL_TOOL_NAME,
+  LOCATIONS_TOOL,
+  LOCATIONS_INSTRUCTIONS,
   MAX_ANSWER_CHARS,
   MAX_MODEL_NAME_CHARS,
   MAX_SELECTED_PRODUCT_REFS,
@@ -62,6 +65,7 @@ export async function startAgent(
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
   attachment?: AdvisorAttachment | AdvisorAttachment[],
+  locationsEnabled = false,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
@@ -70,7 +74,7 @@ export async function startAgent(
         providerId,
         branchId,
         protocolVersion,
-      ),
+      ) + (locationsEnabled ? " " + LOCATIONS_INSTRUCTIONS : ""),
       input: modelInput(message, attachment),
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
@@ -83,13 +87,16 @@ export async function startAgent(
       text: {
         format: finalAnswerFormatForProtocol(protocolVersion),
       },
-      tools: [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
+      tools: locationsEnabled
+        ? [localToolForProtocol(protocolVersion), LOCATIONS_TOOL, WEB_SEARCH_TOOL]
+        : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
     "START",
     true,
     protocolVersion,
+    locationsEnabled,
   );
 }
 
@@ -103,6 +110,7 @@ export async function messageAgent(
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
   attachment?: AdvisorAttachment | AdvisorAttachment[],
+  locationsEnabled = false,
 ): Promise<AgentResult> {
   return requestOpenAI(
     {
@@ -111,7 +119,7 @@ export async function messageAgent(
         providerId,
         branchId,
         protocolVersion,
-      ),
+      ) + (locationsEnabled ? " " + LOCATIONS_INSTRUCTIONS : ""),
       previous_response_id: previousResponseId,
       input: modelInput(message, attachment),
       reasoning: {
@@ -125,13 +133,16 @@ export async function messageAgent(
       text: {
         format: finalAnswerFormatForProtocol(protocolVersion),
       },
-      tools: [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
+      tools: locationsEnabled
+        ? [localToolForProtocol(protocolVersion), LOCATIONS_TOOL, WEB_SEARCH_TOOL]
+        : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
     upstreamFetch,
     "MESSAGE",
     true,
     protocolVersion,
+    locationsEnabled,
   );
 }
 
@@ -171,10 +182,13 @@ export async function continueAgent(
   upstreamFetch: UpstreamFetch,
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
+  locationsEnabled = false,
 ): Promise<AgentResult> {
   const localToolAvailable =
-    !("rejection" in result) ||
-    result.rejection !== "local_tool_limit_reached";
+    (!("rejection" in result) ||
+      result.rejection !== "local_tool_limit_reached") &&
+    (!("status" in result) ||
+      result.reason !== "local_tool_limit_reached");
 
   return requestOpenAI(
     {
@@ -183,7 +197,7 @@ export async function continueAgent(
         providerId,
         branchId,
         protocolVersion,
-      ),
+      ) + (locationsEnabled ? " " + LOCATIONS_INSTRUCTIONS : ""),
       previous_response_id: responseId,
       input: [
         {
@@ -204,7 +218,9 @@ export async function continueAgent(
         format: finalAnswerFormatForProtocol(protocolVersion),
       },
       tools: localToolAvailable
-        ? [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL]
+        ? (locationsEnabled
+          ? [localToolForProtocol(protocolVersion), LOCATIONS_TOOL, WEB_SEARCH_TOOL]
+          : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL])
         : [WEB_SEARCH_TOOL],
     },
     apiKey,
@@ -212,6 +228,7 @@ export async function continueAgent(
     "CONTINUE",
     localToolAvailable,
     protocolVersion,
+    locationsEnabled,
   );
 }
 
@@ -222,6 +239,7 @@ async function requestOpenAI(
   requestType: AgentRequestType,
   allowLocalTool: boolean,
   protocolVersion: AdvisorProtocolVersion,
+  locationsEnabled = false,
 ): Promise<AgentResult> {
   let response: Response;
   try {
@@ -263,6 +281,7 @@ async function requestOpenAI(
       requestType,
       allowLocalTool,
       protocolVersion,
+      locationsEnabled,
     );
   } catch (error) {
     if (
@@ -284,6 +303,7 @@ export function normalizeOpenAIResponse(
   allowLocalTool = true,
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
+  locationsEnabled = false,
 ): AgentResult {
   if (!isRecord(payload)) {
     throw new UpstreamFailureError("upstream_invalid_envelope");
@@ -317,8 +337,11 @@ export function normalizeOpenAIResponse(
       protocolVersion >= 3
         ? PROVIDER_LOCAL_TOOL_NAME
         : LOCAL_TOOL_NAME;
+    const toolName = call.name === LOCATIONS_LOCAL_TOOL_NAME &&
+      locationsEnabled && protocolVersion !== 1
+        ? LOCATIONS_LOCAL_TOOL_NAME : expectedToolName;
     if (
-      call.name !== expectedToolName ||
+      call.name !== toolName ||
       typeof call.call_id !== "string" ||
       !call.call_id ||
       call.call_id.length > 256 ||
@@ -332,6 +355,7 @@ export function normalizeOpenAIResponse(
       argumentsValue = parseToolArguments(
         call.arguments,
         protocolVersion,
+        toolName,
       );
     } catch (error) {
       if (error instanceof InvalidRequestError) {
@@ -344,7 +368,7 @@ export function normalizeOpenAIResponse(
       type: "tool_request",
       responseId,
       tool: {
-        name: expectedToolName,
+        name: toolName,
         callId: call.call_id,
         arguments: argumentsValue,
       },

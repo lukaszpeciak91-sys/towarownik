@@ -730,8 +730,8 @@ private fun TowarownikApp() {
 
             activeConversationId = turn.conversationId
             freshCaseSelected = false
-            conversationRepository.load(turn.conversationId)
-                ?.let(::applyConversation)
+            val persistedTurnConversation = conversationRepository.load(turn.conversationId)
+            persistedTurnConversation?.let(::applyConversation)
 
             var toolAssistedRecorded = false
 
@@ -749,6 +749,13 @@ private fun TowarownikApp() {
                     conversationStoreNumber = branchId,
                     conversationProviderId = providerId,
                     attachments = submittedAttachments,
+                    historicalVerifiedProducts = persistedTurnConversation
+                        ?.messages
+                        ?.asReversed()
+                        ?.filter { it.role == "ASSISTANT" }
+                        ?.take(3)
+                        ?.flatMap { it.products }
+                        .orEmpty(),
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(

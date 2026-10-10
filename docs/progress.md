@@ -1,5 +1,25 @@
 # Progress
 
+## PR #102 — location completeness (2026-10-10)
+
+Replaced partial city-suffix and numeric-ID extraction with one Android-side complete restricted-scope parser. Added regression cases for Kraków and inflected Nowy Sącz, unsupported multi-word cities, trailing polite text, comma/`i`/`oraz` lists of 2–3 market IDs, and unknown market IDs/malformed mixed lists (no HTTP). Existing 61-market batching, cancellation, partial results, 45-second deadline and provider integration remain unchanged.
+
+
+## PR #102 — 2026-10-10 scope parser regression closure
+
+Replaced single-token unknown-city detection and `i`-only checks with complete named-locality phrase validation. Added deterministic tests for four generic all-other requests, seven known/unknown multi-city conjunction examples with empty model hints and canonical four-market Kraków scope. Existing 61-market batching, partial failure, execution deadline, trusted product, KWANT and WorkingProfile behavior remain untouched.
+
+
+## PR #102 — 2026-10-10 focused location authorization hardening
+
+Scope authorization hardened: focused explicit user inventory-intent gate before any location network access; unknown city without model hints rejected; store ID extraction requires explicit market context; partial 61-market headings state all-other scope and incomplete results; 45-second total bounded OBI scan with injectable fast deterministic timeout test and verified partial-result preservation. No WorkingProfile write, discovery regression or KWANT contract change.
+
+
+## 2026-10-10 — PR 2 opt-in find_product_locations
+
+The Android Advisor orchestration now supports one typed, provider-neutral location inventory call with current-conversation verified-product authorization and OBI current-user canonical location authorization. The Worker advertises it only when the new Android client sends `X-Taksula-Locations-Capability: 1`; legacy v1 and old v2–v5 clients continue with their original discovery tools, which enables Worker-first deployment. The location call shares the existing three-call budget and does not run automatically for ordinary product search. Recent persisted assistant product cards may authorize product identity but do not auto-generate new product cards or override live stock evidence. For explicit "where else" follow-ups, the Advisor derives the full canonical OBI directory scope (61 other markets excluding the selected market) and orchestrates at most four sequential service reads (20 IDs/read, 10 IDs/HTTP request, seven HTTP reads total). Explicit user cities/markets restrict the scope; Kraków expands to its four canonical stores, while Tarnów is not a canonical OBI market. Each missing market is returned with unknown/null stock, full checked IDs and partial coverage instead of a fabricated zero. This is still **one** logical Advisor local-tool call. The per-service PR #101 budgets remain intact and no ordinary search gains new location requests. KWANT returns `UNVERIFIED_REQUEST_CONTRACT` without transport until the independently observed `extended` query VALUE can be recovered; two-provider live readiness is not claimed. PR is unmerged until independently audited.
+
+
 ## 2026-10-10 — Product locations transport PR 1
 
 Read-only Android internal `ProductLocationsService` now dispatches to isolated OBI and KWANT adapters, independently of current Advisor and manual search. OBI canonical requested subsets use max-10 market batches and max-20 logical budget, strict JSON trust checks and partial-coverage semantics. KWANT one-shot 21-branch parser and transport are implemented behind a **fail-closed missing-`extended` contract gate**: original live research redacted the query value, and production does **not** send unverified requests. Until an exact reproducible value is established, do not claim production-ready two-provider support. No existing normal-turn network cost changes. Dedicated offline regression tests cover quantities, product/store IDs, request budgets and malformed/partial responses; only final checks/CI can establish their pass status. Future PR 2 will connect the service to Advisor/Worker with trusted references.
