@@ -33,6 +33,10 @@ import okhttp3.Response
 import pl.lukaszpeciak.towarownik.BuildConfig
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
+import pl.lukaszpeciak.towarownik.attachment.AttachmentType
+import pl.lukaszpeciak.towarownik.attachment.allowedTextAttachment
+import pl.lukaszpeciak.towarownik.attachment.decodedTextAttachmentOrNull
+import pl.lukaszpeciak.towarownik.attachment.TEXT_ATTACHMENT_MAX_BYTES
 import okio.BufferedSink
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
@@ -440,7 +444,10 @@ internal class AdvisorProxyClient(
                     (it.type == pl.lukaszpeciak.towarownik.attachment.AttachmentType.IMAGE &&
                         it.mimeType !in setOf("image/jpeg", "image/png")) ||
                     (it.type == pl.lukaszpeciak.towarownik.attachment.AttachmentType.PDF &&
-                        it.mimeType != "application/pdf")
+                        it.mimeType != "application/pdf") ||
+                    (it.type == AttachmentType.TEXT &&
+                        (!isMulti || it.byteSize > TEXT_ATTACHMENT_MAX_BYTES ||
+                            !allowedTextAttachment(it.displayName, it.mimeType)))
             } ||
             attachments.sumOf { it.byteSize } > maxTotalBytes
         ) {
@@ -451,6 +458,21 @@ internal class AdvisorProxyClient(
         )
         if (attachments.any { !storage.exists(it.localId) }) {
             return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
+        }
+        // Fail locally before networking; the Worker independently repeats this
+        // validation because Android is not an authoritative trust boundary.
+        for (part in attachments) {
+            if (part.type != AttachmentType.TEXT) continue
+            val bytes = runCatching {
+                storage.open(part.localId)?.use { input ->
+                    input.readNBytes((TEXT_ATTACHMENT_MAX_BYTES + 1).toInt())
+                }
+            }.getOrNull()
+            if (bytes == null || bytes.size.toLong() != part.byteSize ||
+                decodedTextAttachmentOrNull(bytes) == null
+            ) {
+                return AdvisorProxyCallResult.Failure(AdvisorProxyFailureKind.PROTOCOL)
+            }
         }
         val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
             .addFormDataPart("payload", payload.toString())
