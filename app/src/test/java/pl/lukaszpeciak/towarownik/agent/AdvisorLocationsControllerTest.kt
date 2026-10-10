@@ -542,6 +542,10 @@ class AdvisorLocationsControllerTest {
                 continueCall = { output ->
                     continuations++
                     assertTrue(output is AdvisorToolContinuation.Verified)
+                    val verifiedResult = (output as AdvisorToolContinuation.Verified).result
+                    assertEquals("kwant-pl", verifiedResult.providerId)
+                    assertEquals(expectedBranch, verifiedResult.branchId)
+                    assertEquals("7027", verifiedResult.results.single().products.single().productId)
                     answer()
                 },
                 locationCall = { _, _, _, _, _, _ ->
@@ -557,7 +561,17 @@ class AdvisorLocationsControllerTest {
                     AdvisorToolExecutionResult.Success(
                         result = AdvisorVerifiedToolResult(
                             storeNumber = expectedBranch,
-                            results = emptyList(),
+                            results = listOf(AdvisorVerifiedQueryResult(
+                                query = "gniazdo 16A 4P",
+                                status = AdvisorQueryResultStatus.VERIFIED,
+                                products = listOf(AdvisorVerifiedProduct(
+                                    obik = "7027",
+                                    productId = "7027",
+                                    name = "Fixture KWANT gniazdo",
+                                    stock = 4,
+                                    price = null,
+                                )),
+                            )),
                             providerId = "kwant-pl",
                         ),
                         snapshots = listOf(kwantSnapshot),
