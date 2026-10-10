@@ -862,6 +862,38 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun `KWANT verified meter stock unit persists after database restart`() = runBlocking {
+        val started = repository.beginUserTurn(
+            conversationId = null, text = "Sprawdź przewód", createdAt = 100L,
+            workingProfile = WorkingProfile(KWANT_PROVIDER_ID, BranchId("205")),
+        )
+        val verified = VerifiedProductSnapshot(
+            obik = "580", name = "Przewód", stock = 135,
+            centralStock = 9000, stockUnit = "m",
+            grossPrice = BigDecimal("2.55"),
+            productUrl = "https://kwant.net.pl/produkt/przewod-580",
+            verifiedAt = 120L, storeNumber = "205",
+            providerId = "kwant-pl", productId = "580", branchId = "205",
+            articleNumber = "CABLE/M",
+            priceScope = ProviderPriceScope.ONLINE,
+        )
+        repository.completeAssistantTurn(
+            conversationId = started.conversationId,
+            text = "Zweryfikowany przewód",
+            finalResponseId = "resp_meter_unit",
+            products = listOf(verified), createdAt = 150L,
+        )
+        database.close()
+        openDatabase()
+        val restored = requireNotNull(repository.load(started.conversationId))
+            .messages.last().products.single()
+        assertEquals(verified, restored)
+        assertEquals("m", restored.stockUnit)
+        assertEquals(135, restored.stock)
+        assertEquals(9000, restored.centralStock)
+    }
+
+    @Test
     fun `assistant text response id and verified cards commit together`() = runBlocking {
         val started = repository.beginUserTurn(
             conversationId = null,
