@@ -1,5 +1,12 @@
 # Decisions
 
+## 2026-10-10 — Advisor selectable answers and history tail positioning
+
+- Render plain and cited assistant answers as selectable Compose Text inside SelectionContainer. Inline numbered citations use native LinkAnnotation.Url so they remain clickable, with the existing clickable source list unchanged.
+- On opening or restoring an existing conversation, scroll the message list to the latest item, including a tall final answer's bottom. Continue following new USER/progress/ASSISTANT content only while the reader stays near the end; scrolling upward disables following until they return to the end.
+- Keep the empty new-conversation state, visual layout, provider/protocol behavior, and Room schema unchanged.
+
+
 ## 2026-10-10 — Canonical model hints are compatibility checks, never authority
 
 Do not maintain separate name-matching rules for user-scoped OBI city parsing versus `find_product_locations.locations[]` validation. Share one canonical/inflected alias table derived only from the verified store directory, plus the existing explicit market-label grammar. Hints may name canonical cities, deterministic Polish inflections, exact IDs, or `OBI <ID>`, but must resolve wholly inside the already authorized market set. Empty hints are valid and never reduce user scope; unknown or contradictory hints on restricted requests fail closed before HTTP. Provider adapters, Worker schema, trust, rollout and nationwide batching are unchanged.

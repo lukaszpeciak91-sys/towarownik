@@ -52,10 +52,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -86,6 +87,8 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -97,16 +100,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import java.time.Instant
@@ -114,6 +123,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -283,6 +293,8 @@ private fun TowarownikApp() {
     var activeConversationId by rememberSaveable {
         mutableStateOf<Long?>(null)
     }
+    // A fresh open event (including reopening the same history row) resets chat scroll.
+    var historyOpenSerial by remember { mutableIntStateOf(0) }
     var globalWorkingProfile by remember {
         mutableStateOf(workingProfileRepository.load())
     }
@@ -551,6 +563,7 @@ private fun TowarownikApp() {
         activeConversationId = conversation.id
         selectedWorkingProfile = conversation.workingProfile
         advisorCase = conversation.toAdvisorCaseUiState()
+        historyOpenSerial++
     }
 
     suspend fun cancelAndRecoverActiveTurn(
@@ -1118,6 +1131,8 @@ private fun TowarownikApp() {
             ) {
                 AdvisorChatScreen(
                     advisorCase = advisorCase,
+                    conversationId = activeConversationId,
+                    historyOpenSerial = historyOpenSerial,
                     state = advisorState,
                     onDraftChange = ::updateAdvisorDraft,
                     onSubmit = ::submitAdvisorTurn,
@@ -1670,6 +1685,8 @@ private fun Modifier.bottomComposerSafeArea(): Modifier =
 @Composable
 private fun AdvisorChatScreen(
     advisorCase: AdvisorCaseUiState,
+    conversationId: Long?,
+    historyOpenSerial: Int,
     state: AdvisorUiState,
     onDraftChange: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -1699,6 +1716,53 @@ private fun AdvisorChatScreen(
 ) {
     val isRunning = state.isRunning()
     val composerEnabled = isAdvisorComposerEnabled(state)
+    val chatListState = rememberLazyListState()
+    val bottomTolerancePx = with(LocalDensity.current) { 48.dp.roundToPx() }
+    val bottomPaddingPx = with(LocalDensity.current) { 20.dp.roundToPx() }
+    val visibleItemCount = advisorCase.messages.size +
+        if (state is AdvisorUiState.Idle || state is AdvisorUiState.Success) 0 else 1
+    var followNewMessages by remember(conversationId, historyOpenSerial) {
+        mutableStateOf(true)
+    }
+
+    // User-driven scrolling away from the end disables following; scrolling back
+    // to the end re-enables it. New content alone must not change this preference.
+    LaunchedEffect(chatListState, conversationId, historyOpenSerial, bottomTolerancePx) {
+        snapshotFlow {
+            if (!chatListState.isScrollInProgress) null
+            else {
+                val layout = chatListState.layoutInfo
+                val last = layout.visibleItemsInfo.lastOrNull()
+                advisorListIsNearBottom(
+                    lastIndex = last?.index ?: -1,
+                    totalItems = layout.totalItemsCount,
+                    lastItemBottom = last?.let { it.offset + it.size } ?: 0,
+                    viewportEnd = layout.viewportEndOffset,
+                    tolerance = bottomTolerancePx,
+                )
+            }
+        }.collect { nearBottom ->
+            if (nearBottom != null) followNewMessages = nearBottom
+        }
+    }
+
+    // Covers first history load/reopen and live USER, progress, or ASSISTANT updates.
+    // Do not jump when the user has intentionally scrolled up to read older turns.
+    LaunchedEffect(
+        conversationId, historyOpenSerial, visibleItemCount,
+        advisorCase.messages.lastOrNull(), state::class,
+    ) {
+        if (visibleItemCount > 0 && followNewMessages) {
+            chatListState.scrollToItem(visibleItemCount - 1)
+            val last = chatListState.layoutInfo.visibleItemsInfo.lastOrNull()
+            if (last?.index == visibleItemCount - 1) {
+                chatListState.scrollBy(
+                    (last.offset + last.size + bottomPaddingPx -
+                        chatListState.layoutInfo.viewportEndOffset).coerceAtLeast(0).toFloat(),
+                )
+            }
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -1764,6 +1828,7 @@ private fun AdvisorChatScreen(
                 )
             } else {
                 LazyColumn(
+                    state = chatListState,
                     modifier = Modifier
                         .fillMaxSize()
                         .widthIn(max = 720.dp),
@@ -1828,6 +1893,20 @@ private fun AdvisorChatScreen(
         }
     }
 }
+
+/** True only when the last row is actually near the viewport end.
+ * A tall answer can be visible while its bottom is still far below the screen.
+ */
+internal fun advisorListIsNearBottom(
+    lastIndex: Int,
+    totalItems: Int,
+    lastItemBottom: Int,
+    viewportEnd: Int,
+    tolerance: Int,
+): Boolean =
+    totalItems > 0 &&
+        lastIndex == totalItems - 1 &&
+        lastItemBottom <= viewportEnd + tolerance
 
 @Composable
 private fun AdvisorTopBar(
@@ -2645,97 +2724,62 @@ private fun AdvisorMessageBubble(
 private fun AdvisorAnswerText(
     message: AdvisorChatMessage,
 ) {
-    val mappedSources = message.sources.mapIndexedNotNull {
-            index,
-            source,
-        ->
-        val end = source.endIndex
-        if (
-            source.startIndex != null &&
-            end != null &&
-            end in 1..message.text.length
-        ) {
-            Triple(end, index + 1, source)
-        } else {
-            null
-        }
-    }.sortedWith(
-        compareBy<Triple<Int, Int, PersistedWebSource>> {
-            it.first
-        }.thenBy {
-            it.second
-        },
+    // Native Compose links remain clickable on a Text under SelectionContainer,
+    // while long-press selection and copy work on both cited and plain answers.
+    val annotated = advisorAnswerWithCitationLinks(
+        text = message.text,
+        sources = message.sources,
+        linkColor = MaterialTheme.colorScheme.primary,
     )
-
-    if (mappedSources.isEmpty()) {
+    SelectionContainer {
         Text(
-            text = message.text,
+            text = annotated,
             modifier = Modifier.padding(
                 horizontal = 14.dp,
                 vertical = 10.dp,
             ),
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
         )
-        return
     }
+}
 
-    val linkColor = MaterialTheme.colorScheme.primary
-    val annotated = buildAnnotatedString {
+internal fun advisorAnswerWithCitationLinks(
+    text: String,
+    sources: List<PersistedWebSource>,
+    linkColor: Color,
+): AnnotatedString {
+    val mappedSources = sources.mapIndexedNotNull { index, source ->
+        val end = source.endIndex
+        if (source.startIndex != null && end != null && end in 1..text.length) {
+            Triple(end, index + 1, source)
+        } else null
+    }.sortedWith(
+        compareBy<Triple<Int, Int, PersistedWebSource>> { it.first }
+            .thenBy { it.second },
+    )
+
+    return buildAnnotatedString {
         var cursor = 0
-        mappedSources
-            .groupBy { it.first }
-            .toSortedMap()
-            .forEach { (end, entries) ->
-                if (end > cursor) {
-                    append(message.text.substring(cursor, end))
-                    cursor = end
-                }
-                entries.forEach { (_, number, source) ->
-                    pushStringAnnotation(
-                        tag = "source_url",
-                        annotation = source.url,
-                    )
-                    pushStyle(
-                        SpanStyle(
-                            color = linkColor,
-                        ),
-                    )
+        mappedSources.groupBy { it.first }.toSortedMap().forEach { (end, entries) ->
+            if (end > cursor) {
+                append(text.substring(cursor, end))
+                cursor = end
+            }
+            entries.forEach { (_, number, source) ->
+                withLink(
+                    LinkAnnotation.Url(
+                        url = source.url,
+                        styles = TextLinkStyles(style = SpanStyle(color = linkColor)),
+                    ),
+                ) {
                     append(" [$number]")
-                    pop()
-                    pop()
                 }
             }
-        if (cursor < message.text.length) {
-            append(message.text.substring(cursor))
         }
+        if (cursor < text.length) append(text.substring(cursor))
     }
-
-    val uriHandler = LocalUriHandler.current
-    ClickableText(
-        text = annotated,
-        modifier = Modifier.padding(
-            horizontal = 14.dp,
-            vertical = 10.dp,
-        ),
-        style = MaterialTheme.typography.bodyLarge.copy(
-            color = MaterialTheme.colorScheme.onSurface,
-        ),
-        onClick = { offset ->
-            annotated
-                .getStringAnnotations(
-                    tag = "source_url",
-                    start = offset,
-                    end = offset,
-                )
-                .firstOrNull()
-                ?.item
-                ?.let { url ->
-                    runCatching {
-                        uriHandler.openUri(url)
-                    }
-                }
-        },
-    )
 }
 
 @Composable
@@ -3529,6 +3573,8 @@ private fun AdvisorChatPreview() {
                 ),
             ),
             state = AdvisorUiState.Idle,
+            conversationId = null,
+            historyOpenSerial = 0,
             onDraftChange = {},
             onSubmit = {},
             pendingAttachments = emptyList(),
