@@ -783,6 +783,16 @@ private fun TowarownikApp() {
                         ?.take(3)
                         ?.flatMap { it.products }
                         .orEmpty(),
+                    locationHistory = persistedTurnConversation
+                        ?.messages
+                        ?.dropLast(1) // Current USER turn never authorizes itself as prior context.
+                        ?.takeLast(12)
+                        ?.map { pl.lukaszpeciak.towarownik.agent.AdvisorLocationHistoryMessage(
+                            role = it.role,
+                            text = it.text,
+                            products = it.products,
+                        ) }
+                        .orEmpty(),
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(
