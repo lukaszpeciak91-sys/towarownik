@@ -11,6 +11,15 @@ import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ObiProductProvider
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
+import pl.lukaszpeciak.towarownik.product.provider.LocationCoverage
+import pl.lukaszpeciak.towarownik.product.provider.LocationCoverageKind
+import pl.lukaszpeciak.towarownik.product.provider.LocationStock
+import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsAdapter
+import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsResult
+import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsService
+import pl.lukaszpeciak.towarownik.product.provider.ProductRef
+import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
+import pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
 
 /** Offline orchestration: synthetic IDs and quantities, no upstream or provider HTTP. */
 class AdvisorLocationsControllerTest {
@@ -326,11 +335,40 @@ class AdvisorLocationsControllerTest {
             assertTrue(parsed is AdvisorProxyCallResult.Success)
             val product = snapshot.copy(
                 obik = "6117543", productId = "6117543",
+                storeNumber = "003", branchId = "003",
             )
             val old = snapshot.copy(
                 obik = "5524079", productId = "5524079",
+                storeNumber = "003", branchId = "003",
             )
             var locationCalls = 0
+            var inventoryReads = 0
+            val stockAdapter = object : ProductLocationsAdapter {
+                override val providerId = OBI_PROVIDER_ID
+                override suspend fun read(
+                    ref: ProductRef,
+                    requested: List<BranchId>,
+                    trustedProduct: ProviderProduct?,
+                ): ProductLocationsResult {
+                    inventoryReads++
+                    assertEquals(listOf(BranchId("052")), requested)
+                    assertEquals("6117543", ref.productId)
+                    return ProductLocationsResult.Available(
+                        ref,
+                        requested.map { LocationStock(
+                            ProviderBranch(it, "Miejsce Piastowe"), 4,
+                        ) },
+                        LocationCoverage(
+                            LocationCoverageKind.REQUESTED_SUBSET,
+                            requested, requested, 1,
+                        ),
+                        123L,
+                    )
+                }
+            }
+            val realTool = AdvisorLocationsTool(
+                locationsService = ProductLocationsService(listOf(stockAdapter)),
+            )
             val c = controller(
                 initial = parsed,
                 continueCall = { continuation ->
@@ -348,21 +386,7 @@ class AdvisorLocationsControllerTest {
                     assertTrue(input.startsWith("Sprawdź stan produktu:"))
                     assertTrue(current.isEmpty())
                     assertEquals(listOf(product), past)
-                    AdvisorLocationEvidence(
-                        providerId = "obi-pl",
-                        productId = "6117543",
-                        status = "verified",
-                        reason = null,
-                        coverage = "requested_subset",
-                        checkedIds = listOf("052"),
-                        returnedIds = listOf("052"),
-                        missingIds = emptyList(),
-                        locations = listOf(
-                            AdvisorLocationEntry("052", "Miejsce Piastowe", 4),
-                        ),
-                        verifiedAtMillis = 123L,
-                        centralStock = null,
-                    )
+                    realTool.execute(args, provider, selected, input, current, past)
                 },
             )
             val final = c.runTurn(
@@ -383,6 +407,7 @@ class AdvisorLocationsControllerTest {
             ) {}
             assertTrue(final is AdvisorUiState.Success)
             assertEquals(1, locationCalls)
+            assertEquals(1, inventoryReads)
             assertEquals(
                 "33333333-3333-4333-8333-333333333333",
                 (final as AdvisorUiState.Success).traceId,
