@@ -27,6 +27,7 @@ import type {
 import {
   InvalidRequestError,
   parseContinueRequest,
+  acceptsLocations,
   parseMessageRequest,
   parseStartRequest,
   RequestTooLargeError,
@@ -141,6 +142,7 @@ async function handleProtectedAgentRequest(
   }
 
   let protocolVersion: AdvisorProtocolVersion | null = null;
+  const locationsEnabled = acceptsLocations(request);
 
   try {
     let result: AgentResult;
@@ -160,6 +162,7 @@ async function handleProtectedAgentRequest(
         upstreamFetch,
         input.protocolVersion,
         input.attachment ?? input.attachments,
+        locationsEnabled,
       );
     } else if (endpoint === "message") {
       const input = await parseMessageRequest(request);
@@ -177,6 +180,7 @@ async function handleProtectedAgentRequest(
         upstreamFetch,
         input.protocolVersion,
         input.attachment ?? input.attachments,
+        locationsEnabled,
       );
     } else {
       const input = await parseContinueRequest(request);
@@ -198,6 +202,7 @@ async function handleProtectedAgentRequest(
         apiKey,
         upstreamFetch,
         input.protocolVersion,
+        locationsEnabled,
       );
     }
 
