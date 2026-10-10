@@ -558,6 +558,70 @@ test("v5 invalid UTF-8, binary-like contents, MIME mismatch and unsupported form
   assert.equal(fake.captures.length, 0);
 });
 
+const textFixture = (filename, byteSize) => ({
+  filename, mimeType: filename.endsWith(".md") ? "text/markdown" :
+    filename.endsWith(".json") ? "application/json" : "text/plain",
+  bytes: new Uint8Array(byteSize).fill(0x61),
+});
+
+test("v5 text input accepts one exactly 1 MiB and multiple files totaling at most 1 MiB", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const cases = [
+    [textFixture("full.txt", 1024 * 1024)],
+    [textFixture("part.md", 256 * 1024), textFixture("part.json", 256 * 1024),
+      textFixture("part.txt", 512 * 1024)],
+    [textFixture("short.txt", 127), textFixture("short.md", 512)],
+  ];
+  for (const attachments of cases) {
+    const response = await worker.fetch(
+      multiRequest("/v1/agent/start", v5Start, attachments), configuredEnv,
+    );
+    assert.equal(response.status, 200);
+    const content = fake.captures.at(-1).body.input[0].content;
+    assert.deepEqual(content.map(part => part.type), attachments.map(() => "input_text"));
+    for (let i = 0; i < attachments.length; i++) {
+      assert.ok(content[i].text.includes(JSON.stringify(attachments[i].filename)));
+      assert.equal(content[i].text.slice(-attachments[i].bytes.length).length, attachments[i].bytes.length);
+    }
+  }
+  assert.equal(fake.captures.length, cases.length);
+});
+
+test("v5 text aggregate >1 MiB rejects before OpenAI even when individual text parts are valid", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const twoTextsOver = [textFixture("part1.txt", 512 * 1024),
+    textFixture("part2.md", 512 * 1024 + 1)];
+  for (const attachments of [
+    twoTextsOver,
+    [imagePart, ...twoTextsOver],
+    [pdfPart, ...twoTextsOver],
+  ]) {
+    const response = await worker.fetch(
+      multiRequest("/v1/agent/start", v5Start, attachments), configuredEnv,
+    );
+    assert.equal(response.status, 413);
+  }
+  assert.equal(fake.captures.length, 0);
+});
+
+test("v5 image/PDF bytes do not count toward the separate 1 MiB text aggregate", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const response = await worker.fetch(
+    multiRequest("/v1/agent/start", v5Start,
+      [imagePart, pdfPart, textFixture("exact.txt", 1024 * 1024)]),
+    configuredEnv,
+  );
+  assert.equal(response.status, 200);
+  const content = fake.captures[0].body.input[0].content;
+  assert.deepEqual(content.map(part => part.type), ["input_image", "input_file", "input_text"]);
+  assert.equal(content[0].detail, "high");
+  assert.equal(content[1].filename, pdfPart.filename);
+  assert.ok(content[2].text.includes('"exact.txt"'));
+});
+
 test("protocol v5 accepts one part without changing v4 single-file transport", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
