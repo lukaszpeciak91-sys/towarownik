@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-10-10 — PR 2 opt-in Advisor locations integration
+
+- One explicit-capability model function `find_product_locations` is registered only if `X-Taksula-Locations-Capability: 1` is supplied. Existing v2/v3/v4/v5 families remain stable; old Android versions without the capability header receive unchanged tools, so deploy Worker before shipping the Android version.
+- Android alone authorizes product identity from exact current-turn verification or recent assistant product cards from the **same persisted conversation**. The model's ID and location list remain hints. A single unambiguous historical product supports natural follow-ups; multiple cards require an exact reference/clarification. Historical snapshots never auto-promote to current-turn output product cards.
+- OBI locations must be explicitly named by the current USER and resolved against canonical provider directory; reject unknown, ambiguous and model-selected extra markets, cap to 20 markets per logical lookup (two batches of ten). Render positive-first above transport. The KWANT adapter remains **production-blocked** on missing evidence for `extended`; typed unavailability is an expected honest outcome.
+- Model requests are counted against the existing three local calls per user turn (independent of HTTP batch count), without modifying normal search, profile, Room or UI. Rejection and unavailable remain typed safe tool facts; Worker strict JSON validation and continuation budget remain in force.
+
+
 ## 2026-10-10 — Product locations transport PR 1 (isolated, no Advisor integration)
 
 - Introduced a single Android internal `ProductLocationsService` dispatching the existing provider-owned `ProductRef` to separate OBI and KWANT readers, with typed invalid/unavailable/unsupported outcomes, location stock, exact zero, explicit requested/returned/missing coverage, and optional separately verified matching-product central stock. No products or locations are invented and no WorkingProfile is mutated.

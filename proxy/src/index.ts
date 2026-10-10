@@ -162,7 +162,7 @@ async function handleProtectedAgentRequest(
         upstreamFetch,
         input.protocolVersion,
         input.attachment ?? input.attachments,
-        locationsEnabled,
+        locationsEnabled && input.protocolVersion !== 1,
       );
     } else if (endpoint === "message") {
       const input = await parseMessageRequest(request);
@@ -180,7 +180,7 @@ async function handleProtectedAgentRequest(
         upstreamFetch,
         input.protocolVersion,
         input.attachment ?? input.attachments,
-        locationsEnabled,
+        locationsEnabled && input.protocolVersion !== 1,
       );
     } else {
       const input = await parseContinueRequest(request);
@@ -202,7 +202,7 @@ async function handleProtectedAgentRequest(
         apiKey,
         upstreamFetch,
         input.protocolVersion,
-        locationsEnabled,
+        locationsEnabled && input.protocolVersion !== 1,
       );
     }
 

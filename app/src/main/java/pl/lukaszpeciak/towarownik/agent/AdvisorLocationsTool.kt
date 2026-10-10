@@ -75,7 +75,10 @@ internal class AdvisorLocationsTool(
             branchId = BranchId(selected.effectiveBranchId),
             name = selected.name,
             stock = selected.stock,
-            centralStock = selected.centralStock,
+            // Historical cards authorize identity only, never current central stock.
+            centralStock = currentVerified.firstOrNull {
+                it.providerId == providerId && it.effectiveProductId == exactRef.productId
+            }?.centralStock,
             grossPrice = selected.grossPrice,
             priceScope = selected.priceScope,
             productUrl = selected.productUrl,
