@@ -335,7 +335,7 @@ internal class AdvisorController(
         var localToolLimitContinuationSent = false
         var toolAssistedObserved = false
         val deterministicLocationOutcomes =
-            linkedMapOf<Pair<String, List<String>>, AdvisorLocationEvidence>()
+            linkedMapOf<Triple<String, String, List<String>>, AdvisorLocationEvidence>()
         val verifiedByKey =
             linkedMapOf<VerifiedProductKey, VerifiedProductSnapshot>()
         val searchActionsByKey =
@@ -374,10 +374,14 @@ internal class AdvisorController(
                     val followUp = resolveAdvisorLocationFollowUp(
                         input = normalizedInput,
                         history = locationHistory,
-                        historicalProducts = historicalVerifiedProducts,
+                        historicalProducts = historicalVerifiedProducts
+                            .filter { it.providerId == conversationProviderId },
                     )
-                    val repeatKey = locationRequest.arguments.productId to
-                        locationRequest.arguments.locations
+                    val repeatKey = Triple(
+                        locationRequest.arguments.providerId,
+                        locationRequest.arguments.productId,
+                        locationRequest.arguments.locations,
+                    )
                     // A deterministic denial is returned unchanged for an
                     // identical retry, rather than spending a second local
                     // lookup budget (or performing duplicate provider work).
