@@ -263,7 +263,7 @@ internal class AdvisorLocationsTool(
         if (candidates.isEmpty()) return null
         // An explicit new exact identifier must never silently resolve to an
         // unrelated older card just because the model supplied that card's ID.
-        val normalized = userText.lowercase()
+        val normalized = norm(userText)
         val explicit = candidates.filter { candidate ->
             boundedMention(normalized, candidate.effectiveProductId.lowercase()) ||
                 (candidate.articleNumber?.let { boundedMention(
