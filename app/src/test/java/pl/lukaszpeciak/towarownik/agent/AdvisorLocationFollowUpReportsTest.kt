@@ -300,11 +300,16 @@ class AdvisorLocationFollowUpReportsTest {
         assertTrue(f.adapterReads.isEmpty())
     }
 
-    @Test fun shortKwantUnlabeledCheckAndUnknownArticleRejectWithoutAdapter() = runBlocking {
+    @Test fun shortKwantDirectAccentedCheckRejectsUnknownId() = runBlocking {
         val f = ShortKwantFixture()
         val unlabeled = f.check("Sprawdź 7027 w oddziale Zamość", listOf(f.old), "7035")
         assertEquals("rejected", unlabeled.status)
         assertEquals("untrusted_product", unlabeled.reason)
+        assertTrue(f.adapterReads.isEmpty())
+    }
+
+    @Test fun shortKwantUnknownArticleRejectsWithoutAdapter() = runBlocking {
+        val f = ShortKwantFixture()
         val article = f.check(
             "Sprawdź stan produktu o kodzie 921861 w oddziale Zamość",
             listOf(f.old), "7035",
