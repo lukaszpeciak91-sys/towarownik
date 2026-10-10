@@ -1,5 +1,18 @@
 # Architecture
 
+## Read-only product locations foundation (PR 1 of 2; not Advisor-exposed)
+
+`ProductLocationsService` is an Android-only provider-neutral dispatcher keyed by existing `ProductRef.providerId`. It returns `ProductLocationsResult` with canonical `ProviderBranch` identities, nullable integer stock, verification time, explicit `LocationCoverage` (requested, returned, missing, attempts/failures), and an optional independently verified `centralStock`. Zero is a known physical-location quantity; null and missing canonical IDs remain unknown. No missing location rows or aggregate totals are synthesized. Unsupported/invalid/unavailable are typed failures.
+
+The two dedicated adapters do **not** change `ProductProvider.search/lookup`, `find_products`, Advisor, Worker, UI, Room, WorkingProfile or existing selected-store state. Neither adapter is called during regular discovery or during Advisor turns in this PR. The future PR 2 owns trusted prior-product authorization and model tool routing; an arbitrary model-chosen product ID is not authorized by the mere existence of these transport helpers.
+
+- **OBI:** exact seven-digit OBIK; only IDs from the current `ObiProductProvider` / canonical `OBI_STORES` directory. One HTTPS `GET https://www.obi.pl/api/pdp/v1/stock/{OBIK}?storeIds=...` for up to ten requested stores, comma-delimited. A logical operation accepts at most **20** explicit unique stores, issuing at most **two** ten-store batches; this 20-ID limit is an **application cost budget**, NOT live evidence of OBI's maximum. The live research proves a 10-ID B subset, **not** all 62 markets. JSON list entries must have exact `storeId` and nonnegative integer `availableQuantity`. Duplicates, foreign IDs, bad quantities and untrusted paths reject their batch. A failed second batch leaves the first trusted subset with `PARTIAL` coverage; omitted IDs remain unknown.
+- **KWANT:** `GET https://services.kwant.net.pl/api/front/products/{id}/departments` was observed with an `extended` query **name**, but the sanitized research evidence contains **no value**. The production constructor deliberately has no value and returns `UNVERIFIED_REQUEST_CONTRACT` **before any HTTP or directory lookup**. It must **not** guess `true`, `1`, an empty value or omission. A non-default, explicitly supplied verified query value enables the isolated one-request/one-product adapter and its deterministic fixture tests, but must not be configured for production until the exact request is independently evidenced. It accepts only canonical numeric `department_id` and nonnegative integer `stock` in root `list`, rejects duplicates/conflicts, reports partial directory coverage, and never treats `total_stock` as branch or central stock. `centralStock` may only come from a separately verified matching `ProviderProduct`.
+- Both adapters use dedicated JSON-only read-only OkHttp GETs, exact HTTPS-origin/path allowlists, redirects disabled, no cookie/session-switch operation, bounded 64 KiB response bodies, 15-second call budget and coroutine-aware cancellation. No raw payload or secret logging.
+
+**Production status:** OBI adapter implemented with deterministic transport/parser tests. KWANT parsing, one-shot logic and safety boundary are implemented and fixture-tested, but **live-reproducible production transport remains blocked by the missing verified `extended` value**. Thus full two-provider acceptance is **not** claimed. No re-probing was done in PR 1.
+
+
 ## Provider branch resolution and one-off lookup
 
 `ProviderProduct` carries nullable `centralStock` independently from the
