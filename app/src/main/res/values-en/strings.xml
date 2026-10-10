@@ -38,6 +38,9 @@
     <string name="attachment_error_too_many">You can add up to 3 attachments.</string>
     <string name="attachment_error_total_too_large">Attachments must total no more than 24 MiB.</string>
     <string name="attachment_photo">Photo</string>
+    <string name="product_image_open">Enlarge product image</string>
+    <string name="product_image_close">Close image preview</string>
+    <string name="product_image_load_failed">Could not load the image.</string>
     <string name="attachment_image_preview">Photo preview</string>
     <string name="attachment_importing">Processing attachment…</string>
     <string name="attachment_error_missing_persisted">This attachment is no longer available.</string>

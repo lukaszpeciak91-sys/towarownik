@@ -1,5 +1,10 @@
 # Architecture
 
+## Shared product-image preview (2026-10-10)
+
+The existing VerifiedProductThumbnail provides click-to-preview for Advisor cards, restored conversation cards, exact manual-search results, and enriched search-result thumbnails, for OBI and KWANT. Only Coil-successful thumbnails are clickable; a null or failed primaryImageUrl leaves no interactive empty target. A full-screen in-app Compose Dialog opens the original trusted primaryImageUrl using a second AsyncImage constrained to the expanded display area and ContentScale.Fit, preserving Coil caching and memory-bounded decoding without enlarging a thumbnail bitmap. Tapping anywhere or Android Back dismisses the preview; loading/error states are presentation-only. No external navigation or changes to provider image URL validation, persisted data, or product actions.
+
+
 ## PR #102 — location-scope completeness and fail-closed lists (2026-10-10)
 
 Android scope authorization uses one constrained parser for user-mentioned city lists and market-ID lists. It preserves commas; contextualized IDs after `market/sklep/oddział/OBI` may be joined by comma, `i` or `oraz`. City references may appear inside a longer sentence and can include the canonical directory's multi-word names and deterministic inflections such as `Nowym Sączu`. Parsing resolves **every** explicitly named location before any inventory HTTP; unknown/malformed mixed scopes are typed `unknown_location` with zero HTTP. Generic inventory phrases remain broad all-other, model hints are nonauthoritative, and product dimensions are not location IDs. The existing explicit-intent guard, 61-market scans, service/HTTP batch limits, cancellation, partial coverage and 45-second deadline remain unchanged.

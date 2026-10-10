@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-10 — Product-image tap-to-preview
+
+Put the feature in shared VerifiedProductThumbnail, not in MainActivity or provider fetchers. Load expanded image with the existing Coil 3 image URL and a separate display-sized AsyncImage (not a thumbnail stretch, HD URL substitution or original-size unbounded request). Keep preview full-screen and minimal: single tap/Back dismissal, no controls, zoom or gallery. Thumbnail click is enabled after success only; original product link buttons and text selection remain independent.
+
+
 ## 2026-10-10 — lightweight text attachments Phase A2 Android picker and history
 
 - Reuse existing OpenMultipleDocuments and one-file replacement, ordered Room v12 metadata, private-file ownership journal and failed-turn recovery for .txt/.md/.csv/.json/.xml/.yaml/.yml/.log/.ini/.conf. No Room migration, Worker contract or provider-authority changes.
