@@ -2965,6 +2965,44 @@ class FinalExtendedEndpointResearchTest(unittest.TestCase):
         self.assertEqual(1, missing_value["missingCount"])
         self.assertEqual(0, missing_value["nullCount"])
 
+    def test_cookie_free_inventory_comparison_requires_exact_stock_quantities(self):
+        directory = {"205": "Nowy Sącz", "128": "Zamość"}
+        browser = probe.safe_exact_departments_response(
+            {"list": [
+                {"department_id": 205, "stock": 5},
+                {"department_id": 128, "stock": 0},
+            ]}, "580", directory,
+        )
+        same_reordered = probe.safe_exact_departments_response(
+            {"list": [
+                {"department_id": 128, "stock": 0},
+                {"department_id": 205, "stock": 5},
+            ]}, "580", directory,
+        )
+        changed_positive_quantity = probe.safe_exact_departments_response(
+            {"list": [
+                {"department_id": 205, "stock": 7},
+                {"department_id": 128, "stock": 0},
+            ]}, "580", directory,
+        )
+        swapped_branch_quantities = probe.safe_exact_departments_response(
+            {"list": [
+                {"department_id": 205, "stock": 0},
+                {"department_id": 128, "stock": 5},
+            ]}, "580", directory,
+        )
+        self.assertEqual("ALL_DIRECTORY_BRANCHES", browser["coverage"])
+        self.assertEqual(browser["coverage"], changed_positive_quantity["coverage"])
+        self.assertEqual(browser["zeroCount"], changed_positive_quantity["zeroCount"])
+        self.assertTrue(probe.same_sanitized_department_inventory(browser, same_reordered))
+        # 5 -> 7 remains POSITIVE, but cannot mean cookie-free quantities agree.
+        self.assertFalse(probe.same_sanitized_department_inventory(
+            browser, changed_positive_quantity,
+        ))
+        self.assertFalse(probe.same_sanitized_department_inventory(
+            browser, swapped_branch_quantities,
+        ))
+
     def test_second_product_has_independent_identity_and_no_assumed_stock(self):
         directory = {"205": "Nowy Sącz", "128": "Zamość"}
         payload = {"list": [
