@@ -48,6 +48,13 @@ internal fun renderAdvisorLocationDetails(
             }
         }
     }
+    if (evidence.providerId == "kwant-pl" &&
+        evidence.locations.isEmpty() && evidence.checkedIds.isNotEmpty()
+    ) {
+        return "Oddziały KWANT: nie udało się potwierdzić stanu w " +
+            evidence.checkedIds.size + " wskazanych lokalizacjach. " +
+            "Stan pozostaje nieznany (to nie jest potwierdzone 0)."
+    }
     if (evidence.locations.isEmpty()) return ""
     val checked = evidence.checkedIds.toSet()
     if (checked.size != evidence.checkedIds.size ||
