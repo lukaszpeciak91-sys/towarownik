@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-11 — PR #110 final natural short-ID regression
+
+Extended the existing exact trusted-product guard to constrained `Sprawdź stan 7027`, `Sprawdź dostępność 7027`, and `Jaki jest stan 921861` forms. Added rejection/no-HTTP tests for unknown IDs and wrong model product; verified-ID and article tests for selecting the requested product; checks for `1000 W`, `25 m`, `5 szt.`, OBI 003/052/075 and unknown EAN; plus Controller coverage for two KWANT grouped `find_products` queries in the current and an explicitly selected other branch, without location requests. Existing authorization, 61-OBI-market and three-local-call tests are retained.
+
+
 ## 2026-10-10 — PR #110 final security regressions
 
 Narrowed cross-turn inventory clarifications to complete canonical city/location forms so prices, mounting and compatibility prompts cannot inherit stock intent. Added short KWANT ID/article fail-closed checks with synthetic rejection-to-newly-verified transition; made unlabeled location questions with contradictory OBI market numbers reject without HTTP. Added targeted price/advice/market tests and Controller KWANT `find_products` selected/other-branch regression asserting no dependence on disabled `find_product_locations`. Existing 052/054, 61-store bounded read, KWANT `obu` and logical-call-limit tests are retained.
