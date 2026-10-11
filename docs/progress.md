@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-11 — PR #112 guarded production KWANT product locations
+
+Implemented observed `extended=1` with existing read-only HTTP, one exact product GET and bounded response validation. Directory-based user scope and model-hint containment prevent a Zamość-only request leaking the full public branch list, while explicit nationwide queries are permitted. Numeric stock, zero, null, missing, invalid and unknown branch identities remain distinct; root `unit` is optional and never inferred. Deterministic KWANT location output now labels oddziały rather than OBI markets and shows verified units, timestamp and incomplete status. Current `obu` produces a typed single-product-tool limitation rather than an unverified endpoint claim. Added synthetic provider, scope, MockWebServer and UI regressions; production Worker and normal provider find_products remain unchanged. Manual Android checks: see `docs/kwant-product-locations-production-smoke.md`.
+
+
 ## 2026-10-11 — PR #110 inherited "obu" supersession regression
 
 Added explicit-current-identity precedence in `AdvisorLocationFollowUps`: verified 7027 overrides a preceding `obu`, while explicit unknown 9999 cancels old `obu` before normal trusted-identity rejection. Controller → follow-up → actual locations tool regressions also verify that current `obu` and location-only Tarnów follow-ups preserve the intended two-product selection. Production KWANT adapter with disabled extended and a failing synthetic network fetcher verifies no inventory HTTP. Prior OBI, shared identity, tool-budget and grouped `find_products` suites remain in full Android checks.
