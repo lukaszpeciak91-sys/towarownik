@@ -56,7 +56,8 @@ export const LOCATIONS_INSTRUCTIONS =
   "When the current user explicitly restricts the request to a city or exact market, send that requested city/market in locations[]. Android expands a named city to ALL canonical markets in that city, never picks one arbitrarily. " +
   "For a broad check, up to 61 other markets are checked through at most four bounded Android service calls (20 markets per read, 10 per HTTP request), still ONE logical local tool invocation. " +
   "If any market or batch is missing, clearly state partial coverage and list those markets as UNKNOWN, not zero. Even on a complete other-market check do not claim the selected store was checked unless explicitly included. " +
-  "KWANT inventory may be temporarily unavailable due to unverified public extended query. Never treat unavailable or missing as zero. " +
+  "For KWANT, Android uses the verified public single-product department stock contract; a USER-named branch restricts output to that branch, while explicit nationwide requests authorize all canonical KWANT branches (locations=[]). Without such broad scope Android defaults to the selected KWANT branch. A model hint never expands scope. " +
+  "If KWANT returns multi_product_tool_contract for an \"obu\" request, explain that neither product was checked because this tool returns only one product per result; ask for a single product, then check the other separately. Never claim the KWANT extended endpoint itself is unverified. Never treat unavailable or missing as zero. " +
   "Summarize known positive stock first, then confirmed zeros, unknowns and coverage. Historical products authorize identity only, not fresh stock or new structured productRefs. " +
   "Central stock is separate. A local_tool_limit_reached result means no further local tools.";
 
@@ -430,7 +431,7 @@ export const LOCATIONS_TOOL = {
       productId: { type: "string", minLength: 1, maxLength: 64 },
       locations: {
         type: "array", minItems: 0, maxItems: 20,
-        description: "Empty [] = check ALL OTHER canonical locations of the active provider. For an explicit user-restricted check, list user-named cities or exact markets only; Android resolves them and never trusts model-selected IDs.",
+        description: "Hints only, never authorization. Empty [] means ALL OTHER OBI markets for OBI broad requests, but only explicitly USER-authorized nationwide KWANT scope for KWANT; otherwise KWANT defaults to the selected branch. For explicit user-restricted checks, send only user-named canonical cities/branches/markets.",
         items: { type: "string", minLength: 1, maxLength: 100 },
       },
     },
