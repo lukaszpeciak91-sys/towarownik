@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-11 — PR #110 Controller ↔ follow-up identity consistency
+
+Replaced raw numeric mention matching in the follow-up resolver (both older USER turns and current USER input) with the same bounded product-identifier policy used by `AdvisorLocationsTool`. Added an offline Controller → real follow-up resolver → real location-authorization regression checking that earlier 7035 stays selected over a 1000 W measurement, explicit verified product 1000 takes precedence, unknown short ID fails before inventory adapter HTTP, model mismatch is rejected, and dimensions stay non-identities. Also covered OBI market ID 003/052/075 identity isolation. Existing KWANT grouped `find_products` and prior test suites remain part of full Android checks.
+
+
 ## 2026-10-11 — PR #110 final natural short-ID regression
 
 Extended the existing exact trusted-product guard to constrained `Sprawdź stan 7027`, `Sprawdź dostępność 7027`, and `Jaki jest stan 921861` forms. Added rejection/no-HTTP tests for unknown IDs and wrong model product; verified-ID and article tests for selecting the requested product; checks for `1000 W`, `25 m`, `5 szt.`, OBI 003/052/075 and unknown EAN; plus Controller coverage for two KWANT grouped `find_products` queries in the current and an explicitly selected other branch, without location requests. Existing authorization, 61-OBI-market and three-local-call tests are retained.
