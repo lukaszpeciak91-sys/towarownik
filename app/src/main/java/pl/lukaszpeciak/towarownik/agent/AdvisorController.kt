@@ -636,6 +636,7 @@ internal class AdvisorController(
                                             diagnostic = AdvisorFailureDiagnostic(
                                                 kind = AdvisorProxyFailureKind.SERVICE,
                                                 failureClass = AdvisorFailureClass.LOCAL_PROVIDER_FAILURE,
+                                                traceId = turnTraceId,
                                             ),
                                         ).also(onState)
                                 }
