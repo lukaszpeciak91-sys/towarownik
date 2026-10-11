@@ -65,8 +65,6 @@ class ProductLocationsTest {
     ) = KwantProductLocationsAdapter(
         fetcher = fetcher,
         directory = { directory },
-        // Synthetic URL fixture; NOT the researched actual value of "extended".
-        verifiedExtendedValue = "fixtureOnly",
         now = now,
     )
 
@@ -201,22 +199,20 @@ class ProductLocationsTest {
         assertEquals(0, calls)
     }
 
-    @Test fun `KWANT default blocks unknown extended value before directory and HTTP`() = runBlocking {
-        var directoryCalls = 0
+    @Test fun verifiedKwantProductionContractUsesExtendedOne() = runBlocking {
         var requests = 0
         val adapter = KwantProductLocationsAdapter(
-            fetcher = LocationsHttpFetcher {
+            fetcher = LocationsHttpFetcher { url ->
                 requests++
+                assertTrue(trustedLocationsEndpoint(url))
+                assertEquals("1", url.queryParameter("extended"))
+                assertEquals("/api/front/products/580/departments", url.encodedPath)
                 LocationsHttpResult.Success(kwantPayload())
             },
-            directory = { directoryCalls++; directory },
+            directory = { directory },
         )
-        assertEquals(
-            ProductLocationsResult.Unavailable(LocationFailure.UNVERIFIED_REQUEST_CONTRACT),
-            adapter.read(kwantRef, emptyList()),
-        )
-        assertEquals(0, requests)
-        assertEquals(0, directoryCalls)
+        assertTrue(adapter.read(kwantRef, emptyList()) is ProductLocationsResult.Available)
+        assertEquals(1, requests)
     }
 
     @Test fun `KWANT fixture one-shot returns 21 canonical states including zeros`() = runBlocking {
@@ -226,7 +222,7 @@ class ProductLocationsTest {
                 requests++
                 assertTrue(trustedLocationsEndpoint(url))
                 assertEquals("/api/front/products/580/departments", url.encodedPath)
-                assertEquals("fixtureOnly", url.queryParameter("extended"))
+                assertEquals("1", url.queryParameter("extended"))
                 LocationsHttpResult.Success(
                     kwantPayload(branchIds = (201..221).toList().reversed()),
                 )
@@ -270,7 +266,6 @@ class ProductLocationsTest {
             """{"list":[{"department_id":205,"stock":-3}]}""",
             """{"list":[{"department_id":205,"stock":"3"}]}""",
             """{"list":[{"department_id":"205","stock":3}]}""",
-            """{"list":[{"department_id":205,"stock":null}]}""",
             """{"list":[{"department_id":205,"stock":0,"product_id":581}]}""",
             """{"product_id":581,"list":[]}""",
             """{"list":"not_an_array"}""",
@@ -382,8 +377,6 @@ class ProductLocationsTest {
                     directory
                 },
                 directoryDispatcher = dispatcher,
-                // Fixture-only shape, not a known production extended value.
-                verifiedExtendedValue = "fixtureOnly",
             )
             assertTrue(adapter.read(kwantRef, emptyList()) is ProductLocationsResult.Available)
             // Coroutine debug mode may append a coroutine id to the thread name.
@@ -406,7 +399,6 @@ class ProductLocationsTest {
                 LocationsHttpResult.Success(kwantPayload())
             },
             directory = { throw IllegalStateException("synthetic directory failure") },
-            verifiedExtendedValue = "fixtureOnly",
         )
         assertEquals(
             ProductLocationsResult.Unavailable(LocationFailure.DIRECTORY_UNAVAILABLE),
@@ -423,7 +415,6 @@ class ProductLocationsTest {
                 LocationsHttpResult.Success(kwantPayload())
             },
             directory = { throw CancellationException("synthetic cancellation") },
-            verifiedExtendedValue = "fixtureOnly",
         )
         var cancelled = false
         try {
@@ -433,6 +424,79 @@ class ProductLocationsTest {
         }
         assertTrue("Directory cancellation must propagate", cancelled)
         assertEquals(0, fetchCount)
+    }
+
+    @Test fun kwantScopedSingleBranchNeverReturnsWholeNetwork() = runBlocking {
+        var requests = 0
+        val adapter = verifiedKwant(LocationsHttpFetcher { url ->
+            requests++
+            assertEquals("1", url.queryParameter("extended"))
+            LocationsHttpResult.Success(kwantPayload())
+        })
+        val result = adapter.read(kwantRef, listOf(BranchId("205")))
+            as ProductLocationsResult.Available
+        assertEquals(1, requests)
+        assertEquals(LocationCoverageKind.REQUESTED_SUBSET, result.coverage.kind)
+        assertEquals(listOf(BranchId("205")), result.coverage.requestedIds)
+        assertEquals(listOf(BranchId("205")), result.coverage.returnedIds)
+        assertEquals(listOf(BranchId("205")), result.locations.map { it.branch.branchId })
+        assertEquals(0, result.locations.single().stock)
+        assertEquals("szt.", result.stockUnit)
+    }
+
+    @Test fun kwantNullAndMissingStocksRemainUnknown() = runBlocking {
+        val adapter = verifiedKwant(LocationsHttpFetcher {
+            LocationsHttpResult.Success(
+                """{"list":[{"department_id":205,"stock":0},""" +
+                    """{"department_id":206,"stock":null},""" +
+                    """{"department_id":207}],"unit":"kg"}""",
+            )
+        })
+        val result = adapter.read(kwantRef, emptyList())
+            as ProductLocationsResult.Available
+        assertEquals(LocationCoverageKind.PARTIAL, result.coverage.kind)
+        assertEquals("kg", result.stockUnit)
+        assertEquals(0, result.locations.first().stock)
+        assertNull(result.locations.single { it.branch.branchId == BranchId("206") }.stock)
+        assertNull(result.locations.single { it.branch.branchId == BranchId("207") }.stock)
+        assertEquals(1, result.coverage.returnedIds.size)
+        assertEquals(20, result.coverage.missingIds.size)
+    }
+
+    @Test fun kwantConflictingAndUnknownUnitsNotClaimedVerified() = runBlocking {
+        val selected = ProviderProduct(
+            ref = kwantRef, branchId = BranchId("205"), name = "Synthetic",
+            stock = 2, grossPrice = null, centralStock = 88,
+            priceScope = null, productUrl = "https://kwant.net.pl/produkt/580",
+            ean = null, stockUnit = "m",
+        )
+        for ((unit, expected) in listOf(
+            "szt." to null, "unknown-value" to null, "m" to "m",
+        )) {
+            val adapter = verifiedKwant(LocationsHttpFetcher {
+                LocationsHttpResult.Success(
+                    """{"list":[{"department_id":205,"stock":8}],""" +
+                        """"unit":"$unit","total_stock":99999}""",
+                )
+            })
+            val result = adapter.read(kwantRef, listOf(BranchId("205")), selected)
+                as ProductLocationsResult.Available
+            assertEquals(unit, expected, result.stockUnit)
+            assertEquals(88, result.centralStock)
+        }
+    }
+
+    @Test fun kwantEmptyAndTransportFailureStayUnavailable() = runBlocking {
+        for ((response, failure) in listOf(
+            LocationsHttpResult.Success("""{"list":[],"unit":"szt."}""") to LocationFailure.NO_TRUSTED_ROWS,
+            LocationsHttpResult.Failure(LocationFailure.TRANSPORT) to LocationFailure.TRANSPORT,
+        )) {
+            val adapter = verifiedKwant(LocationsHttpFetcher { response })
+            val result = adapter.read(kwantRef, listOf(BranchId("205")))
+                as ProductLocationsResult.Unavailable
+            assertEquals(failure, result.failure)
+            assertEquals(listOf(BranchId("205")), result.coverage!!.requestedIds)
+        }
     }
 
 }
