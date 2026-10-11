@@ -1,4 +1,9 @@
 # Progress
+
+## 2026-10-11 — INC-002 CONTINUE stock-unit repair (pending independent audit)
+
+RED Proxy CI run 38178340364: both new Android-wire fixture cases failed with `expected 200 / actual 400` and `255 pass / 2 fail`, reproducing the strict Worker/Android `stockUnit` mismatch. Added optional bounded `stockUnit` acceptance to product validators and types plus synthetic v2–v5, historical omission, malformed type and unknown-field tests. No production requests, Android changes, AAB build or Worker deployment. Track GREEN Proxy and Android CI on final HEAD before merging.
+
 ## 2026-10-11 — R4.1 rapid duplicate-submit admission boundary (awaiting independent audit)
 
 Extracted the unchanged synchronous `advisorJob?.isActive != true && !attachmentImporting` predicate to a pure helper used by MainActivity. Deterministic coroutine tests verify that an immediate second admission fails while a Job is active, that admission resumes after completion/cancellation, that attachment import blocks sending, and that guard invalidation rejects a stale conversation token. **This does not prove a full Compose UI → Room user-message persistence → proxy-request lifecycle**: the synthetic counters in the test are not actual repository or OkHttp calls. Existing `ConversationRepositoryTest` covers independent failed-turn recovery and `AdvisorRequestGuardTest` covers stale callbacks. Full B05 remains NOT TESTED at integrated UI boundary; perform rapid double-send with local request counting or a controlled device smoke test before five-person pilot. No network limits, protocols, Worker or persistence schema changed.
