@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-11 — Current USER product identity has priority over inherited "obu"
+
+A historical two-product `obu` request is a bounded conversational selection, not permanent inventory authorization. When the current USER explicitly identifies a single product, or a new unverified numeric ID, clear historical `bothProductIds` and defer identity validation to the normal trusted-product guard. Preserve explicit current `obu` and location-only follow-ups after an uninterrupted previous `obu`; never select a model ID as fallback, permit unverified KWANT extended HTTP, or alter normal multi-query `find_products`.
+
+
 ## 2026-10-11 — Final PR #110 shared product-identity authorization
 
 Consolidate numeric product-identity interpretation into one bounded USER-text policy shared by history referent selection and inventory authorization. A numeric `1000 W` specification must not select a verified item whose product ID is `1000`, even when it appears in historical cards. An explicit `produkt 1000` remains eligible only when independently verified, with newer explicit selection taking priority over historical selection. Keep unverified explicit numbers fail-closed, ignore three-digit market IDs for product selection, preserve long OBIK/EAN checks, local-tool budget, disabled KWANT extended, and separate normal `find_products` requests.
