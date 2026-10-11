@@ -4,7 +4,7 @@ import java.text.Normalizer
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
 
-/** A model location hint is only a constraint on the USER-authorized KWANT scope. */
+/** Model hints can constrain but cannot grant USER-owned inventory scope. */
 internal sealed interface KwantAuthorizedLocations {
     data class Allowed(val requested: List<BranchId>, val nationwide: Boolean) :
         KwantAuthorizedLocations
@@ -17,11 +17,14 @@ internal fun authorizeKwantLocations(
     branches: List<ProviderBranch>,
     selected: BranchId,
 ): KwantAuthorizedLocations {
-    fun norm(s: String): String =
-        Normalizer.normalize(s.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
+    fun norm(value: String, keepCommas: Boolean = false): String =
+        Normalizer.normalize(value.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
             .replace(Regex("""\p{M}+"""), "")
-            .replace(Regex("""[^a-z0-9]+"""), " ")
+            .replace(if (keepCommas) Regex("""[^a-z0-9,]+""") else Regex("""[^a-z0-9]+"""), " ")
+            .replace(Regex("""\s*,\s*"""), ", ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
+
     if (branches.isEmpty() || branches.size > 100 ||
         branches.map { it.branchId }.distinct().size != branches.size ||
         selected !in branches.map { it.branchId }) {
@@ -35,49 +38,88 @@ internal fun authorizeKwantLocations(
             aliases.getOrPut(alias) { linkedSetOf() }.add(branch.branchId)
         }
     }
+    val names = aliases.keys.sortedByDescending { it.length }
     val byId = branches.associateBy { it.branchId.value }
-    // In "1000 W w oddziale Zamość" the first W denotes watts,
-    // not a location preposition. Product identity uses this same boundary.
-    val text = norm(userText).replace(
+    // 1000 W w Zamościu: W is a measurement, not an independent locality.
+    val text = norm(userText, keepCommas = true).replace(
         Regex("""\b[0-9]{1,6}\s+w\b(?=\s+(?:w|we)\s+)"""), "",
     ).replace(Regex("""\s+"""), " ").trim()
+
     val explicit = linkedSetOf<BranchId>()
-    val foundIds = Regex("""\b(?:oddzial(?:e|u)?|hurtowni)\s+(?:nr\s+)?([0-9]{1,8})\b""")
-        .findAll(text).map { it.groupValues[1] }
-    for (id in foundIds) {
-        explicit += byId[id]?.branchId
-            ?: return KwantAuthorizedLocations.Denied("unknown_location")
-    }
-    val locationWords = listOf(
+    val nonLocalPhrases = setOf(
         "wszystkich", "wszystkie", "innych", "inne", "pozostalych",
         "oddzialach", "hurtowniach", "ktorych", "jakich", "calym",
         "calej", "sieci",
     )
-    // Constrain only explicit user place phrases; unknown named locations
-    // require clarification rather than silently expanding to all branches.
-    val places = Regex("""\b(?:w|we)\s+(?:(?:oddziale|hurtowni)\s+(?:w\s+)?)?([a-z]+(?:\s+[a-z]+)?)""")
-    // Numeric "w oddziale 128" was already bound above. Do not let the
-    // word-based matcher mistake "oddziale" for a new unknown city.
-    val cityText = text.replace(
-        Regex("""\b(?:w|we)\s+(?:oddziale|hurtowni)\s+(?:nr\s+)?[0-9]{1,8}\b"""),
-        "",
-    )
-    for (match in places.findAll(cityText)) {
-        val phrase = match.groupValues[1]
-        if (locationWords.any { phrase.startsWith(it + " ") || phrase == it }) continue
-        val alias = aliases.keys.sortedByDescending { it.length }
-            .firstOrNull { phrase == it || phrase.startsWith(it + " ") }
-        if (alias != null) {
-            explicit += aliases.getValue(alias)
-        } else if (!phrase.startsWith("kwant") && !phrase.startsWith("tym ") &&
-            !phrase.startsWith("produk") && !phrase.startsWith("stanie") &&
-            !phrase.startsWith("sklepie") && !phrase.startsWith("sztuk")) {
+    fun boundary(s: String, length: Int): Boolean =
+        s.length == length || !s[length].isLetterOrDigit()
+
+    fun consumePlace(source: String): Pair<Set<BranchId>, String>? {
+        var remaining = source.trimStart()
+        remaining = remaining.replaceFirst(
+            Regex("""^(?:w|we)\s+"""), "",
+        )
+        remaining = remaining.replaceFirst(
+            Regex("""^(?:oddziale|oddzial|hurtowni)\s+(?:nr\s+)?"""), "",
+        )
+        remaining = remaining.replaceFirst(Regex("""^(?:w|we)\s+"""), "")
+        val number = Regex("""^([0-9]{1,8})\b""").find(remaining)
+        if (number != null) {
+            val target = byId[number.groupValues[1]] ?: return null
+            return setOf(target.branchId) to remaining.drop(number.value.length).trimStart()
+        }
+        val name = names.firstOrNull { remaining.startsWith(it) && boundary(remaining, it.length) }
+            ?: return null
+        return aliases.getValue(name) to remaining.drop(name.length).trimStart()
+    }
+
+    // Parse the COMPLETE comma / i / oraz chain. A later unknown place makes
+    // the entire USER request ambiguous, rather than silently checking its prefix.
+    val preposition = Regex("""\b(?:w|we)\s+""")
+    for (match in preposition.findAll(text)) {
+        val source = text.substring(match.range.last + 1).trimStart()
+        if (nonLocalPhrases.any { source == it || source.startsWith("$it ") }) continue
+        if (source.startsWith("kwant") || source.startsWith("tym ") ||
+            source.startsWith("produk") || source.startsWith("stanie") ||
+            source.startsWith("sklepie") || source.startsWith("sztuk")) continue
+
+        val first = consumePlace(source)
+        if (first == null) {
+            // A repeated "w" inside "w oddziale w Zamościu" is handled
+            // by the next preposition; all other unrecognized places fail.
+            if (source.matches(Regex("""^(?:oddziale|hurtowni)\s+w\b.*"""))) continue
             return KwantAuthorizedLocations.Denied("unknown_location")
         }
+        explicit.addAll(first.first)
+        var previous = first.first
+        var tail = first.second
+
+        while (true) {
+            val connector = Regex("""^(?:,|\bi\b|\boraz\b)\s*""").find(tail)
+            if (connector != null) {
+                tail = tail.drop(connector.value.length).trimStart()
+                val next = consumePlace(tail)
+                    ?: return KwantAuthorizedLocations.Denied("unknown_location")
+                explicit.addAll(next.first)
+                previous = next.first
+                tail = next.second
+                continue
+            }
+            // Paired descriptions must agree: "oddział 128 (Tarnów)"
+            // or "Zamość, oddział 216" without a new connector are
+            // NOT two independent authorizations.
+            val paired = consumePlace(tail)
+            if (paired != null && tail.isNotBlank()) {
+                if (paired.first != previous) {
+                    return KwantAuthorizedLocations.Denied("location_conflict")
+                }
+                tail = paired.second
+                continue
+            }
+            break
+        }
     }
-    // Explicit "oddział Tarnów" / bare canonical city clarification.
-    val exactBare = aliases[text.removePrefix("a w ").trim()]
-    if (exactBare != null) explicit += exactBare
+
     val broad = Regex(
         """\b(?:wszystkich|wszystkie|innych|pozostalych)\s+(?:oddzialach|hurtowniach|oddzialy)\b|""" +
             """\bgdzie\s+(?:jest\s+)?dostepn|\bw\s+jakich\s+oddzialach\b|""" +
