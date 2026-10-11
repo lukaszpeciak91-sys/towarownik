@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-11 — PR #110 inherited "obu" supersession regression
+
+Added explicit-current-identity precedence in `AdvisorLocationFollowUps`: verified 7027 overrides a preceding `obu`, while explicit unknown 9999 cancels old `obu` before normal trusted-identity rejection. Controller → follow-up → actual locations tool regressions also verify that current `obu` and location-only Tarnów follow-ups preserve the intended two-product selection. Production KWANT adapter with disabled extended and a failing synthetic network fetcher verifies no inventory HTTP. Prior OBI, shared identity, tool-budget and grouped `find_products` suites remain in full Android checks.
+
+
 ## 2026-10-11 — PR #110 Controller ↔ follow-up identity consistency
 
 Replaced raw numeric mention matching in the follow-up resolver (both older USER turns and current USER input) with the same bounded product-identifier policy used by `AdvisorLocationsTool`. Added an offline Controller → real follow-up resolver → real location-authorization regression checking that earlier 7035 stays selected over a 1000 W measurement, explicit verified product 1000 takes precedence, unknown short ID fails before inventory adapter HTTP, model mismatch is rejected, and dimensions stay non-identities. Also covered OBI market ID 003/052/075 identity isolation. Existing KWANT grouped `find_products` and prior test suites remain part of full Android checks.
