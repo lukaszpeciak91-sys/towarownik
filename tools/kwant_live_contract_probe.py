@@ -1629,6 +1629,39 @@ def write_safe_summary(summary: dict[str, Any], out_dir: Path) -> None:
             lines.append("observed=" + format_scalar(observed))
         for request in locations.get("observedRequests", []):
             lines.append("availabilityRequest=" + format_scalar(request))
+    for title, research in (
+        ("CONTROL_PRODUCT", summary.get("locationsResearch")),
+        ("SECOND_PRODUCT", summary.get("secondProductLocationsResearch")),
+    ):
+        if isinstance(research, dict):
+            exact = research.get("extendedResearch") or {}
+            frontend = exact.get("frontendRequest") or {}
+            browser = exact.get("browserResponse") or {}
+            standalone = exact.get("cookieFree") or {}
+            clean = standalone.get("response") or {}
+            lines.extend([
+                "",
+                "EXTENDED_LIVE_" + title,
+                "productId=" + str(research.get("productId", UNKNOWN)),
+                "verifiedProductPage=" + format_scalar(research.get("verifiedProductPage")),
+                "requestMethod=" + str(frontend.get("method", UNKNOWN)),
+                "requestHost=" + str(frontend.get("host", UNKNOWN)),
+                "requestPath=" + str(frontend.get("path", UNKNOWN)),
+                "extendedValue=" + str(frontend.get("extendedValue", UNKNOWN)),
+                "frontendStatus=" + str(exact.get("frontendStatus", UNKNOWN)),
+                "frontendCoverage=" + str(browser.get("coverage", UNKNOWN)),
+                "frontendCanonicalIds=" + str(browser.get("canonicalIdCount", UNKNOWN)),
+                "frontendZeroCount=" + str(browser.get("zeroCount", UNKNOWN)),
+                "frontendUnit=" + str(browser.get("unit", UNKNOWN)),
+                "cookieFreeStatus=" + str(standalone.get("status", UNKNOWN)),
+                "cookieFreeCoverage=" + str(clean.get("coverage", UNKNOWN)),
+                "sessionIndependentCoverage=" + str(exact.get("sessionIndependentCoverage", UNKNOWN)),
+                "selectedCurrentStock=" + format_scalar(
+                    (exact.get("selectedBranchCurrent") or {}).get("selectedBranchStock")
+                ),
+                "selectedCurrentMatch=" + format_scalar(exact.get("selectedCurrentMatchesDepartment")),
+                "centralVsBranch=" + str(exact.get("centralVsBranch", UNKNOWN)),
+            ])
     (out_dir / "summary.txt").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
@@ -2604,6 +2637,7 @@ def run_live_probe(
     text_query: str,
     numeric_product_id: str,
     out_dir: Path,
+    second_numeric_product_id: str = "7027",
 ) -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright
@@ -2818,6 +2852,22 @@ def run_live_probe(
             ),
             selected_branch_label=branch_label,
         )
+        # Second product is independently identity-verified. Do not borrow
+        # 580's observed extended value or branch-stock figures: the second
+        # page must itself cause the exact product-bound frontend GET.
+        locations_capture.product_id = second_numeric_product_id
+        locations_capture.records.clear()
+        locations_capture.request_records.clear()
+        second_locations_research = research_product_locations(
+            page, recorder, locations_capture,
+            product_id=second_numeric_product_id,
+            branch_html=branch_before_html,
+            selected_branch_id=(
+                trusted_selected_branch_id
+                if trusted_selected_branch_id != UNKNOWN else ""
+            ),
+            selected_branch_label=branch_label,
+        )
         recorder.set_action("home:after-locations")
         page.goto(KWANT_ORIGIN, wait_until="domcontentloaded", timeout=45000)
         frontend_clues = collect_frontend_clues(page, context)
@@ -2950,6 +3000,7 @@ def run_live_probe(
                 loc_key + "Source", "UNKNOWN"
             )
         summary["locationsResearch"] = locations_research
+        summary["secondProductLocationsResearch"] = second_locations_research
         browser.close()
         return summary
 
@@ -4603,6 +4654,10 @@ def main() -> int:
         default="580",
     )
     parser.add_argument(
+        "--second-numeric-product-id",
+        default="7027",
+    )
+    parser.add_argument(
         "--out-dir",
         default="build/kwant-live-contract",
     )
@@ -4615,6 +4670,14 @@ def main() -> int:
             args.text_query,
             args.numeric_product_id,
         )
+        validate_inputs(
+            args.product_query,
+            args.branch_label,
+            args.text_query,
+            args.second_numeric_product_id,
+        )
+        if args.numeric_product_id == args.second_numeric_product_id:
+            raise ValueError("second product must have a distinct verified public ID")
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -4626,6 +4689,7 @@ def main() -> int:
         branch_label=args.branch_label.strip(),
         text_query=args.text_query.strip(),
         numeric_product_id=args.numeric_product_id.strip(),
+        second_numeric_product_id=args.second_numeric_product_id.strip(),
         out_dir=out_dir,
     )
     write_safe_summary(summary, out_dir)
