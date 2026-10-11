@@ -431,6 +431,8 @@ class AdvisorProxyClientTest {
             assertEquals(
                 AdvisorProxyCallResult.Failure(
                     AdvisorProxyFailureKind.PROTOCOL,
+                    endpoint = "start",
+                    failureClass = AdvisorFailureClass.RESPONSE_PARSE,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -463,6 +465,8 @@ class AdvisorProxyClientTest {
             assertEquals(
                 AdvisorProxyCallResult.Failure(
                     AdvisorProxyFailureKind.PROTOCOL,
+                    endpoint = "start",
+                    failureClass = AdvisorFailureClass.RESPONSE_PARSE,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -629,6 +633,8 @@ class AdvisorProxyClientTest {
             assertEquals(
                 AdvisorProxyCallResult.Failure(
                     AdvisorProxyFailureKind.PROTOCOL,
+                    endpoint = "start",
+                    failureClass = AdvisorFailureClass.RESPONSE_PARSE,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -666,6 +672,8 @@ class AdvisorProxyClientTest {
             assertEquals(
                 AdvisorProxyCallResult.Failure(
                     AdvisorProxyFailureKind.PROTOCOL,
+                    endpoint = "start",
+                    failureClass = AdvisorFailureClass.RESPONSE_PARSE,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -922,6 +930,8 @@ class AdvisorProxyClientTest {
             assertEquals(
                 AdvisorProxyCallResult.Failure(
                     AdvisorProxyFailureKind.PROTOCOL,
+                    endpoint = "start",
+                    failureClass = AdvisorFailureClass.RESPONSE_PARSE,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -950,6 +960,8 @@ class AdvisorProxyClientTest {
             assertEquals(
                 AdvisorProxyCallResult.Failure(
                     AdvisorProxyFailureKind.PROTOCOL,
+                    endpoint = "start",
+                    failureClass = AdvisorFailureClass.RESPONSE_PARSE,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -971,6 +983,7 @@ class AdvisorProxyClientTest {
                     httpStatus = 401,
                     proxyErrorCode = "unauthorized",
                     endpoint = "start",
+                    failureClass = AdvisorFailureClass.HTTP_ERROR,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -992,6 +1005,7 @@ class AdvisorProxyClientTest {
                     httpStatus = 503,
                     proxyErrorCode = "server_not_configured",
                     endpoint = "start",
+                    failureClass = AdvisorFailureClass.HTTP_ERROR,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -1014,6 +1028,7 @@ class AdvisorProxyClientTest {
                     httpStatus = 502,
                     proxyErrorCode = null,
                     endpoint = "start",
+                    failureClass = AdvisorFailureClass.HTTP_ERROR,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -1035,6 +1050,7 @@ class AdvisorProxyClientTest {
                     httpStatus = 502,
                     proxyErrorCode = null,
                     endpoint = "start",
+                    failureClass = AdvisorFailureClass.HTTP_ERROR,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
@@ -1056,6 +1072,7 @@ class AdvisorProxyClientTest {
                     httpStatus = 400,
                     proxyErrorCode = "unsupported_protocol_version",
                     endpoint = "start",
+                    failureClass = AdvisorFailureClass.HTTP_ERROR,
                 ),
                 client(server, FAKE_TOKEN).start("test"),
             )
