@@ -1095,7 +1095,7 @@ function validateStoreNumber(value: unknown): string {
 function validateProviderProduct(
   value: unknown,
 ): ProviderVerifiedProduct {
-  const object = exactObjectShape(
+  const object = exactObject(
     value,
     [
       "productId",
@@ -1109,7 +1109,6 @@ function validateProviderProduct(
       "price",
       "priceScope",
     ],
-    ["stockUnit"],
   );
   const productId = validateProductId(object.productId);
   const articleNumber =
@@ -1151,12 +1150,11 @@ function validateProviderProduct(
     centralStock,
     price,
     priceScope,
-    ...(object.stockUnit === undefined ? {} : { stockUnit: validateOptionalStockUnit(object.stockUnit) }),
   };
 }
 
 function validateProduct(value: unknown): VerifiedProduct {
-  const object = exactObjectShape(
+  const object = exactObject(
     value,
     [
       "obik",
@@ -1167,7 +1165,6 @@ function validateProduct(value: unknown): VerifiedProduct {
       "stock",
       "price",
     ],
-    ["stockUnit"],
   );
 
   if (
@@ -1200,7 +1197,6 @@ function validateProduct(value: unknown): VerifiedProduct {
     ),
     stock: validateNullableStock(object.stock),
     price: validateNullablePrice(object.price),
-    ...(object.stockUnit === undefined ? {} : { stockUnit: validateOptionalStockUnit(object.stockUnit) }),
   };
 }
 
@@ -1250,16 +1246,6 @@ function validateNullableNormalizedString(
     throw new InvalidRequestError();
   }
   return normalized;
-}
-
-function validateOptionalStockUnit(value: unknown): string | null | undefined {
-  if (value === undefined) return undefined; // Legacy Android clients omit the field.
-  if (value === null) return null;
-  if (typeof value !== "string" || value.length < 1 || value.length > 32 ||
-      !/^[\p{L}\p{N}.%/ -]+$/u.test(value) || value.trim() !== value) {
-    throw new InvalidRequestError();
-  }
-  return value;
 }
 
 function validateNullableStock(value: unknown): number | null {
