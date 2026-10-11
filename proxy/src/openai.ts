@@ -43,6 +43,10 @@ export type UpstreamFailureCategory =
   | "upstream_http_5xx"
   | "upstream_invalid_json"
   | "upstream_invalid_envelope"
+  | "upstream_incomplete_output_budget"
+  | "upstream_incomplete_other"
+  | "upstream_response_not_completed"
+  | "upstream_invalid_response_status"
   | "upstream_invalid_tool_call"
   | "upstream_invalid_final_answer";
 
@@ -318,6 +322,29 @@ export function normalizeOpenAIResponse(
 ): AgentResult {
   if (!isRecord(payload)) {
     throw new UpstreamFailureError("upstream_invalid_envelope");
+  }
+
+  // A valid-looking answer or function call is not evidence of completion.
+  // Fail closed on missing, malformed, nonterminal, or unsuccessful status.
+  if (payload.status === "incomplete") {
+    const details = payload.incomplete_details;
+    const reason = isRecord(details) ? details.reason : undefined;
+    throw new UpstreamFailureError(
+      reason === "max_output_tokens"
+        ? "upstream_incomplete_output_budget"
+        : "upstream_incomplete_other",
+    );
+  }
+  if (
+    payload.status === "failed" ||
+    payload.status === "cancelled" ||
+    payload.status === "in_progress" ||
+    payload.status === "queued"
+  ) {
+    throw new UpstreamFailureError("upstream_response_not_completed");
+  }
+  if (payload.status !== "completed") {
+    throw new UpstreamFailureError("upstream_invalid_response_status");
   }
 
   const responseId = boundedUpstreamId(
