@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-11 — KWANT production departments, least-authority scope and two-product limit
+
+The merged live research #111 observed literal `extended=1` for 580/7027 with no session. Permit one product-bound public read and bound/validate exact canonical branch identities. Distinguish root `total_stock` from independently verified central product stock; permit only validated explicit root unit and suppress conflicted unit. The USER explicitly scopes product and location, and arbitrary model `locations[]` cannot expand that scope; unscoped inventory lookup defaults to the working branch, not the whole network. For historical `obu` retain a deterministic, correctly typed limitation (`multi_product_tool_contract`), not the now-false `unverified_request_contract`: one-product Worker location-result protocol cannot represent two complete product results, so no partial single-product read is allowed. Keep Worker schema, OBI, standard KWANT search, WorkingProfile, persistence and three-tool budget unchanged. Do not add retries.
+
+
 ## 2026-10-11 — Current USER product identity has priority over inherited "obu"
 
 A historical two-product `obu` request is a bounded conversational selection, not permanent inventory authorization. When the current USER explicitly identifies a single product, or a new unverified numeric ID, clear historical `bothProductIds` and defer identity validation to the normal trusted-product guard. Preserve explicit current `obu` and location-only follow-ups after an uninterrupted previous `obu`; never select a model ID as fallback, permit unverified KWANT extended HTTP, or alter normal multi-query `find_products`.
