@@ -1957,7 +1957,7 @@ test("INC-002 RED: Android v2 verified CONTINUE stockUnit null is accepted", asy
   body.result.results[0].products[0].stockUnit = null;
   const fake = fakeOpenAI(answerPayload());
   const response = await createWorker(fake.fetch).fetch(
-    jsonRequest("/v1/agent/continue", body), configuredEnv,
+    jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
   );
   assert.equal(response.status, 200);
 });
@@ -1977,7 +1977,7 @@ test("INC-002 RED: Android v3 verified CONTINUE stockUnit string is accepted", a
   };
   const fake = fakeOpenAI(answerPayload());
   const response = await createWorker(fake.fetch).fetch(
-    jsonRequest("/v1/agent/continue", body), configuredEnv,
+    jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
   );
   assert.equal(response.status, 200);
 });
@@ -2006,7 +2006,7 @@ for (const version of [2, 3, 4, 5]) {
       };
       const fake = fakeOpenAI(answerPayload());
       const response = await createWorker(fake.fetch).fetch(
-        jsonRequest("/v1/agent/continue", body), configuredEnv,
+        jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
       );
       assert.equal(response.status, 200);
       assert.equal(fake.captures.length, 1);
@@ -2036,7 +2036,7 @@ for (const version of [2, 3, 4, 5]) {
     };
     const fake = fakeOpenAI(answerPayload());
     const response = await createWorker(fake.fetch).fetch(
-      jsonRequest("/v1/agent/continue", body), configuredEnv,
+      jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
     );
     assert.equal(response.status, 200);
     const passed = JSON.parse(fake.captures[0].body.input[0].output);
@@ -2050,7 +2050,7 @@ for (const badUnit of [3, true, [], {}, "", "x".repeat(33), "\nmalformed"]) {
     body.result.results[0].products[0].stockUnit = badUnit;
     const fake = fakeOpenAI(answerPayload());
     const response = await createWorker(fake.fetch).fetch(
-      jsonRequest("/v1/agent/continue", body), configuredEnv,
+      jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
     );
     assert.equal(response.status, 400);
     assert.deepEqual(await responseJson(response), { error: "invalid_request" });
@@ -2065,7 +2065,7 @@ test("INC-002 unrelated verified-product key remains rejected", async () => {
   const fake = fakeOpenAI(answerPayload());
   const { result: response, lines } = await captureWarnLogs(() =>
     createWorker(fake.fetch).fetch(
-      jsonRequest("/v1/agent/continue", body), configuredEnv,
+      jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
     ),
   );
   assert.equal(response.status, 400);
