@@ -1,5 +1,16 @@
 # KWANT: product availability across locations — live-contract research
 
+## Final extended-parameter research — 11 October 2026 (pending live verification)
+
+**Production gate: NO-GO until live research confirms BOTH products.** The earlier 9 October run #18 established a full 580 browser response, not the exact extended value, cookie-free portability, or product 7027 behavior. No production adapter, Worker or inventory feature changes are included.
+
+The existing KWANT live probe and workflow now support a narrowly gated same-repository research-PR trigger and retain manual dispatch. The PR run first executes deterministic security tests. It then independently visits product pages 580 and 7027, each of which must produce its own frontend-generated GET to https://services.kwant.net.pl/api/front/products/{id}/departments. The exact single extended query value is exposed only when it is a short known nonsecret enum (0, 1, true, false, yes, no, all, full, extended); opaque values are REDACTED and not replayed. Other query values, cookies, auth headers, and session tokens are never included in the new diagnostic. PR workflow uploads only sanitized summary artifacts, no raw HTML captures.
+
+Inspect locationsResearch.extendedResearch and secondProductLocationsResearch.extendedResearch in the safe summary. Each separately records exact request/status, response root whitelist, canonical department ID coverage, numeric/zero/null/missing stock states, explicit unit, and selected-branch /current?depstock comparison. Isolated public GET uses a fresh urllib opener with no browser cookies, account headers or authorization. total_stock is observed only as a field type; it is never equated to selected-branch or product-level central stock.
+
+**Required to change verdict to GO:** both exact public product pages verified; both frontend requests actually observed; known safe extended value; both browser and standalone responses return trusted product-bound branch rows; canonical branch coverage and explicit zero/null semantics validated per product without assuming 21/21; selected-branch values and units corroborated where independently available; session-free request succeeds and preserves coverage. Any unmet gate remains NO-GO. Results are not proof of reservation/freshness or sellable inventory.
+
+
 Status: **CONFIRMED PUBLIC ONE-SHOT ALL-BRANCH INVENTORY CONTRACT FOR CONTROL PRODUCT 580** — live run #18, 9 October 2026.
 A public frontend request returned 21/21 directory branches including explicit zero-stock rows. This is sufficient research evidence to design a future `find_product_locations` integration, **not** evidence that Taksula already implements it. Exact-product binding, zero-vs-null and central-vs-branch separation remain mandatory in production.
 
