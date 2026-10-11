@@ -278,6 +278,13 @@ class AdvisorLocationFollowUpReportsTest {
         }
         private val tool = AdvisorLocationsTool(
             locationsService = ProductLocationsService(listOf(adapter)),
+            kwantBranches = {
+                ProviderBranchResult.Available(listOf(
+                    ProviderBranch(BranchId("205"), "Nowy Sącz"),
+                    ProviderBranch(BranchId("128"), "Zamość"),
+                    ProviderBranch(BranchId("216"), "Tarnów"),
+                ))
+            },
         )
         suspend fun check(
             message: String,
