@@ -73,6 +73,19 @@ internal fun authorizeKwantLocations(
         return aliases.getValue(name) to remaining.drop(name.length).trimStart()
     }
 
+    // A comma after a city can also introduce product measurements rather
+    // than another branch. Accept ONLY an entirely measurement-shaped suffix;
+    // a later city or unrecognized token still fails the whole scope.
+    val measurementsOnly = Regex(
+        """^[0-9]{1,6}\s+(?:w|kw|m|mm|cm|kg|l|szt|opak)""" +
+            """(?:(?:,\s*|\s+i\s+)[0-9]{1,6}\s+""" +
+            """(?:w|kw|m|mm|cm|kg|l|szt|opak))*$""",
+    )
+    fun isNonLocationAnnotation(source: String): Boolean {
+        val rest = source.trim().removePrefix("potrzebuje ").trim()
+        return source.trim() == "prosze" || measurementsOnly.matches(rest)
+    }
+
     // Parse the COMPLETE comma / i / oraz chain. A later unknown place makes
     // the entire USER request ambiguous, rather than silently checking its prefix.
     val preposition = Regex("""\b(?:w|we)\s+""")
@@ -98,6 +111,9 @@ internal fun authorizeKwantLocations(
             val connector = Regex("""^(?:,|\bi\b|\boraz\b)\s*""").find(tail)
             if (connector != null) {
                 tail = tail.drop(connector.value.length).trimStart()
+                if (connector.value.startsWith(",") && isNonLocationAnnotation(tail)) {
+                    break
+                }
                 val next = consumePlace(tail)
                     ?: return KwantAuthorizedLocations.Denied("unknown_location")
                 explicit.addAll(next.first)
