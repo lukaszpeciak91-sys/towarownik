@@ -13,15 +13,13 @@ import okhttp3.HttpUrl
 /**
  * One request per exact product, never a per-department fanout.
  *
- * The research observed the "extended" query *name*, but redacted its value.
- * Production must remain disabled until a separately verified value can be
- * supplied. In particular, do not guess true/1/false or omit the query key.
+ * 2026-10-11 live research #111 confirmed the single query extended=1 for
+ * exact products 580/7027. Keep the one-product, one-GET, fail-closed contract.
  */
 internal class KwantProductLocationsAdapter(
     private val fetcher: LocationsHttpFetcher = OkHttpLocationsFetcher(),
     private val directory: () -> ProviderBranchResult = KwantProductProvider()::branches,
     private val directoryDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val verifiedExtendedValue: String? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) : ProductLocationsAdapter {
     override val providerId: ProviderId = KWANT_PROVIDER_ID
@@ -40,14 +38,6 @@ internal class KwantProductLocationsAdapter(
         if (requested.distinct().size != requested.size || requested.size > 100) {
             return ProductLocationsResult.Invalid(LocationFailure.INVALID_LOCATION_IDS)
         }
-
-        // Before even loading the remote directory or sending HTTP, refuse a
-        // request shape that research did not retain. Safe PR1 production default.
-        val extended = verifiedExtendedValue
-            ?.takeIf { it.matches(VERIFIED_VALUE_SHAPE) }
-            ?: return ProductLocationsResult.Unavailable(
-                LocationFailure.UNVERIFIED_REQUEST_CONTRACT,
-            )
 
         // KwantProductProvider.branches() performs synchronous network I/O.
         // Never execute it on the caller/UI thread. Do not swallow cancellation.
@@ -70,7 +60,7 @@ internal class KwantProductLocationsAdapter(
             .addPathSegments("api/front/products")
             .addPathSegment(ref.productId)
             .addPathSegment("departments")
-            .addQueryParameter("extended", extended)
+            .addQueryParameter("extended", "1")
             .build()
 
         return when (val response = fetcher.get(url)) {
@@ -80,40 +70,43 @@ internal class KwantProductLocationsAdapter(
                     coverage = unknownCoverage(branches.keys.toList()),
                 )
             is LocationsHttpResult.Success -> {
-                val rows = parseKwantDepartmentRows(
+                val parsed = parseKwantDepartmentResponse(
                     response.json, ref.productId, branches,
                 ) ?: return ProductLocationsResult.Unavailable(
                     LocationFailure.MALFORMED_RESPONSE,
-                    coverage = unknownCoverage(branches.keys.toList()),
+                    coverage = unknownCoverage((if (requested.isEmpty()) branches.keys.toList() else requested)),
                 )
+                val wanted = if (requested.isEmpty()) branches.keys.toList() else requested
+                val mapped = parsed.rows.associateBy { it.branch.branchId }
+                val visible = wanted.mapNotNull(mapped::get)
+                val returned = visible.filter { it.stock != null }
+                    .map { it.branch.branchId }
                 val coverage = LocationCoverage(
-                    kind = if (rows.size == branches.size) {
-                        LocationCoverageKind.ALL_PUBLIC_LOCATIONS
-                    } else if (rows.isEmpty()) {
-                        LocationCoverageKind.UNKNOWN
-                    } else {
-                        LocationCoverageKind.PARTIAL
+                    kind = when {
+                        returned.size != wanted.size -> LocationCoverageKind.PARTIAL
+                        requested.isNotEmpty() -> LocationCoverageKind.REQUESTED_SUBSET
+                        else -> LocationCoverageKind.ALL_PUBLIC_LOCATIONS
                     },
-                    requestedIds = branches.keys.toList(),
-                    returnedIds = branches.keys.filter { id ->
-                        rows.any { it.branch.branchId == id }
-                    },
+                    requestedIds = wanted,
+                    returnedIds = returned,
                     requestCount = 1,
                 )
-                if (rows.isEmpty()) {
+                if (returned.isEmpty()) {
                     ProductLocationsResult.Unavailable(
-                        LocationFailure.NO_TRUSTED_ROWS,
-                        coverage,
+                        LocationFailure.NO_TRUSTED_ROWS, coverage,
                     )
                 } else {
+                    val trustedUnit = trustedProduct?.stockUnit
+                    val unit = parsed.unit?.takeIf {
+                        trustedUnit == null || trustedUnit == it
+                    }
                     ProductLocationsResult.Available(
                         ref = ref,
-                        locations = rows.associateBy { it.branch.branchId }.let { byId ->
-                            branches.keys.mapNotNull(byId::get)
-                        },
+                        locations = visible,
                         coverage = coverage,
                         verifiedAtMillis = now(),
                         centralStock = separateTrustedCentralStock(ref, trustedProduct),
+                        stockUnit = unit,
                     )
                 }
             }
@@ -132,38 +125,65 @@ internal class KwantProductLocationsAdapter(
         val PRODUCT_ID = Regex("""[0-9]+""")
         val DEPARTMENT_ID = Regex("""[0-9]+""")
         // Safety of URL encoding only. NOT a claim about the real query value.
-        val VERIFIED_VALUE_SHAPE = Regex("""[A-Za-z0-9_-]{1,32}""")
+
     }
 }
 
-/** Parse only singular-product-bound canonical department_id/stock rows. */
-internal fun parseKwantDepartmentRows(
+/** Strictly product-bound /departments response; never use total_stock as central. */
+internal data class KwantDepartmentResponse(
+    val rows: List<LocationStock>,
+    val unit: String?,
+)
+
+internal fun parseKwantDepartmentResponse(
     jsonText: String,
     exactProductId: String,
     branches: Map<BranchId, ProviderBranch>,
-): List<LocationStock>? {
+): KwantDepartmentResponse? {
     val root = runCatching { Json.parseToJsonElement(jsonText) }.getOrNull()
         as? JsonObject ?: return null
-    if ("list" !in root) return null
-    if (root.keys.any { it !in setOf("list", "total_stock", "unit", "product_id") }) return null
+    if ("list" !in root || root.keys.any {
+        it !in setOf("list", "total_stock", "unit", "product_id")
+    }) return null
     if ("product_id" in root &&
         nonnegativeJsonInteger(root["product_id"])?.toString() != exactProductId) return null
     val list = root["list"] as? JsonArray ?: return null
     if (list.size > branches.size || list.size > 100) return null
+    val unitValue = root["unit"]
+    val unit = if (unitValue == null || unitValue is kotlinx.serialization.json.JsonNull) {
+        null
+    } else {
+        val raw = unitValue as? JsonPrimitive ?: return null
+        if (!raw.isString) return null
+        raw.content.trim().takeIf {
+            it.matches(Regex("""(?:szt\\.|m|m²|m³|kg|l|opak\\.)"""))
+        }
+    }
     val seen = mutableSetOf<BranchId>()
-    val result = mutableListOf<LocationStock>()
-    for (element in list) {
-        val row = element as? JsonObject ?: return null
+    val rows = mutableListOf<LocationStock>()
+    for (entry in list) {
+        val row = entry as? JsonObject ?: return null
+        if (row.keys.any { it !in setOf("department_id", "stock", "product_id") }) return null
         if ("product_id" in row &&
             nonnegativeJsonInteger(row["product_id"])?.toString() != exactProductId) return null
-        val idValue = row["department_id"] as? JsonPrimitive ?: return null
-        if (idValue.isString || !idValue.content.matches(Regex("""[0-9]+"""))) return null
-        val id = BranchId(idValue.content)
+        val idRaw = row["department_id"] as? JsonPrimitive ?: return null
+        if (idRaw.isString || !idRaw.content.matches(Regex("""[0-9]+"""))) return null
+        val id = BranchId(idRaw.content)
         val branch = branches[id] ?: return null
         if (!seen.add(id)) return null
-        val quantity = nonnegativeJsonInteger(row["stock"]) ?: return null
-        result += LocationStock(branch, quantity)
+        val rawStock = row["stock"]
+        val stock = if (rawStock == null || rawStock is kotlinx.serialization.json.JsonNull) {
+            null
+        } else nonnegativeJsonInteger(rawStock) ?: return null
+        rows += LocationStock(branch, stock)
     }
-    // "total_stock" is deliberately NOT parsed, summed or treated as centralStock.
-    return result
+    return KwantDepartmentResponse(rows, unit)
 }
+
+/** Backward-compatible strict row parser used by existing unit tests. */
+internal fun parseKwantDepartmentRows(
+    jsonText: String,
+    exactProductId: String,
+    branches: Map<BranchId, ProviderBranch>,
+): List<LocationStock>? =
+    parseKwantDepartmentResponse(jsonText, exactProductId, branches)?.rows
