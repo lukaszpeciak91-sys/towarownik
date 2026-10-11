@@ -938,12 +938,12 @@ class AdvisorLocationsControllerTest {
             Case(
                 "a w Tarnowie?", "7035", setOf("7035", "7027"),
                 listOf("7035", "7027"),
-                "unavailable", "unverified_request_contract", null, 0,
+                "unavailable", "multi_product_tool_contract", null, 0,
             ),
         )
         for (scenario in cases) {
-            // Real KWANT adapter is disabled before fetching any directory
-            // or HTTP. This verifies the unverified extended boundary too.
+            // Real endpoint is enabled. A synthetic fetcher reports transport
+            // failure for a selected single product; obu invokes no HTTP.
             var httpCalls = 0
             val adapter = KwantProductLocationsAdapter(
                 fetcher = LocationsHttpFetcher {
