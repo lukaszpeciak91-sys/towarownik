@@ -1018,4 +1018,87 @@ class AdvisorLocationsControllerTest {
         }
     }
 
+    @Test fun controllerKwantScopesRealLocationsOutputToUserBranchesNotModelHints() = runBlocking {
+        val branches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+            ProviderBranch(BranchId("216"), "Tarnów"),
+        )
+        val product = snapshot.copy(
+            obik = "580", productId = "580", providerId = "kwant-pl",
+            articleNumber = "MBN116E", branchId = "205", storeNumber = "205",
+        )
+        data class Scenario(
+            val user: String,
+            val modelHints: List<String>,
+            val expectedStatus: String,
+            val checked: List<String>,
+            val expectedHttp: Int,
+        )
+        for (case in listOf(
+            Scenario("Sprawdź stan produktu 580 w Zamościu",
+                listOf("Zamość"), "verified", listOf("128"), 1),
+            Scenario("Sprawdź stan produktu 580 w Zamościu",
+                listOf("Tarnów"), "rejected", emptyList(), 0),
+            Scenario("Sprawdź stan produktu 580 we wszystkich oddziałach",
+                emptyList(), "verified", listOf("205", "128", "216"), 1),
+        )) {
+            var inventoryHttpCalls = 0
+            val adapter = KwantProductLocationsAdapter(
+                directory = { ProviderBranchResult.Available(branches) },
+                fetcher = LocationsHttpFetcher { url ->
+                    inventoryHttpCalls++
+                    assertEquals("1", url.queryParameter("extended"))
+                    pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
+                        """{"list":[{"department_id":205,"stock":2},""" +
+                            """{"department_id":128,"stock":0},""" +
+                            """{"department_id":216,"stock":9}],"unit":"szt."}""",
+                    )
+                },
+            )
+            val tool = AdvisorLocationsTool(
+                locationsService = ProductLocationsService(listOf(adapter)),
+                kwantBranches = { ProviderBranchResult.Available(branches) },
+            )
+            val proxy = AdvisorProxyCallResult.Success(
+                AdvisorProxyResult.LocationToolRequest(
+                    responseId = "resp_kwant_scope", callId = "call_kwant_scope",
+                    arguments = AdvisorLocationArguments(
+                        "kwant-pl", "580", case.modelHints,
+                    ),
+                ),
+            )
+            var continuations = 0
+            val c = controller(
+                initial = proxy,
+                continueCall = { result ->
+                    continuations++
+                    val verified = (result as AdvisorToolContinuation.Locations).evidence
+                    assertEquals(case.user, case.expectedStatus, verified.status)
+                    assertEquals(case.user, case.checked, verified.checkedIds)
+                    assertEquals(case.user, case.checked, verified.locations.map { it.branchId })
+                    if (verified.status == "verified") {
+                        assertEquals(case.user, "szt.", verified.stockUnit)
+                        assertTrue(case.user, verified.centralStock == null)
+                    } else {
+                        assertEquals(case.user, "location_not_authorized", verified.reason)
+                    }
+                    answer()
+                },
+                locationCall = { args, provider, selected, text, current, past ->
+                    tool.execute(args, provider, selected, text, current, past)
+                },
+                onProviderDiscovery = { error("find_products must remain independent") },
+            )
+            val result = c.runTurn(
+                input = case.user, previousResponseId = "previous",
+                conversationProviderId = "kwant-pl", conversationStoreNumber = "205",
+                historicalVerifiedProducts = listOf(product),
+            ) {}
+            assertTrue(case.user, result is AdvisorUiState.Success)
+            assertEquals(case.user, 1, continuations)
+            assertEquals(case.user, case.expectedHttp, inventoryHttpCalls)
+        }
+    }
+
 }
