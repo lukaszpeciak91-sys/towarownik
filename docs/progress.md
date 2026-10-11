@@ -1,4 +1,8 @@
 # Progress
+## 2026-10-11 — R4.1 rapid duplicate-submit admission boundary (awaiting independent audit)
+
+Extracted the unchanged synchronous `advisorJob?.isActive != true && !attachmentImporting` predicate to a pure helper used by MainActivity. Deterministic coroutine tests verify that an immediate second admission fails while a Job is active, that admission resumes after completion/cancellation, that attachment import blocks sending, and that guard invalidation rejects a stale conversation token. **This does not prove a full Compose UI → Room user-message persistence → proxy-request lifecycle**: the synthetic counters in the test are not actual repository or OkHttp calls. Existing `ConversationRepositoryTest` covers independent failed-turn recovery and `AdvisorRequestGuardTest` covers stale callbacks. Full B05 remains NOT TESTED at integrated UI boundary; perform rapid double-send with local request counting or a controlled device smoke test before five-person pilot. No network limits, protocols, Worker or persistence schema changed.
+
 
 ## 2026-10-11 — R3 offline fault-injection evidence (PR #115)
 

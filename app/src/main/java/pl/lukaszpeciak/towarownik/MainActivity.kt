@@ -717,7 +717,7 @@ private fun TowarownikApp() {
     }
 
     fun submitAdvisorTurn() {
-        if (advisorJob?.isActive == true || attachmentImporting) return
+        if (!canSubmitAdvisorTurn(advisorJob, attachmentImporting)) return
 
         val submitted = advisorCase.draft.trim()
         val submittedAttachments = pendingAttachments.toList()
