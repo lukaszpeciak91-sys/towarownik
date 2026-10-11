@@ -2377,6 +2377,39 @@ test("tool schema is generic and final schema is store-aware", () => {
   );
 });
 
+test("R3 delayed upstream remains pending until deterministic release", async () => {
+  let releaseUpstream;
+  let notifyEntered;
+  const entered = new Promise((resolve) => { notifyEntered = resolve; });
+  const gate = new Promise((resolve) => { releaseUpstream = resolve; });
+  let requests = 0;
+  const upstreamFetch = async () => {
+    requests += 1;
+    notifyEntered();
+    await gate;
+    return new Response(JSON.stringify(answerPayload("Released synthetic answer")), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const worker = createWorker(upstreamFetch);
+  let settled = false;
+  const pending = worker.fetch(
+    jsonRequest("/v1/agent/start", { message: "synthetic delayed query" }),
+    configuredEnv,
+  ).then((response) => {
+    settled = true;
+    return response;
+  });
+  await entered;
+  assert.equal(requests, 1);
+  assert.equal(settled, false);
+  releaseUpstream();
+  const response = await pending;
+  assert.equal(response.status, 200);
+  assert.equal((await responseJson(response)).text, "Released synthetic answer");
+});
+
 const noncompletedResponseCases = [
   { name: "incomplete output budget", status: "incomplete",
     details: { reason: "max_output_tokens" }, expected: "upstream_incomplete_output_budget" },
