@@ -1,5 +1,9 @@
 # Progress
 
+## 2026-10-11 — R3 offline fault-injection evidence (PR #115)
+
+Added one deterministic deferred OpenAI START test with injected `upstreamFetch` and no sleeps or live requests, and an inspectable scenario-to-test reliability matrix at `docs/reliability/r3-fault-injection-matrix.md`. Existing Kotlin/JUnit + MockWebServer and Node tests cover transport failure classification, continuation traces, R2 completion status, location/provider rules and multipart boundaries. This is **contract-level**, not a true connected Android-to-Worker runtime test; real device timeouts, user recovery and production Cloudflare behavior remain unverified. Do not merge pending independent audit.
+
 ## 2026-10-11 — R2 Worker Responses completion attribution (pending independent audit)
 
 Added fail-closed top-level Responses status validation before answer/tool normalization. Structured `max_output_tokens` incomplete reason receives separate privacy-safe category; all other incomplete/nonterminal/missing/invalid statuses reject with bounded diagnostics. Synthetic tests cover completed answer/tool, noncompleted answer/tool, HTTP upstream categories, logs and trace behavior. No Worker deployment or changed public wire/limits; independent PR audit and CI required.
