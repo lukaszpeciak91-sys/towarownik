@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-11 — Final PR #110 shared product-identity authorization
+
+Consolidate numeric product-identity interpretation into one bounded USER-text policy shared by history referent selection and inventory authorization. A numeric `1000 W` specification must not select a verified item whose product ID is `1000`, even when it appears in historical cards. An explicit `produkt 1000` remains eligible only when independently verified, with newer explicit selection taking priority over historical selection. Keep unverified explicit numbers fail-closed, ignore three-digit market IDs for product selection, preserve long OBIK/EAN checks, local-tool budget, disabled KWANT extended, and separate normal `find_products` requests.
+
+
 ## 2026-10-11 — Final PR #110 short-ID inventory safety boundary
 
 Treat natural `stan <ID>` and `dostępność <ID>` requests as explicit product identity only in anchored, bounded inventory-question grammar. Reject unknown four-to-six-digit product or article IDs before any location transport; do not substitute a historical verified product through a model hint. Keep exact verified product/article priority, ignore measurement quantities and three-digit store identifiers for product selection, and retain long OBIK/EAN validation. Do not touch KWANT normal grouped `find_products`, selected/other-branch routing, local-tool budget or the unverified extended contract.
