@@ -43,6 +43,7 @@ function answerPayload({
   const structured = JSON.stringify({ text, productRefs });
   return {
     id,
+    status: "completed",
     model: OPENAI_MODEL,
     output: [
       {
@@ -74,6 +75,7 @@ function toolPayload(
 ) {
   return {
     id: "resp_tool_observability_sentinel",
+    status: "completed",
     output: [
       {
         type: "function_call",

@@ -1,5 +1,9 @@
 # Architecture
 
+## R2 — Responses completion gate (2026-10-11)
+
+Worker normalizes OpenAI Responses only when the top-level `status` is exactly `completed`. Explicit `incomplete` responses are classified as output-budget exhaustion only for structured `incomplete_details.reason=max_output_tokens`, otherwise as other incompleteness. `failed`, `cancelled`, `queued`, and `in_progress` are rejected as noncompleted; missing, unknown, or malformed status is rejected independently. This gate precedes tool-call extraction or structured-final parsing; valid-looking output cannot authorize Android tool execution. The public 502/upstream_failure response and trace header remain unchanged. No retry, extra deadline, protocol change, tool-budget change, model-budget change, or attachment/provider behavior change.
+
 ## PR #112 final audit — canonical KWANT Polish locatives (2026-10-11)
 
 The shared `advisorCityLocative` now recognizes deterministic locatives for all 21 canonical cities listed in KWANT research #111 (including Białymstoku, Bochni, Piasecznie, Mielcu, Włocławku, Suwałkach). Both KWANT explicit location authorization and bounded `AdvisorLocationFollowUps` resolve aliases ONLY against the current verified provider directory, deriving branch IDs from its `ProviderBranch` records rather than any static alias-to-ID lookup. The bounded follow-up syntax now supports `a we Włocławku?` alongside `a w Białymstoku?`; unrelated USER messages still sever permission. Public directory pages confirm Białystok 216 and Tarnów 204, correcting earlier incorrect synthetic fixtures. Tests cover every canonical locative, canonical numeric-ID routing, multi-city complete/fail-closed scope, and Controller → real adapter checks. No HTTP contract, Worker wire schema or provider search/persistence changes.

@@ -2173,6 +2173,7 @@ test("production eval driver reuses production advisor request configuration", a
     return new Response(
       JSON.stringify({
         id: `resp_${captures.length}`,
+            status: "completed",
         output_text: structured,
         output: [
           {
@@ -2255,6 +2256,7 @@ test("production eval driver uses protocol v3 for KWANT start and continue", asy
     const output = JSON.stringify({ text: "OK", productRefs: [] });
     return new Response(JSON.stringify({
       id: `resp_kwant_eval_${captures.length}`,
+            status: "completed",
       output_text: output,
       output: [{
         type: "message",

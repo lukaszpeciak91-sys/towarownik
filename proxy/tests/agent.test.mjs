@@ -80,6 +80,7 @@ function answerPayload(text = "Synthetic answer", productRefs = []) {
   const structured = JSON.stringify({ text, productRefs: normalizedRefs });
   return {
     id: "resp_test_answer",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -111,6 +112,7 @@ function withUsage(payload, overrides = {}) {
 function toolPayload(argumentsJson = '{"storeNumber":"075","queries":[{"query":"synthetic query","limit":5}]}', name = LOCAL_TOOL_NAME) {
   return {
     id: "resp_test_tool",
+    status: "completed",
     output: [
       {
         type: "function_call",
@@ -538,6 +540,7 @@ test("structured OpenAI answer is normalized and raw response is not forwarded",
   });
   const fake = fakeOpenAI({
     id: "resp_direct",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -1001,6 +1004,7 @@ test("normalized usage is bounded and exposes no raw OpenAI internals", async ()
 test("malformed structured final output fails closed", async () => {
   const fake = fakeOpenAI({
     id: "resp_bad_structured",
+    status: "completed",
     output_text: JSON.stringify({ text: "missing product selection" }),
     output: [],
   });
@@ -1156,6 +1160,7 @@ test("web_search_call plus final message preserves bounded citation metadata", a
   const fake = fakeOpenAI(
     withUsage({
       id: "resp_web_answer",
+    status: "completed",
       output_text: structured,
       output: [
         {
@@ -1222,6 +1227,7 @@ test("web_search_call plus application function call remains a local tool reques
   const fake = fakeOpenAI(
     withUsage({
       id: "resp_web_then_function",
+    status: "completed",
       output: [
         {
           type: "web_search_call",
@@ -1299,6 +1305,7 @@ test("citation normalization deduplicates limits and filters unsafe URLs", async
   ];
   const fake = fakeOpenAI({
     id: "resp_citations",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -1374,6 +1381,7 @@ test("unsupported internal citation and entity tokens are removed without breaki
   const rawEnd = rawStart + citedFragment.length;
   const fake = fakeOpenAI({
     id: "resp_internal_markup",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -1506,6 +1514,7 @@ test("citation offsets map safely through structured JSON string escapes", async
   const rawEnd = rawStart + rawFragment.length;
   const fake = fakeOpenAI({
     id: "resp_citation_escape",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -1740,6 +1749,45 @@ test("valid continue sends previous_response_id and function_call_output", async
   assert.equal(capture.body.input[0].type, "function_call_output");
   assert.equal(capture.body.input[0].call_id, "call_previous");
   assert.deepEqual(JSON.parse(capture.body.input[0].output), validContinueBody().result);
+});
+
+test("failed CONTINUE retains supplied trace and returns only safe 502", async () => {
+  const trace = "44444444-4444-4444-8444-444444444444";
+  const fake = fakeOpenAI(answerPayload(), { throwNetwork: true });
+  const worker = createWorker(fake.fetch);
+  const { result: response, lines } = await captureWarnLogs(() =>
+    worker.fetch(
+      jsonRequest("/v1/agent/continue", validContinueBody(), {
+        headers: { "X-Taksula-Trace-Id": trace },
+      }),
+      configuredEnv,
+    ),
+  );
+  assert.equal(response.status, 502);
+  assert.equal(response.headers.get("X-Taksula-Trace-Id"), trace);
+  assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
+  const diagnostic = JSON.parse(lines[0]);
+  assert.equal(diagnostic.endpointStage, "CONTINUE");
+  assert.equal(diagnostic.traceId, trace);
+  assert.equal(diagnostic.upstreamFailureCategory, "upstream_network");
+  assert.equal(diagnostic.upstreamStatus, null);
+});
+
+test("repeated CONTINUE invokes upstream twice without assuming idempotency", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const trace = "55555555-5555-4555-8555-555555555555";
+  const request = () => jsonRequest("/v1/agent/continue", validContinueBody(), {
+    headers: { "X-Taksula-Trace-Id": trace },
+  });
+  const first = await worker.fetch(request(), configuredEnv);
+  const second = await worker.fetch(request(), configuredEnv);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(fake.captures.length, 2);
+  assert.deepEqual(fake.captures[0].body, fake.captures[1].body);
+  assert.equal(first.headers.get("X-Taksula-Trace-Id"), trace);
+  assert.equal(second.headers.get("X-Taksula-Trace-Id"), trace);
 });
 
 test("tool assisted structured answer exposes selected product refs only", async () => {
@@ -2329,6 +2377,53 @@ test("tool schema is generic and final schema is store-aware", () => {
   );
 });
 
+const noncompletedResponseCases = [
+  { name: "incomplete output budget", status: "incomplete",
+    details: { reason: "max_output_tokens" }, expected: "upstream_incomplete_output_budget" },
+  { name: "incomplete other", status: "incomplete",
+    details: { reason: "content_filter" }, expected: "upstream_incomplete_other" },
+  { name: "failed", status: "failed", expected: "upstream_response_not_completed" },
+  { name: "cancelled", status: "cancelled", expected: "upstream_response_not_completed" },
+  { name: "in_progress", status: "in_progress", expected: "upstream_response_not_completed" },
+  { name: "queued", status: "queued", expected: "upstream_response_not_completed" },
+  { name: "unknown", status: "synthetic_unknown", expected: "upstream_invalid_response_status" },
+  { name: "malformed", status: { invalid: true }, expected: "upstream_invalid_response_status" },
+  { name: "missing", status: undefined, expected: "upstream_invalid_response_status" },
+];
+
+for (const scenario of noncompletedResponseCases) {
+  for (const kind of ["answer", "tool"]) {
+    test(`noncompleted ${scenario.name} ${kind} fails closed with safe attribution`, async () => {
+      const payload = kind === "answer"
+        ? answerPayload("USER_CANARY_PRIVATE_TEXT")
+        : toolPayload();
+      if (scenario.status === undefined) delete payload.status;
+      else payload.status = scenario.status;
+      if (scenario.details) payload.incomplete_details = scenario.details;
+      const fake = fakeOpenAI(payload);
+      const worker = createWorker(fake.fetch);
+      const { result: response, lines } = await captureWarnLogs(() =>
+        worker.fetch(
+          jsonRequest("/v1/agent/start", { message: "SECRET_USER_TEXT" }),
+          configuredEnv,
+        ),
+      );
+      assert.equal(response.status, 502);
+      assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
+      assert.match(response.headers.get("X-Taksula-Trace-Id"), /^[0-9a-f-]{36}$/);
+      const log = lines.map((line) => JSON.parse(line));
+      assert.equal(log.length, 1);
+      assert.equal(log[0].upstreamFailureCategory, scenario.expected);
+      assert.equal(log[0].upstreamStatus, 200);
+      assert.equal(log[0].outcome, "upstream_failure");
+      assert.ok(!lines.join("").includes("SECRET_USER_TEXT"));
+      assert.ok(!lines.join("").includes("USER_CANARY_PRIVATE_TEXT"));
+      assert.ok(!lines.join("").includes("max_output_tokens"));
+      assert.ok(!lines.join("").includes("content_filter"));
+    });
+  }
+}
+
 const upstreamFailureCases = [
   {
     name: "network exception",
@@ -2375,6 +2470,7 @@ const upstreamFailureCases = [
     expectedStatus: 200,
     fake: () => fakeOpenAI({
       id: "resp_bad_envelope",
+    status: "completed",
       output: "UPSTREAM_BODY_SENTINEL_BAD_ENVELOPE",
     }),
   },
@@ -2395,6 +2491,7 @@ const upstreamFailureCases = [
     expectedStatus: 200,
     fake: () => fakeOpenAI({
       id: "resp_bad_final",
+    status: "completed",
       output: [
         {
           type: "message",

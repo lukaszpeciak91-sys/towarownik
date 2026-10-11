@@ -92,6 +92,7 @@ function answerPayload(text = "Synthetic answer") {
   });
   return {
     id: "resp_answer",
+    status: "completed",
     output: [
       {
         type: "message",
@@ -109,6 +110,7 @@ function answerPayload(text = "Synthetic answer") {
 function toolPayload(argumentsValue, name = LOCAL_TOOL_NAME) {
   return {
     id: "resp_tool",
+    status: "completed",
     output: [
       {
         type: "function_call",
@@ -982,6 +984,7 @@ test("protocol v3 KWANT continue preserves provider product refs", async () => {
   });
   const fake = fakeOpenAI({
     id: "resp_final",
+    status: "completed",
     output: [
       {
         type: "message",
