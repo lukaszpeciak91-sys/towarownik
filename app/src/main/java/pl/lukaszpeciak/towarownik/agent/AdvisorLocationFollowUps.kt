@@ -119,11 +119,20 @@ internal fun resolveAdvisorLocationFollowUp(
         0 -> selectedId ?: newestCard
         else -> null // Explicitly named multiple candidates remain ambiguous.
     }
-    val bothSelectedByUser = Regex("""\b(?:obu|oba)\b""").containsMatchIn(current) ||
+    // A NEW explicit product identity (including an as-yet unverified numeric
+    // ID) supersedes any older "obu". The model never decides this: the
+    // shared USER-text identity policy is the only source. Current "obu" and
+    // location-only clarifications can still carry a bounded prior "obu".
+    val currentSelectsProduct = currentMatches.isNotEmpty() ||
+        currentReferences.referencedNumericIds.isNotEmpty()
+    val currentRequestsBoth = Regex("""\b(?:obu|oba)\b""").containsMatchIn(current)
+    val inheritedBoth = !currentSelectsProduct &&
         userHistory.drop(anchor.coerceAtLeast(0)).any {
             Regex("""\b(?:obu|oba)\b""").containsMatchIn(normalized(it.text))
         }
-    val both = if (bothSelectedByUser && continuation && candidates.size == 2) {
+    val both = if ((currentRequestsBoth || inheritedBoth) &&
+        continuation && candidates.size == 2
+    ) {
         candidates.map { it.effectiveProductId }.toSet()
     } else emptySet()
     val selectedHistory = if (both.isEmpty() && currentMatches.size <= 1 && provenId != null) {
