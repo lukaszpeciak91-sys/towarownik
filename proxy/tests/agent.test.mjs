@@ -1160,6 +1160,7 @@ test("web_search_call plus final message preserves bounded citation metadata", a
   const fake = fakeOpenAI(
     withUsage({
       id: "resp_web_answer",
+    status: "completed",
       output_text: structured,
       output: [
         {
@@ -1226,6 +1227,7 @@ test("web_search_call plus application function call remains a local tool reques
   const fake = fakeOpenAI(
     withUsage({
       id: "resp_web_then_function",
+    status: "completed",
       output: [
         {
           type: "web_search_call",
