@@ -242,15 +242,11 @@ class KwantLocationAuthorizationTest {
             remappedOnlyInSyntheticFixture, BranchId("205"),
         ) as KwantAuthorizedLocations.Allowed
         assertEquals(listOf(BranchId("901")), outcome.requested)
-        assertEquals("location_not_authorized",
+        assertEquals("unknown_location",
             (authorizeKwantLocations(
                 "Sprawdź stan 7027 w Białymstoku", listOf("216"),
                 remappedOnlyInSyntheticFixture, BranchId("205"),
-            ) as KwantAuthorizedLocations.Denied).reason.let {
-                // 216 no longer exists; a nonexistent model hint cannot
-                // grant the old static ID.
-                if (it == "unknown_location") "location_not_authorized" else it
-            })
+            ) as KwantAuthorizedLocations.Denied).reason)
     }
 
 }
