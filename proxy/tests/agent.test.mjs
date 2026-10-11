@@ -80,6 +80,7 @@ function answerPayload(text = "Synthetic answer", productRefs = []) {
   const structured = JSON.stringify({ text, productRefs: normalizedRefs });
   return {
     id: "resp_test_answer",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -111,6 +112,7 @@ function withUsage(payload, overrides = {}) {
 function toolPayload(argumentsJson = '{"storeNumber":"075","queries":[{"query":"synthetic query","limit":5}]}', name = LOCAL_TOOL_NAME) {
   return {
     id: "resp_test_tool",
+    status: "completed",
     output: [
       {
         type: "function_call",
