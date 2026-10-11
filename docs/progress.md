@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-11 — PR #112 canonical 21-branch locative corrections
+
+Validated the current public KWANT directory's 21 cities and reviewed research #111. Expanded shared canonical locative aliases and `a we` follow-ups, corrected Tarnów 204 vs Białystok 216 in synthetic Android tests and in the device smoke guide, and added bounded resolver + Controller-to-real-KWANT transport regressions including two-city and unknown/conflicting scopes. No static production branch IDs, OBI regression, reliability retries, persistence or Worker schema edits.
+
+
 ## 2026-10-11 — Audit fix in existing PR #112
 
 Aligned Android unavailable evidence with strict Worker JSON validation by adding canonical null-stock entries for the entire checked/missing set, including HTTP failure, timeout, malformed JSON and NO_TRUSTED_ROWS; unavailable directory returns empty coherent arrays. Replaced KWANT's first-city-only matching with full bounded `i/oraz/comma` name/numeric-ID chain parsing and paired-label conflict rejection. Added focused resolver, Controller-to-real-adapter, real Android ProxyClient serialization and Worker validation tests. No production search, Worker schema, OBI or reliability retry changes. Test status is tracked by PR #112 CI.
