@@ -2,6 +2,8 @@
 
 ## Production KWANT cross-branch stock — guarded extended=1 (2026-10-11)
 
+The Worker location-tool guidance is updated only to remove obsolete unverified-extended wording and clarify provider-specific empty location-hint semantics. The location-result JSON schema, protocol versions and normal provider search prompt remain unchanged.
+
 PR #112 enables the exact browser-verified single-product `GET https://services.kwant.net.pl/api/front/products/{numericProductId}/departments?extended=1`. Production reuses strict JSON-only, cookie-free, redirect-free bounded OkHttp transport (no retries), canonical KWANT branch IDs and one HTTP inventory GET per requested product. Android parses product-bound `list[].department_id/stock`, root `unit`, and never reinterprets `total_stock` as central. Branch ID unknown/duplicate, wrong product ID and malformed/negative/non-integer stocks fail closed. Zero remains zero; null/missing/nonreturned branch IDs remain unknown; no 21-branch assumption.
 
 USER text controls KWANT scope. Canonical branch and deterministic Polish locative parsing plus explicit numeric branch references restrict `find_product_locations` to one location (default current) or only a user-authorized nationwide set. Model hints are constrained to that scope, never a source of authorization. Transport may retrieve all public branch rows in one product-bound call, but adapter, Controller evidence and deterministic final rendering include only requested branches when the user scoped a subset. Shared historical single-product identity remains authoritative over model arguments.
