@@ -124,6 +124,7 @@ internal class AdvisorController(
         attachment: AdvisorAttachment? = null,
         attachments: List<AdvisorAttachment> = emptyList(),
         historicalVerifiedProducts: List<VerifiedProductSnapshot> = emptyList(),
+        locationHistory: List<AdvisorLocationHistoryMessage> = emptyList(),
         onOpenAiResponse: (AdvisorUsage?, Long) -> Unit = { _, _ -> },
         onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
@@ -333,6 +334,8 @@ internal class AdvisorController(
         var lastLocationEvidence: AdvisorLocationEvidence? = null
         var localToolLimitContinuationSent = false
         var toolAssistedObserved = false
+        val deterministicLocationOutcomes =
+            linkedMapOf<Triple<String, String, List<String>>, AdvisorLocationEvidence>()
         val verifiedByKey =
             linkedMapOf<VerifiedProductKey, VerifiedProductSnapshot>()
         val searchActionsByKey =
@@ -368,6 +371,23 @@ internal class AdvisorController(
                         toolAssistedObserved = true
                         observeToolSafely(onToolRequestObserved)
                     }
+                    val followUp = resolveAdvisorLocationFollowUp(
+                        input = normalizedInput,
+                        history = locationHistory,
+                        historicalProducts = historicalVerifiedProducts
+                            .filter { it.providerId == conversationProviderId },
+                        branches = (loadTurnBranches() as? ProviderBranchResult.Available)
+                            ?.branches.orEmpty(),
+                    )
+                    val repeatKey = Triple(
+                        locationRequest.arguments.providerId,
+                        locationRequest.arguments.productId,
+                        locationRequest.arguments.locations,
+                    )
+                    // A deterministic denial is returned unchanged for an
+                    // identical retry, rather than spending a second local
+                    // lookup budget (or performing duplicate provider work).
+                    val priorDecision = deterministicLocationOutcomes[repeatKey]
                     val evidence = if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) {
                         if (localToolLimitContinuationSent) {
                             return AdvisorUiState.Error(AdvisorError.PROTOCOL).also(onState)
@@ -386,18 +406,44 @@ internal class AdvisorController(
                             verifiedAtMillis = null,
                             centralStock = null,
                         )
+                    } else if (priorDecision != null) {
+                        // Cached denials avoid duplicate provider work but still
+                        // count as logical model tool requests (hard budget = 3).
+                        toolCalls += 1
+                        priorDecision
                     } else {
                         toolCalls += 1
                         onState(AdvisorUiState.RunningLocalTool)
                         try {
-                            executeLocationsTool?.invoke(
-                                locationRequest.arguments,
-                                conversationProviderId,
-                                conversationStoreNumber,
-                                normalizedInput,
-                                verifiedByKey.values.toList(),
-                                historicalVerifiedProducts,
-                            ) ?: AdvisorLocationEvidence(
+                            if (conversationProviderId == "kwant-pl" &&
+                                followUp.bothProductIds.size == 2 &&
+                                locationRequest.arguments.productId in followUp.bothProductIds
+                            ) {
+                                // The user selected BOTH separately verified
+                                // products, but KWANT extended is not verified.
+                                // One model tool can never silently pick one.
+                                AdvisorLocationEvidence(
+                                    providerId = conversationProviderId,
+                                    productId = null,
+                                    status = "unavailable",
+                                    reason = "unverified_request_contract",
+                                    coverage = "unknown",
+                                    checkedIds = emptyList(),
+                                    returnedIds = emptyList(),
+                                    missingIds = emptyList(),
+                                    locations = emptyList(),
+                                    verifiedAtMillis = null,
+                                    centralStock = null,
+                                )
+                            } else {
+                                executeLocationsTool?.invoke(
+                                    locationRequest.arguments,
+                                    conversationProviderId,
+                                    conversationStoreNumber,
+                                    followUp.authorizedText,
+                                    verifiedByKey.values.toList(),
+                                    followUp.historicalProducts,
+                                ) ?: AdvisorLocationEvidence(
                                 providerId = conversationProviderId,
                                 productId = null,
                                 status = "unavailable",
@@ -409,7 +455,8 @@ internal class AdvisorController(
                                 locations = emptyList(),
                                 verifiedAtMillis = null,
                                 centralStock = null,
-                            )
+                                )
+                            }
                         } catch (cancel: CancellationException) {
                             throw cancel
                         } catch (_: Exception) {
@@ -427,6 +474,15 @@ internal class AdvisorController(
                                 centralStock = null,
                             )
                         }
+                    }
+                    // Product-trust and ambiguity decisions may change after
+                    // a local discovery call in this same USER turn. Cache only
+                    // scope/provider denials invariant under new verified cards.
+                    if (priorDecision == null &&
+                        evidence.status == "rejected" &&
+                        isInvariantLocationDenial(evidence.reason)
+                    ) {
+                        deterministicLocationOutcomes[repeatKey] = evidence
                     }
                     lastLocationEvidence = evidence
                     onState(AdvisorUiState.WaitingForFinalAnswer)
@@ -690,6 +746,16 @@ internal class AdvisorController(
                 AdvisorProxyFailureKind.NETWORK,
             )
         }
+
+    private fun isInvariantLocationDenial(reason: String?): Boolean =
+        reason in setOf(
+            "location_intent_required",
+            "unknown_location",
+            "location_not_authorized",
+            "wrong_provider",
+            "unsupported_provider",
+        ) || reason?.startsWith("location_conflict_") == true
+
 
     companion object {
         fun production(context: android.content.Context): AdvisorController {

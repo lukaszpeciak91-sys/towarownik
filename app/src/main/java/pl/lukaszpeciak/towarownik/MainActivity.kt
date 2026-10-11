@@ -778,10 +778,22 @@ private fun TowarownikApp() {
                     attachments = submittedAttachments,
                     historicalVerifiedProducts = persistedTurnConversation
                         ?.messages
+                        ?.dropLast(1) // Current USER turn is not prior verified evidence.
+                        ?.takeLast(12)
                         ?.asReversed()
-                        ?.filter { it.role == "ASSISTANT" }
+                        ?.filter { it.role == "ASSISTANT" && it.products.isNotEmpty() }
                         ?.take(3)
                         ?.flatMap { it.products }
+                        .orEmpty(),
+                    locationHistory = persistedTurnConversation
+                        ?.messages
+                        ?.dropLast(1) // Current USER turn never authorizes itself as prior context.
+                        ?.takeLast(12)
+                        ?.map { pl.lukaszpeciak.towarownik.agent.AdvisorLocationHistoryMessage(
+                            role = it.role,
+                            text = it.text,
+                            products = it.products,
+                        ) }
                         .orEmpty(),
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {

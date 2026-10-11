@@ -1,5 +1,37 @@
 # Architecture
 
+## PR #110 latest explicit product selection supersedes inherited "obu" (2026-10-11)
+
+The history resolver maintains the shared USER-origin bounded ID grammar but limits inherited multi-product scope: a new current USER explicit single-product ID or unknown explicit numeric identity ends any prior `obu` selection. Current `obu` remains authoritative and uninterrupted canonical location-only follow-ups continue the prior `obu` scope. The resolver narrows verified historical snapshots only for a current verified exact ID; unknown explicit IDs are passed to the normal locations authorization guard to reject before transport. Controller integration regressions cover verified 7027 replacing historical `obu`, wrong model hint, unverified 9999, fresh `obu`, and an ensuing Tarnów location-only question; the disabled KWANT extended adapter proves zero HTTP. The three-call budget and ordinary `find_products` routing are unchanged.
+
+
+## PR #110 final integration identity consistency (2026-10-11)
+
+Both `resolveAdvisorLocationFollowUp` and `AdvisorLocationsTool.resolveTrustedProduct` consume the shared `AdvisorProductIdentityReferences` USER-text grammar. It extracts short numeric identities only from bounded product/stock contexts, excludes measurement units (e.g. `1000 W`) and three-digit OBI store numbers, and preserves previous bounded long OBIK/EAN handling. The same policy applies to previous USER selections and the current turn before historical snapshots can be narrowed; model hints are equality-only and never grant product identity. Controller-to-history-to-real-location-tool offline regressions cover earlier 7035 selection versus a measured 1000 W, explicit product 1000, unknown IDs, conflicting model hints, OBI market numbers, and quantity dimensions. KWANT ordinary `find_products` and the three-local-call budget remain unchanged.
+
+
+## PR #110 final short product-identity grammar (2026-10-11)
+
+`find_product_locations` recognizes short KWANT product IDs/article numbers only in explicit identifier labels, direct `Sprawdź 7027` requests, or bounded natural Polish stock questions (e.g. `Sprawdź stan 7027`, `Sprawdź dostępność 7027`, `Jaki jest stan 921861`). Exact unverified short IDs fail closed, and model IDs remain equality checks. Verified 4–6 digit products are selected only through those bounded identity contexts; numeric quantities (including `1000 W`) and three-digit OBI market identifiers do not become product references. Existing 7–13 digit OBIK/EAN checks remain unchanged. Grouped two-query KWANT `find_products` continues independently for selected/explicit alternative branches, without invoking disabled `find_product_locations`.
+
+
+## PR #110 final authorization audit hardening — canonical scope and KWANT IDs (2026-10-10)
+
+Inventory-intent carry-over only accepts entire canonical city/branch-only clauses (including deterministic inflections), optionally with a contextual three-digit OBI market number. Price/advice suffixes break carry-over even after stock questions. The same shared canonical city inflections are used by follow-up matching and OBI authorized-scope parsing. OBI city-plus-market conflicts are rejected for both labeled `market w ... 054` and `a w ... 054`, without HTTP. Product identity validation rejects unknown explicitly labeled short KWANT IDs/article numbers (e.g. 7027/7035) before any location read; unlabeled quantities, dimensions and OBI market IDs do not create IDs. Ordinary KWANT `find_products` remains independent from unavailable multi-department `find_product_locations`, with Controller branch-route regression coverage.
+
+
+## PR #110 audit hardening — bounded follow-up categories and current identity
+
+A pending inventory request survives only explicit clarification forms (`obu`/`oba`, constrained location-preposition follow-ups, supported market clarification or broad relative-market follow-up) or a bare location that exactly names a branch in the active provider's canonical directory. Generic short messages, including `pokaż ceny`, interrupt authorization even if a previous stock request exists. Current-message exact identifiers are resolved solely against previously verified snapshots and take precedence over older user selections; multiple explicit products stay ambiguous. Model IDs remain equality-only. Only location/provider denial categories invariant under newly verified product evidence are memoized in a turn; `untrusted_product` and `ambiguous_product` must be re-evaluated after discovery. Every model tool request still consumes the existing three-call budget.
+
+
+## Advisor inventory clarifications — bounded history (2026-10-10)
+
+Android now supplies the location tool with a bounded prior-conversation evidence window: at most 12 preceding messages, four preceding USER turns, and up to three most recent assistant messages containing verified product cards in that 12-message window. A standalone city, "a w…", or "obu" is inventory-authorized only when chained to a previous **USER-requested** stock/availability operation with no unrelated intervening USER turn. Assistant suggestions and model location/product IDs do not authorize scope. Explicit earlier user identifiers and a single newest verified assistant card may disambiguate product identity; the model's ID remains an equality guard. An exact two-product "obu" clarification is retained across immediate related turns; because KWANT's extended transport is unverified, it produces a typed unavailable result before inventory HTTP rather than selecting one product.
+
+OBI adds verified Miejsce Piastowe/Miejscu Piastowym alias, contextual city-vs-market ID conflict rejection (052 versus asserted 054, no silent substitution), and broad "markety w których…" relative clauses. For the specific rejected 054/052 mismatch, existing deterministic Advisor location-detail rendering now appends a canonical-directory-grounded confirmation request, explicitly stating that no stock HTTP occurred. The existing directory, 61-market coverage, four service reads / seven HTTP batches, 45-second budget, profile, Worker interface and trace semantics remain unchanged.
+
+
 ## Provider-verified stock unit in product cards
 
 `ProviderProduct.stockUnit` is nullable presentation metadata, propagated through OBI `LocalProduct`, `VerifiedProductSnapshot`, Room `message_products.stockUnit` (v13), Compose saved state and `VerifiedProductUiModel`. KWANT only obtains explicit `unit` from a matching product page or product-ID-and-department-matched current-stock payload. If both trusted unit fields conflict, unit is unknown. OBI selected-store `articleData` still has no stock-unit field. For the same exact verified product, the PDP may however expose an explicit dedicated sales-unit fact such as `Sprzedaż: na metry` or `Jednostka sprzedaży: m²`; only these unit-labeled product facts are accepted for stock presentation. Titles, categories, dimensions such as `Długość [m]`, and price-per-unit text are never used to infer a unit. A narrow safe unit normalizer renders known labels (`szt.`, `m`, `m²`, `m³`, `kg`, `l`, `opak.`) or bounded trusted labels and suppresses missing/unsafe labels. Branch and central stocks share the same **product-level** verified unit; stock zero, null and central/branch separation are unchanged. Legacy Room v12 rows migrate to `stockUnit=NULL` without rewriting history.
