@@ -4151,6 +4151,23 @@ def isolated_public_json_get(path: str, query: dict[str, str]) -> tuple[int | No
         return None, None
 
 
+def same_sanitized_department_inventory(
+    browser: dict[str, Any], standalone: dict[str, Any],
+) -> bool:
+    """Exact branch identities, stock states and quantities; never state-only."""
+    return (
+        browser.get("coverage") == standalone.get("coverage")
+        and browser.get("canonicalIdCount") == standalone.get("canonicalIdCount")
+        and sorted(
+            (row["departmentId"], row["stockState"], row["stock"])
+            for row in browser.get("canonicalRows", [])
+        ) == sorted(
+            (row["departmentId"], row["stockState"], row["stock"])
+            for row in standalone.get("canonicalRows", [])
+        )
+    )
+
+
 def cookie_free_departments_replay(
     observed: dict[str, Any] | None,
     product_id: str,
@@ -4597,17 +4614,8 @@ def research_product_locations(
             and standalone.get("status") == 200
             and isinstance(standalone_summary, dict)
         )
-        same_directory = comparable and (
-            browser_summary.get("coverage") == standalone_summary.get("coverage")
-            and browser_summary.get("canonicalIdCount")
-                == standalone_summary.get("canonicalIdCount")
-            and {
-                (row["departmentId"], row["stockState"])
-                for row in browser_summary.get("canonicalRows", [])
-            } == {
-                (row["departmentId"], row["stockState"])
-                for row in standalone_summary.get("canonicalRows", [])
-            }
+        same_directory = comparable and same_sanitized_department_inventory(
+            browser_summary, standalone_summary,
         )
         current_stock = selected_current.get("selectedBranchStock")
         browser_stock = (
