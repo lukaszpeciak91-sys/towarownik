@@ -24,16 +24,3 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Check and assemble debug APK
         run: ./gradlew check assembleDebug
-      - name: Temporary KWANT audit failure details (remove after diagnosis)
-        if: failure()
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-          for path in Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml"):
-              for case in ET.parse(path).getroot().iter("testcase"):
-                  for failure in case.findall("failure"):
-                      print("FAILED_CASE", case.attrib.get("classname"), case.attrib.get("name"))
-                      print("ASSERTION", failure.attrib.get("message"))
-                      print((failure.text or "")[:1500])
-          PY
