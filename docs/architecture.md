@@ -1,5 +1,10 @@
 # Architecture
 
+## PR #110 latest explicit product selection supersedes inherited "obu" (2026-10-11)
+
+The history resolver maintains the shared USER-origin bounded ID grammar but limits inherited multi-product scope: a new current USER explicit single-product ID or unknown explicit numeric identity ends any prior `obu` selection. Current `obu` remains authoritative and uninterrupted canonical location-only follow-ups continue the prior `obu` scope. The resolver narrows verified historical snapshots only for a current verified exact ID; unknown explicit IDs are passed to the normal locations authorization guard to reject before transport. Controller integration regressions cover verified 7027 replacing historical `obu`, wrong model hint, unverified 9999, fresh `obu`, and an ensuing Tarnów location-only question; the disabled KWANT extended adapter proves zero HTTP. The three-call budget and ordinary `find_products` routing are unchanged.
+
+
 ## PR #110 final integration identity consistency (2026-10-11)
 
 Both `resolveAdvisorLocationFollowUp` and `AdvisorLocationsTool.resolveTrustedProduct` consume the shared `AdvisorProductIdentityReferences` USER-text grammar. It extracts short numeric identities only from bounded product/stock contexts, excludes measurement units (e.g. `1000 W`) and three-digit OBI store numbers, and preserves previous bounded long OBIK/EAN handling. The same policy applies to previous USER selections and the current turn before historical snapshots can be narrowed; model hints are equality-only and never grant product identity. Controller-to-history-to-real-location-tool offline regressions cover earlier 7035 selection versus a measured 1000 W, explicit product 1000, unknown IDs, conflicting model hints, OBI market numbers, and quantity dimensions. KWANT ordinary `find_products` and the three-local-call budget remain unchanged.
