@@ -36,7 +36,11 @@ internal fun authorizeKwantLocations(
         }
     }
     val byId = branches.associateBy { it.branchId.value }
-    val text = norm(userText)
+    // In "1000 W w oddziale Zamość" the first W denotes watts,
+    // not a location preposition. Product identity uses this same boundary.
+    val text = norm(userText).replace(
+        Regex("""\b[0-9]{1,6}\s+w\b(?=\s+(?:w|we)\s+)"""), "",
+    ).replace(Regex("""\s+"""), " ").trim()
     val explicit = linkedSetOf<BranchId>()
     val foundIds = Regex("""\b(?:oddzial(?:e|u)?|hurtowni)\s+(?:nr\s+)?([0-9]{1,8})\b""")
         .findAll(text).map { it.groupValues[1] }
