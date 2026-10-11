@@ -486,7 +486,9 @@ class AdvisorLocationFollowUpReportsTest {
         val unverifiedCity = resolveAdvisorLocationFollowUp(
             "a w Nieznanowie?", history, listOf(product), branches,
         )
-        assertEquals(false, unverifiedCity.hasPendingInventoryRequest)
+        // Historical inventory is still pending, but an unknown city cannot
+        // be promoted to an authorized inventory request by the resolver.
+        assertEquals("a w Nieznanowie?", unverifiedCity.authorizedText)
     }
 
 }
