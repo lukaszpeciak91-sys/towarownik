@@ -134,4 +134,18 @@ class KwantLocationAuthorizationTest {
             rejected(text, listOf("wszystkie")))
     }
 
+    @Test fun measurementAnnotationsDoNotBecomeExtraLocationOrOverrideVerifiedScope() {
+        for (request in listOf(
+            "Sprawdź stan produktu 7035 w oddziale Zamość, potrzebuję 1000 W, 25 m i 5 szt.",
+            "Sprawdź stan produktu 7035 w oddziale Zamość, 1000 W, 25 m i 5 szt.",
+            "Sprawdź 1000 W w oddziale Zamość",
+        )) {
+            assertEquals(request, listOf(BranchId("128")), allowed(request).requested)
+        }
+        assertEquals("unknown_location", rejected(
+            "Sprawdź stan 7035 w Zamościu, 1000 W i Tarnowie",
+            emptyList(),
+        ))
+    }
+
 }
