@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-11 — Final PR #110 short-ID inventory safety boundary
+
+Treat natural `stan <ID>` and `dostępność <ID>` requests as explicit product identity only in anchored, bounded inventory-question grammar. Reject unknown four-to-six-digit product or article IDs before any location transport; do not substitute a historical verified product through a model hint. Keep exact verified product/article priority, ignore measurement quantities and three-digit store identifiers for product selection, and retain long OBIK/EAN validation. Do not touch KWANT normal grouped `find_products`, selected/other-branch routing, local-tool budget or the unverified extended contract.
+
+
 ## 2026-10-10 — PR #110 follow-up re-audit: exact canonical clarifications and short-ID fail-closed
 
 Carry inventory permission only through complete canonical location clarification phrases, not arbitrary `a w ...` text. In particular price, compatibility and installation questions must remain ordinary turns. Reuse deterministic provider city inflections for authorization and location scope. Treat explicitly named KWANT short IDs and article numbers as exact product identities; an unknown 4-digit ID cannot inherit a previous verified product, while unlabeled measurements and OBI store numbers must not be mistaken for products. A city with an adjacent contradictory 3-digit OBI market identifier must ask for confirmation, even when phrased `a w ... 054?`. Preserve disabled KWANT extended, independent normal `find_products`, and the three-logical-tool-call cap.
