@@ -436,4 +436,57 @@ class AdvisorLocationFollowUpReportsTest {
         assertTrue(inventory.http.isEmpty())
     }
 
+    @Test fun canonicalPolishKwantLocativesContinueOnlyBoundedInventoryRequests() {
+        val product = snapshot("7027", "kwant-pl", "921861")
+        // Canonical identities originate from the injected branch directory,
+        // not from locative aliases or the assistant's product/location hint.
+        val branches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+            ProviderBranch(BranchId("216"), "Białystok"),
+            ProviderBranch(BranchId("204"), "Tarnów"),
+            ProviderBranch(BranchId("203"), "Bochnia"),
+            ProviderBranch(BranchId("214"), "Piaseczno"),
+            ProviderBranch(BranchId("206"), "Mielec"),
+            ProviderBranch(BranchId("141"), "Włocławek"),
+            ProviderBranch(BranchId("161"), "Suwałki"),
+        )
+        val history = listOf(
+            assistant(product),
+            user("Sprawdź stan produktu 7027 w Zamościu"),
+            assistant(),
+        )
+        for ((message, id) in listOf(
+            "a w Białymstoku?" to "216",
+            "a w Bochni?" to "203",
+            "a w Piasecznie?" to "214",
+            "a w Mielcu?" to "206",
+            "a we Włocławku?" to "141",
+            "a w Suwałkach?" to "161",
+            "a w Tarnowie?" to "204",
+        )) {
+            val followUp = resolveAdvisorLocationFollowUp(
+                message, history, listOf(product), branches,
+            )
+            assertTrue(message, followUp.hasPendingInventoryRequest)
+            assertEquals(message, listOf("7027"),
+                followUp.historicalProducts.map { it.effectiveProductId })
+            assertTrue(message, followUp.authorizedText.startsWith("Sprawdź stan produktu:"))
+            val scope = authorizeKwantLocations(
+                followUp.authorizedText, emptyList(), branches, BranchId("205"),
+            ) as KwantAuthorizedLocations.Allowed
+            assertEquals(message, listOf(BranchId(id)), scope.requested)
+        }
+        val unrelatedHistory = history + user("pokaż ceny") + assistant()
+        val broken = resolveAdvisorLocationFollowUp(
+            "a w Białymstoku?", unrelatedHistory, listOf(product), branches,
+        )
+        assertEquals(false, broken.hasPendingInventoryRequest)
+        assertEquals("a w Białymstoku?", broken.authorizedText)
+        val unverifiedCity = resolveAdvisorLocationFollowUp(
+            "a w Nieznanowie?", history, listOf(product), branches,
+        )
+        assertEquals(false, unverifiedCity.hasPendingInventoryRequest)
+    }
+
 }
