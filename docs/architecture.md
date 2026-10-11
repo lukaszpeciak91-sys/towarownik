@@ -1,5 +1,10 @@
 # Architecture
 
+## PR #110 final short product-identity grammar (2026-10-11)
+
+`find_product_locations` recognizes short KWANT product IDs/article numbers only in explicit identifier labels, direct `Sprawdź 7027` requests, or bounded natural Polish stock questions (e.g. `Sprawdź stan 7027`, `Sprawdź dostępność 7027`, `Jaki jest stan 921861`). Exact unverified short IDs fail closed, and model IDs remain equality checks. Verified 4–6 digit products are selected only through those bounded identity contexts; numeric quantities (including `1000 W`) and three-digit OBI market identifiers do not become product references. Existing 7–13 digit OBIK/EAN checks remain unchanged. Grouped two-query KWANT `find_products` continues independently for selected/explicit alternative branches, without invoking disabled `find_product_locations`.
+
+
 ## PR #110 final authorization audit hardening — canonical scope and KWANT IDs (2026-10-10)
 
 Inventory-intent carry-over only accepts entire canonical city/branch-only clauses (including deterministic inflections), optionally with a contextual three-digit OBI market number. Price/advice suffixes break carry-over even after stock questions. The same shared canonical city inflections are used by follow-up matching and OBI authorized-scope parsing. OBI city-plus-market conflicts are rejected for both labeled `market w ... 054` and `a w ... 054`, without HTTP. Product identity validation rejects unknown explicitly labeled short KWANT IDs/article numbers (e.g. 7027/7035) before any location read; unlabeled quantities, dimensions and OBI market IDs do not create IDs. Ordinary KWANT `find_products` remains independent from unavailable multi-department `find_product_locations`, with Controller branch-route regression coverage.
