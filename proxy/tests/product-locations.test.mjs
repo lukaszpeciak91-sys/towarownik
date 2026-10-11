@@ -14,6 +14,7 @@ const env = {
 const args = { providerId: "obi-pl", productId: "3496072", locations: ["075"] };
 const locationCall = {
   id: "resp_locations",
+  status: "completed",
   output: [{
     type: "function_call",
     name: LOCATIONS_LOCAL_TOOL_NAME,
@@ -23,6 +24,7 @@ const locationCall = {
 };
 const answer = {
   id: "resp_final",
+  status: "completed",
   output: [{
     type: "message",
     content: [{
