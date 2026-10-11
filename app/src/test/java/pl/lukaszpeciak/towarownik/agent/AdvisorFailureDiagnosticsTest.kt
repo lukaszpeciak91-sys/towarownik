@@ -61,6 +61,23 @@ class AdvisorFailureDiagnosticsTest {
     }
 
     @Test
+    fun `malformed success reports response parse without echoing payload`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(200).setBody("SECRET-MALFORMED"))
+            val client = AdvisorProxyClient(
+                appToken = "synthetic",
+                baseUrl = server.url("/").toString().toHttpUrl(),
+            )
+            val result = client.message("previous", "test", "075")
+            assertTrue(result is AdvisorProxyCallResult.Failure)
+            val failure = result as AdvisorProxyCallResult.Failure
+            assertEquals(AdvisorFailureClass.RESPONSE_PARSE, failure.failureClass)
+            assertEquals("message", failure.endpoint)
+            assertFalse(failure.diagnosticOrNull()!!.reportValue().contains("SECRET"))
+        }
+    }
+
+    @Test
     fun `missing and malformed traces never enter report`() {
         val failure = AdvisorProxyCallResult.Failure(
             kind = AdvisorProxyFailureKind.NETWORK,
