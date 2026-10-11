@@ -101,7 +101,7 @@ class AdvisorLocationsControllerTest {
                 ProviderBranchResult.Available(listOf(
                     ProviderBranch(BranchId("205"), "Nowy Sącz"),
                     ProviderBranch(BranchId("128"), "Zamość"),
-                    ProviderBranch(BranchId("216"), "Tarnów"),
+                    ProviderBranch(BranchId("204"), "Tarnów"),
                 ))
             } else {
                 ObiProductProvider().branches()
@@ -757,7 +757,7 @@ class AdvisorLocationsControllerTest {
                     ProviderBranchResult.Available(listOf(
                         ProviderBranch(BranchId("205"), "Nowy Sącz"),
                         ProviderBranch(BranchId("128"), "Zamość"),
-                        ProviderBranch(BranchId("216"), "Tarnów"),
+                        ProviderBranch(BranchId("204"), "Tarnów"),
                     ))
                 },
             )
@@ -899,7 +899,7 @@ class AdvisorLocationsControllerTest {
         val kwantBranches = listOf(
             ProviderBranch(BranchId("205"), "Nowy Sącz"),
             ProviderBranch(BranchId("128"), "Zamość"),
-            ProviderBranch(BranchId("216"), "Tarnów"),
+            ProviderBranch(BranchId("204"), "Tarnów"),
         )
         data class Case(
             val input: String,
@@ -1022,7 +1022,7 @@ class AdvisorLocationsControllerTest {
         val branches = listOf(
             ProviderBranch(BranchId("205"), "Nowy Sącz"),
             ProviderBranch(BranchId("128"), "Zamość"),
-            ProviderBranch(BranchId("216"), "Tarnów"),
+            ProviderBranch(BranchId("204"), "Tarnów"),
         )
         val product = snapshot.copy(
             obik = "580", productId = "580", providerId = "kwant-pl",
@@ -1041,7 +1041,7 @@ class AdvisorLocationsControllerTest {
             Scenario("Sprawdź stan produktu 580 w Zamościu",
                 listOf("Tarnów"), "rejected", emptyList(), 0),
             Scenario("Sprawdź stan produktu 580 we wszystkich oddziałach",
-                emptyList(), "verified", listOf("205", "128", "216"), 1),
+                emptyList(), "verified", listOf("205", "128", "204"), 1),
         )) {
             var inventoryHttpCalls = 0
             val adapter = KwantProductLocationsAdapter(
@@ -1105,7 +1105,7 @@ class AdvisorLocationsControllerTest {
         val branches = listOf(
             ProviderBranch(BranchId("205"), "Nowy Sącz"),
             ProviderBranch(BranchId("128"), "Zamość"),
-            ProviderBranch(BranchId("216"), "Tarnów"),
+            ProviderBranch(BranchId("204"), "Tarnów"),
         )
         val product = snapshot.copy(
             obik = "7027", productId = "7027", providerId = "kwant-pl",
@@ -1119,13 +1119,13 @@ class AdvisorLocationsControllerTest {
         )
         val scenarios = listOf(
             Case("Sprawdź stan 7027 w Zamościu i Tarnowie",
-                listOf("Zamość"), listOf("128", "216"), null),
+                listOf("Zamość"), listOf("128", "204"), null),
             Case("Sprawdź stan 7027 w Zamościu oraz Tarnowie",
-                emptyList(), listOf("128", "216"), null),
+                emptyList(), listOf("128", "204"), null),
             Case("Sprawdź stan 7027 w Tarnowie, Zamościu",
-                emptyList(), listOf("216", "128"), null),
+                emptyList(), listOf("204", "128"), null),
             Case("Sprawdź stan 7027 w oddziale 128 i 216",
-                listOf("216"), listOf("128", "216"), null),
+                listOf("204"), listOf("128", "204"), null),
             Case("Sprawdź stan 7027 w Zamościu i Nieznanowie",
                 emptyList(), emptyList(), "unknown_location"),
             Case("Sprawdź stan 7027 w oddziale 128 i 999",
