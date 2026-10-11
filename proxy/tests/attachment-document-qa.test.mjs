@@ -32,6 +32,7 @@ function jsonContinue(body) {
 function answer(text) {
   return {
     id: "resp_answer",
+    status: "completed",
     output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ text, productRefs: [] }) }] }],
   };
 }
@@ -39,6 +40,7 @@ function answer(text) {
 function findProducts() {
   return {
     id: "resp_tool",
+    status: "completed",
     output: [{
       type: "function_call", call_id: "call_price", name: "find_products",
       arguments: JSON.stringify({
