@@ -9,6 +9,8 @@ import org.junit.Test
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.KwantProductLocationsAdapter
+import pl.lukaszpeciak.towarownik.product.provider.LocationsHttpFetcher
 import pl.lukaszpeciak.towarownik.product.provider.LocationFailure
 import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ObiProductProvider
@@ -865,6 +867,143 @@ class AdvisorLocationsControllerTest {
                 locationHistory = oldMessages,
             ) {} is AdvisorUiState.Success)
             assertEquals(text, listOf("6117543"), locationAdapterReads)
+        }
+    }
+
+
+    @Test fun controllerCurrentSingleSelectionSupersedesHistoricalBothWithoutNetworkHttp() = runBlocking {
+        val first = snapshot.copy(
+            obik = "7035", productId = "7035", providerId = "kwant-pl",
+            articleNumber = "921871", storeNumber = "205", branchId = "205",
+        )
+        val second = first.copy(
+            obik = "7027", productId = "7027", articleNumber = "921861",
+        )
+        val verified = listOf(first, second)
+        val history = listOf(
+            AdvisorLocationHistoryMessage(
+                "ASSISTANT", "Two verified KWANT products", verified,
+            ),
+            AdvisorLocationHistoryMessage(
+                "USER", "Sprawdź stan obu gniazd w Zamościu",
+            ),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Który oddział?"),
+        )
+        val kwantBranches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+            ProviderBranch(BranchId("216"), "Tarnów"),
+        )
+        data class Case(
+            val input: String,
+            val modelId: String,
+            val expectedBoth: Set<String>,
+            val expectedHistory: List<String>,
+            val expectedStatus: String,
+            val expectedReason: String,
+            val expectedProductId: String?,
+            val expectedToolCalls: Int,
+        )
+        val cases = listOf(
+            Case(
+                "Sprawdź stan produktu 7027 w Tarnowie", "7027",
+                emptySet(), listOf("7027"),
+                "unavailable", "unverified_request_contract", "7027", 1,
+            ),
+            Case(
+                "Sprawdź stan produktu 7027 w Tarnowie", "7035",
+                emptySet(), listOf("7027"),
+                "rejected", "untrusted_product", null, 1,
+            ),
+            Case(
+                "Sprawdź stan produktu 9999 w Tarnowie", "7035",
+                emptySet(), listOf("7035", "7027"),
+                "rejected", "ambiguous_product", null, 1,
+            ),
+            // The current explicit "obu" remains valid; it must not
+            // collapse into silently selecting the model's single product.
+            Case(
+                "obu", "7035", setOf("7035", "7027"),
+                listOf("7035", "7027"),
+                "unavailable", "unverified_request_contract", null, 0,
+            ),
+            // Location-only follow-up may carry an uninterrupted USER "obu".
+            Case(
+                "a w Tarnowie?", "7035", setOf("7035", "7027"),
+                listOf("7035", "7027"),
+                "unavailable", "unverified_request_contract", null, 0,
+            ),
+        )
+        for (scenario in cases) {
+            // Real KWANT adapter is disabled before fetching any directory
+            // or HTTP. This verifies the unverified extended boundary too.
+            var httpCalls = 0
+            val adapter = KwantProductLocationsAdapter(
+                fetcher = LocationsHttpFetcher {
+                    httpCalls++
+                    error("KWANT extended HTTP must stay disabled")
+                },
+                directory = { error("No directory HTTP for disabled KWANT extended") },
+            )
+            val locationsTool = AdvisorLocationsTool(
+                locationsService = ProductLocationsService(listOf(adapter)),
+            )
+            val followed = resolveAdvisorLocationFollowUp(
+                input = scenario.input,
+                history = history,
+                historicalProducts = verified,
+                branches = kwantBranches,
+            )
+            assertEquals(scenario.input, scenario.expectedBoth, followed.bothProductIds)
+            assertEquals(
+                scenario.input, scenario.expectedHistory,
+                followed.historicalProducts.map { it.effectiveProductId },
+            )
+            var locationToolCalls = 0
+            var continuations = 0
+            val c = controller(
+                initial = AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.LocationToolRequest(
+                        responseId = "resp_kwant_both_selection",
+                        callId = "call_kwant_both_selection",
+                        arguments = AdvisorLocationArguments(
+                            "kwant-pl", scenario.modelId, listOf("Tarnów"),
+                        ),
+                    ),
+                ),
+                continueCall = { output ->
+                    continuations++
+                    val evidence = (output as AdvisorToolContinuation.Locations).evidence
+                    assertEquals(scenario.input, scenario.expectedStatus, evidence.status)
+                    assertEquals(scenario.input, scenario.expectedReason, evidence.reason)
+                    assertEquals(scenario.input, scenario.expectedProductId, evidence.productId)
+                    answer()
+                },
+                locationCall = { args, provider, selectedBranch, userText, current, past ->
+                    locationToolCalls++
+                    assertEquals(scenario.input, followed.authorizedText, userText)
+                    assertEquals(
+                        scenario.input, scenario.expectedHistory,
+                        past.map { it.effectiveProductId },
+                    )
+                    locationsTool.execute(
+                        args, provider, selectedBranch, userText, current, past,
+                    )
+                },
+                onProviderDiscovery = { error("find_products not involved") },
+            )
+            val result = c.runTurn(
+                input = scenario.input,
+                previousResponseId = "resp_prior",
+                conversationProviderId = "kwant-pl",
+                conversationStoreNumber = "205",
+                historicalVerifiedProducts = verified,
+                locationHistory = history,
+            ) {}
+            assertTrue(scenario.input, result is AdvisorUiState.Success)
+            assertEquals(scenario.input, 1, continuations)
+            assertEquals(scenario.input, scenario.expectedToolCalls, locationToolCalls)
+            assertEquals(scenario.input, 0, httpCalls)
         }
     }
 
