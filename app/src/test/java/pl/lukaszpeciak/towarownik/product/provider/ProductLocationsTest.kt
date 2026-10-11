@@ -325,7 +325,7 @@ class ProductLocationsTest {
     @Test fun `transport permits only exact trusted HTTPS product-bound JSON URLs`() {
         val good = listOf(
             "https://www.obi.pl/api/pdp/v1/stock/3496072?storeIds=075",
-            "https://services.kwant.net.pl/api/front/products/580/departments?extended=fixtureOnly",
+            "https://services.kwant.net.pl/api/front/products/580/departments?extended=1",
         )
         assertTrue(good.all { trustedLocationsEndpoint(it.toHttpUrl()) })
         val bad = listOf(
@@ -334,14 +334,18 @@ class ProductLocationsTest {
             "https://www.obi.pl/api/pdp/v1/stock/3496072/other?storeIds=075",
             "https://www.obi.pl/api/pdp/v1/stock/3496072?storeIds=075&other=1",
             "https://services.kwant.net.pl/api/front/products/580/departments",
+            "https://services.kwant.net.pl/api/front/products/580/departments?extended=fixtureOnly",
+            "https://services.kwant.net.pl/api/front/products/580/departments?extended=1&branch=205",
             "https://services.kwant.net.pl/api/front/products/580/current?extended=x",
         )
         assertTrue(bad.none { trustedLocationsEndpoint(it.toHttpUrl()) })
     }
 
     @Test fun `HTTP adapter rejects unexpected redirects content and oversized JSON`() = runBlocking {
-        val url = "https://www.obi.pl/api/pdp/v1/stock/3496072?storeIds=075".toHttpUrl()
-        for ((status, media, body) in listOf(
+        for (url in listOf(
+            "https://www.obi.pl/api/pdp/v1/stock/3496072?storeIds=075",
+            "https://services.kwant.net.pl/api/front/products/580/departments?extended=1",
+        ).map { it.toHttpUrl() }) for ((status, media, body) in listOf(
             Triple(302, "application/json", "[]"),
             Triple(200, "text/html", "[]"),
             Triple(200, "application/json", "x".repeat(65537)),
