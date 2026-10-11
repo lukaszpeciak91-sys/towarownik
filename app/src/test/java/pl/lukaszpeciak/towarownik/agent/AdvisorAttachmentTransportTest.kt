@@ -446,6 +446,7 @@ class AdvisorAttachmentTransportTest {
             assertEquals(
                 AdvisorProxyCallResult.Failure(
                     AdvisorProxyFailureKind.PROTOCOL,
+                    endpoint = "start",
                 ),
                 result,
             )
@@ -838,6 +839,7 @@ class AdvisorAttachmentTransportTest {
             assertEquals(
                 AdvisorProxyCallResult.Failure(
                     AdvisorProxyFailureKind.PROTOCOL,
+                    endpoint = "start",
                 ),
                 result,
             )

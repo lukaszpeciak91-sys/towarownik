@@ -735,7 +735,13 @@ class AdvisorControllerTest {
 
         assertEquals(0, continueCalls)
         assertEquals(
-            AdvisorUiState.Error(AdvisorError.PRODUCT_PROVIDER),
+            AdvisorUiState.Error(
+                AdvisorError.PRODUCT_PROVIDER,
+                diagnostic = AdvisorFailureDiagnostic(
+                    kind = AdvisorProxyFailureKind.SERVICE,
+                    failureClass = AdvisorFailureClass.LOCAL_PROVIDER_FAILURE,
+                ),
+            ),
             final,
         )
     }
@@ -1848,6 +1854,53 @@ class AdvisorControllerTest {
             "kind=NETWORK trace=$trace",
             final.diagnostic?.reportValue(),
         )
+    }
+
+    @Test
+    fun `failed start and message retain their own stage without cross turn contamination`() = runBlocking {
+        val controller = controller(
+            start = {
+                AdvisorProxyCallResult.Failure(
+                    kind = AdvisorProxyFailureKind.NETWORK,
+                    endpoint = "start",
+                    failureClass = AdvisorFailureClass.DNS,
+                )
+            },
+            message = { _, _ ->
+                AdvisorProxyCallResult.Failure(
+                    kind = AdvisorProxyFailureKind.NETWORK,
+                    endpoint = "message",
+                    failureClass = AdvisorFailureClass.TIMEOUT,
+                )
+            },
+        )
+        val first = controller.runTurn("first", null) { } as AdvisorUiState.Error
+        val second = controller.runTurn("second", "previous", onState = { }) as AdvisorUiState.Error
+        assertEquals("start", first.diagnostic?.endpoint)
+        assertEquals(AdvisorFailureClass.DNS, first.diagnostic?.failureClass)
+        assertEquals("message", second.diagnostic?.endpoint)
+        assertEquals(AdvisorFailureClass.TIMEOUT, second.diagnostic?.failureClass)
+        assertEquals(null, second.diagnostic?.traceId)
+    }
+
+    @Test
+    fun `failed continuation retains known trace and continuation stage`() = runBlocking {
+        val trace = "55555555-5555-4555-8555-555555555555"
+        val controller = controller(
+            start = { successTool("resp_tool", "call_1", "test", traceId = trace) },
+            continueCall = { _, _, _ ->
+                AdvisorProxyCallResult.Failure(
+                    kind = AdvisorProxyFailureKind.NETWORK,
+                    endpoint = "continue",
+                    failureClass = AdvisorFailureClass.NETWORK_IO,
+                )
+            },
+            tool = { verifiedResult(it.query) },
+        )
+        val failure = controller.runTurn("test", null) { } as AdvisorUiState.Error
+        assertEquals("continue", failure.diagnostic?.endpoint)
+        assertEquals(trace, failure.diagnostic?.traceId)
+        assertEquals(AdvisorFailureClass.NETWORK_IO, failure.diagnostic?.failureClass)
     }
 
     private fun controller(

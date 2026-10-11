@@ -1,5 +1,9 @@
 # Progress
 
+## 2026-10-11 — R1 bounded Android Advisor failure diagnostics (PR #113)
+
+Android-only diagnostic extension: recognize DNS, TLS, timeout and generic IO failures; preserve HTTP stage and 502 status/allowlisted error/UUID trace; report malformed successful envelopes as response parsing failures and mark unexpected local product-tool failure separately. Current failed-turn state and report formatter carry only bounded enum/endpoint/status/trace fields. Cancellation still cancels OkHttp calls and is not reported as a retryable failure. Existing 10/20/20/30 second OkHttp limits, no-retry behavior, protocols v1–v5, attachments, provider authorization, Worker and Room stay unchanged. Deterministic Android classification and MockWebServer regressions added; independent audit required before merge.
+
 ## 2026-10-11 — PR #112 canonical 21-branch locative corrections
 
 Validated the current public KWANT directory's 21 cities and reviewed research #111. Expanded shared canonical locative aliases and `a we` follow-ups, corrected Tarnów 204 vs Białystok 216 in synthetic Android tests and in the device smoke guide, and added bounded resolver + Controller-to-real-KWANT transport regressions including two-city and unknown/conflicting scopes. No static production branch IDs, OBI regression, reliability retries, persistence or Worker schema edits.

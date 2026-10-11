@@ -311,12 +311,24 @@ internal enum class AdvisorProxyFailureKind {
     PROTOCOL,
 }
 
+internal enum class AdvisorFailureClass {
+    DNS, TLS, TIMEOUT, NETWORK_IO, HTTP_ERROR, RESPONSE_PARSE, LOCAL_PROVIDER_FAILURE
+}
+
+internal fun advisorFailureClass(exception: java.io.IOException): AdvisorFailureClass = when (exception) {
+    is java.net.UnknownHostException -> AdvisorFailureClass.DNS
+    is javax.net.ssl.SSLException -> AdvisorFailureClass.TLS
+    is java.net.SocketTimeoutException -> AdvisorFailureClass.TIMEOUT
+    else -> AdvisorFailureClass.NETWORK_IO
+}
+
 internal data class AdvisorFailureDiagnostic(
     val kind: AdvisorProxyFailureKind,
     val httpStatus: Int? = null,
     val proxyErrorCode: String? = null,
     val endpoint: String? = null,
     val traceId: String? = null,
+    val failureClass: AdvisorFailureClass? = null,
 ) {
     fun userCode(): String? =
         listOfNotNull(
@@ -332,6 +344,7 @@ internal data class AdvisorFailureDiagnostic(
             proxyErrorCode?.let { add("proxy=$it") }
             endpoint?.let { add("endpoint=$it") }
             advisorTraceIdOrNull(traceId)?.let { add("trace=$it") }
+            failureClass?.let { add("failureClass=${it.name}") }
         }.joinToString(" ")
 }
 
@@ -347,13 +360,15 @@ internal sealed interface AdvisorProxyCallResult {
         val proxyErrorCode: String? = null,
         val endpoint: String? = null,
         val traceId: String? = null,
+        val failureClass: AdvisorFailureClass? = null,
     ) : AdvisorProxyCallResult {
         fun diagnosticOrNull(): AdvisorFailureDiagnostic? =
             if (
                 httpStatus == null &&
                 proxyErrorCode == null &&
                 endpoint == null &&
-                traceId == null
+                traceId == null &&
+                failureClass == null
             ) {
                 null
             } else {
@@ -363,6 +378,7 @@ internal sealed interface AdvisorProxyCallResult {
                     proxyErrorCode = proxyErrorCode,
                     endpoint = endpoint,
                     traceId = advisorTraceIdOrNull(traceId),
+                    failureClass = failureClass,
                 )
             }
     }

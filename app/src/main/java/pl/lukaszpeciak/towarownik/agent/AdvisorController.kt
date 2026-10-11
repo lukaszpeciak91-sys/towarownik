@@ -633,6 +633,11 @@ internal class AdvisorController(
                                     AdvisorToolExecutionResult.Failure ->
                                         return AdvisorUiState.Error(
                                             AdvisorError.PRODUCT_PROVIDER,
+                                            diagnostic = AdvisorFailureDiagnostic(
+                                                kind = AdvisorProxyFailureKind.SERVICE,
+                                                failureClass = AdvisorFailureClass.LOCAL_PROVIDER_FAILURE,
+                                                traceId = turnTraceId,
+                                            ),
                                         ).also(onState)
                                 }
                             }
