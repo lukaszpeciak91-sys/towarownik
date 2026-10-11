@@ -2336,6 +2336,53 @@ test("tool schema is generic and final schema is store-aware", () => {
   );
 });
 
+const noncompletedResponseCases = [
+  { name: "incomplete output budget", status: "incomplete",
+    details: { reason: "max_output_tokens" }, expected: "upstream_incomplete_output_budget" },
+  { name: "incomplete other", status: "incomplete",
+    details: { reason: "content_filter" }, expected: "upstream_incomplete_other" },
+  { name: "failed", status: "failed", expected: "upstream_response_not_completed" },
+  { name: "cancelled", status: "cancelled", expected: "upstream_response_not_completed" },
+  { name: "in_progress", status: "in_progress", expected: "upstream_response_not_completed" },
+  { name: "queued", status: "queued", expected: "upstream_response_not_completed" },
+  { name: "unknown", status: "synthetic_unknown", expected: "upstream_invalid_response_status" },
+  { name: "malformed", status: { invalid: true }, expected: "upstream_invalid_response_status" },
+  { name: "missing", status: undefined, expected: "upstream_invalid_response_status" },
+];
+
+for (const scenario of noncompletedResponseCases) {
+  for (const kind of ["answer", "tool"]) {
+    test(`noncompleted ${scenario.name} ${kind} fails closed with safe attribution`, async () => {
+      const payload = kind === "answer"
+        ? answerPayload("USER_CANARY_PRIVATE_TEXT")
+        : toolPayload();
+      if (scenario.status === undefined) delete payload.status;
+      else payload.status = scenario.status;
+      if (scenario.details) payload.incomplete_details = scenario.details;
+      const fake = fakeOpenAI(payload);
+      const worker = createWorker(fake.fetch);
+      const { result: response, lines } = await captureWarnLogs(() =>
+        worker.fetch(
+          jsonRequest("/v1/agent/start", { message: "SECRET_USER_TEXT" }),
+          configuredEnv,
+        ),
+      );
+      assert.equal(response.status, 502);
+      assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
+      assert.match(response.headers.get("X-Taksula-Trace-Id"), /^[0-9a-f-]{36}$/);
+      const log = lines.map((line) => JSON.parse(line));
+      assert.equal(log.length, 1);
+      assert.equal(log[0].upstreamFailureCategory, scenario.expected);
+      assert.equal(log[0].upstreamStatus, 200);
+      assert.equal(log[0].outcome, "upstream_failure");
+      assert.ok(!lines.join("").includes("SECRET_USER_TEXT"));
+      assert.ok(!lines.join("").includes("USER_CANARY_PRIVATE_TEXT"));
+      assert.ok(!lines.join("").includes("max_output_tokens"));
+      assert.ok(!lines.join("").includes("content_filter"));
+    });
+  }
+}
+
 const upstreamFailureCases = [
   {
     name: "network exception",
