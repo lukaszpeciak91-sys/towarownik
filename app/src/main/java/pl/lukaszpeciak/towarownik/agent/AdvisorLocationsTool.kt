@@ -682,15 +682,36 @@ internal class AdvisorLocationsTool(
 
 /** Only deterministic canonical name inflections: no fuzzy city guesses. */
 internal fun advisorCityLocative(canonical: String): String? = when (canonical) {
-    "nowy sacz" -> "nowym saczu"
-    "miejsce piastowe" -> "miejscu piastowym"
-    "zamosc" -> "zamosciu"
+    // Only exact normalized canonical city names from the verified public
+    // directory. IDs are NEVER embedded here: aliases inherit the dynamic
+    // runtime ProviderBranch.branchId of the matching canonical name.
+    "bialystok" -> "bialymstoku"
+    "bochnia" -> "bochni"
+    "brzesko" -> "brzesku"
+    "bydgoszcz" -> "bydgoszczy"
+    "chelm" -> "chelmie"
+    "dabrowa tarnowska" -> "dabrowie tarnowskiej"
+    "kielce" -> "kielcach"
+    "krakow" -> "krakowie"
+    "krosno" -> "krosnie"
+    "lublin" -> "lublinie"
     "lodz" -> "lodzi"
+    "mielec" -> "mielcu"
+    "nowy sacz" -> "nowym saczu"
+    "ostroleka" -> "ostrolece"
+    "piaseczno" -> "piasecznie"
+    "rzeszow" -> "rzeszowie"
+    "suwalki" -> "suwalkach"
+    "tarnow" -> "tarnowie"
+    "warszawa" -> "warszawie"
+    "wloclawek" -> "wloclawku"
+    "zamosc" -> "zamosciu"
+    // Existing non-KWANT/OBI aliases stay compatible.
+    "miejsce piastowe" -> "miejscu piastowym"
     "wroclaw" -> "wroclawiu"
     "gdansk" -> "gdansku"
     "poznan" -> "poznaniu"
     "torun" -> "toruniu"
-    "lublin" -> "lublinie"
     "dabrowa gornicza" -> "dabrowie gorniczej"
     "gorzow wielkopolski" -> "gorzowie wielkopolskim"
     else -> when {
