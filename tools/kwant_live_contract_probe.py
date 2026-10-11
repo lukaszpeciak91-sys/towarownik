@@ -3905,6 +3905,269 @@ def summarize_search_ranking_evidence(
     }
 
 
+# Exact public endpoint evidence only: never sanitize/reveal unrelated query
+# values as "extended". Opaque values are rejected rather than persisted.
+VERIFIED_EXTENDED_ENUM = frozenset({
+    "0", "1", "true", "false", "yes", "no", "all", "full", "extended",
+})
+EXTENDED_DEPARTMENTS_PATH_RE = re.compile(
+    r"^/api/front/products/([0-9]{1,12})/departments$"
+)
+MAX_EXACT_DEPARTMENTS_BYTES = 512 * 1024
+
+
+def observed_exact_extended_request(
+    raw_url: str, method: str, product_id: str,
+) -> dict[str, Any] | None:
+    """Only an actual frontend GET to the product-bound endpoint can authorize replay."""
+    try:
+        parsed = urlsplit(raw_url)
+        path = f"/api/front/products/{product_id}/departments"
+        if (
+            method.upper() != "GET" or parsed.scheme != "https"
+            or parsed.hostname != KWANT_SERVICES_HOST
+            or parsed.port not in (None, 443)
+            or parsed.username is not None or parsed.password is not None
+            or parsed.path != path or parsed.fragment
+        ):
+            return None
+        pairs = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except (ValueError, TypeError):
+        return None
+    # Never copy other query names or values to the artifact. Never replay a
+    # request with additional parameters, even if they appear innocuous.
+    safe = len(pairs) == 1 and pairs[0][0] == "extended"
+    value = pairs[0][1] if safe else None
+    allowed = value in VERIFIED_EXTENDED_ENUM
+    return {
+        "observed": True,
+        "method": "GET",
+        "host": KWANT_SERVICES_HOST,
+        "path": path,
+        "queryShape": "SINGLE_EXTENDED" if safe else "UNSAFE_OR_EXTRA_FIELDS",
+        "extendedValue": value if allowed else REDACTED,
+        "safeForReplay": bool(safe and allowed),
+    }
+
+
+def safe_exact_departments_response(
+    payload: Any, product_id: str, directory: dict[str, str],
+) -> dict[str, Any]:
+    """Public branch stock only; no arbitrary response fields or raw bodies."""
+    result: dict[str, Any] = {
+        "requestProductId": product_id,
+        "rootType": type(payload).__name__,
+        "rootFields": [],
+        "rootIdentity": "PATH_BOUND_ONLY",
+        "rowCount": None,
+        "canonicalIdCount": 0,
+        "unknownDirectoryIdCount": 0,
+        "duplicateIdCount": 0,
+        "numericCount": 0,
+        "zeroCount": 0,
+        "nullCount": 0,
+        "missingCount": 0,
+        "invalidCount": 0,
+        "coverage": UNKNOWN,
+        "unitFieldState": "MISSING",
+        "unit": None,
+        "totalStockFieldState": "MISSING",
+        "selectedBranch205Stock": None,
+        "canonicalRows": [],
+    }
+    if not isinstance(payload, dict):
+        return result
+    result["rootFields"] = sorted(set(payload).intersection({
+        "list", "unit", "total_stock", "product_id",
+    }))
+    if "product_id" in payload:
+        raw_id = payload["product_id"]
+        result["rootIdentity"] = (
+            "MATCH" if type(raw_id) in (int, str)
+            and str(raw_id) == product_id else "MISMATCH"
+        )
+    if "unit" in payload:
+        unit = payload["unit"]
+        if isinstance(unit, str):
+            result["unitFieldState"] = "EXPLICIT_STRING"
+            if len(unit) <= 24 and re.fullmatch(r"[A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż0-9²³. /_-]{1,24}", unit):
+                result["unit"] = unit
+            else:
+                result["unit"] = REDACTED
+        elif unit is None:
+            result["unitFieldState"] = "NULL"
+        else:
+            result["unitFieldState"] = "OTHER_TYPE"
+    if "total_stock" in payload:
+        result["totalStockFieldState"] = (
+            "NONNEGATIVE_INTEGER" if type(payload["total_stock"]) is int
+            and payload["total_stock"] >= 0 else
+            "NULL" if payload["total_stock"] is None else "OTHER_TYPE"
+        )
+    rows = payload.get("list")
+    if not isinstance(rows, list) or len(rows) > 100:
+        return result
+    result["rowCount"] = len(rows)
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            result["invalidCount"] += 1
+            continue
+        raw_id = row.get("department_id")
+        branch_id = (
+            str(raw_id) if type(raw_id) is int and 0 <= raw_id <= 99999999
+            else None
+        )
+        if branch_id is None:
+            result["invalidCount"] += 1
+            continue
+        if branch_id in seen:
+            result["duplicateIdCount"] += 1
+            continue
+        seen.add(branch_id)
+        if branch_id not in directory:
+            result["unknownDirectoryIdCount"] += 1
+            continue
+        result["canonicalIdCount"] += 1
+        if "stock" not in row:
+            result["missingCount"] += 1
+            state, stock = "MISSING", None
+        elif row["stock"] is None:
+            result["nullCount"] += 1
+            state, stock = "NULL", None
+        elif type(row["stock"]) is int and row["stock"] >= 0:
+            stock = row["stock"]
+            result["numericCount"] += 1
+            state = "ZERO" if stock == 0 else "POSITIVE"
+            if stock == 0:
+                result["zeroCount"] += 1
+        else:
+            result["invalidCount"] += 1
+            state, stock = "INVALID", None
+        result["canonicalRows"].append({
+            "departmentId": branch_id,
+            "stockState": state,
+            "stock": stock,
+        })
+        if branch_id == "205" and state in {"ZERO", "POSITIVE"}:
+            result["selectedBranch205Stock"] = stock
+    if result["rootIdentity"] == "MISMATCH":
+        result["coverage"] = "IDENTITY_CONFLICT"
+    elif not directory:
+        result["coverage"] = "NO_DIRECTORY"
+    elif (
+        result["canonicalIdCount"] == len(directory)
+        and result["rowCount"] == len(directory)
+        and result["unknownDirectoryIdCount"] == 0
+        and result["duplicateIdCount"] == 0
+        and result["invalidCount"] == 0
+        and result["nullCount"] == 0
+        and result["missingCount"] == 0
+    ):
+        result["coverage"] = "ALL_DIRECTORY_BRANCHES"
+    else:
+        result["coverage"] = "PARTIAL_OR_UNKNOWN"
+    return result
+
+
+class NoPublicRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req: Any, fp: Any, code: int,
+                         msg: str, headers: Any, newurl: str) -> None:
+        return None
+
+
+def isolated_public_json_get(path: str, query: dict[str, str]) -> tuple[int | None, Any]:
+    """New stdlib opener: no browser context, cookie jar, or auth headers."""
+    from urllib.error import HTTPError, URLError
+    from urllib.parse import urlencode
+
+    url = "https://" + KWANT_SERVICES_HOST + path + "?" + urlencode(query)
+    req = Request(url, headers={"Accept": "application/json"}, method="GET")
+    opener = build_opener(NoPublicRedirects())
+    try:
+        with opener.open(req, timeout=25) as response:
+            status = response.status
+            body = response.read(MAX_EXACT_DEPARTMENTS_BYTES + 1)
+            if len(body) > MAX_EXACT_DEPARTMENTS_BYTES:
+                return status, None
+            if "json" not in response.headers.get("content-type", "").lower():
+                return status, None
+            return status, json.loads(body)
+    except HTTPError as failure:
+        # No error bodies, URLs or response headers are retained.
+        return failure.code, None
+    except (URLError, ValueError, OSError, json.JSONDecodeError):
+        return None, None
+
+
+def cookie_free_departments_replay(
+    observed: dict[str, Any] | None,
+    product_id: str,
+    directory: dict[str, str],
+) -> dict[str, Any]:
+    result = {"attempted": False, "status": None, "response": None}
+    if not observed or not observed.get("safeForReplay"):
+        return result
+    path = f"/api/front/products/{product_id}/departments"
+    if observed.get("path") != path or observed.get("host") != KWANT_SERVICES_HOST:
+        return result
+    value = observed.get("extendedValue")
+    if value not in VERIFIED_EXTENDED_ENUM:
+        return result
+    result["attempted"] = True
+    status, payload = isolated_public_json_get(path, {"extended": value})
+    result["status"] = status
+    if status == 200 and payload is not None:
+        result["response"] = safe_exact_departments_response(
+            payload, product_id, directory,
+        )
+    return result
+
+
+def cookie_free_selected_current(
+    product_id: str, selected_id: str,
+) -> dict[str, Any]:
+    result = {
+        "attempted": False, "status": None, "productIdentity": UNKNOWN,
+        "branchIdentity": UNKNOWN, "selectedBranchStock": None,
+        "unit": None, "centralStock": None,
+    }
+    if not re.fullmatch(r"[0-9]{1,12}", product_id) or not re.fullmatch(
+        r"[0-9]{1,8}", selected_id
+    ):
+        return result
+    # /current?depstock is independently verified by prior KWANT research.
+    result["attempted"] = True
+    status, payload = isolated_public_json_get(
+        f"/api/front/products/{product_id}/current", {"depstock": selected_id},
+    )
+    result["status"] = status
+    if status != 200 or not isinstance(payload, dict):
+        return result
+    root_id = payload.get("product_id")
+    result["productIdentity"] = (
+        "MATCH" if type(root_id) in (str, int) and str(root_id) == product_id
+        else "MISMATCH"
+    )
+    department = payload.get("department_stock")
+    if not isinstance(department, dict):
+        return result
+    dep_id = department.get("department_id")
+    result["branchIdentity"] = (
+        "MATCH" if type(dep_id) in (int, str) and str(dep_id) == selected_id
+        else "MISMATCH"
+    )
+    stock = department.get("stock")
+    if (
+        result["productIdentity"] == "MATCH"
+        and result["branchIdentity"] == "MATCH"
+        and type(stock) is int and stock >= 0
+    ):
+        result["selectedBranchStock"] = stock
+    # Do not infer central stock from /current or its department stock.
+    return result
+
+
 class ObservedLocationsResponses:
     """Conservative, bounded observer for *real* frontend JSON responses."""
 
