@@ -1,0 +1,77 @@
+{
+  "researchDate": "2026-10-11",
+  "sourceRunId": "38122949960",
+  "sourceCommit": "d9089b3f6d82be7c6b2a730a6599c2cedf9b7396",
+  "note": "Bounded sanitized live observations only; quantities are time-sensitive and must never be used as production stock or fallback values.",
+  "request": {
+    "method": "GET",
+    "host": "services.kwant.net.pl",
+    "pathTemplate": "/api/front/products/{productId}/departments",
+    "exactObservedQuery": {
+      "extended": "1"
+    },
+    "authentication": "NONE_FOR_ISOLATED_PUBLIC_REPLAY"
+  },
+  "response": {
+    "rootFields": [
+      "list",
+      "total_stock",
+      "unit"
+    ],
+    "rowFields": [
+      "department_id",
+      "stock"
+    ],
+    "rootProductIdAbsent": true,
+    "rootUnit": "szt.",
+    "totalStockScope": "UNVERIFIED_AGGREGATE_NOT_SELECTED_BRANCH_OR_CENTRAL"
+  },
+  "observedProducts": [
+    {
+      "productId": "580",
+      "browserHttp": 200,
+      "anonymousHttp": 200,
+      "canonicalDirectoryCount": 21,
+      "responseRowCount": 21,
+      "numericStockCount": 21,
+      "explicitZeroCount": 3,
+      "nullCount": 0,
+      "missingCount": 0,
+      "invalidCount": 0,
+      "unknownDepartmentCount": 0,
+      "duplicateDepartmentCount": 0,
+      "selectedBranchId": "205",
+      "selectedStock": 424,
+      "currentHttp": 200,
+      "currentProductIdMatched": true,
+      "currentDepartmentIdMatched": true,
+      "currentStock": 424,
+      "separateExactProductPageStock": 9375,
+      "unit": "szt.",
+      "cookieFreeRowsAndStockEqual": true
+    },
+    {
+      "productId": "7027",
+      "browserHttp": 200,
+      "anonymousHttp": 200,
+      "canonicalDirectoryCount": 21,
+      "responseRowCount": 21,
+      "numericStockCount": 21,
+      "explicitZeroCount": 8,
+      "nullCount": 0,
+      "missingCount": 0,
+      "invalidCount": 0,
+      "unknownDepartmentCount": 0,
+      "duplicateDepartmentCount": 0,
+      "selectedBranchId": "205",
+      "selectedStock": 13,
+      "currentHttp": 200,
+      "currentProductIdMatched": true,
+      "currentDepartmentIdMatched": true,
+      "currentStock": 13,
+      "separateExactProductPageStock": 45,
+      "unit": "szt.",
+      "cookieFreeRowsAndStockEqual": true
+    }
+  ]
+}
