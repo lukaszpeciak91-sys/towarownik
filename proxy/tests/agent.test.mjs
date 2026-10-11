@@ -540,6 +540,7 @@ test("structured OpenAI answer is normalized and raw response is not forwarded",
   });
   const fake = fakeOpenAI({
     id: "resp_direct",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -1003,6 +1004,7 @@ test("normalized usage is bounded and exposes no raw OpenAI internals", async ()
 test("malformed structured final output fails closed", async () => {
   const fake = fakeOpenAI({
     id: "resp_bad_structured",
+    status: "completed",
     output_text: JSON.stringify({ text: "missing product selection" }),
     output: [],
   });
@@ -1301,6 +1303,7 @@ test("citation normalization deduplicates limits and filters unsafe URLs", async
   ];
   const fake = fakeOpenAI({
     id: "resp_citations",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -1376,6 +1379,7 @@ test("unsupported internal citation and entity tokens are removed without breaki
   const rawEnd = rawStart + citedFragment.length;
   const fake = fakeOpenAI({
     id: "resp_internal_markup",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -1508,6 +1512,7 @@ test("citation offsets map safely through structured JSON string escapes", async
   const rawEnd = rawStart + rawFragment.length;
   const fake = fakeOpenAI({
     id: "resp_citation_escape",
+    status: "completed",
     output_text: structured,
     output: [
       {
@@ -2377,6 +2382,7 @@ const upstreamFailureCases = [
     expectedStatus: 200,
     fake: () => fakeOpenAI({
       id: "resp_bad_envelope",
+    status: "completed",
       output: "UPSTREAM_BODY_SENTINEL_BAD_ENVELOPE",
     }),
   },
@@ -2397,6 +2403,7 @@ const upstreamFailureCases = [
     expectedStatus: 200,
     fake: () => fakeOpenAI({
       id: "resp_bad_final",
+    status: "completed",
       output: [
         {
           type: "message",
