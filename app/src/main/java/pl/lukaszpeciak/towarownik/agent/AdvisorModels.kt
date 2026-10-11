@@ -318,7 +318,7 @@ internal enum class AdvisorFailureClass {
 internal fun advisorFailureClass(exception: java.io.IOException): AdvisorFailureClass = when (exception) {
     is java.net.UnknownHostException -> AdvisorFailureClass.DNS
     is javax.net.ssl.SSLException -> AdvisorFailureClass.TLS
-    is java.net.SocketTimeoutException, is java.io.InterruptedIOException -> AdvisorFailureClass.TIMEOUT
+    is java.net.SocketTimeoutException -> AdvisorFailureClass.TIMEOUT
     else -> AdvisorFailureClass.NETWORK_IO
 }
 
