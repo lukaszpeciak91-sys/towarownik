@@ -1751,6 +1751,45 @@ test("valid continue sends previous_response_id and function_call_output", async
   assert.deepEqual(JSON.parse(capture.body.input[0].output), validContinueBody().result);
 });
 
+test("failed CONTINUE retains supplied trace and returns only safe 502", async () => {
+  const trace = "44444444-4444-4444-8444-444444444444";
+  const fake = fakeOpenAI(answerPayload(), { throwNetwork: true });
+  const worker = createWorker(fake.fetch);
+  const { result: response, lines } = await captureWarnLogs(() =>
+    worker.fetch(
+      jsonRequest("/v1/agent/continue", validContinueBody(), {
+        headers: { "X-Taksula-Trace-Id": trace },
+      }),
+      configuredEnv,
+    ),
+  );
+  assert.equal(response.status, 502);
+  assert.equal(response.headers.get("X-Taksula-Trace-Id"), trace);
+  assert.deepEqual(await responseJson(response), { error: "upstream_failure" });
+  const diagnostic = JSON.parse(lines[0]);
+  assert.equal(diagnostic.endpointStage, "CONTINUE");
+  assert.equal(diagnostic.traceId, trace);
+  assert.equal(diagnostic.upstreamFailureCategory, "upstream_network");
+  assert.equal(diagnostic.upstreamStatus, null);
+});
+
+test("repeated CONTINUE invokes upstream twice without assuming idempotency", async () => {
+  const fake = fakeOpenAI(answerPayload());
+  const worker = createWorker(fake.fetch);
+  const trace = "55555555-5555-4555-8555-555555555555";
+  const request = () => jsonRequest("/v1/agent/continue", validContinueBody(), {
+    headers: { "X-Taksula-Trace-Id": trace },
+  });
+  const first = await worker.fetch(request(), configuredEnv);
+  const second = await worker.fetch(request(), configuredEnv);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(fake.captures.length, 2);
+  assert.deepEqual(fake.captures[0].body, fake.captures[1].body);
+  assert.equal(first.headers.get("X-Taksula-Trace-Id"), trace);
+  assert.equal(second.headers.get("X-Taksula-Trace-Id"), trace);
+});
+
 test("tool assisted structured answer exposes selected product refs only", async () => {
   const fake = fakeOpenAI(
     answerPayload("Use first and second.", ["1234567", "7654321"]),
