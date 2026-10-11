@@ -1,5 +1,10 @@
 # Architecture
 
+## PR #112 final audit — canonical KWANT Polish locatives (2026-10-11)
+
+The shared `advisorCityLocative` now recognizes deterministic locatives for all 21 canonical cities listed in KWANT research #111 (including Białymstoku, Bochni, Piasecznie, Mielcu, Włocławku, Suwałkach). Both KWANT explicit location authorization and bounded `AdvisorLocationFollowUps` resolve aliases ONLY against the current verified provider directory, deriving branch IDs from its `ProviderBranch` records rather than any static alias-to-ID lookup. The bounded follow-up syntax now supports `a we Włocławku?` alongside `a w Białymstoku?`; unrelated USER messages still sever permission. Public directory pages confirm Białystok 216 and Tarnów 204, correcting earlier incorrect synthetic fixtures. Tests cover every canonical locative, canonical numeric-ID routing, multi-city complete/fail-closed scope, and Controller → real adapter checks. No HTTP contract, Worker wire schema or provider search/persistence changes.
+
+
 ## PR #112 audit: Worker-valid unavailable evidence and complete KWANT location chains (2026-10-11)
 
 Unavailable KWANT location outcomes now preserve a complete canonical `locations` row with `stock=null` for every `checkedIds`/ `missingIds` entry. If the canonical directory itself is unavailable, use empty checked/missing/location collections and `coverage=unknown`, never fabricated names or zero stock. The existing strict Worker `validateLocationToolResult` remains unchanged; real Android `continueTurn` JSON serialization and Worker validation have corresponding regressions. Error status retains its precise reason without verified timestamp or central stock.
