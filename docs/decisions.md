@@ -2,6 +2,8 @@
 
 ## 2026-10-11 — KWANT production departments, least-authority scope and two-product limit
 
+The optional location guidance update in `proxy/src/config.ts` describes the verified KWANT endpoint and explicit `multi_product_tool_contract` limitation. No Worker schema or normal `find_products` prompt is changed; run Proxy typecheck and tests in addition to Android/Python.
+
 The merged live research #111 observed literal `extended=1` for 580/7027 with no session. Permit one product-bound public read and bound/validate exact canonical branch identities. Distinguish root `total_stock` from independently verified central product stock; permit only validated explicit root unit and suppress conflicted unit. The USER explicitly scopes product and location, and arbitrary model `locations[]` cannot expand that scope; unscoped inventory lookup defaults to the working branch, not the whole network. For historical `obu` retain a deterministic, correctly typed limitation (`multi_product_tool_contract`), not the now-false `unverified_request_contract`: one-product Worker location-result protocol cannot represent two complete product results, so no partial single-product read is allowed. Keep Worker schema, OBI, standard KWANT search, WorkingProfile, persistence and three-tool budget unchanged. Do not add retries.
 
 
