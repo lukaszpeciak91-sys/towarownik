@@ -72,6 +72,7 @@ export interface VerifiedProduct {
   shortDescription: string | null;
   technicalFacts: TechnicalFact[];
   stock: number | null;
+  stockUnit?: string | null;
   price: number | null;
 }
 
@@ -83,6 +84,7 @@ export interface ProviderVerifiedProduct {
   shortDescription: string | null;
   technicalFacts: TechnicalFact[];
   stock: number | null;
+  stockUnit?: string | null;
   centralStock: number | null;
   price: number | null;
   priceScope: "branch" | "online" | null;
