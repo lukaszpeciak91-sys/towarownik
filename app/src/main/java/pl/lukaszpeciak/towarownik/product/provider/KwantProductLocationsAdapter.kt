@@ -67,7 +67,7 @@ internal class KwantProductLocationsAdapter(
             is LocationsHttpResult.Failure ->
                 ProductLocationsResult.Unavailable(
                     response.failure,
-                    coverage = unknownCoverage(branches.keys.toList()),
+                    coverage = unknownCoverage(if (requested.isEmpty()) branches.keys.toList() else requested),
                 )
             is LocationsHttpResult.Success -> {
                 val parsed = parseKwantDepartmentResponse(
@@ -122,9 +122,8 @@ internal class KwantProductLocationsAdapter(
     )
 
     private companion object {
-        val PRODUCT_ID = Regex("""[0-9]+""")
+        val PRODUCT_ID = Regex("""[0-9]{1,12}""")
         val DEPARTMENT_ID = Regex("""[0-9]+""")
-        // Safety of URL encoding only. NOT a claim about the real query value.
 
     }
 }
@@ -156,7 +155,7 @@ internal fun parseKwantDepartmentResponse(
         val raw = unitValue as? JsonPrimitive ?: return null
         if (!raw.isString) return null
         raw.content.trim().takeIf {
-            it.matches(Regex("""(?:szt\\.|m|m²|m³|kg|l|opak\\.)"""))
+            it.matches(Regex("""(?:szt\.|m|m²|m³|kg|l|opak\.)"""))
         }
     }
     val seen = mutableSetOf<BranchId>()
