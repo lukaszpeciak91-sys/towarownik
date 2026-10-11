@@ -251,7 +251,7 @@ class AdvisorLocationsControllerTest {
             continueCall = { output ->
                 val e = (output as AdvisorToolContinuation.Locations).evidence
                 assertEquals("unavailable", e.status)
-                assertEquals("unverified_request_contract", e.reason)
+                assertEquals("multi_product_tool_contract", e.reason)
                 assertTrue(e.productId == null)
                 answer()
             },
@@ -753,6 +753,13 @@ class AdvisorLocationsControllerTest {
             }
             val realLocations = AdvisorLocationsTool(
                 locationsService = ProductLocationsService(listOf(adapter)),
+                kwantBranches = {
+                    ProviderBranchResult.Available(listOf(
+                        ProviderBranch(BranchId("205"), "Nowy Sącz"),
+                        ProviderBranch(BranchId("128"), "Zamość"),
+                        ProviderBranch(BranchId("216"), "Tarnów"),
+                    ))
+                },
             )
             val proxyLocation = AdvisorProxyCallResult.Success(
                 AdvisorProxyResult.LocationToolRequest(
@@ -908,7 +915,7 @@ class AdvisorLocationsControllerTest {
             Case(
                 "Sprawdź stan produktu 7027 w Tarnowie", "7027",
                 emptySet(), listOf("7027"),
-                "unavailable", "unverified_request_contract", "7027", 1,
+                "unavailable", "transport", "7027", 1,
             ),
             Case(
                 "Sprawdź stan produktu 7027 w Tarnowie", "7035",
@@ -925,7 +932,7 @@ class AdvisorLocationsControllerTest {
             Case(
                 "obu", "7035", setOf("7035", "7027"),
                 listOf("7035", "7027"),
-                "unavailable", "unverified_request_contract", null, 0,
+                "unavailable", "multi_product_tool_contract", null, 0,
             ),
             // Location-only follow-up may carry an uninterrupted USER "obu".
             Case(
@@ -941,12 +948,15 @@ class AdvisorLocationsControllerTest {
             val adapter = KwantProductLocationsAdapter(
                 fetcher = LocationsHttpFetcher {
                     httpCalls++
-                    error("KWANT extended HTTP must stay disabled")
+                    pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Failure(
+                        LocationFailure.TRANSPORT,
+                    )
                 },
-                directory = { error("No directory HTTP for disabled KWANT extended") },
+                directory = { ProviderBranchResult.Available(kwantBranches) },
             )
             val locationsTool = AdvisorLocationsTool(
                 locationsService = ProductLocationsService(listOf(adapter)),
+                kwantBranches = { ProviderBranchResult.Available(kwantBranches) },
             )
             val followed = resolveAdvisorLocationFollowUp(
                 input = scenario.input,
@@ -1003,7 +1013,8 @@ class AdvisorLocationsControllerTest {
             assertTrue(scenario.input, result is AdvisorUiState.Success)
             assertEquals(scenario.input, 1, continuations)
             assertEquals(scenario.input, scenario.expectedToolCalls, locationToolCalls)
-            assertEquals(scenario.input, 0, httpCalls)
+            assertEquals(scenario.input, if (scenario.expectedToolCalls == 0) 0 else
+                if (scenario.expectedReason == "transport") 1 else 0, httpCalls)
         }
     }
 
