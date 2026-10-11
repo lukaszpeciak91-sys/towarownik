@@ -10,6 +10,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.HttpUrl
+import okhttp3.Request
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -501,6 +504,59 @@ class ProductLocationsTest {
             assertEquals(failure, result.failure)
             assertEquals(listOf(BranchId("205")), result.coverage!!.requestedIds)
         }
+    }
+
+    @Test fun kwantTwoExactProductsUseOnePublicRequestEachWithMockWebServer() = runBlocking {
+        MockWebServer().use { server ->
+            for (product in listOf("580", "7027")) {
+                server.enqueue(MockResponse().setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        """{"list":[{"department_id":205,"stock":2},""" +
+                            """{"department_id":206,"stock":0}],"unit":"m"}""",
+                    ))
+                var remoteCalls = 0
+                val adapter = KwantProductLocationsAdapter(
+                    directory = { directory },
+                    fetcher = LocationsHttpFetcher { exact ->
+                        remoteCalls++
+                        assertEquals(
+                            "/api/front/products/$product/departments",
+                            exact.encodedPath,
+                        )
+                        assertEquals("1", exact.queryParameter("extended"))
+                        // The MockWebServer contains the synthetic, read-only JSON
+                        // body; the adapter can only build the trusted public URL.
+                        val localRequest = Request.Builder().url(server.url("/")).get().build()
+                        OkHttpClient().newCall(localRequest).execute().use { response ->
+                            LocationsHttpResult.Success(response.body!!.string())
+                        }
+                    },
+                )
+                val result = adapter.read(
+                    ProductRef(KWANT_PROVIDER_ID, product),
+                    listOf(BranchId("205"), BranchId("206")),
+                ) as ProductLocationsResult.Available
+                assertEquals(1, remoteCalls)
+                assertEquals(listOf(2, 0), result.locations.map { it.stock })
+                assertEquals("m", result.stockUnit)
+                assertEquals(LocationCoverageKind.REQUESTED_SUBSET, result.coverage.kind)
+            }
+            assertEquals(2, server.requestCount)
+        }
+    }
+
+    @Test fun kwantFetchCancellationPropagatesWithoutFallbackStock() = runBlocking {
+        val adapter = verifiedKwant(LocationsHttpFetcher {
+            throw CancellationException("Synthetic cancellation")
+        })
+        var caught = false
+        try {
+            adapter.read(kwantRef, listOf(BranchId("205")))
+        } catch (_: CancellationException) {
+            caught = true
+        }
+        assertTrue(caught)
     }
 
 }
