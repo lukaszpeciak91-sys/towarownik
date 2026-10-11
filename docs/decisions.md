@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-11 — PR #112 Worker evidence/complete-scope audit corrections
+
+Do not weaken Worker `find_product_locations` validation to accommodate Android's earlier incomplete error payload. A failed KWANT read with verified directory must return exact requested canonical IDs, names and `null` stocks as a coherent checked/missing row set. A failed directory has no verified checked scope and sends empty arrays. Unknown is never zero. Explicit multi-location user chains must either resolve every city/branch ID or reject without HTTP; paired mismatching city/ID is an ambiguity, not implicit permission to read both. Do not change Worker schema, OBI, provider search, unit trust, tool budgets, or transport retries.
+
+
 ## 2026-10-11 — KWANT production departments, least-authority scope and two-product limit
 
 The optional location guidance update in `proxy/src/config.ts` describes the verified KWANT endpoint and explicit `multi_product_tool_contract` limitation. No Worker schema or normal `find_products` prompt is changed; run Proxy typecheck and tests in addition to Android/Python.
