@@ -55,4 +55,17 @@ class KwantLocationRenderingTest {
         assertTrue(text.contains("Nie sprawdziłam"))
         assertFalse(text.contains("nie jest jeszcze zweryfikowany"))
     }
+    @Test fun noTrustedRowsShowsUnknownInsteadOfAnInventedZero() {
+        val text = renderAdvisorLocationDetails(AdvisorLocationEvidence(
+            providerId = "kwant-pl", productId = "580",
+            status = "unavailable", reason = "no_trusted_rows",
+            coverage = "unknown", checkedIds = listOf("205"),
+            returnedIds = emptyList(), missingIds = listOf("205"),
+            locations = emptyList(), verifiedAtMillis = null,
+            centralStock = null,
+        ))
+        assertTrue(text.contains("Stan pozostaje nieznany"))
+        assertFalse(text.contains("0 szt."))
+    }
+
 }
