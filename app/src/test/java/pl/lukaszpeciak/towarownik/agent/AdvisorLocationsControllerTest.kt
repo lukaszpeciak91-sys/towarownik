@@ -592,4 +592,92 @@ class AdvisorLocationsControllerTest {
     }
 
 
+    @Test fun kwantGroupedFindProductsIndependentFromDisabledLocations() = runBlocking {
+        for ((requestText, expectedBranch) in listOf(
+            "Sprawdź gniazda 7027 i 7035 w oddziale Nowy Sącz" to "205",
+            "Sprawdź gniazda 7027 i 7035 w oddziale Zamość" to "128",
+        )) {
+            var providerCalls = 0
+            var locationCalls = 0
+            var continuations = 0
+            val identifiers = listOf("7027", "7035")
+            val groupedQueries = identifiers.map { AdvisorToolQuery(it, 1) }
+            val initial = AdvisorProxyCallResult.Success(
+                AdvisorProxyResult.ToolRequest(
+                    responseId = "resp_kwant_group",
+                    callId = "call_kwant_group",
+                    arguments = AdvisorToolArguments(
+                        storeNumber = expectedBranch,
+                        providerId = "kwant-pl",
+                        requestedBranch = expectedBranch,
+                        queries = groupedQueries,
+                    ),
+                ),
+            )
+            val c = controller(
+                initial = initial,
+                continueCall = { output ->
+                    continuations++
+                    assertTrue(requestText, output is AdvisorToolContinuation.Verified)
+                    val result = (output as AdvisorToolContinuation.Verified).result
+                    assertEquals("kwant-pl", result.providerId)
+                    assertEquals(expectedBranch, result.branchId)
+                    assertEquals(identifiers, result.results.map {
+                        it.products.single().productId
+                    })
+                    assertTrue(result.results.all {
+                        it.status == AdvisorQueryResultStatus.VERIFIED
+                    })
+                    answer()
+                },
+                locationCall = { _, _, _, _, _, _ ->
+                    locationCalls++
+                    error("Grouped find_products must not invoke find_product_locations")
+                },
+                onProviderDiscovery = { args ->
+                    providerCalls++
+                    assertEquals("kwant-pl", args.providerId)
+                    assertEquals(expectedBranch, args.branchId)
+                    assertEquals(groupedQueries, args.queries)
+                    assertEquals(null, args.requestedBranch)
+                    AdvisorToolExecutionResult.Success(
+                        result = AdvisorVerifiedToolResult(
+                            storeNumber = expectedBranch,
+                            providerId = "kwant-pl",
+                            results = identifiers.map { id ->
+                                AdvisorVerifiedQueryResult(
+                                    query = id,
+                                    status = AdvisorQueryResultStatus.VERIFIED,
+                                    products = listOf(AdvisorVerifiedProduct(
+                                        obik = id,
+                                        productId = id,
+                                        name = "Verified KWANT fixture $id",
+                                        stock = 3,
+                                        price = null,
+                                    )),
+                                )
+                            },
+                        ),
+                        snapshots = identifiers.map { id ->
+                            snapshot.copy(
+                                obik = id, productId = id, providerId = "kwant-pl",
+                                branchId = expectedBranch, storeNumber = expectedBranch,
+                            )
+                        },
+                    )
+                },
+            )
+            val state = c.runTurn(
+                input = requestText,
+                previousResponseId = "resp_before",
+                conversationProviderId = "kwant-pl",
+                conversationStoreNumber = "205",
+            ) {}
+            assertTrue(requestText, state is AdvisorUiState.Success)
+            assertEquals(requestText, 1, providerCalls)
+            assertEquals(requestText, 1, continuations)
+            assertEquals(requestText, 0, locationCalls)
+        }
+    }
+
 }
