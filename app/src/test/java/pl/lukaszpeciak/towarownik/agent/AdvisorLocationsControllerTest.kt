@@ -1101,4 +1101,92 @@ class AdvisorLocationsControllerTest {
         }
     }
 
+    @Test fun controllerKwantCompleteMultipleLocationsOrWholeRequestRejected() = runBlocking {
+        val branches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+            ProviderBranch(BranchId("216"), "Tarnów"),
+        )
+        val product = snapshot.copy(
+            obik = "7027", productId = "7027", providerId = "kwant-pl",
+            articleNumber = "921861", branchId = "205", storeNumber = "205",
+        )
+        data class Case(
+            val text: String,
+            val hints: List<String>,
+            val ids: List<String>,
+            val rejection: String?,
+        )
+        val scenarios = listOf(
+            Case("Sprawdź stan 7027 w Zamościu i Tarnowie",
+                listOf("Zamość"), listOf("128", "216"), null),
+            Case("Sprawdź stan 7027 w Zamościu oraz Tarnowie",
+                emptyList(), listOf("128", "216"), null),
+            Case("Sprawdź stan 7027 w Tarnowie, Zamościu",
+                emptyList(), listOf("216", "128"), null),
+            Case("Sprawdź stan 7027 w oddziale 128 i 216",
+                listOf("216"), listOf("128", "216"), null),
+            Case("Sprawdź stan 7027 w Zamościu i Nieznanowie",
+                emptyList(), emptyList(), "unknown_location"),
+            Case("Sprawdź stan 7027 w oddziale 128 i 999",
+                emptyList(), emptyList(), "unknown_location"),
+            Case("Sprawdź stan 7027 w oddziale 128 Tarnów",
+                emptyList(), emptyList(), "location_conflict"),
+            Case("Sprawdź stan 7027 w Zamościu i Tarnowie",
+                listOf("Nowy Sącz"), emptyList(), "location_not_authorized"),
+        )
+        for (scenario in scenarios) {
+            var httpReads = 0
+            val adapter = KwantProductLocationsAdapter(
+                directory = { ProviderBranchResult.Available(branches) },
+                fetcher = LocationsHttpFetcher {
+                    httpReads++
+                    pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
+                        """{"list":[{"department_id":205,"stock":1},""" +
+                            """{"department_id":128,"stock":0},""" +
+                            """{"department_id":216,"stock":5}],"unit":"szt."}""",
+                    )
+                },
+            )
+            val tool = AdvisorLocationsTool(
+                locationsService = ProductLocationsService(listOf(adapter)),
+                kwantBranches = { ProviderBranchResult.Available(branches) },
+            )
+            val c = controller(
+                initial = AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.LocationToolRequest(
+                        responseId = "resp_multi", callId = "call_multi",
+                        arguments = AdvisorLocationArguments(
+                            "kwant-pl", "7027", scenario.hints,
+                        ),
+                    ),
+                ),
+                continueCall = { continuation ->
+                    val result = (continuation as AdvisorToolContinuation.Locations).evidence
+                    if (scenario.rejection != null) {
+                        assertEquals(scenario.text, "rejected", result.status)
+                        assertEquals(scenario.text, scenario.rejection, result.reason)
+                        assertTrue(scenario.text, result.checkedIds.isEmpty())
+                    } else {
+                        assertEquals(scenario.text, "verified", result.status)
+                        assertEquals(scenario.text, scenario.ids, result.checkedIds)
+                        assertEquals(scenario.text, scenario.ids.toSet(),
+                            result.locations.map { it.branchId }.toSet())
+                    }
+                    answer()
+                },
+                locationCall = { args, provider, branch, text, current, history ->
+                    tool.execute(args, provider, branch, text, current, history)
+                },
+                onProviderDiscovery = { error("find_products must not execute") },
+            )
+            assertTrue(scenario.text, c.runTurn(
+                input = scenario.text, previousResponseId = "resp_before_multi",
+                conversationProviderId = "kwant-pl", conversationStoreNumber = "205",
+                historicalVerifiedProducts = listOf(product),
+            ) {} is AdvisorUiState.Success)
+            assertEquals(scenario.text, if (scenario.rejection == null) 1 else 0, httpReads)
+        }
+    }
+
 }
