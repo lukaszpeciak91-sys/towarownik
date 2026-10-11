@@ -48,6 +48,7 @@ internal sealed interface ProductLocationsResult {
         val verifiedAtMillis: Long,
         /** Only separately verified exact-product context may supply this; never departments.total_stock. */
         val centralStock: Int? = null,
+        val stockUnit: String? = null,
     ) : ProductLocationsResult
 
     data class Invalid(val failure: LocationFailure) : ProductLocationsResult
