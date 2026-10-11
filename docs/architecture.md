@@ -1,5 +1,28 @@
 # Architecture
 
+## PR #112 final audit — canonical KWANT Polish locatives (2026-10-11)
+
+The shared `advisorCityLocative` now recognizes deterministic locatives for all 21 canonical cities listed in KWANT research #111 (including Białymstoku, Bochni, Piasecznie, Mielcu, Włocławku, Suwałkach). Both KWANT explicit location authorization and bounded `AdvisorLocationFollowUps` resolve aliases ONLY against the current verified provider directory, deriving branch IDs from its `ProviderBranch` records rather than any static alias-to-ID lookup. The bounded follow-up syntax now supports `a we Włocławku?` alongside `a w Białymstoku?`; unrelated USER messages still sever permission. Public directory pages confirm Białystok 216 and Tarnów 204, correcting earlier incorrect synthetic fixtures. Tests cover every canonical locative, canonical numeric-ID routing, multi-city complete/fail-closed scope, and Controller → real adapter checks. No HTTP contract, Worker wire schema or provider search/persistence changes.
+
+
+## PR #112 audit: Worker-valid unavailable evidence and complete KWANT location chains (2026-10-11)
+
+Unavailable KWANT location outcomes now preserve a complete canonical `locations` row with `stock=null` for every `checkedIds`/ `missingIds` entry. If the canonical directory itself is unavailable, use empty checked/missing/location collections and `coverage=unknown`, never fabricated names or zero stock. The existing strict Worker `validateLocationToolResult` remains unchanged; real Android `continueTurn` JSON serialization and Worker validation have corresponding regressions. Error status retains its precise reason without verified timestamp or central stock.
+
+KWANT location authorization consumes the full comma, `i` and `oraz` sequence of canonical city names, locatives and numeric department IDs. The whole request is rejected for an unknown extra location, duplicate/unknown identity, or conflicting paired city/ID rather than silently choosing the first branch. User-owned scope and model-hint containment still apply before inventory HTTP; one GET per product, three logical calls and normal KWANT `find_products` are unchanged.
+
+
+## Production KWANT cross-branch stock — guarded extended=1 (2026-10-11)
+
+The Worker location-tool guidance is updated only to remove obsolete unverified-extended wording and clarify provider-specific empty location-hint semantics. The location-result JSON schema, protocol versions and normal provider search prompt remain unchanged.
+
+PR #112 enables the exact browser-verified single-product `GET https://services.kwant.net.pl/api/front/products/{numericProductId}/departments?extended=1`. Production reuses strict JSON-only, cookie-free, redirect-free bounded OkHttp transport (no retries), canonical KWANT branch IDs and one HTTP inventory GET per requested product. Android parses product-bound `list[].department_id/stock`, root `unit`, and never reinterprets `total_stock` as central. Branch ID unknown/duplicate, wrong product ID and malformed/negative/non-integer stocks fail closed. Zero remains zero; null/missing/nonreturned branch IDs remain unknown; no 21-branch assumption.
+
+USER text controls KWANT scope. Canonical branch and deterministic Polish locative parsing plus explicit numeric branch references restrict `find_product_locations` to one location (default current) or only a user-authorized nationwide set. Model hints are constrained to that scope, never a source of authorization. Transport may retrieve all public branch rows in one product-bound call, but adapter, Controller evidence and deterministic final rendering include only requested branches when the user scoped a subset. Shared historical single-product identity remains authoritative over model arguments.
+
+Android `ProductLocationsResult.Available.stockUnit` and `AdvisorLocationEvidence.stockUnit` are optional and local-only; the Worker CONTINUE JSON schema is unchanged (unit omitted) and Android deterministic location rendering consumes the exact product-bound unit, dropping unknown/conflicting labels. KWANT and OBI headings, zero/unknown handling and verified timestamps are provider-specific. `obu` remains a two-product selection, but the current single-product `find_product_locations` tool cannot reliably transmit two independent product results in one continuation; Controller returns typed `multi_product_tool_contract` without fetching or hiding a result for only one. Ordinary grouped `find_products` remains separate and unchanged.
+
+
 ## PR #110 latest explicit product selection supersedes inherited "obu" (2026-10-11)
 
 The history resolver maintains the shared USER-origin bounded ID grammar but limits inherited multi-product scope: a new current USER explicit single-product ID or unknown explicit numeric identity ends any prior `obu` selection. Current `obu` remains authoritative and uninterrupted canonical location-only follow-ups continue the prior `obu` scope. The resolver narrows verified historical snapshots only for a current verified exact ID; unknown explicit IDs are passed to the normal locations authorization guard to reject before transport. Controller integration regressions cover verified 7027 replacing historical `obu`, wrong model hint, unverified 9999, fresh `obu`, and an ensuing Tarnów location-only question; the disabled KWANT extended adapter proves zero HTTP. The three-call budget and ordinary `find_products` routing are unchanged.

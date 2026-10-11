@@ -220,6 +220,8 @@ internal data class AdvisorLocationEvidence(
     val locations: List<AdvisorLocationEntry>,
     val verifiedAtMillis: Long?,
     val centralStock: Int?,
+    // Local-only deterministic label; not added to the Worker JSON schema.
+    val stockUnit: String? = null,
 )
 
 internal sealed interface AdvisorToolContinuation {

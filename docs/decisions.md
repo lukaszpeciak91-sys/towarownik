@@ -1,5 +1,22 @@
 # Decisions
 
+## 2026-10-11 — PR #112 canonical locative audit decision
+
+Keep a bounded, explicit Polish locative table only for verified canonical KWANT city names and existing OBI aliases. Never hardcode alias-to-branch-ID routes; dynamic `ProviderBranch.branchId` is the sole identity binding. Correct all prior synthetic `Tarnów = 216` assumptions to `Tarnów = 204`; `Białystok = 216` is separate, verified public-directory evidence. Extend `a we [city]?` only as a bounded stock clarification when history grants authorization. Unknown cities, conflicting pairs and model hints outside USER scope still fail closed before inventory HTTP. No changes to extended=1, OBI behavior, 3-call budget, or Worker result schema.
+
+
+## 2026-10-11 — PR #112 Worker evidence/complete-scope audit corrections
+
+Do not weaken Worker `find_product_locations` validation to accommodate Android's earlier incomplete error payload. A failed KWANT read with verified directory must return exact requested canonical IDs, names and `null` stocks as a coherent checked/missing row set. A failed directory has no verified checked scope and sends empty arrays. Unknown is never zero. Explicit multi-location user chains must either resolve every city/branch ID or reject without HTTP; paired mismatching city/ID is an ambiguity, not implicit permission to read both. Do not change Worker schema, OBI, provider search, unit trust, tool budgets, or transport retries.
+
+
+## 2026-10-11 — KWANT production departments, least-authority scope and two-product limit
+
+The optional location guidance update in `proxy/src/config.ts` describes the verified KWANT endpoint and explicit `multi_product_tool_contract` limitation. No Worker schema or normal `find_products` prompt is changed; run Proxy typecheck and tests in addition to Android/Python.
+
+The merged live research #111 observed literal `extended=1` for 580/7027 with no session. Permit one product-bound public read and bound/validate exact canonical branch identities. Distinguish root `total_stock` from independently verified central product stock; permit only validated explicit root unit and suppress conflicted unit. The USER explicitly scopes product and location, and arbitrary model `locations[]` cannot expand that scope; unscoped inventory lookup defaults to the working branch, not the whole network. For historical `obu` retain a deterministic, correctly typed limitation (`multi_product_tool_contract`), not the now-false `unverified_request_contract`: one-product Worker location-result protocol cannot represent two complete product results, so no partial single-product read is allowed. Keep Worker schema, OBI, standard KWANT search, WorkingProfile, persistence and three-tool budget unchanged. Do not add retries.
+
+
 ## 2026-10-11 — Current USER product identity has priority over inherited "obu"
 
 A historical two-product `obu` request is a bounded conversational selection, not permanent inventory authorization. When the current USER explicitly identifies a single product, or a new unverified numeric ID, clear historical `bothProductIds` and defer identity validation to the normal trusted-product guard. Preserve explicit current `obu` and location-only follow-ups after an uninterrupted previous `obu`; never select a model ID as fallback, permit unverified KWANT extended HTTP, or alter normal multi-query `find_products`.

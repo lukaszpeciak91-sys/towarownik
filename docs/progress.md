@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-10-11 — PR #112 canonical 21-branch locative corrections
+
+Validated the current public KWANT directory's 21 cities and reviewed research #111. Expanded shared canonical locative aliases and `a we` follow-ups, corrected Tarnów 204 vs Białystok 216 in synthetic Android tests and in the device smoke guide, and added bounded resolver + Controller-to-real-KWANT transport regressions including two-city and unknown/conflicting scopes. No static production branch IDs, OBI regression, reliability retries, persistence or Worker schema edits.
+
+
+## 2026-10-11 — Audit fix in existing PR #112
+
+Aligned Android unavailable evidence with strict Worker JSON validation by adding canonical null-stock entries for the entire checked/missing set, including HTTP failure, timeout, malformed JSON and NO_TRUSTED_ROWS; unavailable directory returns empty coherent arrays. Replaced KWANT's first-city-only matching with full bounded `i/oraz/comma` name/numeric-ID chain parsing and paired-label conflict rejection. Added focused resolver, Controller-to-real-adapter, real Android ProxyClient serialization and Worker validation tests. No production search, Worker schema, OBI or reliability retry changes. Test status is tracked by PR #112 CI.
+
+
+## 2026-10-11 — PR #112 guarded production KWANT product locations
+
+Updated only location-specific Worker instructions (not protocol or schema) so the model no longer describes verified KWANT extended as unverified. Proxy checks are required for this focused Worker text change.
+
+Implemented observed `extended=1` with existing read-only HTTP, one exact product GET and bounded response validation. Directory-based user scope and model-hint containment prevent a Zamość-only request leaking the full public branch list, while explicit nationwide queries are permitted. Numeric stock, zero, null, missing, invalid and unknown branch identities remain distinct; root `unit` is optional and never inferred. Deterministic KWANT location output now labels oddziały rather than OBI markets and shows verified units, timestamp and incomplete status. Current `obu` produces a typed single-product-tool limitation rather than an unverified endpoint claim. Added synthetic provider, scope, MockWebServer and UI regressions; production Worker and normal provider find_products remain unchanged. Manual Android checks: see `docs/kwant-product-locations-production-smoke.md`.
+
+
 ## 2026-10-11 — PR #110 inherited "obu" supersession regression
 
 Added explicit-current-identity precedence in `AdvisorLocationFollowUps`: verified 7027 overrides a preceding `obu`, while explicit unknown 9999 cancels old `obu` before normal trusted-identity rejection. Controller → follow-up → actual locations tool regressions also verify that current `obu` and location-only Tarnów follow-ups preserve the intended two-product selection. Production KWANT adapter with disabled extended and a failing synthetic network fetcher verifies no inventory HTTP. Prior OBI, shared identity, tool-budget and grouped `find_products` suites remain in full Android checks.

@@ -416,17 +416,16 @@ internal class AdvisorController(
                         onState(AdvisorUiState.RunningLocalTool)
                         try {
                             if (conversationProviderId == "kwant-pl" &&
-                                followUp.bothProductIds.size == 2 &&
-                                locationRequest.arguments.productId in followUp.bothProductIds
+                                followUp.bothProductIds.size == 2
                             ) {
-                                // The user selected BOTH separately verified
-                                // products, but KWANT extended is not verified.
-                                // One model tool can never silently pick one.
+                                // The public endpoint is verified, but the single-
+                                // product location tool cannot represent two
+                                // independent reads. Never report only one.
                                 AdvisorLocationEvidence(
                                     providerId = conversationProviderId,
                                     productId = null,
                                     status = "unavailable",
-                                    reason = "unverified_request_contract",
+                                    reason = "multi_product_tool_contract",
                                     coverage = "unknown",
                                     checkedIds = emptyList(),
                                     returnedIds = emptyList(),

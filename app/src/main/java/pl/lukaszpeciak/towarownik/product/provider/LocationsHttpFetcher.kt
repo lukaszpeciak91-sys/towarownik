@@ -114,10 +114,10 @@ internal fun trustedLocationsEndpoint(url: HttpUrl): Boolean {
                 url.queryParameter("storeIds")?.isNotEmpty() == true
         }
         "services.kwant.net.pl" -> {
-            url.encodedPath.matches(Regex("""/api/front/products/[0-9]+/departments""")) &&
+            url.encodedPath.matches(Regex("""/api/front/products/[0-9]{1,12}/departments""")) &&
                 url.queryParameterNames == setOf("extended") &&
                 url.queryParameterValues("extended").size == 1 &&
-                !url.queryParameter("extended").isNullOrBlank()
+                url.queryParameter("extended") == "1"
         }
         else -> false
     }

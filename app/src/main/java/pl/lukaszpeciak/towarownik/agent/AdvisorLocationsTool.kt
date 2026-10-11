@@ -3,9 +3,12 @@ package pl.lukaszpeciak.towarownik.agent
 import java.text.Normalizer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
+import pl.lukaszpeciak.towarownik.product.provider.KwantProductProvider
 import pl.lukaszpeciak.towarownik.product.provider.LocationCoverage
 import pl.lukaszpeciak.towarownik.product.provider.LocationCoverageKind
 import pl.lukaszpeciak.towarownik.product.provider.LocationFailure
@@ -27,6 +30,7 @@ import pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
 internal class AdvisorLocationsTool(
     private val locationsService: ProductLocationsService = ProductLocationsService.production(),
     private val obiBranches: () -> ProviderBranchResult = ObiProductProvider()::branches,
+    private val kwantBranches: () -> ProviderBranchResult = KwantProductProvider()::branches,
     private val scopeExecutionBudgetMillis: Long = 45_000L,
 ) {
     init {
@@ -65,10 +69,17 @@ internal class AdvisorLocationsTool(
         val exactRef = ProductRef(ProviderId(providerId), selected.effectiveProductId)
         val directory = if (providerId == OBI_PROVIDER_ID.value) {
             (obiBranches() as? ProviderBranchResult.Available)?.branches
-                ?: return empty(providerId, exactRef.productId, "unavailable", "directory_unavailable")
         } else {
-            emptyList()
-        }
+            try {
+                withContext(Dispatchers.IO) {
+                    (kwantBranches() as? ProviderBranchResult.Available)?.branches
+                }
+            } catch (cancel: CancellationException) {
+                throw cancel
+            } catch (_: Exception) {
+                null
+            }
+        } ?: return empty(providerId, exactRef.productId, "unavailable", "directory_unavailable")
         val authorizedScope = if (providerId == OBI_PROVIDER_ID.value) {
             when (val scope = authorizedObiLocations(
                 userText, arguments.locations, directory, BranchId(currentBranchId),
@@ -80,6 +91,15 @@ internal class AdvisorLocationsTool(
         } else {
             null
         }
+        val kwantScope = if (providerId == KWANT_PROVIDER_ID.value) {
+            when (val authorization = authorizeKwantLocations(
+                userText, arguments.locations, directory, BranchId(currentBranchId),
+            )) {
+                is KwantAuthorizedLocations.Denied ->
+                    return rejected(authorization.reason, exactRef.productId)
+                is KwantAuthorizedLocations.Allowed -> authorization
+            }
+        } else null
         val trustedContext = ProviderProduct(
             ref = exactRef,
             branchId = BranchId(selected.effectiveBranchId),
@@ -94,16 +114,17 @@ internal class AdvisorLocationsTool(
             productUrl = selected.productUrl,
             ean = null,
             articleNumber = selected.articleNumber,
+            stockUnit = selected.stockUnit,
         )
         if (authorizedScope != null) {
             return readObiScope(exactRef, trustedContext, authorizedScope, directory)
         }
-        // KWANT: one verified-product-bound request, still disabled by the
-        // unresolved real 'extended' query value; never guess or omit it.
+        // One product-bound GET. The adapter returns only the authorized
+        // subset despite fetching the full public product-bound branch list.
         val result = try {
             locationsService.read(
                 ref = exactRef,
-                requested = emptyList(),
+                requested = kwantScope?.requested.orEmpty(),
                 trustedProduct = trustedContext,
             )
         } catch (cancel: CancellationException) {
@@ -112,7 +133,19 @@ internal class AdvisorLocationsTool(
             ProductLocationsResult.Unavailable(LocationFailure.TRANSPORT)
         }
         return when (result) {
-            is ProductLocationsResult.Available -> AdvisorLocationEvidence(
+            is ProductLocationsResult.Available -> {
+                val requested = if (kwantScope?.nationwide == true) {
+                    directory.map { it.branchId }
+                } else kwantScope?.requested.orEmpty()
+                val covered = result.coverage
+                if (result.ref != exactRef || covered.requestedIds != requested ||
+                    covered.returnedIds.any { it !in requested } ||
+                    result.locations.any { it.branch.branchId !in requested } ||
+                    result.locations.map { it.branch.branchId }.distinct().size !=
+                        result.locations.size
+                ) return rejected("malformed_response", exactRef.productId)
+                val rows = result.locations.associateBy { it.branch.branchId }
+                AdvisorLocationEvidence(
                 providerId = providerId,
                 productId = exactRef.productId,
                 status = "verified",
@@ -121,17 +154,24 @@ internal class AdvisorLocationsTool(
                 checkedIds = result.coverage.requestedIds.map { it.value },
                 returnedIds = result.coverage.returnedIds.map { it.value },
                 missingIds = result.coverage.missingIds.map { it.value },
-                locations = result.locations
-                    .sortedWith(compareByDescending<pl.lukaszpeciak.towarownik.product.provider.LocationStock> {
-                        (it.stock ?: 0) > 0
-                    }.thenByDescending { it.stock ?: -1 })
-                    .map { AdvisorLocationEntry(it.branch.branchId.value, it.branch.name, it.stock) },
+                locations = requested.map { id ->
+                    val row = rows[id]
+                    val branch = directory.single { it.branchId == id }
+                    AdvisorLocationEntry(id.value, branch.name, row?.stock)
+                }.sortedWith(compareByDescending<AdvisorLocationEntry> {
+                    (it.stock ?: 0) > 0
+                }.thenByDescending { it.stock ?: -1 }),
                 verifiedAtMillis = result.verifiedAtMillis,
                 centralStock = result.centralStock,
+                stockUnit = result.stockUnit,
             )
+            }
             is ProductLocationsResult.Unavailable -> empty(
                 providerId, exactRef.productId, "unavailable",
                 result.failure.name.lowercase(), result.coverage,
+                // The Worker requires a canonical null-stock row for EVERY
+                // checked ID, including failed, malformed and empty reads.
+                directory,
             )
             is ProductLocationsResult.Invalid ->
                 rejected(result.failure.name.lowercase(), exactRef.productId)
@@ -610,32 +650,68 @@ internal class AdvisorLocationsTool(
         status: String,
         reason: String,
         scope: LocationCoverage? = null,
-    ) = AdvisorLocationEvidence(
-        providerId = providerId,
-        productId = productId,
-        status = status,
-        reason = reason,
-        coverage = scope?.kind?.asWire() ?: "unknown",
-        checkedIds = scope?.requestedIds?.map { it.value } ?: emptyList(),
-        returnedIds = emptyList(),
-        missingIds = scope?.requestedIds?.map { it.value } ?: emptyList(),
-        locations = emptyList(),
-        verifiedAtMillis = null,
-        centralStock = null,
-    )
+        canonicalBranches: List<ProviderBranch> = emptyList(),
+    ): AdvisorLocationEvidence {
+        val ids = scope?.requestedIds.orEmpty()
+        val directory = canonicalBranches.associateBy { it.branchId }
+        // No fabricated display names. If the entire canonical mapping
+        // cannot be proven, send no checked IDs (valid unknown evidence).
+        val checked = ids.takeIf { requested ->
+            requested.size <= 100 && requested.distinct().size == requested.size &&
+                requested.all { it in directory }
+        }.orEmpty()
+        return AdvisorLocationEvidence(
+            providerId = providerId,
+            productId = productId,
+            status = status,
+            reason = reason,
+            coverage = if (checked.size == ids.size) scope?.kind?.asWire() ?: "unknown"
+                else "unknown",
+            checkedIds = checked.map { it.value },
+            returnedIds = emptyList(),
+            missingIds = checked.map { it.value },
+            locations = checked.map { id ->
+                val branch = requireNotNull(directory[id])
+                AdvisorLocationEntry(id.value, branch.name, null)
+            },
+            verifiedAtMillis = null,
+            centralStock = null,
+        )
+    }
 }
 
 /** Only deterministic canonical name inflections: no fuzzy city guesses. */
 internal fun advisorCityLocative(canonical: String): String? = when (canonical) {
-    "nowy sacz" -> "nowym saczu"
-    "miejsce piastowe" -> "miejscu piastowym"
-    "zamosc" -> "zamosciu"
+    // Only exact normalized canonical city names from the verified public
+    // directory. IDs are NEVER embedded here: aliases inherit the dynamic
+    // runtime ProviderBranch.branchId of the matching canonical name.
+    "bialystok" -> "bialymstoku"
+    "bochnia" -> "bochni"
+    "brzesko" -> "brzesku"
+    "bydgoszcz" -> "bydgoszczy"
+    "chelm" -> "chelmie"
+    "dabrowa tarnowska" -> "dabrowie tarnowskiej"
+    "kielce" -> "kielcach"
+    "krakow" -> "krakowie"
+    "krosno" -> "krosnie"
+    "lublin" -> "lublinie"
     "lodz" -> "lodzi"
+    "mielec" -> "mielcu"
+    "nowy sacz" -> "nowym saczu"
+    "ostroleka" -> "ostrolece"
+    "piaseczno" -> "piasecznie"
+    "rzeszow" -> "rzeszowie"
+    "suwalki" -> "suwalkach"
+    "tarnow" -> "tarnowie"
+    "warszawa" -> "warszawie"
+    "wloclawek" -> "wloclawku"
+    "zamosc" -> "zamosciu"
+    // Existing non-KWANT/OBI aliases stay compatible.
+    "miejsce piastowe" -> "miejscu piastowym"
     "wroclaw" -> "wroclawiu"
     "gdansk" -> "gdansku"
     "poznan" -> "poznaniu"
     "torun" -> "toruniu"
-    "lublin" -> "lublinie"
     "dabrowa gornicza" -> "dabrowie gorniczej"
     "gorzow wielkopolski" -> "gorzowie wielkopolskim"
     else -> when {
