@@ -11,7 +11,7 @@ class KwantLocationAuthorizationTest {
     private val directory = listOf(
         ProviderBranch(BranchId("205"), "Nowy Sącz"),
         ProviderBranch(BranchId("128"), "Zamość"),
-        ProviderBranch(BranchId("216"), "Tarnów"),
+        ProviderBranch(BranchId("204"), "Tarnów"),
     )
 
     private fun allowed(text: String, hints: List<String> = emptyList()) =
@@ -37,8 +37,8 @@ class KwantLocationAuthorizationTest {
 
     @Test fun branchIdAndLocativeAliasAreExactNotGuessed() {
         assertEquals(
-            listOf(BranchId("216")),
-            allowed("Jaki jest stan 921861 w Tarnowie?", listOf("216")).requested,
+            listOf(BranchId("204")),
+            allowed("Jaki jest stan 921861 w Tarnowie?", listOf("204")).requested,
         )
         assertEquals(
             listOf(BranchId("128")),
@@ -100,7 +100,7 @@ class KwantLocationAuthorizationTest {
             "Sprawdź stan 7027 w Zamościu oraz oddziale 216",
         )) {
             val result = allowed(request)
-            assertEquals(request, setOf(BranchId("128"), BranchId("216")),
+            assertEquals(request, setOf(BranchId("128"), BranchId("204")),
                 result.requested.toSet())
             assertEquals(request, 2, result.requested.size)
             assertEquals(request, false, result.nationwide)
@@ -126,7 +126,7 @@ class KwantLocationAuthorizationTest {
 
     @Test fun modelHintsMayNotExpandTwoUserAuthorizedBranches() {
         val text = "Sprawdź stan 7027 w Zamościu i Tarnowie"
-        assertEquals(setOf(BranchId("128"), BranchId("216")),
+        assertEquals(setOf(BranchId("128"), BranchId("204")),
             allowed(text, listOf("Tarnów")).requested.toSet())
         assertEquals("location_not_authorized",
             rejected(text, listOf("Nowy Sącz")))
