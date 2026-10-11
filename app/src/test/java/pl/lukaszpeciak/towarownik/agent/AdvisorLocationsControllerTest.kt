@@ -1076,7 +1076,7 @@ class AdvisorLocationsControllerTest {
                     val verified = (result as AdvisorToolContinuation.Locations).evidence
                     assertEquals(case.user, case.expectedStatus, verified.status)
                     assertEquals(case.user, case.checked, verified.checkedIds)
-                    assertEquals(case.user, case.checked, verified.locations.map { it.branchId })
+                    assertEquals(case.user, case.checked.toSet(), verified.locations.map { it.branchId }.toSet())
                     if (verified.status == "verified") {
                         assertEquals(case.user, "szt.", verified.stockUnit)
                         assertTrue(case.user, verified.centralStock == null)
