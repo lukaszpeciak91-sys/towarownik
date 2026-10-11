@@ -169,6 +169,9 @@ internal class AdvisorLocationsTool(
             is ProductLocationsResult.Unavailable -> empty(
                 providerId, exactRef.productId, "unavailable",
                 result.failure.name.lowercase(), result.coverage,
+                // The Worker requires a canonical null-stock row for EVERY
+                // checked ID, including failed, malformed and empty reads.
+                directory,
             )
             is ProductLocationsResult.Invalid ->
                 rejected(result.failure.name.lowercase(), exactRef.productId)
@@ -647,19 +650,34 @@ internal class AdvisorLocationsTool(
         status: String,
         reason: String,
         scope: LocationCoverage? = null,
-    ) = AdvisorLocationEvidence(
-        providerId = providerId,
-        productId = productId,
-        status = status,
-        reason = reason,
-        coverage = scope?.kind?.asWire() ?: "unknown",
-        checkedIds = scope?.requestedIds?.map { it.value } ?: emptyList(),
-        returnedIds = emptyList(),
-        missingIds = scope?.requestedIds?.map { it.value } ?: emptyList(),
-        locations = emptyList(),
-        verifiedAtMillis = null,
-        centralStock = null,
-    )
+        canonicalBranches: List<ProviderBranch> = emptyList(),
+    ): AdvisorLocationEvidence {
+        val ids = scope?.requestedIds.orEmpty()
+        val directory = canonicalBranches.associateBy { it.branchId }
+        // No fabricated display names. If the entire canonical mapping
+        // cannot be proven, send no checked IDs (valid unknown evidence).
+        val checked = ids.takeIf { requested ->
+            requested.size <= 100 && requested.distinct().size == requested.size &&
+                requested.all { it in directory }
+        }.orEmpty()
+        return AdvisorLocationEvidence(
+            providerId = providerId,
+            productId = productId,
+            status = status,
+            reason = reason,
+            coverage = if (checked.size == ids.size) scope?.kind?.asWire() ?: "unknown"
+                else "unknown",
+            checkedIds = checked.map { it.value },
+            returnedIds = emptyList(),
+            missingIds = checked.map { it.value },
+            locations = checked.map { id ->
+                val branch = requireNotNull(directory[id])
+                AdvisorLocationEntry(id.value, branch.name, null)
+            },
+            verifiedAtMillis = null,
+            centralStock = null,
+        )
+    }
 }
 
 /** Only deterministic canonical name inflections: no fuzzy city guesses. */
