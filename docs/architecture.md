@@ -1,5 +1,12 @@
 # Architecture
 
+## PR #112 audit: Worker-valid unavailable evidence and complete KWANT location chains (2026-10-11)
+
+Unavailable KWANT location outcomes now preserve a complete canonical `locations` row with `stock=null` for every `checkedIds`/ `missingIds` entry. If the canonical directory itself is unavailable, use empty checked/missing/location collections and `coverage=unknown`, never fabricated names or zero stock. The existing strict Worker `validateLocationToolResult` remains unchanged; real Android `continueTurn` JSON serialization and Worker validation have corresponding regressions. Error status retains its precise reason without verified timestamp or central stock.
+
+KWANT location authorization consumes the full comma, `i` and `oraz` sequence of canonical city names, locatives and numeric department IDs. The whole request is rejected for an unknown extra location, duplicate/unknown identity, or conflicting paired city/ID rather than silently choosing the first branch. User-owned scope and model-hint containment still apply before inventory HTTP; one GET per product, three logical calls and normal KWANT `find_products` are unchanged.
+
+
 ## Production KWANT cross-branch stock — guarded extended=1 (2026-10-11)
 
 The Worker location-tool guidance is updated only to remove obsolete unverified-extended wording and clarify provider-specific empty location-hint semantics. The location-result JSON schema, protocol versions and normal provider search prompt remain unchanged.
