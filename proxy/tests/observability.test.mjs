@@ -43,6 +43,7 @@ function answerPayload({
   const structured = JSON.stringify({ text, productRefs });
   return {
     id,
+    status: "completed",
     model: OPENAI_MODEL,
     output: [
       {
