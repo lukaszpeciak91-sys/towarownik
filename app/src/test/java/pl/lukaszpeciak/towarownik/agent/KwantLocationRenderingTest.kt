@@ -10,13 +10,13 @@ class KwantLocationRenderingTest {
             providerId = "kwant-pl", productId = "7027",
             status = "verified", reason = "partial_inventory",
             coverage = "partial",
-            checkedIds = listOf("128", "205", "216"),
+            checkedIds = listOf("128", "205", "204"),
             returnedIds = listOf("128", "205"),
-            missingIds = listOf("216"),
+            missingIds = listOf("204"),
             locations = listOf(
                 AdvisorLocationEntry("128", "Zamość", 8),
                 AdvisorLocationEntry("205", "Nowy Sącz", 0),
-                AdvisorLocationEntry("216", "Tarnów", null),
+                AdvisorLocationEntry("204", "Tarnów", null),
             ), verifiedAtMillis = 1234L, centralStock = 987654,
             stockUnit = "kg",
         ))
