@@ -3033,5 +3033,47 @@ class FinalExtendedEndpointResearchTest(unittest.TestCase):
         self.assertIsNone(wrong["selectedBranchStock"])
 
 
+
+class SanitizedObservedLiveFixtureTest(unittest.TestCase):
+    def test_live_fixture_is_two_distinct_products_without_secret_values(self):
+        fixture_path = Path(__file__).parent / "fixtures" / "kwant_extended_live_20261011.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            {"extended": "1"}, fixture["request"]["exactObservedQuery"],
+        )
+        self.assertEqual(
+            ["list", "total_stock", "unit"], fixture["response"]["rootFields"],
+        )
+        self.assertEqual(
+            ["department_id", "stock"], fixture["response"]["rowFields"],
+        )
+        self.assertEqual(
+            ["580", "7027"],
+            [p["productId"] for p in fixture["observedProducts"]],
+        )
+        for product in fixture["observedProducts"]:
+            with self.subTest(product=product["productId"]):
+                self.assertEqual(200, product["browserHttp"])
+                self.assertEqual(200, product["anonymousHttp"])
+                self.assertEqual(
+                    product["canonicalDirectoryCount"], product["responseRowCount"],
+                )
+                self.assertEqual(
+                    product["numericStockCount"], product["responseRowCount"],
+                )
+                self.assertGreater(product["explicitZeroCount"], 0)
+                for k in ("nullCount", "missingCount", "invalidCount",
+                          "duplicateDepartmentCount", "unknownDepartmentCount"):
+                    self.assertEqual(0, product[k])
+                self.assertTrue(product["cookieFreeRowsAndStockEqual"])
+                self.assertEqual(product["selectedStock"], product["currentStock"])
+                self.assertNotEqual(
+                    product["separateExactProductPageStock"], product["selectedStock"],
+                )
+        raw = fixture_path.read_text(encoding="utf-8").lower()
+        for secret_field in ("cookie:", "authorization:", "set-cookie",
+                             "bearer ", "sessiontoken", "password="):
+            self.assertNotIn(secret_field, raw)
+
 if __name__ == "__main__":
     unittest.main()
