@@ -34,6 +34,8 @@ These values are a **snapshot**, not production fallbacks or promises of stock a
 
 After each browser-generated request, the probe created a **separate standard-library HTTP opener**, with no browser cookie jar and no Authorization/session headers, and repeated only the exact sanitized, allowlisted product-bound GET. Both independent GETs returned 200. For both products, every canonical `(department_id, stock)` pair matched the corresponding browser response. **Verdict for these two observed public requests: session/cookie independent.** This is not a promise that the public API can never change its authentication or anti-automation policy.
 
+The `sessionIndependentCoverage` diagnostic now compares exact sanitized `(department_id, stock state, numeric stock)` rows, not just zero-versus-positive status; for example, a cookie-free replay returning 7 instead of 5 must be `NOT_CONFIRMED` despite identical coverage. Row order does not affect the comparison. This hardening does not alter the original live observations.
+
 ## Response schema and semantics
 
 - The product ID is anchored to the singular requested `/products/<numeric-id>/departments` path, separately matched to the canonical product page. The root response does not repeat product ID.
