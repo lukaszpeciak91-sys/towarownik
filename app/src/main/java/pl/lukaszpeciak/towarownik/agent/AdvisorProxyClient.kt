@@ -552,7 +552,7 @@ internal class AdvisorProxyClient(
                                 },
                                 endpoint = endpoint.substringAfterLast('/'),
                                 failureClass = if (exception is AttachmentByteCountMismatchException) {
-                                    AdvisorFailureClass.RESPONSE_PARSE
+                                    null
                                 } else advisorFailureClass(exception),
                             ),
                         )
