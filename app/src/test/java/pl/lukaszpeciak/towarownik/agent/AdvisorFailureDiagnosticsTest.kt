@@ -5,6 +5,11 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import javax.net.ssl.SSLHandshakeException
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.CompletableDeferred
+import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -74,6 +79,36 @@ class AdvisorFailureDiagnosticsTest {
             assertEquals(AdvisorFailureClass.RESPONSE_PARSE, failure.failureClass)
             assertEquals("message", failure.endpoint)
             assertFalse(failure.diagnosticOrNull()!!.reportValue().contains("SECRET"))
+        }
+    }
+
+    @Test
+    fun `cancelled request cannot resume as late success`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(
+                MockResponse()
+                    .setSocketPolicy(SocketPolicy.NO_RESPONSE),
+            )
+            val client = AdvisorProxyClient(
+                appToken = "synthetic",
+                baseUrl = server.url("/"),
+            )
+            val outcome = CompletableDeferred<AdvisorProxyCallResult>()
+            val job = launch {
+                outcome.complete(client.start("synthetic", "obi-pl", "075"))
+            }
+            try {
+                withTimeout(5_000) {
+                    while (server.requestCount == 0) {
+                        kotlinx.coroutines.yield()
+                    }
+                }
+                job.cancelAndJoin()
+                assertTrue(job.isCancelled)
+                assertFalse(outcome.isCompleted)
+            } finally {
+                job.cancel()
+            }
         }
     }
 
