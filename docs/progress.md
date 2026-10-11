@@ -1,5 +1,10 @@
 # Progress
 
+## 2026-10-11 — Audit fix in existing PR #112
+
+Aligned Android unavailable evidence with strict Worker JSON validation by adding canonical null-stock entries for the entire checked/missing set, including HTTP failure, timeout, malformed JSON and NO_TRUSTED_ROWS; unavailable directory returns empty coherent arrays. Replaced KWANT's first-city-only matching with full bounded `i/oraz/comma` name/numeric-ID chain parsing and paired-label conflict rejection. Added focused resolver, Controller-to-real-adapter, real Android ProxyClient serialization and Worker validation tests. No production search, Worker schema, OBI or reliability retry changes. Test status is tracked by PR #112 CI.
+
+
 ## 2026-10-11 — PR #112 guarded production KWANT product locations
 
 Updated only location-specific Worker instructions (not protocol or schema) so the model no longer describes verified KWANT extended as unverified. Proxy checks are required for this focused Worker text change.
