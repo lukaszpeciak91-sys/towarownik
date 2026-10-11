@@ -1,5 +1,14 @@
 # KWANT: product availability across locations — live-contract research
 
+## Final extended-parameter research — 11 October 2026 (LIVE CONFIRMED)
+
+**Research verdict: GO for a guarded separate production integration PR; NO-GO for enabling production in this research PR.** Full evidence: [final report](kwant-extended-live-final-report.md) and [GitHub live probe #38122949960](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/38122949960). The run passed 108 offline regression tests, then observed the real frontend GET with literal `extended=1` for independently verified products 580 and 7027.
+
+Both exact product-bound frontend GETs returned HTTP 200 with root `list`, `total_stock`, `unit`, 21/21 canonical branch IDs and explicit numeric stock values. Product 580 had 3 zero rows and department 205 = 424; product 7027 had 8 zero rows and department 205 = 13. Explicit unit `szt.` appeared in both responses. Independent anonymous/cookie-free GETs returned 200 and every `(department_id, stock)` pair agreed with the original browser response. Both selected-branch values also matched separately identity-verified `/current?depstock=205`; product-level central stocks were separately sourced and never combined with branch counts. No null/missing/invalid stock values were observed in either live response, but negative fixtures cover these cases as unknown/fail-closed.
+
+**Verified request shape:** `GET https://services.kwant.net.pl/api/front/products/{verifiedId}/departments?extended=1`, with real frontend observation of the exact single `extended` query field. Only two products and one selected branch were tested; network availability, stock freshness, transport rate limits, unit variation, and directory changes remain implementation/rollout risks. Production adapter, Worker, branch profile and Advisor routing were not changed.
+
+### Prior evidence (historical, 9 October 2026)
 Status: **CONFIRMED PUBLIC ONE-SHOT ALL-BRANCH INVENTORY CONTRACT FOR CONTROL PRODUCT 580** — live run #18, 9 October 2026.
 A public frontend request returned 21/21 directory branches including explicit zero-stock rows. This is sufficient research evidence to design a future `find_product_locations` integration, **not** evidence that Taksula already implements it. Exact-product binding, zero-vs-null and central-vs-branch separation remain mandatory in production.
 

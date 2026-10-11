@@ -1,6 +1,12 @@
 name: KWANT live contract probe
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/kwant-live-contract.yml'
+      - 'tools/kwant_live_contract_probe.py'
+      - 'tools/test_kwant_live_contract_probe.py'
   workflow_dispatch:
     inputs:
       product_query:
@@ -19,30 +25,48 @@ on:
         description: Numeric public product ID to verify through /produkt/<id>
         required: true
         default: "580"
+      second_numeric_product_id:
+        description: Distinct second public numeric product ID
+        required: true
+        default: "7027"
 
 permissions:
   contents: read
 
 jobs:
   probe:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.head_ref == 'research/kwant-extended-live-contract-20261011')
     runs-on: ubuntu-latest
     env:
       PRODUCT_QUERY: ${{ inputs.product_query || 'MBN116E' }}
       BRANCH_LABEL: ${{ inputs.branch_label || 'Nowy Sącz' }}
       TEXT_QUERY: ${{ inputs.text_query || 'wyłącznik nadprądowy B16 Hager' }}
       NUMERIC_PRODUCT_ID: ${{ inputs.numeric_product_id || '580' }}
+      SECOND_NUMERIC_PRODUCT_ID: ${{ inputs.second_numeric_product_id || '7027' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Offline safe-contract regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=tools python3 -m unittest tools/test_kwant_live_contract_probe.py -q
 
       - name: Validate probe inputs
         shell: bash
         run: |
           set -euo pipefail
-          PYTHONPATH=tools python3 - "$PRODUCT_QUERY" "$BRANCH_LABEL" "$TEXT_QUERY" "$NUMERIC_PRODUCT_ID" <<'PY'
+          PYTHONPATH=tools python3 - "$PRODUCT_QUERY" "$BRANCH_LABEL" "$TEXT_QUERY" "$NUMERIC_PRODUCT_ID" "$SECOND_NUMERIC_PRODUCT_ID" <<'PY'
           import sys
           from kwant_live_contract_probe import validate_inputs
 
           validate_inputs(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
+          validate_inputs(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[5])
+          if sys.argv[4] == sys.argv[5]:
+              raise ValueError("Second product ID must be distinct")
           PY
 
       - name: Install Playwright Chromium
@@ -61,6 +85,7 @@ jobs:
             --branch-label "$BRANCH_LABEL" \
             --text-query "$TEXT_QUERY" \
             --numeric-product-id "$NUMERIC_PRODUCT_ID" \
+            --second-numeric-product-id "$SECOND_NUMERIC_PRODUCT_ID" \
             --out-dir build/kwant-live-contract
 
       - name: Print safe contract summary
@@ -83,7 +108,8 @@ jobs:
           retention-days: 3
 
       - name: Upload short-lived raw KWANT page captures
-        if: always()
+        # PR runs publish only sanitized summary, never raw captures.
+        if: github.event_name == 'workflow_dispatch' && always()
         uses: actions/upload-artifact@v4
         with:
           name: kwant-live-contract-raw

@@ -2899,5 +2899,219 @@ class AvailabilityLiveFollowupTest(unittest.TestCase):
         self.assertFalse(conflicting_fields["usableBatchCandidate"])
 
 
+
+class FinalExtendedEndpointResearchTest(unittest.TestCase):
+    """Offline synthetic fixtures only, never guessed production stock."""
+
+    def test_only_exact_frontend_product_endpoint_exposes_extended_value(self):
+        url = "https://services.kwant.net.pl/api/front/products/580/departments?extended=1"
+        observed = probe.observed_exact_extended_request(url, "GET", "580")
+        self.assertEqual("1", observed["extendedValue"])
+        self.assertTrue(observed["safeForReplay"])
+        self.assertEqual("SINGLE_EXTENDED", observed["queryShape"])
+        for hostile_url, method, requested_id in (
+            (url, "POST", "580"),
+            (url, "GET", "7027"),
+            ("https://evil.example/api/front/products/580/departments?extended=1", "GET", "580"),
+            ("https://services.kwant.net.pl/api/front/products/prices/580?extended=1", "GET", "580"),
+        ):
+            self.assertIsNone(probe.observed_exact_extended_request(
+                hostile_url, method, requested_id,
+            ))
+        extra = probe.observed_exact_extended_request(
+            url + "&session=THIS_MUST_NOT_LEAK", "GET", "580",
+        )
+        self.assertFalse(extra["safeForReplay"])
+        self.assertNotIn("THIS_MUST_NOT_LEAK", json.dumps(extra))
+        opaque = probe.observed_exact_extended_request(
+            url.replace("extended=1", "extended=sk-proj-research-secret"), "GET", "580",
+        )
+        self.assertEqual(probe.REDACTED, opaque["extendedValue"])
+        self.assertFalse(opaque["safeForReplay"])
+        self.assertNotIn("sk-proj", json.dumps(opaque))
+
+    def test_full_directory_coverage_zeros_nulls_missing_units_are_distinct(self):
+        directory = {"205": "Nowy Sącz", "128": "Zamość", "216": "Tarnów"}
+        rows = [
+            {"department_id": 205, "stock": 7},
+            {"department_id": 128, "stock": 0},
+            {"department_id": 216, "stock": 4},
+        ]
+        value = probe.safe_exact_departments_response(
+            {"list": rows, "total_stock": 123, "unit": "szt.",
+             "token": "SECRET_MUST_NOT_LEAK"},
+            "580", directory,
+        )
+        self.assertEqual("ALL_DIRECTORY_BRANCHES", value["coverage"])
+        self.assertEqual(3, value["canonicalIdCount"])
+        self.assertEqual(1, value["zeroCount"])
+        self.assertEqual("szt.", value["unit"])
+        self.assertEqual(7, value["selectedBranch205Stock"])
+        self.assertEqual("NONNEGATIVE_INTEGER", value["totalStockFieldState"])
+        self.assertNotIn("123", json.dumps(value))  # aggregate never labelled branch
+        self.assertNotIn("SECRET_MUST_NOT_LEAK", json.dumps(value))
+        null_row = rows[:2] + [{"department_id": 216, "stock": None}]
+        null_value = probe.safe_exact_departments_response(
+            {"list": null_row}, "580", directory,
+        )
+        self.assertEqual("PARTIAL_OR_UNKNOWN", null_value["coverage"])
+        self.assertEqual(1, null_value["nullCount"])
+        self.assertEqual(0, null_value["missingCount"])
+        missing = rows[:2] + [{"department_id": 216}]
+        missing_value = probe.safe_exact_departments_response(
+            {"list": missing}, "580", directory,
+        )
+        self.assertEqual("PARTIAL_OR_UNKNOWN", missing_value["coverage"])
+        self.assertEqual(1, missing_value["missingCount"])
+        self.assertEqual(0, missing_value["nullCount"])
+
+    def test_cookie_free_inventory_comparison_requires_exact_stock_quantities(self):
+        directory = {"205": "Nowy Sącz", "128": "Zamość"}
+        browser = probe.safe_exact_departments_response(
+            {"list": [
+                {"department_id": 205, "stock": 5},
+                {"department_id": 128, "stock": 0},
+            ]}, "580", directory,
+        )
+        same_reordered = probe.safe_exact_departments_response(
+            {"list": [
+                {"department_id": 128, "stock": 0},
+                {"department_id": 205, "stock": 5},
+            ]}, "580", directory,
+        )
+        changed_positive_quantity = probe.safe_exact_departments_response(
+            {"list": [
+                {"department_id": 205, "stock": 7},
+                {"department_id": 128, "stock": 0},
+            ]}, "580", directory,
+        )
+        swapped_branch_quantities = probe.safe_exact_departments_response(
+            {"list": [
+                {"department_id": 205, "stock": 0},
+                {"department_id": 128, "stock": 5},
+            ]}, "580", directory,
+        )
+        self.assertEqual("ALL_DIRECTORY_BRANCHES", browser["coverage"])
+        self.assertEqual(browser["coverage"], changed_positive_quantity["coverage"])
+        self.assertEqual(browser["zeroCount"], changed_positive_quantity["zeroCount"])
+        self.assertTrue(probe.same_sanitized_department_inventory(browser, same_reordered))
+        # 5 -> 7 remains POSITIVE, but cannot mean cookie-free quantities agree.
+        self.assertFalse(probe.same_sanitized_department_inventory(
+            browser, changed_positive_quantity,
+        ))
+        self.assertFalse(probe.same_sanitized_department_inventory(
+            browser, swapped_branch_quantities,
+        ))
+
+    def test_second_product_has_independent_identity_and_no_assumed_stock(self):
+        directory = {"205": "Nowy Sącz", "128": "Zamość"}
+        payload = {"list": [
+            {"department_id": 205, "stock": 0},
+            {"department_id": 128, "stock": None},
+        ], "product_id": 7027, "unit": None}
+        second = probe.safe_exact_departments_response(payload, "7027", directory)
+        wrong = probe.safe_exact_departments_response(payload, "580", directory)
+        self.assertEqual("MATCH", second["rootIdentity"])
+        self.assertEqual("MISMATCH", wrong["rootIdentity"])
+        self.assertEqual("PARTIAL_OR_UNKNOWN", second["coverage"])
+        self.assertEqual(1, second["zeroCount"])
+        self.assertEqual(1, second["nullCount"])
+        self.assertEqual("NULL", second["unitFieldState"])
+        self.assertEqual("IDENTITY_CONFLICT", wrong["coverage"])
+
+    def test_only_observed_sanitized_request_allows_cookie_free_replay(self):
+        from unittest.mock import patch
+
+        directory = {"205": "Nowy Sącz"}
+        observed = probe.observed_exact_extended_request(
+            "https://services.kwant.net.pl/api/front/products/580/departments?extended=true",
+            "GET", "580",
+        )
+        with patch.object(probe, "isolated_public_json_get", return_value=(
+            200, {"list": [{"department_id": 205, "stock": 0}], "unit": "szt."},
+        )) as fetch:
+            result = probe.cookie_free_departments_replay(observed, "580", directory)
+        fetch.assert_called_once_with(
+            "/api/front/products/580/departments", {"extended": "true"},
+        )
+        self.assertEqual("ALL_DIRECTORY_BRANCHES", result["response"]["coverage"])
+        self.assertEqual(0, result["response"]["selectedBranch205Stock"])
+        with patch.object(probe, "isolated_public_json_get") as fetch:
+            denied = probe.cookie_free_departments_replay(
+                {"safeForReplay": False, "extendedValue": probe.REDACTED},
+                "7027", directory,
+            )
+            self.assertFalse(denied["attempted"])
+            fetch.assert_not_called()
+
+    def test_selected_current_corroboration_requires_both_exact_id_matches(self):
+        from unittest.mock import patch
+
+        exact = {
+            "product_id": 7027,
+            "department_stock": {"department_id": 205, "stock": 0},
+            "stock": 999,  # central-like value must not enter local quantity
+        }
+        with patch.object(probe, "isolated_public_json_get", return_value=(
+            200, exact,
+        )) as fetch:
+            current = probe.cookie_free_selected_current("7027", "205")
+        fetch.assert_called_once_with(
+            "/api/front/products/7027/current", {"depstock": "205"},
+        )
+        self.assertEqual("MATCH", current["productIdentity"])
+        self.assertEqual("MATCH", current["branchIdentity"])
+        self.assertEqual(0, current["selectedBranchStock"])
+        self.assertIsNone(current["centralStock"])
+        with patch.object(probe, "isolated_public_json_get", return_value=(
+            200, exact,
+        )):
+            wrong = probe.cookie_free_selected_current("580", "205")
+        self.assertEqual("MISMATCH", wrong["productIdentity"])
+        self.assertIsNone(wrong["selectedBranchStock"])
+
+
+
+class SanitizedObservedLiveFixtureTest(unittest.TestCase):
+    def test_live_fixture_is_two_distinct_products_without_secret_values(self):
+        fixture_path = Path(__file__).parent / "fixtures" / "kwant_extended_live_20261011.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            {"extended": "1"}, fixture["request"]["exactObservedQuery"],
+        )
+        self.assertEqual(
+            ["list", "total_stock", "unit"], fixture["response"]["rootFields"],
+        )
+        self.assertEqual(
+            ["department_id", "stock"], fixture["response"]["rowFields"],
+        )
+        self.assertEqual(
+            ["580", "7027"],
+            [p["productId"] for p in fixture["observedProducts"]],
+        )
+        for product in fixture["observedProducts"]:
+            with self.subTest(product=product["productId"]):
+                self.assertEqual(200, product["browserHttp"])
+                self.assertEqual(200, product["anonymousHttp"])
+                self.assertEqual(
+                    product["canonicalDirectoryCount"], product["responseRowCount"],
+                )
+                self.assertEqual(
+                    product["numericStockCount"], product["responseRowCount"],
+                )
+                self.assertGreater(product["explicitZeroCount"], 0)
+                for k in ("nullCount", "missingCount", "invalidCount",
+                          "duplicateDepartmentCount", "unknownDepartmentCount"):
+                    self.assertEqual(0, product[k])
+                self.assertTrue(product["cookieFreeRowsAndStockEqual"])
+                self.assertEqual(product["selectedStock"], product["currentStock"])
+                self.assertNotEqual(
+                    product["separateExactProductPageStock"], product["selectedStock"],
+                )
+        raw = fixture_path.read_text(encoding="utf-8").lower()
+        for secret_field in ("cookie:", "authorization:", "set-cookie",
+                             "bearer ", "sessiontoken", "password="):
+            self.assertNotIn(secret_field, raw)
+
 if __name__ == "__main__":
     unittest.main()
