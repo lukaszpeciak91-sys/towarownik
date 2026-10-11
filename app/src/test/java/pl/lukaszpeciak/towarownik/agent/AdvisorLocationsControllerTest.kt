@@ -88,6 +88,11 @@ class AdvisorLocationsControllerTest {
         onProviderDiscovery: (AdvisorToolArguments) -> AdvisorToolExecutionResult = {
             onDiscovery()
         },
+        kwantBranches: List<ProviderBranch> = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+            ProviderBranch(BranchId("204"), "Tarnów"),
+        ),
     ) = AdvisorController(
         isConfigured = { true },
         startAgent = { _, _, _ -> initial },
@@ -98,11 +103,7 @@ class AdvisorLocationsControllerTest {
         executeLocationsTool = locationCall,
         branchDirectory = { provider ->
             if (provider.value == "kwant-pl") {
-                ProviderBranchResult.Available(listOf(
-                    ProviderBranch(BranchId("205"), "Nowy Sącz"),
-                    ProviderBranch(BranchId("128"), "Zamość"),
-                    ProviderBranch(BranchId("204"), "Tarnów"),
-                ))
+                ProviderBranchResult.Available(kwantBranches)
             } else {
                 ObiProductProvider().branches()
             }
@@ -1284,6 +1285,7 @@ class AdvisorLocationsControllerTest {
                     tool.execute(args, provider, branch, text, current, history)
                 },
                 onProviderDiscovery = { error("find_products must stay independent") },
+                kwantBranches = branches,
             )
             val state = c.runTurn(
                 input = case.text,
