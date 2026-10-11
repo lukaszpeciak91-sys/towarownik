@@ -1256,7 +1256,7 @@ function validateOptionalStockUnit(value: unknown): string | null | undefined {
   if (value === undefined) return undefined; // Legacy Android clients omit the field.
   if (value === null) return null;
   if (typeof value !== "string" || value.length < 1 || value.length > 32 ||
-      !/^[\\p{L}\\p{N}.%/ -]+$/u.test(value) || value.trim() !== value) {
+      !/^[\p{L}\p{N}.%/ -]+$/u.test(value) || value.trim() !== value) {
     throw new InvalidRequestError();
   }
   return value;
