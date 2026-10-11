@@ -735,7 +735,13 @@ class AdvisorControllerTest {
 
         assertEquals(0, continueCalls)
         assertEquals(
-            AdvisorUiState.Error(AdvisorError.PRODUCT_PROVIDER),
+            AdvisorUiState.Error(
+                AdvisorError.PRODUCT_PROVIDER,
+                diagnostic = AdvisorFailureDiagnostic(
+                    kind = AdvisorProxyFailureKind.SERVICE,
+                    failureClass = AdvisorFailureClass.LOCAL_PROVIDER_FAILURE,
+                ),
+            ),
             final,
         )
     }
