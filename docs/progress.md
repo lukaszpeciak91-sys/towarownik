@@ -2,7 +2,7 @@
 
 ## 2026-10-11 — INC-002 CONTINUE stock-unit repair (pending independent audit)
 
-RED Proxy CI run 38178340364: both new Android-wire fixture cases failed with `expected 200 / actual 400` and `255 pass / 2 fail`, reproducing the strict Worker/Android `stockUnit` mismatch. Added optional bounded `stockUnit` acceptance to product validators and types plus synthetic v2–v5, historical omission, malformed type and unknown-field tests. No production requests, Android changes, AAB build or Worker deployment. Track GREEN Proxy and Android CI on final HEAD before merging.
+Initial RED run 38178340364 confirmed v2 but included a malformed test helper injection for v3. Corrected RED Proxy CI run **38178594839**, using the exact baseline validator and properly versioned v2–v5 fixtures, yielded **267 pass / 14 expected failures**: each new `stockUnit`-carrying verified CONTINUE returned 400 instead of expected 200; historical fixtures without `stockUnit` stayed green. The strict Worker/Android mismatch is therefore executable across all affected versions. Added optional bounded `stockUnit` acceptance to product validators and types plus synthetic v2–v5, historical omission, malformed type and unknown-field tests. No production requests, Android changes, AAB build or Worker deployment. Track GREEN Proxy and Android CI on final HEAD before merging.
 
 ## 2026-10-11 — R4.1 rapid duplicate-submit admission boundary (awaiting independent audit)
 
