@@ -95,26 +95,20 @@ internal fun resolveAdvisorLocationFollowUp(
     // A current explicit inventory request can still use a previous unambiguous
     // user-selected product. No product is selected from a model hint.
     val recentSelections = userHistory.asReversed().flatMap { item ->
-        val txt = normalized(item.text)
+        val references = AdvisorProductIdentityReferences.fromUserText(item.text)
         candidates.filter { candidate ->
-            val id = candidate.effectiveProductId.lowercase()
-            Regex("""(?<![a-z0-9])""" + Regex.escape(id) + """(?![a-z0-9])""")
-                .containsMatchIn(txt) ||
-                candidate.articleNumber?.let { article ->
-                    txt.contains(article.lowercase())
-                } == true
+            references.mentions(candidate.effectiveProductId) ||
+                (candidate.articleNumber?.let(references::mentions) == true)
         }.map { it.effectiveProductId }
     }
     val selectedId = recentSelections.firstOrNull()
-    // A current explicit product ID or article always takes precedence over
-    // prior selections. It must match an already verified snapshot; unknown
-    // numbers are still rejected by the downstream trusted-product guard.
+    // Both the present request and older USER selections use the exact same
+    // numeric-ID safety boundary as the inventory tool. "1000 W" may describe
+    // a measurement, never an explicit request for verified product 1000.
+    val currentReferences = AdvisorProductIdentityReferences.fromUserText(input)
     val currentMatches = candidates.filter { candidate ->
-        listOfNotNull(candidate.effectiveProductId, candidate.articleNumber)
-            .any { identifier ->
-                Regex("""(?<![a-z0-9])""" + Regex.escape(normalized(identifier)) +
-                    """(?![a-z0-9])""").containsMatchIn(current)
-            }
+        currentReferences.mentions(candidate.effectiveProductId) ||
+            (candidate.articleNumber?.let(currentReferences::mentions) == true)
     }.distinctBy { it.providerId to it.effectiveProductId }
     val newestCard = recent.asReversed()
         .firstOrNull { it.role == "ASSISTANT" && it.products.isNotEmpty() }
