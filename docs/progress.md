@@ -2,6 +2,8 @@
 
 ## 2026-10-11 — PR #112 guarded production KWANT product locations
 
+Updated only location-specific Worker instructions (not protocol or schema) so the model no longer describes verified KWANT extended as unverified. Proxy checks are required for this focused Worker text change.
+
 Implemented observed `extended=1` with existing read-only HTTP, one exact product GET and bounded response validation. Directory-based user scope and model-hint containment prevent a Zamość-only request leaking the full public branch list, while explicit nationwide queries are permitted. Numeric stock, zero, null, missing, invalid and unknown branch identities remain distinct; root `unit` is optional and never inferred. Deterministic KWANT location output now labels oddziały rather than OBI markets and shows verified units, timestamp and incomplete status. Current `obu` produces a typed single-product-tool limitation rather than an unverified endpoint claim. Added synthetic provider, scope, MockWebServer and UI regressions; production Worker and normal provider find_products remain unchanged. Manual Android checks: see `docs/kwant-product-locations-production-smoke.md`.
 
 
