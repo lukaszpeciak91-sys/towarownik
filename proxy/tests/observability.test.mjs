@@ -74,6 +74,7 @@ function toolPayload(
 ) {
   return {
     id: "resp_tool_observability_sentinel",
+    status: "completed",
     output: [
       {
         type: "function_call",
