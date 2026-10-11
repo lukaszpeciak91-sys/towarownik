@@ -58,7 +58,7 @@ internal fun resolveAdvisorLocationFollowUp(
         if (t in setOf("obu", "oba")) return true
         if (t in canonicalLocations) return true
         val preposition = Regex(
-            """^a w (?:(?:oddziale|markecie|sklepie)(?: obi)? )?(.+)$""",
+            """^a (?:w|we) (?:(?:oddziale|markecie|sklepie)(?: obi)? )?(.+)$""",
         ).matchEntire(t)
         if (preposition != null) {
             return isCanonicalLocationWithOptionalMarketNumber(preposition.groupValues[1])
@@ -142,7 +142,8 @@ internal fun resolveAdvisorLocationFollowUp(
     val effective = if (pending && !isInventoryRequest(input)) {
         if (current == "obu" || current == "oba") {
             "Sprawdź stan obu produktów"
-        } else if (current.startsWith("a w ") || current.startsWith("no jak market ") ||
+        } else if (current.startsWith("a w ") || current.startsWith("a we ") ||
+            current.startsWith("no jak market ") ||
             current.startsWith("ok podaj markety ")
         ) {
             "Sprawdź stan produktu: $input"
