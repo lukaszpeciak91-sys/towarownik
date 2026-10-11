@@ -1,3 +1,7 @@
+## 2026-10-11 — R2 Worker Responses completion attribution (pending independent audit)
+
+Added fail-closed top-level Responses status validation before answer/tool normalization. Structured `max_output_tokens` incomplete reason receives separate privacy-safe category; all other incomplete/nonterminal/missing/invalid statuses reject with bounded diagnostics. Synthetic tests cover completed answer/tool, noncompleted answer/tool, HTTP upstream categories, logs and trace behavior. No Worker deployment or changed public wire/limits; independent PR audit and CI required.
+
 # Progress
 
 ## 2026-10-11 — R1 bounded Android Advisor failure diagnostics (PR #113)
