@@ -264,21 +264,13 @@ internal class AdvisorLocationsTool(
         // An explicit new exact identifier must never silently resolve to an
         // unrelated older card just because the model supplied that card's ID.
         val normalized = userText.lowercase()
-        val explicit = candidates.filter { candidate ->
-            boundedMention(normalized, candidate.effectiveProductId.lowercase()) ||
-                (candidate.articleNumber?.let { boundedMention(
-                    normalized, it.lowercase(),
-                ) } == true)
-        }
-        // Short KWANT IDs need the same fail-closed identity boundary as
-        // long OBIK/EAN values. Four-to-six-digit numbers count only in
-        // explicit product/identifier contexts or a direct "sprawdź 7027".
-        // Ordinary measurements and three-digit OBI markets are not IDs.
-        // A quantity followed by a physical unit (1000 W, 25 m) is not
-        // a short product ID. A single "w" followed by a place remains a
-        // Polish location preposition rather than a watt unit.
-        fun hasMeasurementUnitAfter(endIndex: Int): Boolean {
-            val following = normalized.substring(endIndex + 1)
+        // The explicit identity grammar is separate from stock intent. A
+        // model-supplied productId never grants an inventory lookup.
+        // Recognize short numeric IDs only in product-labelled, direct-check
+        // and bounded stock-question forms; never mine arbitrary quantities
+        // or 3-digit OBI market identifiers out of the user message.
+        fun hasMeasurementUnitAfter(text: String, endIndex: Int): Boolean {
+            val following = text.substring(endIndex + 1)
             return Regex("""^\s*(?:mm|cm|m2|m3|m|kg|kw|kwh|v|a|l|ml|szt|opak)\b""")
                 .containsMatchIn(following) ||
                 Regex("""^\s*w\b(?:\s+w\b|\s*$|\s*[,.;!?])""")
@@ -290,22 +282,49 @@ internal class AdvisorLocationsTool(
                 """model(?:u)?|gniazd(?:a|o)|numer(?:\s+katalogowy)?|""" +
                 """nr(?:\s+katalogowy)?)\s*(?:nr\s*)?[:#-]?\s*([0-9]{4,13})\b""",
         ).findAll(normalized)
-            .filterNot { it.groupValues[1].length <= 6 && hasMeasurementUnitAfter(it.range.last) }
-            .map { it.groupValues[1] }
+            .filterNot { it.groupValues[1].length <= 6 &&
+                hasMeasurementUnitAfter(normalized, it.range.last)
+            }.map { it.groupValues[1] }
         val directCheckNumbers = Regex("""\bsprawd[zź](?:cie)?\s+([0-9]{4,6})\b""")
             .findAll(normalized)
-            .filterNot { hasMeasurementUnitAfter(it.range.last) }
+            .filterNot { hasMeasurementUnitAfter(normalized, it.range.last) }
             .map { it.groupValues[1] }
+        // Normalized words are used only for these natural Polish question
+        // forms. Their anchored grammar excludes unrelated numbers elsewhere
+        // in the sentence, including quantities after an identified product.
+        val inventoryQuestion = norm(userText)
+        val stockQuestionNumbers = Regex(
+            """^(?:sprawdz(?:cie)?|jaki jest)\s+(?:stan|dostepnosc)\s+([0-9]{4,6})\b""",
+        ).findAll(inventoryQuestion)
+            .filterNot { hasMeasurementUnitAfter(inventoryQuestion, it.range.last) }
+            .map { it.groupValues[1] }
+        // Existing OBIK/EAN-length protection is intentionally unchanged.
         val longNumbers = Regex("""(?<![0-9])[0-9]{7,13}(?![0-9])""")
             .findAll(normalized).map { it.value }
-        val referencedNumbers = (explicitProductNumbers + directCheckNumbers + longNumbers)
-            .toSet()
+        val referencedNumbers = (
+            explicitProductNumbers + directCheckNumbers + stockQuestionNumbers + longNumbers
+        ).toSet()
         if (referencedNumbers.any { number -> candidates.none {
                 it.effectiveProductId.equals(number, ignoreCase = true) ||
                     it.articleNumber?.equals(number, ignoreCase = true) == true
             } }
         ) return null
 
+        // A verified short numeric ID is an explicit current selection ONLY
+        // when the bounded grammar establishes its role as product identity.
+        // "1000 W" and "OBI 052" must not win over a selected product.
+        fun mentionsTrustedIdentity(identifier: String): Boolean {
+            val value = identifier.lowercase()
+            return when {
+                value.matches(Regex("""[0-9]{1,3}""")) -> false
+                value.matches(Regex("""[0-9]{4,6}""")) -> value in referencedNumbers
+                else -> boundedMention(normalized, value)
+            }
+        }
+        val explicit = candidates.filter { candidate ->
+            mentionsTrustedIdentity(candidate.effectiveProductId) ||
+                (candidate.articleNumber?.let(::mentionsTrustedIdentity) == true)
+        }
         val trusted = when {
             explicit.size == 1 -> explicit.single()
             explicit.size > 1 -> return null
