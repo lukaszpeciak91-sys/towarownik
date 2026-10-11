@@ -1,3 +1,7 @@
+## 2026-10-11 — Reject noncompleted Responses before Advisor normalization
+
+Do not infer model completion from a populated `output` array. Require top-level `status=completed` for all START/MESSAGE/CONTINUE Responses, including tool calls. A missing status in historical synthetic fixtures is not evidence of completion and must be corrected in fixtures. Log only bounded enum categories: `upstream_incomplete_output_budget`, `upstream_incomplete_other`, `upstream_response_not_completed`, `upstream_invalid_response_status`; never raw `incomplete_details` or model output. Preserve public 502/upstream_failure, trace header, model/token/time limits and legacy Advisor protocols.
+
 # Decisions
 
 ## 2026-10-11 — PR #112 canonical locative audit decision
