@@ -405,6 +405,8 @@ internal class AdvisorProxyClient(
                             continuation.resume(
                                 AdvisorProxyCallResult.Failure(
                                     AdvisorProxyFailureKind.NETWORK,
+                                    endpoint = endpoint.substringAfterLast('/'),
+                                    failureClass = advisorFailureClass(exception),
                                 ),
                             )
                         }
@@ -548,6 +550,10 @@ internal class AdvisorProxyClient(
                                 } else {
                                     AdvisorProxyFailureKind.NETWORK
                                 },
+                                endpoint = endpoint.substringAfterLast('/'),
+                                failureClass = if (exception is AttachmentByteCountMismatchException) {
+                                    AdvisorFailureClass.RESPONSE_PARSE
+                                } else advisorFailureClass(exception),
                             ),
                         )
                     }
@@ -578,6 +584,7 @@ internal class AdvisorProxyClient(
                 proxyErrorCode = parseProxyErrorCode(response),
                 endpoint = endpoint,
                 traceId = traceId,
+                failureClass = AdvisorFailureClass.HTTP_ERROR,
             )
         }
 
@@ -586,13 +593,17 @@ internal class AdvisorProxyClient(
         }.getOrNull()
             ?: return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
+                endpoint = endpoint,
                 traceId = traceId,
+                failureClass = AdvisorFailureClass.RESPONSE_PARSE,
             )
 
         if (preview.isEmpty() || preview.size > MAX_PROXY_RESPONSE_BYTES) {
             return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
+                endpoint = endpoint,
                 traceId = traceId,
+                failureClass = AdvisorFailureClass.RESPONSE_PARSE,
             )
         }
 
@@ -601,7 +612,9 @@ internal class AdvisorProxyClient(
         }.getOrNull()
             ?: return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
+                endpoint = endpoint,
                 traceId = traceId,
+                failureClass = AdvisorFailureClass.RESPONSE_PARSE,
             )
 
         val result = runCatching {
@@ -609,7 +622,9 @@ internal class AdvisorProxyClient(
         }.getOrNull()
             ?: return AdvisorProxyCallResult.Failure(
                 AdvisorProxyFailureKind.PROTOCOL,
+                endpoint = endpoint,
                 traceId = traceId,
+                failureClass = AdvisorFailureClass.RESPONSE_PARSE,
             )
 
         return AdvisorProxyCallResult.Success(
