@@ -56,7 +56,13 @@ internal fun authorizeKwantLocations(
     // Constrain only explicit user place phrases; unknown named locations
     // require clarification rather than silently expanding to all branches.
     val places = Regex("""\b(?:w|we)\s+(?:(?:oddziale|hurtowni)\s+(?:w\s+)?)?([a-z]+(?:\s+[a-z]+)?)""")
-    for (match in places.findAll(text)) {
+    // Numeric "w oddziale 128" was already bound above. Do not let the
+    // word-based matcher mistake "oddziale" for a new unknown city.
+    val cityText = text.replace(
+        Regex("""\b(?:w|we)\s+(?:oddziale|hurtowni)\s+(?:nr\s+)?[0-9]{1,8}\b"""),
+        "",
+    )
+    for (match in places.findAll(cityText)) {
         val phrase = match.groupValues[1]
         if (locationWords.any { phrase.startsWith(it + " ") || phrase == it }) continue
         val alias = aliases.keys.sortedByDescending { it.length }
