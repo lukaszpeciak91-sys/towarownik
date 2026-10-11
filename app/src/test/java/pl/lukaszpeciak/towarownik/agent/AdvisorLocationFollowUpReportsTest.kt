@@ -348,4 +348,85 @@ class AdvisorLocationFollowUpReportsTest {
     }
 
 
+    @Test fun naturalKwantStockQuestionUnknownIdRejectsBeforeInventory() = runBlocking {
+        for (message in listOf(
+            "Sprawdź stan 7027 w oddziale Zamość",
+            "Sprawdź dostępność 7027 w Zamościu",
+            "Jaki jest stan 921861 w Tarnowie?",
+        )) {
+            val f = ShortKwantFixture()
+            val result = f.check(message, listOf(f.old), "7035")
+            assertEquals(message, "rejected", result.status)
+            assertEquals(message, "untrusted_product", result.reason)
+            assertTrue(message, f.adapterReads.isEmpty())
+        }
+    }
+
+    @Test fun naturalKwantStockQuestionResolvesVerifiedIdOrArticleExactly() = runBlocking {
+        for (message in listOf(
+            "Sprawdź stan 7027 w oddziale Zamość",
+            "Sprawdź dostępność 7027 w Zamościu",
+            "Jaki jest stan 921861 w Tarnowie?",
+        )) {
+            val f = ShortKwantFixture()
+            val trusted = listOf(f.old, f.newlyVerified)
+            val correct = f.check(message, trusted, "7027")
+            assertEquals(message, "unavailable", correct.status)
+            assertEquals(message, "unverified_request_contract", correct.reason)
+            assertEquals(message, listOf("7027"), f.adapterReads)
+            val substituted = f.check(message, trusted, "7035")
+            assertEquals(message, "rejected", substituted.status)
+            assertEquals(message, listOf("7027"), f.adapterReads)
+        }
+    }
+
+    @Test fun naturalKwantMeasurementsCannotBecomeAnotherVerifiedProduct() = runBlocking {
+        val f = ShortKwantFixture()
+        val numericProduct = snapshot("1000", "kwant-pl", "444441")
+        val correct = f.check(
+            "Sprawdź stan produktu 7035 w oddziale Zamość, potrzebuję 1000 W, 25 m i 5 szt.",
+            listOf(f.old, numericProduct),
+            "7035",
+        )
+        assertEquals("unavailable", correct.status)
+        assertEquals(listOf("7035"), f.adapterReads)
+        val onlyMeasurement = f.check(
+            "Sprawdź stan 1000 W w oddziale Zamość",
+            listOf(f.old, numericProduct),
+            "1000",
+        )
+        assertEquals("rejected", onlyMeasurement.status)
+        assertTrue(f.adapterReads.size == 1)
+    }
+
+    @Test fun obiMarketThreeDigitCodesRemainLocationsNotProductIdentities() = runBlocking {
+        for (market in listOf("003", "052", "075")) {
+            val known = snapshot(market)
+            val product = snapshot("6117543")
+            val inventory = Inventory()
+            val message = "Sprawdź stan OBIK 6117543 w market OBI $market"
+            val result = inventory.tool.execute(
+                arguments = AdvisorLocationArguments("obi-pl", "6117543", emptyList()),
+                providerId = "obi-pl", currentBranchId = "075",
+                userText = message, currentVerified = emptyList(),
+                historicalVerified = listOf(known, product),
+            )
+            assertEquals(message, "verified", result.status)
+            assertEquals(message, "6117543", result.productId)
+            assertEquals(message, listOf(market), result.checkedIds)
+            assertEquals(message, listOf(listOf(market)), inventory.http)
+        }
+    }
+
+    @Test fun obiUnknownEanLengthStillRejectsWithoutHttp() = runBlocking {
+        val (result, inventory) = lookup(
+            "Sprawdź stan EAN 5901234123457 w market OBI 003",
+            obiHistory,
+        )
+        assertEquals("rejected", result.status)
+        assertEquals("untrusted_product", result.reason)
+        assertTrue(inventory.reads.isEmpty())
+        assertTrue(inventory.http.isEmpty())
+    }
+
 }
