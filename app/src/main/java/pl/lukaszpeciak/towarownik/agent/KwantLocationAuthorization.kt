@@ -47,10 +47,11 @@ internal fun authorizeKwantLocations(
     val locationWords = listOf(
         "wszystkich", "wszystkie", "innych", "inne", "pozostalych",
         "oddzialach", "hurtowniach", "ktorych", "jakich", "calym",
+        "calej", "sieci",
     )
     // Constrain only explicit user place phrases; unknown named locations
     // require clarification rather than silently expanding to all branches.
-    val places = Regex("""\b(?:w|we)\s+(?:(?:oddziale|hurtowni)\s+)?([a-z]+(?:\s+[a-z]+)?)""")
+    val places = Regex("""\b(?:w|we)\s+(?:(?:oddziale|hurtowni)\s+(?:w\s+)?)?([a-z]+(?:\s+[a-z]+)?)""")
     for (match in places.findAll(text)) {
         val phrase = match.groupValues[1]
         if (locationWords.any { phrase.startsWith(it + " ") || phrase == it }) continue
@@ -70,7 +71,7 @@ internal fun authorizeKwantLocations(
     val broad = Regex(
         """\b(?:wszystkich|wszystkie|innych|pozostalych)\s+(?:oddzialach|hurtowniach|oddzialy)\b|""" +
             """\bgdzie\s+(?:jest\s+)?dostepn|\bw\s+jakich\s+oddzialach\b|""" +
-            """\bw\s+oddzialach\b""",
+            """\bw\s+oddzialach\b|\bw\s+calej\s+sieci\b""",
     ).containsMatchIn(text)
     val allowed = when {
         explicit.isNotEmpty() -> explicit.toList()
