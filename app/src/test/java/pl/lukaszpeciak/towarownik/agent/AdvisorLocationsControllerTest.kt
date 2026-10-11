@@ -1189,4 +1189,115 @@ class AdvisorLocationsControllerTest {
         }
     }
 
+    @Test fun controllerKwantCanonicalInflectionsFollowUpsAndConflictsStayScoped() = runBlocking {
+        val branches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+            ProviderBranch(BranchId("216"), "Białystok"),
+            ProviderBranch(BranchId("204"), "Tarnów"),
+            ProviderBranch(BranchId("141"), "Włocławek"),
+            ProviderBranch(BranchId("161"), "Suwałki"),
+        )
+        val product = snapshot.copy(
+            obik = "7027", productId = "7027", providerId = "kwant-pl",
+            articleNumber = "921861", storeNumber = "205", branchId = "205",
+        )
+        val previous = listOf(
+            AdvisorLocationHistoryMessage("ASSISTANT", "Verified product",
+                listOf(product)),
+            AdvisorLocationHistoryMessage("USER",
+                "Sprawdź stan produktu 7027 w Zamościu"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Który oddział teraz?"),
+        )
+        data class Scenario(
+            val text: String,
+            val hints: List<String>,
+            val expectedIds: Set<String>,
+            val expectedReason: String?,
+        )
+        val cases = listOf(
+            Scenario("a w Białymstoku?", listOf("Białystok"),
+                setOf("216"), null),
+            Scenario("a we Włocławku?", listOf("Włocławek"),
+                setOf("141"), null),
+            Scenario("Sprawdź stan 7027 w Białymstoku i Tarnowie",
+                listOf("Tarnów"), setOf("216", "204"), null),
+            Scenario("Sprawdź stan 7027 we Włocławku i Suwałkach",
+                emptyList(), setOf("141", "161"), null),
+            Scenario("Sprawdź stan 7027 w Białymstoku i Nieznanowie",
+                emptyList(), emptySet(), "unknown_location"),
+            Scenario("Sprawdź stan 7027 w oddziale 216 Tarnów",
+                emptyList(), emptySet(), "location_conflict"),
+            Scenario("Sprawdź stan 7027 w Białymstoku",
+                listOf("Tarnów"), emptySet(), "location_not_authorized"),
+        )
+        for (case in cases) {
+            var httpCalls = 0
+            val adapter = KwantProductLocationsAdapter(
+                directory = { ProviderBranchResult.Available(branches) },
+                fetcher = LocationsHttpFetcher { url ->
+                    httpCalls++
+                    assertEquals("/api/front/products/7027/departments", url.encodedPath)
+                    assertEquals("1", url.queryParameter("extended"))
+                    pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
+                        """{"list":[{"department_id":205,"stock":2},""" +
+                            """{"department_id":128,"stock":5},""" +
+                            """{"department_id":216,"stock":0},""" +
+                            """{"department_id":204,"stock":3},""" +
+                            """{"department_id":141,"stock":4},""" +
+                            """{"department_id":161,"stock":1}],"unit":"szt."}""",
+                    )
+                },
+            )
+            val tool = AdvisorLocationsTool(
+                locationsService = ProductLocationsService(listOf(adapter)),
+                kwantBranches = { ProviderBranchResult.Available(branches) },
+            )
+            var continuationCount = 0
+            val c = controller(
+                initial = AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.LocationToolRequest(
+                        responseId = "resp_locative", callId = "call_locative",
+                        arguments = AdvisorLocationArguments("kwant-pl", "7027",
+                            case.hints),
+                    ),
+                ),
+                continueCall = { result ->
+                    continuationCount++
+                    val actual = (result as AdvisorToolContinuation.Locations).evidence
+                    if (case.expectedReason != null) {
+                        assertEquals(case.text, "rejected", actual.status)
+                        assertEquals(case.text, case.expectedReason, actual.reason)
+                        assertTrue(case.text, actual.locations.isEmpty())
+                    } else {
+                        assertEquals(case.text, "verified", actual.status)
+                        assertEquals(case.text, case.expectedIds,
+                            actual.checkedIds.toSet())
+                        assertEquals(case.text, case.expectedIds,
+                            actual.locations.map { it.branchId }.toSet())
+                        assertEquals(case.text, "szt.", actual.stockUnit)
+                        assertTrue(case.text, actual.locations.all { it.stock != null })
+                    }
+                    answer()
+                },
+                locationCall = { args, provider, branch, text, current, history ->
+                    tool.execute(args, provider, branch, text, current, history)
+                },
+                onProviderDiscovery = { error("find_products must stay independent") },
+            )
+            val state = c.runTurn(
+                input = case.text,
+                previousResponseId = "resp_before_locative",
+                conversationProviderId = "kwant-pl",
+                conversationStoreNumber = "205",
+                historicalVerifiedProducts = listOf(product),
+                locationHistory = previous,
+            ) {}
+            assertTrue(case.text, state is AdvisorUiState.Success)
+            assertEquals(case.text, 1, continuationCount)
+            assertEquals(case.text, if (case.expectedReason == null) 1 else 0,
+                httpCalls)
+        }
+    }
+
 }
