@@ -1,5 +1,10 @@
 # Architecture
 
+## PR #110 final integration identity consistency (2026-10-11)
+
+Both `resolveAdvisorLocationFollowUp` and `AdvisorLocationsTool.resolveTrustedProduct` consume the shared `AdvisorProductIdentityReferences` USER-text grammar. It extracts short numeric identities only from bounded product/stock contexts, excludes measurement units (e.g. `1000 W`) and three-digit OBI store numbers, and preserves previous bounded long OBIK/EAN handling. The same policy applies to previous USER selections and the current turn before historical snapshots can be narrowed; model hints are equality-only and never grant product identity. Controller-to-history-to-real-location-tool offline regressions cover earlier 7035 selection versus a measured 1000 W, explicit product 1000, unknown IDs, conflicting model hints, OBI market numbers, and quantity dimensions. KWANT ordinary `find_products` and the three-local-call budget remain unchanged.
+
+
 ## PR #110 final short product-identity grammar (2026-10-11)
 
 `find_product_locations` recognizes short KWANT product IDs/article numbers only in explicit identifier labels, direct `Sprawdź 7027` requests, or bounded natural Polish stock questions (e.g. `Sprawdź stan 7027`, `Sprawdź dostępność 7027`, `Jaki jest stan 921861`). Exact unverified short IDs fail closed, and model IDs remain equality checks. Verified 4–6 digit products are selected only through those bounded identity contexts; numeric quantities (including `1000 W`) and three-digit OBI market identifiers do not become product references. Existing 7–13 digit OBIK/EAN checks remain unchanged. Grouped two-query KWANT `find_products` continues independently for selected/explicit alternative branches, without invoking disabled `find_product_locations`.
