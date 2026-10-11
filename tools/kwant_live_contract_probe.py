@@ -4195,6 +4195,11 @@ class ObservedLocationsResponses:
         ):
             return
         headers = getattr(request, "headers", {}) or {}
+        exact = observed_exact_extended_request(
+            getattr(request, "url", ""),
+            str(getattr(request, "method", "")).upper(),
+            self.product_id,
+        )
         self.request_records.append({
             "action": action,
             "method": str(getattr(request, "method", "")).upper(),
@@ -4205,6 +4210,7 @@ class ObservedLocationsResponses:
                 getattr(request, "post_data", None),
                 content_type=str(headers.get("content-type", "")),
             ),
+            **({"exactExtended": exact} if exact is not None else {}),
         })
 
     def on_response(self, response: Any) -> None:
@@ -4278,6 +4284,14 @@ class ObservedLocationsResponses:
         )
         method = str(getattr(request, "method", "")).upper()
         req_headers = getattr(request, "headers", {}) or {}
+        exact = observed_exact_extended_request(
+            getattr(request, "url", ""), method, self.product_id,
+        )
+        department_contract = (
+            safe_exact_departments_response(
+                data, self.product_id, self.directory,
+            ) if exact is not None else None
+        )
         self.records.append({
             "action": action,
             "host": parsed.hostname,
@@ -4291,6 +4305,8 @@ class ObservedLocationsResponses:
                 action=action,
             ),
             "shape": summary,
+            **({"exactExtended": exact, "exactDepartmentsResponse": department_contract}
+               if exact is not None else {}),
             **({"batchPrices": batch_evidence} if batch_evidence else {}),
         })
 
@@ -4497,6 +4513,80 @@ def research_product_locations(
             for item in capture.records
             if "batchPrices" in item
         ][:8]
+        # Public replay uses an independent urllib opener and ONLY the
+        # exact frontend-observed product-bound GET + sanitized extended enum.
+        exact_requests = [
+            item["exactExtended"] for item in capture.request_records
+            if item.get("action") == "locations:open-branches"
+            and "exactExtended" in item
+        ]
+        frontend = exact_requests[-1] if exact_requests else None
+        exact_responses = [
+            item for item in capture.records
+            if item.get("action") == "locations:open-branches"
+            and "exactDepartmentsResponse" in item
+        ]
+        browser_response = exact_responses[-1] if exact_responses else None
+        standalone = cookie_free_departments_replay(
+            frontend, product_id, capture.directory,
+        )
+        selected_current = (
+            cookie_free_selected_current(product_id, selected_branch_id)
+            if result["verifiedProductPage"] and selected_branch_id
+            else {"attempted": False}
+        )
+        browser_summary = (
+            browser_response.get("exactDepartmentsResponse")
+            if browser_response else None
+        )
+        standalone_summary = standalone.get("response")
+        comparable = bool(
+            browser_response and browser_response.get("status") == 200
+            and isinstance(browser_summary, dict)
+            and standalone.get("status") == 200
+            and isinstance(standalone_summary, dict)
+        )
+        same_directory = comparable and (
+            browser_summary.get("coverage") == standalone_summary.get("coverage")
+            and browser_summary.get("canonicalIdCount")
+                == standalone_summary.get("canonicalIdCount")
+            and {
+                (row["departmentId"], row["stockState"])
+                for row in browser_summary.get("canonicalRows", [])
+            } == {
+                (row["departmentId"], row["stockState"])
+                for row in standalone_summary.get("canonicalRows", [])
+            }
+        )
+        current_stock = selected_current.get("selectedBranchStock")
+        browser_stock = (
+            browser_summary.get("selectedBranch205Stock")
+            if isinstance(browser_summary, dict) and selected_branch_id == "205"
+            else None
+        )
+        result["extendedResearch"] = {
+            "frontendRequest": frontend,
+            "frontendStatus": browser_response.get("status")
+                if browser_response else None,
+            "browserResponse": browser_summary,
+            "cookieFree": standalone,
+            "sessionIndependentCoverage": (
+                "CONFIRMED" if same_directory else
+                "NOT_CONFIRMED" if comparable else "UNKNOWN"
+            ),
+            "selectedBranchCurrent": selected_current,
+            "selectedCurrentMatchesDepartment": (
+                current_stock == browser_stock if (
+                    current_stock is not None and browser_stock is not None
+                ) else "NOT_COMPARABLE"
+            ),
+            "centralVsBranch": (
+                "SEPARATE_PRODUCT_LEVEL_AND_DEPARTMENT_SCOPES"
+                if result.get("centralStockSource") == "NEXT_DATA_EXACT_PRODUCT_ID"
+                else "CENTRAL_NOT_INDEPENDENTLY_VERIFIED"
+            ),
+        }
+
     return result
 
 
