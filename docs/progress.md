@@ -1,8 +1,8 @@
+# Progress
+
 ## 2026-10-11 — R1 bounded Android Advisor failure diagnostics (PR #113)
 
 Android-only diagnostic extension: recognize DNS, TLS, timeout and generic IO failures; preserve HTTP stage and 502 status/allowlisted error/UUID trace; report malformed successful envelopes as response parsing failures and mark unexpected local product-tool failure separately. Current failed-turn state and report formatter carry only bounded enum/endpoint/status/trace fields. Cancellation still cancels OkHttp calls and is not reported as a retryable failure. Existing 10/20/20/30 second OkHttp limits, no-retry behavior, protocols v1–v5, attachments, provider authorization, Worker and Room stay unchanged. Deterministic Android classification and MockWebServer regressions added; independent audit required before merge.
-
-# Progress
 
 ## 2026-10-11 — PR #112 canonical 21-branch locative corrections
 
