@@ -1052,7 +1052,7 @@ class AdvisorLocationsControllerTest {
                     pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
                         """{"list":[{"department_id":205,"stock":2},""" +
                             """{"department_id":128,"stock":0},""" +
-                            """{"department_id":216,"stock":9}],"unit":"szt."}""",
+                            """{"department_id":204,"stock":9}],"unit":"szt."}""",
                     )
                 },
             )
@@ -1124,7 +1124,7 @@ class AdvisorLocationsControllerTest {
                 emptyList(), listOf("128", "204"), null),
             Case("Sprawdź stan 7027 w Tarnowie, Zamościu",
                 emptyList(), listOf("204", "128"), null),
-            Case("Sprawdź stan 7027 w oddziale 128 i 216",
+            Case("Sprawdź stan 7027 w oddziale 128 i 204",
                 listOf("204"), listOf("128", "204"), null),
             Case("Sprawdź stan 7027 w Zamościu i Nieznanowie",
                 emptyList(), emptyList(), "unknown_location"),
@@ -1144,7 +1144,7 @@ class AdvisorLocationsControllerTest {
                     pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
                         """{"list":[{"department_id":205,"stock":1},""" +
                             """{"department_id":128,"stock":0},""" +
-                            """{"department_id":216,"stock":5}],"unit":"szt."}""",
+                            """{"department_id":204,"stock":5}],"unit":"szt."}""",
                     )
                 },
             )
