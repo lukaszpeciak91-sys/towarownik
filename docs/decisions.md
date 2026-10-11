@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-11 — PR #112 canonical locative audit decision
+
+Keep a bounded, explicit Polish locative table only for verified canonical KWANT city names and existing OBI aliases. Never hardcode alias-to-branch-ID routes; dynamic `ProviderBranch.branchId` is the sole identity binding. Correct all prior synthetic `Tarnów = 216` assumptions to `Tarnów = 204`; `Białystok = 216` is separate, verified public-directory evidence. Extend `a we [city]?` only as a bounded stock clarification when history grants authorization. Unknown cities, conflicting pairs and model hints outside USER scope still fail closed before inventory HTTP. No changes to extended=1, OBI behavior, 3-call budget, or Worker result schema.
+
+
 ## 2026-10-11 — PR #112 Worker evidence/complete-scope audit corrections
 
 Do not weaken Worker `find_product_locations` validation to accommodate Android's earlier incomplete error payload. A failed KWANT read with verified directory must return exact requested canonical IDs, names and `null` stocks as a coherent checked/missing row set. A failed directory has no verified checked scope and sends empty arrays. Unknown is never zero. Explicit multi-location user chains must either resolve every city/branch ID or reject without HTTP; paired mismatching city/ID is an ambiguity, not implicit permission to read both. Do not change Worker schema, OBI, provider search, unit trust, tool budgets, or transport retries.
