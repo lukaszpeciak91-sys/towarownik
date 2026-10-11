@@ -187,21 +187,23 @@ class AdvisorLocationsToolTest {
         assertEquals(0, evidence.locations[1].stock)
     }
 
-    @Test fun `KWANT missing extended fails before directory or HTTP and does not leak old central stock`() = runBlocking {
+    @Test fun kwantVerifiedExtendedEmptyResponseCannotLeakOldCentralStock() = runBlocking {
         var directoryCalls = 0
         var httpCalls = 0
+        val branches = ProviderBranchResult.Available(
+            listOf(ProviderBranch(BranchId("205"), "Nowy Sącz")),
+        )
         val adapter = KwantProductLocationsAdapter(
-            fetcher = LocationsHttpFetcher {
+            fetcher = LocationsHttpFetcher { url ->
                 httpCalls++
-                LocationsHttpResult.Success("""{"list":[]}""")
+                assertEquals("1", url.queryParameter("extended"))
+                LocationsHttpResult.Success("""{"list":[],"unit":"szt."}""")
             },
-            directory = {
-                directoryCalls++
-                ProviderBranchResult.Available(listOf(ProviderBranch(BranchId("205"), "Fixture")))
-            },
+            directory = { directoryCalls++; branches },
         )
         val tool = AdvisorLocationsTool(
             locationsService = ProductLocationsService(listOf(adapter)),
+            kwantBranches = { branches },
         )
         val kwant = one.copy(
             providerId = "kwant-pl", productId = "580", obik = "580",
@@ -209,15 +211,14 @@ class AdvisorLocationsToolTest {
         )
         val evidence = tool.execute(
             AdvisorLocationArguments("kwant-pl", "580", emptyList()),
-            "kwant-pl",
-            "205",
+            "kwant-pl", "205",
             "Sprawdź ten produkt w innych oddziałach",
             emptyList(), listOf(kwant),
         )
         assertEquals("unavailable", evidence.status)
-        assertEquals("unverified_request_contract", evidence.reason)
-        assertEquals(0, directoryCalls)
-        assertEquals(0, httpCalls)
+        assertEquals("no_trusted_rows", evidence.reason)
+        assertEquals(1, directoryCalls)
+        assertEquals(1, httpCalls)
         assertNull(evidence.centralStock)
     }
     @Test fun `Krakow canonical inflected and empty model hints preserve four stores`() = runBlocking {
