@@ -1,8 +1,8 @@
+# Architecture
+
 ## R2 — Responses completion gate (2026-10-11)
 
 Worker normalizes OpenAI Responses only when the top-level `status` is exactly `completed`. Explicit `incomplete` responses are classified as output-budget exhaustion only for structured `incomplete_details.reason=max_output_tokens`, otherwise as other incompleteness. `failed`, `cancelled`, `queued`, and `in_progress` are rejected as noncompleted; missing, unknown, or malformed status is rejected independently. This gate precedes tool-call extraction or structured-final parsing; valid-looking output cannot authorize Android tool execution. The public 502/upstream_failure response and trace header remain unchanged. No retry, extra deadline, protocol change, tool-budget change, model-budget change, or attachment/provider behavior change.
-
-# Architecture
 
 ## PR #112 final audit — canonical KWANT Polish locatives (2026-10-11)
 
