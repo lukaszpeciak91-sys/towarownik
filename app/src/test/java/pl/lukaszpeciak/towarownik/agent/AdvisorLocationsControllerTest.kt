@@ -703,6 +703,7 @@ class AdvisorLocationsControllerTest {
         val follow = resolveAdvisorLocationFollowUp(
             input = "A ile tego samego produktu jest w Nowym Sączu?",
             history = history, historicalProducts = listOf(product), branches = branches,
+            providerId = "kwant-pl",
         )
         assertEquals(listOf("580"), follow.historicalProducts.map { it.effectiveProductId })
         assertEquals(true, follow.hasPendingInventoryRequest)
@@ -716,6 +717,7 @@ class AdvisorLocationsControllerTest {
         val next = resolveAdvisorLocationFollowUp(
             input = "A w Sączu ile jest tego samego?",
             history = history, historicalProducts = listOf(product), branches = branches,
+            providerId = "kwant-pl",
         )
         assertEquals(true, next.authorizedText.contains("Sprawdź stan"))
         assertEquals(listOf(BranchId("205")),
