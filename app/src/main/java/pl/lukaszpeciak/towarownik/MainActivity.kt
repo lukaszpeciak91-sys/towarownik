@@ -1233,7 +1233,9 @@ private fun TowarownikApp() {
                     onProviderSelected = ::selectProvider,
                     onBranchSelected = ::selectBranch,
                     onReportAssistantMessage = ::openAssistantReport,
-                    onReportFailure = ::openFailureReport,
+                    onReportFailure = if (failureEvidenceStore.current?.conversationId == activeConversationId) {
+                        ::openFailureReport
+                    } else null,
                     onOpenSearchAction = ::openAdvisorSearchAction,
                     emptyPromptIndex = emptyPromptIndex,
                 )
@@ -1764,7 +1766,7 @@ private fun AdvisorChatScreen(
     onProviderSelected: (ProviderId) -> Unit,
     onBranchSelected: (ProviderBranch) -> Unit,
     onReportAssistantMessage: (Long) -> Unit,
-    onReportFailure: () -> Unit,
+    onReportFailure: (() -> Unit)?,
     onOpenSearchAction: (PersistedSearchAction) -> Unit,
     emptyPromptIndex: Int,
 ) {
@@ -3659,7 +3661,7 @@ private fun AdvisorChatPreview() {
             onProviderSelected = {},
             onBranchSelected = {},
             onReportAssistantMessage = {},
-            onReportFailure = {},
+            onReportFailure = null,
             onOpenSearchAction = {},
             emptyPromptIndex = 0,
         )
