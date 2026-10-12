@@ -18,6 +18,7 @@ internal data class AdvisorLocationFollowUp(
     val historicalProducts: List<VerifiedProductSnapshot>,
     val bothProductIds: Set<String> = emptySet(),
     val hasPendingInventoryRequest: Boolean = false,
+    val isContextualQuantityRequest: Boolean = false,
 )
 
 /**
@@ -174,5 +175,6 @@ internal fun resolveAdvisorLocationFollowUp(
         historicalProducts = selectedHistory,
         bothProductIds = both,
         hasPendingInventoryRequest = continuation,
+        isContextualQuantityRequest = quantityFollowUpLocation(current) != null,
     )
 }
