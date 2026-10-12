@@ -321,6 +321,7 @@ private fun TowarownikApp() {
     var advisorState by remember {
         mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
     }
+    val failureEvidenceStore = remember { AdvisorFailureReportEvidenceStore() }
     var pendingAttachments by rememberSaveable(saver = PendingAttachmentsSaver) {
         mutableStateOf<List<AdvisorAttachment>>(emptyList())
     }
@@ -570,6 +571,7 @@ private fun TowarownikApp() {
         recoverInterrupted: Boolean = true,
     ) {
         advisorRequestGuard.invalidate()
+        failureEvidenceStore.clear()
         advisorJob?.cancelAndJoin()
         advisorJob = null
         draftPersistJob?.cancelAndJoin()
@@ -626,6 +628,7 @@ private fun TowarownikApp() {
             }
 
             conversationRepository.deleteConversation(conversationId)
+            failureEvidenceStore.clearConversation(conversationId)
 
             if (freshCase != null) {
                 clearManualProfileContext()
@@ -733,6 +736,8 @@ private fun TowarownikApp() {
             return
         }
         val turnProfile = selectedWorkingProfile
+        val failedTurnId = java.util.UUID.randomUUID().toString()
+        failureEvidenceStore.clear() // A retry owns new evidence, never a prior failure.
 
         val generation = advisorRequestGuard.token()
         advisorJob = scope.launch {
@@ -849,6 +854,7 @@ private fun TowarownikApp() {
 
             when (finalState) {
                 is AdvisorUiState.Success -> {
+                    failureEvidenceStore.clear()
                     val display = normalizeAdvisorDisplay(
                         raw = finalState.text,
                         sources = finalState.sources,
@@ -901,6 +907,13 @@ private fun TowarownikApp() {
                     ) {
                         pendingAttachments = recovery.pendingAttachments
                         applyConversation(recovery.conversation)
+                        failureEvidenceStore.record(
+                            AdvisorFailureReportEvidence(
+                                conversationId = turn.conversationId,
+                                turnId = failedTurnId,
+                                diagnostic = finalState.diagnostic?.reportValue(),
+                            ),
+                        )
                         advisorState = finalState
                     }
                 }
@@ -1063,6 +1076,16 @@ private fun TowarownikApp() {
         surfaceName = AppSurface.REPORT.name
     }
 
+    fun openFailureReport() {
+        val id = activeConversationId ?: return
+        val evidence = failureEvidenceStore.select(id) ?: return
+        reportTypeName = ProblemReportType.ADVISOR_FAILURE.name
+        reportOriginName = ProblemReportOrigin.ADVISOR.name
+        reportConversationId = evidence.conversationId
+        reportMessageId = null
+        surfaceName = AppSurface.REPORT.name
+    }
+
     fun closeReport() {
         surfaceName = reportBackSurface(reportOrigin).name
     }
@@ -1210,6 +1233,7 @@ private fun TowarownikApp() {
                     onProviderSelected = ::selectProvider,
                     onBranchSelected = ::selectBranch,
                     onReportAssistantMessage = ::openAssistantReport,
+                    onReportFailure = ::openFailureReport,
                     onOpenSearchAction = ::openAdvisorSearchAction,
                     emptyPromptIndex = emptyPromptIndex,
                 )
@@ -1327,13 +1351,24 @@ private fun TowarownikApp() {
                             conversationId = reportConversationId,
                             reportedMessageId = reportMessageId,
                             advisorFailureDiagnostic =
-                                advisorFailureDiagnosticForReport(
-                                    type = reportType,
-                                    currentFailureDiagnostic =
-                                        (advisorState as? AdvisorUiState.Error)
-                                            ?.diagnostic
-                                            ?.reportValue(),
-                                ),
+                                if (reportType == ProblemReportType.ADVISOR_FAILURE) {
+                                    failureEvidenceStore.selected
+                                        ?.takeIf { it.conversationId == reportConversationId }
+                                        ?.diagnostic
+                                } else {
+                                    advisorFailureDiagnosticForReport(
+                                        type = reportType,
+                                        currentFailureDiagnostic =
+                                            (advisorState as? AdvisorUiState.Error)
+                                                ?.diagnostic?.reportValue(),
+                                    )
+                                },
+                            failedTurnId =
+                                if (reportType == ProblemReportType.ADVISOR_FAILURE) {
+                                    failureEvidenceStore.selected
+                                        ?.takeIf { it.conversationId == reportConversationId }
+                                        ?.turnId
+                                } else null,
                         )
                         val result = createProblemReportSharePayload(
                             context = uiContext,
@@ -1723,6 +1758,7 @@ private fun AdvisorChatScreen(
     onProviderSelected: (ProviderId) -> Unit,
     onBranchSelected: (ProviderBranch) -> Unit,
     onReportAssistantMessage: (Long) -> Unit,
+    onReportFailure: () -> Unit,
     onOpenSearchAction: (PersistedSearchAction) -> Unit,
     emptyPromptIndex: Int,
 ) {
@@ -1897,6 +1933,7 @@ private fun AdvisorChatScreen(
                                 message = advisorErrorText(state.error),
                                 diagnosticCode =
                                     state.diagnostic?.userCode(),
+                                onReportFailure = onReportFailure,
                             )
                         }
                     }
@@ -2948,6 +2985,7 @@ private fun AdvisorProgressBubble(text: String) {
 private fun AdvisorErrorBubble(
     message: String,
     diagnosticCode: String? = null,
+    onReportFailure: (() -> Unit)? = null,
 ) {
     val warmColors = MaterialTheme.towarownikColors
 
@@ -2972,6 +3010,11 @@ private fun AdvisorErrorBubble(
                 color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            onReportFailure?.let { report ->
+                TextButton(onClick = report) {
+                    Text(stringResource(R.string.advisor_report_failure))
+                }
+            }
             diagnosticCode?.let { code ->
                 Text(
                     text = stringResource(
@@ -3610,6 +3653,7 @@ private fun AdvisorChatPreview() {
             onProviderSelected = {},
             onBranchSelected = {},
             onReportAssistantMessage = {},
+            onReportFailure = {},
             onOpenSearchAction = {},
             emptyPromptIndex = 0,
         )
