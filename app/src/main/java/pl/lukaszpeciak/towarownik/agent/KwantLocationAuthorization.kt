@@ -4,6 +4,11 @@ import java.text.Normalizer
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
 
+/** The shorthand is tied to a real canonical branch name, never a synthetic branch ID. */
+internal fun kwantCanonicalBranchAliases(normalizedName: String): List<String> =
+    listOfNotNull(normalizedName, advisorCityLocative(normalizedName)) +
+        if (normalizedName == "nowy sacz") listOf("sacz", "saczu") else emptyList()
+
 /** Model hints can constrain but cannot grant USER-owned inventory scope. */
 internal sealed interface KwantAuthorizedLocations {
     data class Allowed(val requested: List<BranchId>, val nationwide: Boolean) :
@@ -34,7 +39,7 @@ internal fun authorizeKwantLocations(
     branches.forEach { branch ->
         val name = norm(branch.name)
         if (name.isBlank()) return KwantAuthorizedLocations.Denied("directory_unavailable")
-        for (alias in listOfNotNull(name, advisorCityLocative(name))) {
+        for (alias in kwantCanonicalBranchAliases(name)) {
             aliases.getOrPut(alias) { linkedSetOf() }.add(branch.branchId)
         }
     }

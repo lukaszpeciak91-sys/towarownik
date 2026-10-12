@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-12 — INC-003: canonical KWANT abbreviation, fail-closed same-product context
+
+Use only the live KWANT branch directory to bind `Sącz/Sączu` to canonical `Nowy Sącz`; never hardcode `205` into authorization. Recognize only two strict Polish question shapes mentioning the same product, not a generic short-message heuristic. User-authored inventory history must be uninterrupted; assistant text or model-suggested IDs/locations must not grant authorization. A confirmed product-bound read is required for current stock; no historical number is substituted for an unavailable response. No prompt, proxy, provider HTTP contract, retry, timeout or observability change.
+
+
 ## 2026-10-11 — INC-002: strict optional verified stock-unit contract
 
 Accept the Android-serialized `stockUnit` as an optional field **only** at verified-product positions in Worker CONTINUE result validators (OBI v2 and provider v3/v4/v5). Both explicit JSON null and bounded verified text labels are allowed; historical omission is accepted. Reject any extra keys and invalid types. Preserve privacy-safe error classification, no retries and existing downstream verified-product normalization. RED synthetic fixtures showed HTTP 400; changes require independent audit before merge/deploy.

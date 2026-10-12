@@ -686,6 +686,215 @@ class AdvisorLocationsControllerTest {
     }
 
 
+    @Test fun inc003ContextualSameProductUsesBoundedHistoryAndLocationIntent() {
+        val branches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+        )
+        val product = snapshot.copy(
+            obik = "580", productId = "580", providerId = "kwant-pl",
+            articleNumber = "MBN116E/HAG", storeNumber = "205", branchId = "205",
+        )
+        val history = listOf(
+            AdvisorLocationHistoryMessage("USER",
+                "Sprawdź dostępność produktu MBN116E w oddziale w Zamościu"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Verified", listOf(product)),
+        )
+        val follow = resolveAdvisorLocationFollowUp(
+            input = "A ile tego samego produktu jest w Nowym Sączu?",
+            history = history, historicalProducts = listOf(product), branches = branches,
+            providerId = "kwant-pl",
+        )
+        assertEquals(listOf("580"), follow.historicalProducts.map { it.effectiveProductId })
+        assertEquals(true, follow.hasPendingInventoryRequest)
+        assertEquals(true, follow.authorizedText.contains("Sprawdź stan"))
+        assertEquals(
+            listOf(BranchId("205")),
+            (authorizeKwantLocations(follow.authorizedText,
+                listOf("Nowy Sącz"), branches, BranchId("205"))
+                as KwantAuthorizedLocations.Allowed).requested,
+        )
+        val next = resolveAdvisorLocationFollowUp(
+            input = "A w Sączu ile jest tego samego?",
+            history = history, historicalProducts = listOf(product), branches = branches,
+            providerId = "kwant-pl",
+        )
+        assertEquals(true, next.authorizedText.contains("Sprawdź stan"))
+        assertEquals(listOf(BranchId("205")),
+            (authorizeKwantLocations(next.authorizedText,
+                listOf("Nowy Sącz"), branches, BranchId("205"))
+                as KwantAuthorizedLocations.Allowed).requested)
+        val unrelated = resolveAdvisorLocationFollowUp(
+            input = "A w Sączu ile jest tego samego?",
+            history = history + AdvisorLocationHistoryMessage("USER", "pokaż ceny"),
+            historicalProducts = listOf(product), branches = branches,
+        )
+        assertEquals(false, unrelated.hasPendingInventoryRequest)
+    }
+
+    @Test fun inc003FiveTurnHistoryPreservesLatestExplicitIdentityAndVerifiedBranchReads() = runBlocking {
+        val branches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+        )
+        val first = snapshot.copy(
+            obik = "580", productId = "580", providerId = "kwant-pl",
+            articleNumber = "MBN116E/HAG", storeNumber = "205", branchId = "205",
+        )
+        val other = snapshot.copy(
+            obik = "581", productId = "581", providerId = "kwant-pl",
+            articleNumber = "MBN316E/HAG", storeNumber = "205", branchId = "205",
+        )
+        val reads = mutableListOf<Pair<String, List<String>>>()
+        val adapter = KwantProductLocationsAdapter(
+            directory = { ProviderBranchResult.Available(branches) },
+            fetcher = LocationsHttpFetcher { url ->
+                assertEquals("/api/front/products/580/departments", url.encodedPath)
+                assertEquals("1", url.queryParameter("extended"))
+                pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
+                    """{"list":[{"department_id":205,"stock":7},""" +
+                        """{"department_id":128,"stock":11}],"unit":"szt."}""",
+                )
+            },
+        )
+        val tool = AdvisorLocationsTool(
+            locationsService = ProductLocationsService(listOf(adapter)),
+            kwantBranches = { ProviderBranchResult.Available(branches) },
+        )
+        val turn1 = "Sprawdź dostępność produktu MBN116E w oddziale w Zamościu"
+        val turn2 = "A ile tego samego produktu jest w Nowym Sączu?"
+        val turn3 = "sprawdź dostępność mbn316e u nas"
+        val turn4 = "Sprawdź stan produktu MBN116E/HAG w oddziale KWANT Nowy Sącz 205."
+        val turn5 = "A w Sączu ile jest tego samego?"
+        val history = mutableListOf<AdvisorLocationHistoryMessage>()
+
+        suspend fun exercise(text: String, expected: String, cards: List<VerifiedProductSnapshot>) {
+            var continuationCount = 0
+            val controller = controller(
+                initial = AdvisorProxyCallResult.Success(
+                    AdvisorProxyResult.LocationToolRequest(
+                        responseId = "resp_inc003", callId = "call_inc003",
+                        arguments = AdvisorLocationArguments(
+                            "kwant-pl", "580", listOf(
+                                if (expected == "128") "Zamość" else "Nowy Sącz"
+                            ),
+                        ),
+                    ),
+                ),
+                continueCall = { result ->
+                    continuationCount++
+                    val evidence = (result as AdvisorToolContinuation.Locations).evidence
+                    assertEquals(text, "verified", evidence.status)
+                    assertEquals(text, "580", evidence.productId)
+                    assertEquals(text, listOf(expected), evidence.checkedIds)
+                    assertEquals(text, listOf(expected), evidence.returnedIds)
+                    assertEquals(text, if (expected == "128") 11 else 7,
+                        evidence.locations.single().stock)
+                    reads += evidence.productId!! to evidence.checkedIds
+                    answer()
+                },
+                locationCall = { args, provider, branch, authorizedText, current, past ->
+                    tool.execute(args, provider, branch, authorizedText, current, past)
+                },
+                onProviderDiscovery = { error("History location test must not invoke discovery") },
+                kwantBranches = branches,
+            )
+            val state = controller.runTurn(
+                input = text, previousResponseId = "resp_previous",
+                conversationProviderId = "kwant-pl",
+                conversationStoreNumber = "205",
+                historicalVerifiedProducts = cards,
+                locationHistory = history,
+            ) {}
+            assertTrue(text, state is AdvisorUiState.Success)
+            assertEquals(text, 1, continuationCount)
+        }
+        exercise(turn1, "128", listOf(first))
+        history += AdvisorLocationHistoryMessage("USER", turn1)
+        history += AdvisorLocationHistoryMessage("ASSISTANT", "verified synthetic", listOf(first))
+        exercise(turn2, "205", listOf(first))
+        history += AdvisorLocationHistoryMessage("USER", turn2)
+        history += AdvisorLocationHistoryMessage("ASSISTANT", "verified synthetic", listOf(first))
+        // Turns 3/4 were successful explicit-product requests on the real device;
+        // represent their verified messages without assuming which model tool was used.
+        history += AdvisorLocationHistoryMessage("USER", turn3)
+        history += AdvisorLocationHistoryMessage("ASSISTANT", "verified synthetic", listOf(other))
+        history += AdvisorLocationHistoryMessage("USER", turn4)
+        history += AdvisorLocationHistoryMessage("ASSISTANT", "verified synthetic", listOf(first))
+        val selected = resolveAdvisorLocationFollowUp(
+            input = turn5, history = history, historicalProducts = listOf(first, other),
+            branches = branches, providerId = "kwant-pl",
+        )
+        assertEquals(listOf("580"), selected.historicalProducts.map { it.effectiveProductId })
+        exercise(turn5, "205", listOf(first, other))
+        assertEquals(listOf(
+            "580" to listOf("128"), "580" to listOf("205"), "580" to listOf("205"),
+        ), reads)
+    }
+
+    @Test fun inc003UnrelatedUserTurnNeverGrantsOldProductLocationRead() = runBlocking {
+        val branches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+        )
+        val product = snapshot.copy(
+            obik = "580", productId = "580", providerId = "kwant-pl",
+            articleNumber = "MBN116E/HAG", storeNumber = "205", branchId = "205",
+        )
+        var httpCalls = 0
+        val adapter = object : ProductLocationsAdapter {
+            override val providerId = KWANT_PROVIDER_ID
+            override suspend fun read(
+                ref: ProductRef, requested: List<BranchId>,
+                trustedProduct: ProviderProduct?,
+            ): ProductLocationsResult {
+                httpCalls++
+                return ProductLocationsResult.Unavailable(LocationFailure.TRANSPORT)
+            }
+        }
+        val tool = AdvisorLocationsTool(
+            locationsService = ProductLocationsService(listOf(adapter)),
+            kwantBranches = { ProviderBranchResult.Available(branches) },
+        )
+        val history = listOf(
+            AdvisorLocationHistoryMessage("USER",
+                "Sprawdź dostępność produktu MBN116E w Zamościu"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Verified", listOf(product)),
+            AdvisorLocationHistoryMessage("USER", "pokaż ceny"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Price reply"),
+        )
+        val c = controller(
+            initial = AdvisorProxyCallResult.Success(
+                AdvisorProxyResult.LocationToolRequest(
+                    responseId = "resp_inc003_blocked", callId = "call_inc003_blocked",
+                    arguments = AdvisorLocationArguments(
+                        "kwant-pl", "580", listOf("Nowy Sącz"),
+                    ),
+                ),
+            ),
+            continueCall = { output ->
+                val evidence = (output as AdvisorToolContinuation.Locations).evidence
+                assertEquals("rejected", evidence.status)
+                assertEquals("untrusted_product", evidence.reason)
+                answer()
+            },
+            locationCall = { args, provider, selected, text, current, past ->
+                tool.execute(args, provider, selected, text, current, past)
+            },
+            onProviderDiscovery = { error("Model may not discover historical products here") },
+            kwantBranches = branches,
+        )
+        assertTrue(c.runTurn(
+            input = "A w Sączu ile jest tego samego?",
+            previousResponseId = "resp_prior",
+            conversationProviderId = "kwant-pl",
+            conversationStoreNumber = "205",
+            historicalVerifiedProducts = listOf(product),
+            locationHistory = history,
+        ) {} is AdvisorUiState.Success)
+        assertEquals(0, httpCalls)
+    }
+
     @Test fun controllerAndRealLocationsToolShareNumericProductIdentityBoundary() = runBlocking {
         val selected = snapshot.copy(
             obik = "7035", productId = "7035", providerId = "kwant-pl",
