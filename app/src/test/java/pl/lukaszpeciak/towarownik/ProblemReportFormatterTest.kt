@@ -81,6 +81,41 @@ class ProblemReportFormatterTest {
     }
 
     @Test
+    fun `INC-004 START MESSAGE and CONTINUE failure diagnostics retain only their own trace`() {
+        val scenarios = listOf(
+            Triple("start", 502, "upstream_failure"),
+            Triple("message", 502, "upstream_failure"),
+            Triple("continue", 400, "invalid_request"),
+        )
+        scenarios.forEachIndexed { index, (stage, status, code) ->
+            val trace = "11111111-1111-4111-8111-11111111111${index}"
+            val diagnostic =
+                "kind=PROTOCOL http=$status proxy=$code endpoint=$stage failureClass=HTTP_ERROR trace=$trace"
+            val output = ProblemReportFormatter.format(
+                request = ProblemReportRequest(
+                    type = ProblemReportType.ADVISOR_FAILURE,
+                    category = ProblemReportCategory.ADVISOR_REQUEST_FAILED,
+                    description = "",
+                    includeConversation = false,
+                    includeObiDiagnostics = false,
+                    conversationId = 205L,
+                    failedTurnId = trace,
+                    advisorFailureDiagnostic = diagnostic,
+                ),
+                evidence = ProblemReportEvidence(205L, null, emptyList()),
+                metadata = metadata,
+                safeObiDiagnostics = null,
+            )
+            assertTrue(output.contains("Advisor failure: $diagnostic"))
+            assertTrue(output.contains("Failed turn ID: $trace"))
+            assertTrue(output.contains("Root cause: UNKNOWN"))
+            assertFalse(output.contains("REPORTED ASSISTANT RESPONSE"))
+            assertFalse(output.contains("SECRET_PROMPT_CANARY"))
+            assertFalse(output.contains("SECRET_ATTACHMENT_CANARY"))
+        }
+    }
+
+    @Test
     fun `assistant report without conversation contains only reported response context`() {
         val reported = assistant(
             id = 2,
