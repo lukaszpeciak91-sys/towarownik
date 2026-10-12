@@ -30,6 +30,7 @@ internal const val REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT = false
 
 internal enum class ProblemReportType {
     ASSISTANT_RESPONSE,
+    ADVISOR_FAILURE,
     GENERAL,
 }
 
@@ -69,6 +70,10 @@ internal enum class ProblemReportCategory(
         ProblemReportType.ASSISTANT_RESPONSE,
         R.string.report_category_other,
     ),
+    ADVISOR_REQUEST_FAILED(
+        ProblemReportType.ADVISOR_FAILURE,
+        R.string.report_category_app_problem,
+    ),
     APP_PROBLEM(
         ProblemReportType.GENERAL,
         R.string.report_category_app_problem,
@@ -94,6 +99,7 @@ internal fun advisorFailureDiagnosticForReport(
 ): String? =
     when (type) {
         ProblemReportType.ASSISTANT_RESPONSE -> null
+        ProblemReportType.ADVISOR_FAILURE -> currentFailureDiagnostic
         ProblemReportType.GENERAL -> currentFailureDiagnostic
     }
 
@@ -106,10 +112,18 @@ internal data class ProblemReportRequest(
     val conversationId: Long? = null,
     val reportedMessageId: Long? = null,
     val advisorFailureDiagnostic: String? = null,
+    val failedTurnId: String? = null,
 ) {
     init {
         require(category.reportType == type)
         require(description.length <= REPORT_DESCRIPTION_MAX_CHARS)
+        if (type == ProblemReportType.ADVISOR_FAILURE) {
+            require(conversationId != null && conversationId > 0L)
+            require(reportedMessageId == null)
+            require(failedTurnId != null && Regex("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$").matches(failedTurnId))
+        } else {
+            require(failedTurnId == null)
+        }
         require(
             advisorFailureDiagnostic == null ||
                 advisorFailureDiagnostic.length <=
@@ -164,6 +178,9 @@ internal class ProblemReportResolver(
 
             ProblemReportType.GENERAL ->
                 resolveGeneral(request)
+
+            ProblemReportType.ADVISOR_FAILURE ->
+                resolveFailedAdvisor(request)
         }
 
     private suspend fun resolveAssistantResponse(
@@ -199,6 +216,23 @@ internal class ProblemReportResolver(
                 } else {
                     emptyList()
                 },
+            ),
+        )
+    }
+
+    private suspend fun resolveFailedAdvisor(
+        request: ProblemReportRequest,
+    ): ProblemReportResolution {
+        val id = request.conversationId
+            ?: return ProblemReportResolution.TargetUnavailable
+        val conversation = repository.load(id)
+            ?: return ProblemReportResolution.TargetUnavailable
+        return ProblemReportResolution.Success(
+            ProblemReportEvidence(
+                conversationId = conversation.id,
+                reportedMessage = null,
+                conversationMessages =
+                    if (request.includeConversation) conversation.messages else emptyList(),
             ),
         )
     }
@@ -294,6 +328,12 @@ internal object ProblemReportFormatter {
         appendLine("UI language: ${metadata.uiLanguageTag}")
         request.advisorFailureDiagnostic?.let {
             appendLine("Advisor failure: $it")
+        }
+
+        if (request.type == ProblemReportType.ADVISOR_FAILURE) {
+            appendLine("Failed conversation ID: ${request.conversationId}")
+            appendLine("Failed turn ID: ${request.failedTurnId}")
+            appendLine("Root cause: UNKNOWN (correlate safe trace with Worker logs)")
         }
 
         if (request.type == ProblemReportType.ASSISTANT_RESPONSE) {
