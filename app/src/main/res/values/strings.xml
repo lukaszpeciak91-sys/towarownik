@@ -217,4 +217,5 @@
     <string name="report_share_body">W załączniku znajduje się raport utworzony w aplikacji Taksula.</string>
     <string name="report_share_chooser">Udostępnij raport</string>
 
+    <string name="advisor_report_failure">Zgłoś ten błąd</string>
 </resources>

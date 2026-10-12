@@ -418,6 +418,7 @@ private fun reportPrivacyDisclosure(
                     R.string.report_privacy_assistant_without_conversation
                 }
 
+            ProblemReportType.ADVISOR_FAILURE,
             ProblemReportType.GENERAL ->
                 if (includeConversation) {
                     R.string.report_privacy_general_with_conversation
