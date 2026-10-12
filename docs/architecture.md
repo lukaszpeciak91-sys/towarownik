@@ -1,5 +1,10 @@
 # Architecture
 
+## 2026-10-11 — INC-002 verified stock-unit CONTINUE wire contract
+
+Worker accepts an **optional** `stockUnit` only inside verified-product objects for OBI v2 and provider v3–v5 CONTINUE, where Android serializes it even when null. Values are null or bounded (1–32 characters) presentation labels; legacy clients may omit this field. Unknown product keys and malformed unit types continue to fail through strict shape validation. No public HTTP response, endpoint, trace, provider authorization, model/token limit, or tool budget change. This fixes a synthetically reproduced 400 `invalid_request` when Android sends a verified product with `stockUnit`.
+
+
 ## R2 — Responses completion gate (2026-10-11)
 
 Worker normalizes OpenAI Responses only when the top-level `status` is exactly `completed`. Explicit `incomplete` responses are classified as output-budget exhaustion only for structured `incomplete_details.reason=max_output_tokens`, otherwise as other incompleteness. `failed`, `cancelled`, `queued`, and `in_progress` are rejected as noncompleted; missing, unknown, or malformed status is rejected independently. This gate precedes tool-call extraction or structured-final parsing; valid-looking output cannot authorize Android tool execution. The public 502/upstream_failure response and trace header remain unchanged. No retry, extra deadline, protocol change, tool-budget change, model-budget change, or attachment/provider behavior change.

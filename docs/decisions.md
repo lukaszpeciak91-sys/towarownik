@@ -1,5 +1,10 @@
 # Decisions
 
+## 2026-10-11 — INC-002: strict optional verified stock-unit contract
+
+Accept the Android-serialized `stockUnit` as an optional field **only** at verified-product positions in Worker CONTINUE result validators (OBI v2 and provider v3/v4/v5). Both explicit JSON null and bounded verified text labels are allowed; historical omission is accepted. Reject any extra keys and invalid types. Preserve privacy-safe error classification, no retries and existing downstream verified-product normalization. RED synthetic fixtures showed HTTP 400; changes require independent audit before merge/deploy.
+
+
 ## 2026-10-11 — Reject noncompleted Responses before Advisor normalization
 
 Do not infer model completion from a populated `output` array. Require top-level `status=completed` for all START/MESSAGE/CONTINUE Responses, including tool calls. A missing status in historical synthetic fixtures is not evidence of completion and must be corrected in fixtures. Log only bounded enum categories: `upstream_incomplete_output_budget`, `upstream_incomplete_other`, `upstream_response_not_completed`, `upstream_invalid_response_status`; never raw `incomplete_details` or model output. Preserve public 502/upstream_failure, trace header, model/token/time limits and legacy Advisor protocols.

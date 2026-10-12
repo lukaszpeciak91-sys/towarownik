@@ -1952,6 +1952,128 @@ test("continue preserves verified, unavailable, and not_found groups independent
   assert.deepEqual(output, body.result);
 });
 
+test("INC-002 RED: Android v2 verified CONTINUE stockUnit null is accepted", async () => {
+  const body = validContinueBody();
+  body.result.results[0].products[0].stockUnit = null;
+  const fake = fakeOpenAI(answerPayload());
+  const response = await createWorker(fake.fetch).fetch(
+    jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
+  );
+  assert.equal(response.status, 200);
+});
+
+test("INC-002 RED: Android v3 verified CONTINUE stockUnit string is accepted", async () => {
+  const body = {
+    protocolVersion: 3, responseId: "resp_previous", callId: "call_previous",
+    providerId: "kwant-pl", branchId: "205", tool: "find_products",
+    result: { providerId: "kwant-pl", branchId: "205", results: [{
+      query: "synthetic", status: "verified", products: [{
+        productId: "580", articleNumber: null, name: "Synthetic",
+        brand: null, shortDescription: null, technicalFacts: [],
+        stock: 2, stockUnit: "szt.", centralStock: null, price: 12,
+        priceScope: null,
+      }],
+    }] },
+  };
+  const fake = fakeOpenAI(answerPayload());
+  const response = await createWorker(fake.fetch).fetch(
+    jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
+  );
+  assert.equal(response.status, 200);
+});
+
+
+for (const version of [2, 3, 4, 5]) {
+  for (const unit of [null, "szt.", "kg"]) {
+    test(`INC-002 valid verified stockUnit ${JSON.stringify(unit)} v${version} passes and is bounded`, async () => {
+      const isObi = version === 2;
+      const product = isObi
+        ? { obik: "1234567", name: "Synthetic product", brand: null,
+          shortDescription: null, technicalFacts: [], stock: 2, stockUnit: unit, price: 10 }
+        : { productId: "580", articleNumber: null, name: "Synthetic product",
+          brand: null, shortDescription: null, technicalFacts: [],
+          stock: 2, stockUnit: unit, centralStock: null, price: 10, priceScope: null };
+      const body = isObi ? {
+        protocolVersion: version, responseId: "resp_previous", callId: "call_previous",
+        storeNumber: "075", tool: "find_obi_products",
+        result: { storeNumber: "075", results: [{ query: "synthetic",
+          status: "verified", products: [product] }] },
+      } : {
+        protocolVersion: version, responseId: "resp_previous", callId: "call_previous",
+        providerId: "kwant-pl", branchId: "205", tool: "find_products",
+        result: { providerId: "kwant-pl", branchId: "205",
+          results: [{ query: "synthetic", status: "verified", products: [product] }] },
+      };
+      const fake = fakeOpenAI(answerPayload());
+      const response = await createWorker(fake.fetch).fetch(
+        jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
+      );
+      assert.equal(response.status, 200);
+      assert.equal(fake.captures.length, 1);
+      const passed = JSON.parse(fake.captures[0].body.input[0].output);
+      assert.deepEqual(passed.results[0].products[0].stockUnit, unit);
+    });
+  }
+
+  test(`INC-002 legacy product without stockUnit still accepts v${version}`, async () => {
+    const isObi = version === 2;
+    const product = isObi
+      ? { obik: "1234567", name: "Synthetic", brand: null, shortDescription: null,
+          technicalFacts: [], stock: 0, price: null }
+      : { productId: "580", articleNumber: null, name: "Synthetic",
+          brand: null, shortDescription: null, technicalFacts: [], stock: 0,
+          centralStock: null, price: null, priceScope: null };
+    const body = isObi ? {
+      protocolVersion: version, responseId: "resp_previous", callId: "call_previous",
+      storeNumber: "075", tool: "find_obi_products",
+      result: { storeNumber: "075", results: [{ query: "synthetic",
+        status: "verified", products: [product] }] },
+    } : {
+      protocolVersion: version, responseId: "resp_previous", callId: "call_previous",
+      providerId: "kwant-pl", branchId: "205", tool: "find_products",
+      result: { providerId: "kwant-pl", branchId: "205",
+        results: [{ query: "synthetic", status: "verified", products: [product] }] },
+    };
+    const fake = fakeOpenAI(answerPayload());
+    const response = await createWorker(fake.fetch).fetch(
+      jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
+    );
+    assert.equal(response.status, 200);
+    const passed = JSON.parse(fake.captures[0].body.input[0].output);
+    assert.equal(Object.hasOwn(passed.results[0].products[0], "stockUnit"), false);
+  });
+}
+
+for (const badUnit of [3, true, [], {}, "", "x".repeat(33), "\nmalformed"]) {
+  test(`INC-002 malformed stockUnit ${typeof badUnit}/${JSON.stringify(badUnit).slice(0,20)} is rejected`, async () => {
+    const body = validContinueBody();
+    body.result.results[0].products[0].stockUnit = badUnit;
+    const fake = fakeOpenAI(answerPayload());
+    const response = await createWorker(fake.fetch).fetch(
+      jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
+    );
+    assert.equal(response.status, 400);
+    assert.deepEqual(await responseJson(response), { error: "invalid_request" });
+    assert.equal(fake.captures.length, 0);
+  });
+}
+
+test("INC-002 unrelated verified-product key remains rejected", async () => {
+  const body = validContinueBody();
+  body.result.results[0].products[0].stockUnit = null;
+  body.result.results[0].products[0].unexpected = "private canary";
+  const fake = fakeOpenAI(answerPayload());
+  const { result: response, lines } = await captureWarnLogs(() =>
+    createWorker(fake.fetch).fetch(
+      jsonRequest("/v1/agent/continue", body, { injectStore: body.protocolVersion === 2 }), configuredEnv,
+    ),
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await responseJson(response), { error: "invalid_request" });
+  assert.equal(fake.captures.length, 0);
+  assert.ok(!lines.join("").includes("private canary"));
+});
+
 test("continue accepts enriched verified product facts and forwards them unchanged", async () => {
   const fake = fakeOpenAI(answerPayload());
   const worker = createWorker(fake.fetch);
