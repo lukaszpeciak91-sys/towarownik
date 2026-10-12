@@ -31,6 +31,7 @@ internal fun resolveAdvisorLocationFollowUp(
     history: List<AdvisorLocationHistoryMessage>,
     historicalProducts: List<VerifiedProductSnapshot>,
     branches: List<ProviderBranch> = emptyList(),
+    providerId: String? = null,
 ): AdvisorLocationFollowUp {
     val recent = history.takeLast(12)
     val candidates = historicalProducts.distinctBy { it.providerId to it.effectiveProductId }
@@ -46,8 +47,19 @@ internal fun resolveAdvisorLocationFollowUp(
     // A price, installation or compatibility suffix is never a clarification.
     val canonicalLocations = branches.flatMap { branch ->
         val name = normalized(branch.name)
-        listOfNotNull(name, advisorCityLocative(name))
+        if (providerId == "kwant-pl") kwantCanonicalBranchAliases(name)
+        else listOfNotNull(name, advisorCityLocative(name))
     }.filter { it.isNotBlank() }.toSet()
+    // Explicitly bounded same-product quantity questions, not generic short
+    // phrases. The city must be present in the current verified branch directory.
+    fun quantityFollowUpLocation(text: String): String? {
+        val destination =
+            Regex("""^a ile tego samego produktu jest w (.+)$""")
+                .matchEntire(text)?.groupValues?.get(1)
+                ?: Regex("""^a w (.+) ile jest tego samego$""")
+                    .matchEntire(text)?.groupValues?.get(1)
+        return destination?.takeIf { it in canonicalLocations }
+    }
     fun isCanonicalLocationWithOptionalMarketNumber(value: String): Boolean {
         val match = Regex("""^(.+?)(?: ([0-9]{3})(?: bodajze)?)?$""")
             .matchEntire(value) ?: return false
@@ -56,6 +68,7 @@ internal fun resolveAdvisorLocationFollowUp(
     fun isClarification(s: String): Boolean {
         val t = normalized(s)
         if (t in setOf("obu", "oba")) return true
+        if (quantityFollowUpLocation(t) != null) return true
         if (t in canonicalLocations) return true
         val preposition = Regex(
             """^a (?:w|we) (?:(?:oddziale|markecie|sklepie)(?: obi)? )?(.+)$""",
@@ -140,7 +153,12 @@ internal fun resolveAdvisorLocationFollowUp(
             .takeIf { it.isNotEmpty() } ?: candidates
     } else candidates
     val effective = if (pending && !isInventoryRequest(input)) {
-        if (current == "obu" || current == "oba") {
+        val quantityDestination = quantityFollowUpLocation(current)
+        if (quantityDestination != null) {
+            // Rewrite only the bounded location expression from USER text.
+            // Product identity still comes exclusively from verified history.
+            "Sprawdź stan produktu w $quantityDestination"
+        } else if (current == "obu" || current == "oba") {
             "Sprawdź stan obu produktów"
         } else if (current.startsWith("a w ") || current.startsWith("a we ") ||
             current.startsWith("no jak market ") ||
