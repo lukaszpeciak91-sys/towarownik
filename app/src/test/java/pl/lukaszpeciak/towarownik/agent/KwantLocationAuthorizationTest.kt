@@ -42,6 +42,24 @@ class KwantLocationAuthorizationTest {
         (authorizeKwantLocations(text, hints, directory, BranchId("205"))
             as KwantAuthorizedLocations.Denied).reason
 
+    @Test fun inc003SaczShorthandRequiresVerifiedBranchAndUserOwnedScope() {
+        for (user in listOf(
+            "A w Sączu ile jest tego samego?",
+            "Sprawdź stan produktu MBN116E/HAG w Sączu",
+            "Sprawdź stan produktu MBN116E/HAG w Nowym Sączu",
+            "Sprawdź stan produktu MBN116E/HAG w oddziale Nowy Sącz 205",
+        )) {
+            assertEquals(user, listOf(BranchId("205")),
+                allowed(user, listOf("Nowy Sącz")).requested)
+        }
+        assertEquals("location_not_authorized",
+            rejected("Sprawdź stan produktu 580 w Zamościu", listOf("Nowy Sącz")))
+        assertEquals("unknown_location",
+            rejected("Sprawdź stan produktu 580 w nieznanym Sączu", emptyList()))
+        assertEquals("unknown_location",
+            rejected("Sprawdź stan produktu 580 w Starym Sączu", emptyList()))
+    }
+
     @Test fun onlyCurrentUserExplicitLocationCanChangeBranch() {
         for (request in listOf(
             "Sprawdź stan produktu 7027 w oddziale Zamość",
