@@ -217,4 +217,5 @@
     <string name="report_share_body">A report created in Taksula is attached.</string>
     <string name="report_share_chooser">Share report</string>
 
+    <string name="advisor_report_failure">Report this failure</string>
 </resources>
