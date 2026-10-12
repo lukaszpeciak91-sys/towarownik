@@ -24,6 +24,63 @@ class ProblemReportFormatterTest {
     )
 
     @Test
+    fun `INC-004 failed report names failed turn not previous assistant message`() {
+        val failedTrace = "11111111-1111-4111-8111-111111111111"
+        val priorTrace = "22222222-2222-4222-8222-222222222222"
+        val request = ProblemReportRequest(
+            type = ProblemReportType.ADVISOR_FAILURE,
+            category = ProblemReportCategory.ADVISOR_REQUEST_FAILED,
+            description = "",
+            includeConversation = false,
+            includeObiDiagnostics = false,
+            conversationId = 205L,
+            reportedMessageId = null,
+            failedTurnId = failedTrace,
+            advisorFailureDiagnostic =
+                "kind=SERVICE http=502 proxy=upstream_failure endpoint=message trace=$failedTrace",
+        )
+        val text = ProblemReportFormatter.format(
+            request = request,
+            evidence = ProblemReportEvidence(
+                conversationId = 205L,
+                reportedMessage = assistant(id = 12, text = "PREVIOUS_SUCCESS_CANARY",
+                    advisorTraceId = priorTrace),
+                conversationMessages = emptyList(),
+            ),
+            metadata = metadata,
+            safeObiDiagnostics = null,
+        )
+        assertTrue(text.contains("Report type: ADVISOR_FAILURE"))
+        assertTrue(text.contains("Failed conversation ID: 205"))
+        assertTrue(text.contains("Failed turn ID: $failedTrace"))
+        assertTrue(text.contains("endpoint=message"))
+        assertTrue(text.contains("Root cause: UNKNOWN"))
+        assertFalse(text.contains(priorTrace))
+        assertFalse(text.contains("PREVIOUS_SUCCESS_CANARY"))
+        assertFalse(text.contains("Reported message ID:"))
+    }
+
+    @Test
+    fun `INC-004 failure reports reject wrong assistant target and unsafe turn IDs`() {
+        val failure = ProblemReportRequest(
+            type = ProblemReportType.ADVISOR_FAILURE,
+            category = ProblemReportCategory.ADVISOR_REQUEST_FAILED,
+            description = "",
+            includeConversation = false,
+            includeObiDiagnostics = false,
+            conversationId = 205L,
+            failedTurnId = "11111111-1111-4111-8111-111111111111",
+        )
+        assertTrue(failure.reportedMessageId == null)
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            failure.copy(reportedMessageId = 12L)
+        }
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+            failure.copy(failedTurnId = "SECRET_PRIVATE_PROMPT")
+        }
+    }
+
+    @Test
     fun `assistant report without conversation contains only reported response context`() {
         val reported = assistant(
             id = 2,
