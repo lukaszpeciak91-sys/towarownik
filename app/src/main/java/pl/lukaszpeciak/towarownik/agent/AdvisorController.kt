@@ -417,6 +417,26 @@ internal class AdvisorController(
                         onState(AdvisorUiState.RunningLocalTool)
                         try {
                             if (conversationProviderId == "kwant-pl" &&
+                                followUp.isContextualQuantityRequest &&
+                                !followUp.hasPendingInventoryRequest
+                            ) {
+                                // An unrelated USER turn breaks "same product".
+                                // A model hint or previous ASSISTANT card alone
+                                // cannot restore that product authorization.
+                                AdvisorLocationEvidence(
+                                    providerId = conversationProviderId,
+                                    productId = null,
+                                    status = "rejected",
+                                    reason = "untrusted_product",
+                                    coverage = "unknown",
+                                    checkedIds = emptyList(),
+                                    returnedIds = emptyList(),
+                                    missingIds = emptyList(),
+                                    locations = emptyList(),
+                                    verifiedAtMillis = null,
+                                    centralStock = null,
+                                )
+                            } else if (conversationProviderId == "kwant-pl" &&
                                 followUp.bothProductIds.size == 2
                             ) {
                                 // The public endpoint is verified, but the single-
