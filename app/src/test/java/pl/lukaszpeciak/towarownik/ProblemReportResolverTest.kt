@@ -45,6 +45,49 @@ class ProblemReportResolverTest {
     }
 
     @Test
+    fun `INC-004 failure report resolves its own conversation without selecting previous assistant`() = runBlocking {
+        val one = repository.beginUserTurn(null, "First synthetic turn", 100L)
+        repository.completeAssistantTurn(
+            conversationId = one.conversationId,
+            text = "PREVIOUS_SUCCESS_CANARY",
+            finalResponseId = "resp_1",
+            createdAt = 200L,
+        )
+        val other = repository.beginUserTurn(null, "Other conversation", 300L)
+        repository.completeAssistantTurn(
+            conversationId = other.conversationId,
+            text = "OTHER_CONVERSATION_CANARY",
+            finalResponseId = "resp_2",
+            createdAt = 400L,
+        )
+        val request = ProblemReportRequest(
+            type = ProblemReportType.ADVISOR_FAILURE,
+            category = ProblemReportCategory.ADVISOR_REQUEST_FAILED,
+            description = "",
+            includeConversation = false,
+            includeObiDiagnostics = false,
+            conversationId = one.conversationId,
+            failedTurnId = "11111111-1111-4111-8111-111111111111",
+            advisorFailureDiagnostic = "kind=SERVICE http=502 endpoint=start",
+        )
+        val resolved = ProblemReportResolver(repository).resolve(request)
+        require(resolved is ProblemReportResolution.Success)
+        assertEquals(one.conversationId, resolved.evidence.conversationId)
+        assertTrue(resolved.evidence.reportedMessage == null)
+        assertTrue(resolved.evidence.conversationMessages.isEmpty())
+
+        val withConsent = ProblemReportResolver(repository).resolve(
+            request.copy(includeConversation = true),
+        )
+        require(withConsent is ProblemReportResolution.Success)
+        assertTrue(withConsent.evidence.conversationMessages.any { it.text == "PREVIOUS_SUCCESS_CANARY" })
+        assertFalse(withConsent.evidence.conversationMessages.any { it.text == "OTHER_CONVERSATION_CANARY" })
+
+        repository.deleteConversation(one.conversationId)
+        assertTrue(ProblemReportResolver(repository).resolve(request) is ProblemReportResolution.TargetUnavailable)
+    }
+
+    @Test
     fun `assistant target resolves exact persisted message and products only through target`() = runBlocking {
         val started = repository.beginUserTurn(null, "First user", 100L)
         repository.completeAssistantTurn(
