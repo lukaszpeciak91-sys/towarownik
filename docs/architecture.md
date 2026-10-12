@@ -1,5 +1,10 @@
 # Architecture
 
+## 2026-10-12 — INC-003 bounded KWANT same-product location follow-up
+
+KWANT's Android Advisor normalizes two explicitly bounded quantity follow-up forms (`A ile tego samego produktu jest w [location]?`, `A w [location] ile jest tego samego?`) only when the location resolves against the loaded canonical branch directory and the uninterrupted preceding USER inventory-selection chain contains a trusted product. The normalized intent is used solely for the local location tool; verified history still owns product identity, while the local adapter still performs a fresh product-bound inventory request. The abbreviation `Sącz/Sączu` derives only from a directory branch named `Nowy Sącz`, never an embedded branch ID. If an unrelated USER turn interrupts the chain, the contextual quantity tool is rejected as `untrusted_product` without a KWANT HTTP read. Existing OBI resolution and full explicit-product flows remain unchanged.
+
+
 ## 2026-10-11 — INC-002 verified stock-unit CONTINUE wire contract
 
 Worker accepts an **optional** `stockUnit` only inside verified-product objects for OBI v2 and provider v3–v5 CONTINUE, where Android serializes it even when null. Values are null or bounded (1–32 characters) presentation labels; legacy clients may omit this field. Unknown product keys and malformed unit types continue to fail through strict shape validation. No public HTTP response, endpoint, trace, provider authorization, model/token limit, or tool budget change. This fixes a synthetically reproduced 400 `invalid_request` when Android sends a verified product with `stockUnit`.
