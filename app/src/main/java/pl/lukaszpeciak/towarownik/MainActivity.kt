@@ -1339,6 +1339,12 @@ private fun TowarownikApp() {
                         submission.description.isBlank()
                     ) {
                         ProblemReportUiError.DESCRIPTION_REQUIRED
+                    } else if (
+                        reportType == ProblemReportType.ADVISOR_FAILURE &&
+                        failureEvidenceStore.selected?.conversationId != reportConversationId
+                    ) {
+                        // E.g. process recreation: the in-memory evidence is gone.
+                        ProblemReportUiError.TARGET_UNAVAILABLE
                     } else {
                         val request = ProblemReportRequest(
                             type = reportType,
