@@ -378,6 +378,7 @@ internal class AdvisorController(
                             .filter { it.providerId == conversationProviderId },
                         branches = (loadTurnBranches() as? ProviderBranchResult.Available)
                             ?.branches.orEmpty(),
+                        providerId = conversationProviderId,
                     )
                     val repeatKey = Triple(
                         locationRequest.arguments.providerId,
