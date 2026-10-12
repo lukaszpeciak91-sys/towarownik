@@ -686,6 +686,50 @@ class AdvisorLocationsControllerTest {
     }
 
 
+    @Test fun inc003ContextualSameProductUsesBoundedHistoryAndLocationIntent() {
+        val branches = listOf(
+            ProviderBranch(BranchId("205"), "Nowy Sącz"),
+            ProviderBranch(BranchId("128"), "Zamość"),
+        )
+        val product = snapshot.copy(
+            obik = "580", productId = "580", providerId = "kwant-pl",
+            articleNumber = "MBN116E/HAG", storeNumber = "205", branchId = "205",
+        )
+        val history = listOf(
+            AdvisorLocationHistoryMessage("USER",
+                "Sprawdź dostępność produktu MBN116E w oddziale w Zamościu"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Verified", listOf(product)),
+        )
+        val follow = resolveAdvisorLocationFollowUp(
+            input = "A ile tego samego produktu jest w Nowym Sączu?",
+            history = history, historicalProducts = listOf(product), branches = branches,
+        )
+        assertEquals(listOf("580"), follow.historicalProducts.map { it.effectiveProductId })
+        assertEquals(true, follow.hasPendingInventoryRequest)
+        assertEquals(true, follow.authorizedText.contains("Sprawdź stan"))
+        assertEquals(
+            listOf(BranchId("205")),
+            (authorizeKwantLocations(follow.authorizedText,
+                listOf("Nowy Sącz"), branches, BranchId("205"))
+                as KwantAuthorizedLocations.Allowed).requested,
+        )
+        val next = resolveAdvisorLocationFollowUp(
+            input = "A w Sączu ile jest tego samego?",
+            history = history, historicalProducts = listOf(product), branches = branches,
+        )
+        assertEquals(true, next.authorizedText.contains("Sprawdź stan"))
+        assertEquals(listOf(BranchId("205")),
+            (authorizeKwantLocations(next.authorizedText,
+                listOf("Nowy Sącz"), branches, BranchId("205"))
+                as KwantAuthorizedLocations.Allowed).requested)
+        val unrelated = resolveAdvisorLocationFollowUp(
+            input = "A w Sączu ile jest tego samego?",
+            history = history + AdvisorLocationHistoryMessage("USER", "pokaż ceny"),
+            historicalProducts = listOf(product), branches = branches,
+        )
+        assertEquals(false, unrelated.hasPendingInventoryRequest)
+    }
+
     @Test fun controllerAndRealLocationsToolShareNumericProductIdentityBoundary() = runBlocking {
         val selected = snapshot.copy(
             obik = "7035", productId = "7035", providerId = "kwant-pl",
