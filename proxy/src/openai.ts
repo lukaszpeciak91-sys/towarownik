@@ -394,6 +394,8 @@ export function normalizeOpenAIResponse(
         call.arguments,
         protocolVersion,
         toolName,
+        // Only aggregate overflow in an otherwise valid model plan is repairable.
+        true,
       );
     } catch (error) {
       if (error instanceof InvalidRequestError) {

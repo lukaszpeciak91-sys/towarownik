@@ -309,6 +309,8 @@ export function parseToolArguments(
   protocolVersion: AdvisorProtocolVersion =
     CURRENT_ADVISOR_PROTOCOL_VERSION,
   toolName?: string,
+  // Opt-in only for model output; client CONTINUE validation stays strict.
+  normalizeAggregateLimits = false,
 ): VersionedToolArguments {
   let value: unknown;
   try {
@@ -326,9 +328,9 @@ export function parseToolArguments(
       return validateLegacyToolArguments(value);
     }
     if (protocolVersion === OBI_GROUPED_ADVISOR_PROTOCOL_VERSION) {
-      return validateGroupedToolArguments(value);
+      return validateGroupedToolArguments(value, normalizeAggregateLimits);
     }
-    return validateProviderToolArguments(value);
+    return validateProviderToolArguments(value, normalizeAggregateLimits);
   });
 }
 
@@ -449,6 +451,7 @@ function validateLegacyToolArguments(
 
 function validateGroupedToolArguments(
   value: unknown,
+  normalizeAggregateLimits = false,
 ): ToolArguments {
   const object = exactObject(
     value,
@@ -457,12 +460,13 @@ function validateGroupedToolArguments(
 
   return {
     storeNumber: validateStoreNumber(object.storeNumber),
-    queries: validateToolQueries(object.queries),
+    queries: validateToolQueries(object.queries, normalizeAggregateLimits),
   };
 }
 
 function validateProviderToolArguments(
   value: unknown,
+  normalizeAggregateLimits = false,
 ): ProviderToolArguments {
   const object = exactObject(
     value,
@@ -475,11 +479,14 @@ function validateProviderToolArguments(
       object.requestedBranch === null
         ? null
         : boundedString(object.requestedBranch, 100),
-    queries: validateToolQueries(object.queries),
+    queries: validateToolQueries(object.queries, normalizeAggregateLimits),
   };
 }
 
-function validateToolQueries(value: unknown): ToolQuery[] {
+function validateToolQueries(
+  value: unknown,
+  normalizeAggregateLimits = false,
+): ToolQuery[] {
   if (
     !Array.isArray(value) ||
     value.length < 1 ||
@@ -509,7 +516,17 @@ function validateToolQueries(value: unknown): ToolQuery[] {
     queries.reduce((sum, query) => sum + query.limit, 0) >
     MAX_TOOL_PRODUCTS
   ) {
-    throw new InvalidRequestError();
+    if (!normalizeAggregateLimits) throw new InvalidRequestError();
+    // Only model-generated plans opt in, after every query has passed strict
+    // shape and individual-limit validation. Reserve one result for every
+    // remaining query; preserve order/identity and never increase a limit.
+    let remaining = MAX_TOOL_PRODUCTS;
+    return queries.map((query, index) => {
+      const reserved = queries.length - index - 1;
+      const limit = Math.min(query.limit, remaining - reserved);
+      remaining -= limit;
+      return { ...query, limit };
+    });
   }
 
   return queries;

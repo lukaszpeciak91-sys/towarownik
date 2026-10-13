@@ -1094,7 +1094,7 @@ test("five query groups with limit one are accepted", async () => {
   );
 });
 
-test("tool rejects total requested limits above five", async () => {
+test("tool normalizes aggregate overflow without dropping query groups", async () => {
   const fake = fakeOpenAI(
     toolPayload(
       '{"storeNumber":"075","queries":[{"query":"one","limit":3},{"query":"two","limit":3}]}',
@@ -1107,7 +1107,12 @@ test("tool rejects total requested limits above five", async () => {
     configuredEnv,
   );
 
-  assert.equal(response.status, 502);
+  assert.equal(response.status, 200);
+  const body = await responseJson(response);
+  assert.deepEqual(body.tool.arguments.queries, [
+    { query: "one", limit: 3 },
+    { query: "two", limit: 2 },
+  ]);
 });
 
 test("tool rejects more than five query groups", async () => {
