@@ -8,6 +8,7 @@ import {
 import {
   applyAgentResult,
   applyContinuationSummary,
+  applyUsage,
   emitAdvisorDiagnostic,
   emptyAdvisorDiagnostic,
   inputKindForAttachment,
@@ -246,6 +247,7 @@ async function handleProtectedAgentRequest(
     if (error instanceof UpstreamFailureError) {
       diagnostic.upstreamFailureCategory = error.category;
       diagnostic.upstreamStatus = error.upstreamStatus;
+      applyUsage(diagnostic, error.usage);
       return finish(
         { error: "upstream_failure" },
         502,

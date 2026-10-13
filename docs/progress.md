@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-10-13 — INC-005 F4 production exhaustion → bounded Worker repair (audit pending)
+
+Timeline/evidence: R5.1 could not access production identity/logs; later the incident investigator supplied a real Cloudflare record: trace **`3d3e40fa-5b3b-4abf-bbcd-f587c3dcf49e`**, Worker version **`cd218e15-8264-4f4f-a32c-ff2d14e81314`**, October 13 `/v1/agent/continue`, KWANT `kwant-pl`/`205`, protocol v3, 3 verified groups / 5 products, upstream 200 → Worker 502, `upstream_incomplete_output_budget`, 6070 ms, investigated source cap 384. CONFIRMED exhaustion for that request; exact incident timestamp/token split and deployed git SHA were not supplied. The October 12 pump failure remains **UNKNOWN**. No independent production-log access or live traffic was performed by the implementer.
+
+Base main **`51ba932df85391776e2940bcefd439862faeff5f`** includes F1/F2/F3. Published test-only RED commit **`0cee7c1eb7d14937daa138929f782b3dfc798e7b`** (same tree as locally executed RED `045241cd8aa20862b05d01c920e1ae3ba2eb7ef6`): focused **75 total / 39 PASS / 36 expected FAIL / 0 SKIP**, exit 1. Failures establish absent scoped budget and discarded incomplete usage. The explicit 384 witness remains in the final fixture; its scripted 700-token threshold is synthetic, not a tokenizer or live-model sufficiency measurement. Production patch changes only budget selection and safe metadata carriage; final JSON/tool validation remains strict.
+
+Executed locally under Node **22.23.3** / TypeScript **5.9.3**, from `proxy` (Node 22 prepended to PATH):
+
+```bash
+npm ci
+node node_modules/typescript/bin/tsc --noEmit false --outDir .test-dist
+node --test tests/output-budget.test.mjs # RED before patch, GREEN after
+npm test
+npx tsc --noEmit
+node --test tests/behavior-eval.test.mjs tests/instruction-composition.test.mjs tests/tool-plan.test.mjs tests/blank-output-contract.test.mjs
+npm run eval:build
+node --check evals/run-taksula-behavior.mjs
+```
+
+GREEN: focused **76/76** (including one added positive location-budget boundary), full Proxy **636/636**, combined existing behavior/instruction/F1/F2/F3 regression **350/350**; all have 0 FAIL / 0 SKIP, exit 0. Clean install, typecheck and eval build/CLI syntax check passed. These overlapping runs are not summed. The original investigation harnesses remain unchanged; a scoped `inc005-f4-postfix.test.mjs` points to this Worker and replaces only the obsolete “incomplete discards usage” expectation. Executed from the investigation directory with `node --test inc005-f4-postfix.test.mjs`: **132/132 PASS / 0 FAIL / 0 SKIP**, exit 0. Original harness SHA-256 remains `4584e944591526a279ce270786a1f93d3cde8d7b9af08787de93723b5daed82c`. No live behavioral eval was run; deterministic harness regression is not a live model PASS.
+
+CI: [PR #122 Checks](https://github.com/lukaszpeciak91-sys/towarownik/pull/122/checks) is the authoritative final-HEAD status. Initial implementation HEAD `b028eecd5576a32af33703260ffa5582afbf3f27` started [Proxy checks 38449636333](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/38449636333) and [Android checks 38449636379](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/38449636379); this documentation-only follow-up records those identities, not a completion claim. Exact final-HEAD run URLs/results are recorded in the PR delivery after completion; no AAB workflow is authorized. Remaining unknowns: 1024 live sufficiency, token split/usage availability for the recorded incident, effective production source SHA, live error rate/deadline behavior, Android accounting for failed paid calls, location/simple/START/MESSAGE adequacy at 384 and the October 12 root cause. Independent audit required; no merge/deploy/AAB or production configuration change.
+
 ## 2026-10-13 — INC-005 F2/F3 output contract repair (independent audit pending)
 
 Base main `bae7bd0fddfb2c67fdecb5b64c191af3bc86f296` includes merged F1. Focused RED on unchanged Worker: **138 tests, 56 PASS / 82 expected FAIL**, covering provider requestedBranch blanks and v2–v5 opaque call/response IDs; response ID mismatch separately reproduced for final/tool envelopes. Existing F1-adjusted investigation harness: **130 PASS / 2 expected RED**. Minimal Worker-only predicates now reject location blanks after matching Android's control/Unicode whitespace semantics and reject unnormalized opaque ID blanks; accepted strings are returned unchanged. Node 22.23.3 / TypeScript 5.9.3 GREEN: **560/560** full proxy tests, **138/138** focused, typecheck PASS. Original harness and F1 copy preserved; a scoped copy updates F2/F3 witnesses and expected rejections: **132/132 PASS**. Added five native Android MockWebServer parser regression methods (no production Android edits), including Kotlin vs JS whitespace differences, valid-location normalization, opaque continuation identity and trace. Native execution must be confirmed through final PR Android CI; local Gradle/SDK remains unavailable. No model/schema/prompt/budget/retry/timeout/auth/config changes, live model/Cloudflare testing, deployment or AAB; historical pump root cause UNKNOWN. Independent audit required before merge.
