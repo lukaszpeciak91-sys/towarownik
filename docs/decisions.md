@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-10-13 — INC-005 F2/F3: reject before Android; never rewrite opaque identity
+
+Reject rather than silently converting a non-null blank `requestedBranch` to null or a current branch. Preserve nonblank hints, including Polish natural-language names, without granting branch authority. Match Kotlin blankness for call/response IDs without trim, replacement, synthesis or prefix assumptions. Response ID is included only after executable RED reproduced Worker 200 versus Android's existing rejection, separately from call-ID validation; preserve `upstream_invalid_envelope` for root response identity and `upstream_invalid_tool_call` for invalid function fields. Client request/CONTINUE validation, schemas, prompts, model, token and tool budgets, timeouts, provider HTTP and F1 remain unchanged. Historical pump 502 attribution is still unknown. Reference semantics: Kotlin `Char.isWhitespace` separator categories and control ranges, and the actual `AdvisorProxyClient` control-normalization regex, verified by native parser regressions rather than JS trim.
+
 ## 2026-10-13 — INC-005 F1: bounded model-plan allocation, strict client wire
 
 Accept structurally valid model product plans whose requested aggregate limits exceed five only by deterministically reducing their limits before returning the Android tool envelope. Reserve at least one result for every existing query, preserve order and all identity/scope fields, and never increase a requested limit. This is a product-count allocation, not provider/branch authorization or permission to correct malformed arguments. Enable it explicitly only at OpenAI response normalization; preserve strict CONTINUE behavior and the default strict parser. Keep schemas and model/prompt/reasoning/token/tool-call/timeout/provider API configuration unchanged. F2 blank requestedBranch, F3 blank call_id and the historical pump 502 remain separate unresolved work.

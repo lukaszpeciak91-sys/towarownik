@@ -23,7 +23,7 @@ import {
   localToolForProtocol,
   WEB_SEARCH_TOOL,
 } from "./config.js";
-import { InvalidRequestError, parseToolArguments } from "./validation.js";
+import { InvalidRequestError, isBlankOpaqueId, parseToolArguments } from "./validation.js";
 import type {
   AdvisorProtocolVersion,
   AdvisorAttachment,
@@ -381,8 +381,8 @@ export function normalizeOpenAIResponse(
     if (
       call.name !== toolName ||
       typeof call.call_id !== "string" ||
-      !call.call_id ||
       call.call_id.length > 256 ||
+      isBlankOpaqueId(call.call_id) ||
       typeof call.arguments !== "string"
     ) {
       throw new UpstreamFailureError("upstream_invalid_tool_call");
@@ -1035,7 +1035,7 @@ function boundedUpstreamId(
   value: unknown,
   category: UpstreamFailureCategory,
 ): string {
-  if (typeof value !== "string" || !value || value.length > 256) {
+  if (typeof value !== "string" || value.length > 256 || isBlankOpaqueId(value)) {
     throw new UpstreamFailureError(category);
   }
   return value;
