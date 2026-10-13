@@ -91,6 +91,8 @@ Raw OpenAI responses, reasoning content/items, internal instructions, and upstre
 
 The current cost-sensitive validation model is `gpt-6-luna` with low reasoning effort and a bounded output budget. Model choice is centralized and may be revisited after real evaluations.
 
+Output policy: START/MESSAGE use **384**; CONTINUE uses **1024** only for a strictly validated product result containing at least two query-result groups or at least two returned products (also legacy v1 multi-product). Single-group zero/one-product, authorization/tool-limit rejection and location-inventory CONTINUE retain **384**. The client cannot override this policy. It does not increase the five-product or three-local-call caps or change model/reasoning/prompts/timeouts. 1024 is a bounded candidate motivated by one confirmed production exhaustion, not a guarantee of completion.
+
 The Worker uses native `fetch` against the Responses API. It declares the existing strict `find_obi_products` application function plus the current built-in `{ "type": "web_search" }`, with `tool_choice: "auto"` and `max_tool_calls: 1` for built-in tools. Web search is selective rather than forced. File search, computer use, hosted shell, image generation, MCP, deep research, background mode, and streaming remain disabled.
 
 Exactly one application-defined function is declared:
@@ -104,6 +106,8 @@ find_obi_products(storeNumber, queries[])
 ## Usage and pricing telemetry
 
 For every successful Responses API result, the Worker independently attempts to validate OpenAI `usage`. START, MESSAGE, and CONTINUE are explicit request types. Missing or malformed usage is dropped while the normalized answer/tool request remains valid.
+
+For an **incomplete** Responses result, the same bounded usage validation now feeds only the existing safe diagnostic log. Status still fails closed with 502; incomplete text/tool output is never accepted. Unknown optional token details remain null; measured zeros remain zero. Invalid/missing metadata cannot replace the primary failure. Incomplete `estimatedCostUsd` and `pricingVersion` remain null because full web-tool cost is unknown; log-only failure usage is not forwarded to Android's cumulative usage counters.
 
 Current pricing is server-controlled and versioned as `openai-gpt-6-luna-2026-09-28-web-v1` for `gpt-6-luna`:
 
@@ -234,4 +238,18 @@ Protected Advisor requests emit one privacy-safe structured `advisor_protocol` e
 
 The event records observable operational metadata only: endpoint stage, protocol version, parsed provider/branch, generic input kind (text/image/pdf/tool_result), answer vs tool-request envelope, bounded local query/limit counts, final product-card count, web-search/source counts, normalized AgentUsage/cost when present, total request latency, safe HTTP/outcome/failure categories, and aggregate CONTINUE result counts/rejection category. Cloudflare structured logs are the current inspection surface; no persistent analytics store is used.
 
-The event never contains chain-of-thought, user/model text, local or web query text, product names/descriptions/IDs/OBIKs/article numbers, stock or price values, attachment filenames/bytes/content, web source URLs/titles, raw upstream bodies, responseId/callId/previousResponseId, Authorization material, app/OpenAI secrets, or other raw payload content. Observability is fail-soft and does not change Advisor JSON bodies or production behavior. Android propagation/reporting of the trace header is deferred to B2.2.
+The event never contains chain-of-thought, user/model text, local or web query text, product names/descriptions/IDs/OBIKs/article numbers, stock or price values, attachment filenames/bytes/content, web source URLs/titles, raw upstream bodies, responseId/callId/previousResponseId, Authorization material, app/OpenAI secrets, or other raw payload content. Observability is fail-soft and does not change Advisor JSON bodies. Current Android propagates the UUID trace through CONTINUE and captures it in the dedicated `ADVISOR_FAILURE` report; an older assistant-message report is not evidence for a later failed turn.
+
+### Incomplete-output diagnosis and correlation
+
+OpenAI HTTP 200 is transport success, not proof of `status=completed`. An incomplete result with `incomplete_details.reason=max_output_tokens` maps to `upstream_incomplete_output_budget`; another incomplete reason maps to `upstream_incomplete_other`. Android receives only `502 {"error":"upstream_failure"}` and `X-Taksula-Trace-Id`. Raising the continuation ceiling never promotes incomplete output or invalid final/tool JSON. No retry is added.
+
+The October 13 record for trace `3d3e40fa-5b3b-4abf-bbcd-f587c3dcf49e` / Worker version `cd218e15-8264-4f4f-a32c-ff2d14e81314` confirms KWANT/205 v3 CONTINUE output-budget exhaustion after 3 groups / 5 products (OpenAI 200, Worker 502, 6070 ms; investigated cap 384). This production evidence was supplied by the incident investigator, not independently retrieved during implementation. **The October 12 pump root cause remains UNKNOWN.** A Worker version ID is not a git SHA; match it to the deployment/build history separately.
+
+Safe operational procedure (read-only; no implicit permission to generate traffic or change logging):
+
+1. Obtain the failed turn's UUID trace, stage and timestamp from its dedicated Android failure report, before retry/process death discards transient evidence. Do not substitute a prior successful photo/assistant trace.
+2. In authorized Cloudflare retained logs for the correct Worker/environment, filter event `advisor_protocol`, exact trace and relevant time window. START/MESSAGE create fresh traces; CONTINUE propagates one. Use platform version/deployment metadata to identify the serving code; source main or CI success alone cannot establish deployment.
+3. Export only operational fields: trace/request IDs, stage, provider/branch/protocol, outcome/HTTP status, bounded validation/upstream category/status, duration, local-result/query/product counts, and bounded model/requestType/token usage. Never export prompts, raw error/response bodies, products, queries, attachments, auth or entire platform invocation payloads.
+4. For incomplete, inspect `inputTokens`, `cachedInputTokens`, `cacheWriteTokens`, `outputTokens`, `reasoningTokens`, `totalTokens` when non-null. Reasoning is included in output; do not add it twice. Null is unknown, not zero. Failure `responseEnvelopeType=null`, default false/zero tool/web counters do not prove that no tool work occurred. The selected cap follows the deployed code's policy and validated result counts; this patch adds no budget field or observability schema change.
+5. Preserve original category/status/trace when usage is absent or invalid. A default web counter of zero is not proof of zero incomplete web billing. Logs may be disabled, sampled, unavailable or expired; real-time tail cannot recover history. If exact correlation is missing/ambiguous, report UNKNOWN. Enabling logging or deployment requires separate authorization and cannot recover old logs.

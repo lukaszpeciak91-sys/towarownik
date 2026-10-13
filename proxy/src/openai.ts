@@ -16,6 +16,7 @@ import {
   MAX_WEB_CITATION_URL_CHARS,
   MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
   OPENAI_MAX_OUTPUT_TOKENS,
+  OPENAI_COMPLEX_CONTINUE_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
@@ -54,6 +55,7 @@ export class UpstreamFailureError extends Error {
   constructor(
     readonly category: UpstreamFailureCategory,
     readonly upstreamStatus: number | null = null,
+    readonly usage?: AgentUsage,
   ) {
     super(category);
     this.name = "UpstreamFailureError";
@@ -224,7 +226,7 @@ export async function continueAgent(
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
       },
-      max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+      max_output_tokens: outputBudgetForContinuation(result),
       parallel_tool_calls: false,
       tool_choice: "auto",
       max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
@@ -245,6 +247,17 @@ export async function continueAgent(
     protocolVersion,
     locationsEnabled,
   );
+}
+
+function outputBudgetForContinuation(result: ToolContinuationResult): number {
+  // The Worker validates client result shape/counts before reaching this path.
+  // Authorization/tool-limit rejections and location results keep the base cap.
+  const complex = ("products" in result && result.products.length > 1) ||
+    ("results" in result && (result.results.length > 1 ||
+      result.results.some((entry) => entry.products.length > 1)));
+  return complex
+    ? OPENAI_COMPLEX_CONTINUE_MAX_OUTPUT_TOKENS
+    : OPENAI_MAX_OUTPUT_TOKENS;
 }
 
 async function requestOpenAI(
@@ -306,6 +319,7 @@ async function requestOpenAI(
       throw new UpstreamFailureError(
         error.category,
         response.status,
+        error.usage,
       );
     }
     throw error;
@@ -333,6 +347,10 @@ export function normalizeOpenAIResponse(
       reason === "max_output_tokens"
         ? "upstream_incomplete_output_budget"
         : "upstream_incomplete_other",
+      null,
+      // Validate only bounded metadata; never parse/promote partial output.
+      // Web-tool billing is unknown for incomplete output, so cost stays null.
+      parseUsage(payload, requestType, null),
     );
   }
   if (
@@ -442,7 +460,7 @@ export function normalizeOpenAIResponse(
 function parseUsage(
   payload: Record<string, unknown>,
   requestType: AgentRequestType,
-  webSearchCalls: number,
+  webSearchCalls: number | null,
 ): AgentUsage | undefined {
   try {
     const model = boundedModelName(payload.model);
@@ -516,12 +534,13 @@ function priceUsage(
   cachedInputTokens: number | null,
   cacheWriteTokens: number | null,
   outputTokens: number,
-  webSearchCalls: number,
+  webSearchCalls: number | null,
 ): { estimatedCostUsd: number; pricingVersion: string } | null {
   if (
     model !== CURRENT_MODEL_PRICING.model ||
     cachedInputTokens === null ||
     cacheWriteTokens === null ||
+    webSearchCalls === null ||
     cachedInputTokens + cacheWriteTokens > inputTokens ||
     webSearchCalls < 0 ||
     webSearchCalls > MAX_WEB_SEARCH_CALLS_PER_RESPONSE

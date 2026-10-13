@@ -65,7 +65,8 @@ async function invoke(v, stage = "continue", local = result(v), responsePayload 
       return new Response(JSON.stringify(payload), { status: 200 });
     }).fetch(new Request(`https://offline.invalid/v1/agent/${stage}`, {
       method: "POST", headers: { Authorization: `Bearer ${env.TOWAROWNIK_APP_TOKEN}`,
-        "Content-Type": "application/json", "X-Taksula-Trace-Id": trace },
+        "Content-Type": "application/json", "X-Taksula-Trace-Id": trace,
+        ...(extra.tool === "find_product_locations" ? { "X-Taksula-Locations-Capability": "1" } : {}) },
       body: JSON.stringify(requestBody),
     }), env);
   } finally { [console.info, console.warn] = saved; }
@@ -217,6 +218,20 @@ test("F4 client budget override and malformed complex result fail before upstrea
     const r = await invoke(3, "continue", local, answer(), extra);
     assert.equal(r.response.status, 400); assert.equal(r.sent.length, 0);
   }
+});
+
+test("F4 multi-location inventory result retains the base budget", async () => {
+  const local = {
+    providerId: "kwant-pl", productId: "1", status: "verified", reason: null,
+    coverage: "requested_subset", checkedIds: ["205", "128"], returnedIds: ["205", "128"],
+    missingIds: [], locations: [
+      { branchId: "205", name: "Synthetic location", stock: 1 },
+      { branchId: "128", name: "Synthetic location B", stock: 2 },
+    ], verifiedAtMillis: 1000, centralStock: null,
+  };
+  const r = await invoke(3, "continue", local, answer(), { tool: "find_product_locations" });
+  assert.equal(r.response.status, 200);
+  assert.equal(r.sent[0].max_output_tokens, 384);
 });
 
 for (const [name, mutate, category] of [
