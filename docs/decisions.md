@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-10-13 — INC-005 F1: bounded model-plan allocation, strict client wire
+
+Accept structurally valid model product plans whose requested aggregate limits exceed five only by deterministically reducing their limits before returning the Android tool envelope. Reserve at least one result for every existing query, preserve order and all identity/scope fields, and never increase a requested limit. This is a product-count allocation, not provider/branch authorization or permission to correct malformed arguments. Enable it explicitly only at OpenAI response normalization; preserve strict CONTINUE behavior and the default strict parser. Keep schemas and model/prompt/reasoning/token/tool-call/timeout/provider API configuration unchanged. F2 blank requestedBranch, F3 blank call_id and the historical pump 502 remain separate unresolved work.
+
 ## 2026-10-12 — INC-003: canonical KWANT abbreviation, fail-closed same-product context
 
 Use only the live KWANT branch directory to bind `Sącz/Sączu` to canonical `Nowy Sącz`; never hardcode `205` into authorization. Recognize only two strict Polish question shapes mentioning the same product, not a generic short-message heuristic. User-authored inventory history must be uninterrupted; assistant text or model-suggested IDs/locations must not grant authorization. A confirmed product-bound read is required for current stock; no historical number is substituted for an unavailable response. No prompt, proxy, provider HTTP contract, retry, timeout or observability change.

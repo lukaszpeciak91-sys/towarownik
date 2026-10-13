@@ -1,5 +1,9 @@
 # Architecture
 
+## 2026-10-13 — INC-005 F1 model query-plan allocation
+
+Only the OpenAI completed-response product-tool normalization path opts into aggregate-limit allocation for OBI v2 and provider v3–v5. Every query first passes existing exact-shape, count, query and individual-limit validation. For overflow alone, allocate in original order, reserving one result per remaining query; `[3,3]` becomes `[3,2]`, and five requested limits of five become five limits of one. No query is dropped/deduplicated and no limit is increased. Provider, branch and requestedBranch remain unchanged; Android retains its existing user-owned authorization boundary. Strict parser defaults and all CONTINUE validators still reject over-budget client query results. Model-visible schemas, prompts, hard limits and error/trace contracts are unchanged.
+
 ## 2026-10-12 — INC-003 bounded KWANT same-product location follow-up
 
 KWANT's Android Advisor normalizes two explicitly bounded quantity follow-up forms (`A ile tego samego produktu jest w [location]?`, `A w [location] ile jest tego samego?`) only when the location resolves against the loaded canonical branch directory and the uninterrupted preceding USER inventory-selection chain contains a trusted product. The normalized intent is used solely for the local location tool; verified history still owns product identity, while the local adapter still performs a fresh product-bound inventory request. The abbreviation `Sącz/Sączu` derives only from a directory branch named `Nowy Sącz`, never an embedded branch ID. If an unrelated USER turn interrupts the chain, the contextual quantity tool is rejected as `untrusted_product` without a KWANT HTTP read. Existing OBI resolution and full explicit-product flows remain unchanged.
