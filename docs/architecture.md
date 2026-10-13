@@ -1,5 +1,9 @@
 # Architecture
 
+## 2026-10-13 — INC-005 F2/F3 Worker output blankness parity
+
+Provider v3–v5 model `requestedBranch` accepts null or bounded nonblank text; blankness matches Android's control/whitespace normalization followed by Kotlin `isNotBlank` (Unicode separator categories plus all Cc controls). Worker only validates and preserves valid location text; Android still owns its normalization and user-authorized branch resolution. Model `call_id` and response `id` use Kotlin's distinct unnormalized blankness rule (Unicode separators, U+0009–U+000D and U+001C–U+001F), preserving every accepted opaque ID exactly. Do not apply JavaScript trim or location control normalization to IDs. Blank tool fields fail with existing `upstream_invalid_tool_call`; a blank response identity fails earlier with existing `upstream_invalid_envelope`. Public 502/trace behavior, strict client CONTINUE validators and F1 allocation remain unchanged. Native MockWebServer parser tests document Android acceptance, including NBSP and the FEFF/NEL distinction; no production Android changes.
+
 ## 2026-10-13 — INC-005 F1 model query-plan allocation
 
 Only the OpenAI completed-response product-tool normalization path opts into aggregate-limit allocation for OBI v2 and provider v3–v5. Every query first passes existing exact-shape, count, query and individual-limit validation. For overflow alone, allocate in original order, reserving one result per remaining query; `[3,3]` becomes `[3,2]`, and five requested limits of five become five limits of one. No query is dropped/deduplicated and no limit is increased. Provider, branch and requestedBranch remain unchanged; Android retains its existing user-owned authorization boundary. Strict parser defaults and all CONTINUE validators still reject over-budget client query results. Model-visible schemas, prompts, hard limits and error/trace contracts are unchanged.

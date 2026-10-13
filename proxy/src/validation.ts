@@ -475,12 +475,24 @@ function validateProviderToolArguments(
   return {
     providerId: validateProviderId(object.providerId),
     branchId: validateBranchId(object.branchId),
-    requestedBranch:
-      object.requestedBranch === null
-        ? null
-        : boundedString(object.requestedBranch, 100),
+    requestedBranch: validateRequestedBranch(object.requestedBranch),
     queries: validateToolQueries(object.queries, normalizeAggregateLimits),
   };
+}
+
+function validateRequestedBranch(value: unknown): string | null {
+  if (value === null) return null;
+  const branch = boundedString(value, 100);
+  // Android replaces all Cc controls before Kotlin trim/isNotBlank. Validate
+  // that acceptance boundary without rewriting a valid location hint.
+  if (/^[\p{Z}\p{Cc}]*$/u.test(branch)) throw new InvalidRequestError();
+  return branch;
+}
+
+/** Kotlin Char.isWhitespace: Unicode separators plus these control ranges. */
+export function isBlankOpaqueId(value: string): boolean {
+  // Do not use JS trim (which also removes FEFF), or normalize controls in IDs.
+  return /^[\p{Z}\u0009-\u000d\u001c-\u001f]*$/u.test(value);
 }
 
 function validateToolQueries(
