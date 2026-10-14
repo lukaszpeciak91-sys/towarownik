@@ -187,7 +187,7 @@ internal class AdvisorController(
             arguments: AdvisorToolArguments,
         ): ToolBranchAuthorization {
             if (arguments.providerId != conversationProviderId) {
-                return ToolBranchAuthorization.Rejected
+                return ToolBranchAuthorization.Rejected("wrong_provider")
             }
             val branches = when (val result = loadTurnBranches()) {
                 is ProviderBranchResult.Available -> result.branches
@@ -201,7 +201,7 @@ internal class AdvisorController(
                 return ToolBranchAuthorization.Unavailable
             }
             if (branches.none { it.branchId == currentBranchId }) {
-                return ToolBranchAuthorization.Rejected
+                return ToolBranchAuthorization.Rejected("directory_unavailable")
             }
 
             return when (
@@ -228,7 +228,7 @@ internal class AdvisorController(
 
                 is BranchResolution.Ambiguous -> {
                     if (!resolution.allowsExplicitBranchHint) {
-                        ToolBranchAuthorization.Rejected
+                        ToolBranchAuthorization.Rejected("ambiguous_location")
                     } else {
                         val hinted = arguments.resolveBranchHint(branches)
                         if (
@@ -243,13 +243,13 @@ internal class AdvisorController(
                                 ),
                             )
                         } else {
-                            ToolBranchAuthorization.Rejected
+                            ToolBranchAuthorization.Rejected("tool_rejected")
                         }
                     }
                 }
 
                 BranchResolution.UnknownMention ->
-                    ToolBranchAuthorization.Rejected
+                    ToolBranchAuthorization.Rejected("unknown_location")
 
                 // A model hint is not USER-owned branch authority. With no
                 // location selection, normalize execution to the saved profile.
@@ -327,6 +327,7 @@ internal class AdvisorController(
 
         var toolCalls = 0
         var lastLocationEvidence: AdvisorLocationEvidence? = null
+        var lastDiscoveryRejectionReason: String? = null
         var localToolLimitContinuationSent = false
         var toolAssistedObserved = false
         val deterministicLocationOutcomes =
@@ -347,14 +348,18 @@ internal class AdvisorController(
                         .take(MAX_TOOL_PRODUCTS)
                     val completeLocationList = lastLocationEvidence
                         ?.let(::renderAdvisorLocationDetails)
-                        .orEmpty()
+                        ?: lastDiscoveryRejectionReason?.let(::renderAdvisorLocalFailure).orEmpty()
+                    val authoritativeFailure = lastLocationEvidence?.let {
+                        completeLocationList.isNotBlank() &&
+                            (verifiedByKey.isEmpty() || it.status != "verified" || it.coverage == "partial" || it.coverage == "unknown")
+                    } == true || lastDiscoveryRejectionReason != null && lastLocationEvidence == null
                     return AdvisorUiState.Success(
-                        text = if (completeLocationList.isBlank()) proxyResult.text else {
+                        text = if (authoritativeFailure) completeLocationList else if (completeLocationList.isBlank()) proxyResult.text else {
                             proxyResult.text + "\n\n" + completeLocationList
                         },
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
-                        sources = proxyResult.sources,
+                        sources = if (authoritativeFailure) emptyList() else proxyResult.sources,
                         searchActions = searchActionsByKey.values.toList(),
                         traceId = turnTraceId,
                     ).also(onState)
@@ -374,6 +379,7 @@ internal class AdvisorController(
                         branches = (loadTurnBranches() as? ProviderBranchResult.Available)
                             ?.branches.orEmpty(),
                         providerId = conversationProviderId,
+                        currentBranchId = conversationStoreNumber,
                     )
                     val repeatKey = Triple(
                         locationRequest.arguments.providerId,
@@ -411,7 +417,17 @@ internal class AdvisorController(
                         toolCalls += 1
                         onState(AdvisorUiState.RunningLocalTool)
                         try {
-                            if (conversationProviderId == "kwant-pl" &&
+                            if (locationRequest.arguments.providerId != conversationProviderId ||
+                                followUp.failureReason != null
+                            ) {
+                                AdvisorLocationEvidence(
+                                    providerId = conversationProviderId, productId = null,
+                                    status = if (followUp.failureReason == "directory_unavailable") "unavailable" else "rejected",
+                                    reason = if (locationRequest.arguments.providerId != conversationProviderId) "wrong_provider" else followUp.failureReason,
+                                    coverage = "unknown", checkedIds = emptyList(), returnedIds = emptyList(),
+                                    missingIds = emptyList(), locations = emptyList(), verifiedAtMillis = null, centralStock = null,
+                                )
+                            } else if (conversationProviderId == "kwant-pl" &&
                                 followUp.isContextualQuantityRequest &&
                                 !followUp.hasPendingInventoryRequest
                             ) {
@@ -431,8 +447,7 @@ internal class AdvisorController(
                                     verifiedAtMillis = null,
                                     centralStock = null,
                                 )
-                            } else if (conversationProviderId == "kwant-pl" &&
-                                followUp.bothProductIds.size == 2
+                            } else if (followUp.bothProductIds.size == 2
                             ) {
                                 // The public endpoint is verified, but the single-
                                 // product location tool cannot represent two
@@ -589,19 +604,22 @@ internal class AdvisorController(
                     val authorization = authorizeToolArguments(arguments)
                     val continuation =
                         when (authorization) {
-                            ToolBranchAuthorization.Rejected ->
+                            is ToolBranchAuthorization.Rejected -> {
+                                lastDiscoveryRejectionReason = authorization.reason
                                 AdvisorToolContinuation.RejectedStore(
                                     queries = arguments.queries,
                                     storeNumber = arguments.storeNumber,
                                     providerId = arguments.providerId,
                                 )
 
+                            }
                             ToolBranchAuthorization.Unavailable ->
                                 return AdvisorUiState.Error(
                                     AdvisorError.PRODUCT_PROVIDER,
                                 ).also(onState)
 
                             is ToolBranchAuthorization.Authorized -> {
+                                lastDiscoveryRejectionReason = null
                                 val resolvedArguments =
                                     authorization.arguments
                                 onState(AdvisorUiState.RunningLocalTool)
@@ -636,7 +654,8 @@ internal class AdvisorController(
                                     )
                                 }
 
-                                    AdvisorToolExecutionResult.UnsupportedStore ->
+                                    AdvisorToolExecutionResult.UnsupportedStore -> {
+                                        lastDiscoveryRejectionReason = "tool_rejected"
                                         AdvisorToolContinuation.RejectedStore(
                                             queries =
                                                 resolvedArguments.queries,
@@ -646,6 +665,7 @@ internal class AdvisorController(
                                                 resolvedArguments.providerId,
                                         )
 
+                                    }
                                     AdvisorToolExecutionResult.Failure ->
                                         return AdvisorUiState.Error(
                                             AdvisorError.PRODUCT_PROVIDER,
@@ -943,7 +963,7 @@ private sealed interface ToolBranchAuthorization {
         val arguments: AdvisorToolArguments,
     ) : ToolBranchAuthorization
 
-    data object Rejected : ToolBranchAuthorization
+    data class Rejected(val reason: String) : ToolBranchAuthorization
     data object Unavailable : ToolBranchAuthorization
 }
 

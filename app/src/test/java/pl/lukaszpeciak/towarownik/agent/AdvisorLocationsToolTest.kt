@@ -129,7 +129,7 @@ class AdvisorLocationsToolTest {
         assertEquals(0, fake.calls)
     }
 
-    @Test fun `untrusted model selected market rejected and broad user scope checks all other`() = runBlocking {
+    @Test fun `model cannot replace user market and explicit broad scope still checks all other`() = runBlocking {
         val fake = StockAdapter()
         val svc = tool(fake)
         val invented = svc.execute(
@@ -139,7 +139,9 @@ class AdvisorLocationsToolTest {
             "Sprawdź w OBI 075",
             emptyList(), listOf(one),
         )
-        assertEquals("location_not_authorized", invented.reason)
+        assertEquals("verified", invented.status)
+        assertEquals(listOf("075"), invented.checkedIds)
+        assertEquals(listOf(BranchId("075")), fake.lastRequested)
         val broad = svc.execute(
             AdvisorLocationArguments("obi-pl", "3496072", emptyList()),
             "obi-pl",
@@ -151,7 +153,7 @@ class AdvisorLocationsToolTest {
         assertEquals("all_other_locations", broad.coverage)
         assertEquals(61, broad.checkedIds.size)
         assertTrue("Default selected market excluded", "075" !in broad.checkedIds)
-        assertEquals(4, fake.calls)
+        assertEquals(5, fake.calls)
         assertTrue(fake.lastRequested.size <= 20)
     }
 
@@ -161,7 +163,7 @@ class AdvisorLocationsToolTest {
             AdvisorLocationArguments("obi-pl", "3496072", listOf("Kraków")),
             "obi-pl",
             "075",
-            "Sprawdź w Krakowie",
+            "Sprawdź we wszystkich marketach w Krakowie",
             emptyList(), listOf(one),
         )
         assertEquals("verified", evidence.status)
@@ -232,7 +234,7 @@ class AdvisorLocationsToolTest {
             val fake = StockAdapter()
             val result = tool(fake).execute(
                 AdvisorLocationArguments("obi-pl", "3496072", hints),
-                "obi-pl", "075", "Sprawdź w Krakowie",
+                "obi-pl", "075", "Sprawdź we wszystkich marketach w Krakowie",
                 emptyList(), listOf(one),
             )
             assertEquals(hints.toString(), "verified", result.status)
@@ -270,7 +272,7 @@ class AdvisorLocationsToolTest {
         }
     }
 
-    @Test fun `out-of-scope unknown and contradictory model hints reject before inventory`() = runBlocking {
+    @Test fun `model hints neither resolve USER ambiguity nor veto explicit canonical scope`() = runBlocking {
         val cases = listOf(
             "Sprawdź w Krakowie" to listOf("OBI 075"),
             "Sprawdź w Krakowie" to listOf("Nowy Sącz"),
@@ -285,9 +287,16 @@ class AdvisorLocationsToolTest {
                 "obi-pl", "075", message,
                 emptyList(), listOf(one),
             )
-            assertEquals(message + hints, "rejected", result.status)
-            assertEquals(message + hints, "location_not_authorized", result.reason)
-            assertEquals(message + hints, 0, fake.calls)
+            if (message == "Sprawdź w Krakowie") {
+                assertEquals(message + hints, "rejected", result.status)
+                assertEquals(message + hints, "ambiguous_location", result.reason)
+                assertEquals(message + hints, 0, fake.calls)
+            } else {
+                assertEquals(message + hints, "verified", result.status)
+                assertEquals(message + hints, listOf("003"), result.checkedIds)
+                assertEquals(message + hints, listOf(BranchId("003")), fake.lastRequested)
+                assertEquals(message + hints, 1, fake.calls)
+            }
         }
     }
 

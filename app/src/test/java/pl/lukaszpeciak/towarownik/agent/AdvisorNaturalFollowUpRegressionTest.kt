@@ -47,9 +47,12 @@ class AdvisorNaturalFollowUpRegressionTest {
         cards: List<VerifiedProductSnapshot> = listOf(card(provider)),
         modelId: String = if (provider == "obi-pl") "7000001" else "90001",
         directoryUnavailable: Boolean = false,
+        modelProvider: String = provider,
+        suppliedDirectory: List<ProviderBranch>? = null,
+        previousResponseId: String? = "resp_prior",
     ): Observation {
         val selected = if (provider == "obi-pl") "075" else "205"
-        val directory = if (provider == "obi-pl") obi else kwant
+        val directory = suppliedDirectory ?: if (provider == "obi-pl") obi else kwant
         val reads = mutableListOf<Pair<String, List<String>>>()
         val adapter = object : ProductLocationsAdapter {
             override val providerId = ProviderId(provider)
@@ -67,11 +70,13 @@ class AdvisorNaturalFollowUpRegressionTest {
         val tool = AdvisorLocationsTool(ProductLocationsService(listOf(adapter)), branches, branches)
         var evidence: AdvisorLocationEvidence? = null
         val initial = AdvisorProxyCallResult.Success(AdvisorProxyResult.LocationToolRequest(
-            "resp_locations", "call_locations", AdvisorLocationArguments(provider, modelId, hints),
+            "resp_locations", "call_locations", AdvisorLocationArguments(modelProvider, modelId, hints),
         ))
         val controller = AdvisorController(
-            isConfigured = { true }, startAgent = { _, _, _ -> initial }, messageAgent = { _, _, _, _ -> initial },
-            continueAgent = { _, _, p, b, _, output ->
+            isConfigured = { true }, startAgent = { _, _, _ -> initial },
+            messageAgent = { previous, _, _, _ -> assertEquals(previousResponseId,previous); initial },
+            continueAgent = { response, call, p, b, _, output ->
+                assertEquals("resp_locations",response);assertEquals("call_locations",call)
                 assertEquals(provider, p); assertEquals(selected, b)
                 evidence = (output as AdvisorToolContinuation.Locations).evidence
                 AdvisorProxyCallResult.Success(AdvisorProxyResult.Answer(
@@ -82,7 +87,7 @@ class AdvisorNaturalFollowUpRegressionTest {
             executeObiTool = { error("No discovery fixture") }, executeProviderTool = { error("No discovery fixture") },
             executeLocationsTool = tool::execute, branchDirectory = { branches() },
         )
-        val state = controller.runTurn(input, "resp_prior", selected, provider,
+        val state = controller.runTurn(input, previousResponseId, selected, provider,
             historicalVerifiedProducts = cards, locationHistory = prior) { } as AdvisorUiState.Success
         val observed = requireNotNull(evidence)
         println("R2_SYNTHETIC provider=$provider input=$input status=${observed.status} reason=${observed.reason} checked=${observed.checkedIds} reads=$reads cards=${state.products.size} text=${state.text}")
@@ -95,6 +100,7 @@ class AdvisorNaturalFollowUpRegressionTest {
         assertEquals(7, r.evidence.locations.single().stock)
         assertEquals(2000L, r.evidence.verifiedAtMillis)
         assertTrue(r.state.products.isEmpty()) // Old cards never become new current-turn cards.
+        assertFalse(r.state.text.contains("not authorized"))
         assertFalse(r.state.text.contains("99")) // Historical quantity never substitutes for a read.
     }
     @Test fun `plain KWANT w and we follow-ups use USER anchor and exact product`() = runBlocking {
@@ -126,8 +132,9 @@ class AdvisorNaturalFollowUpRegressionTest {
         assertTrue(r.reads.isEmpty()); assertEquals("rejected", r.evidence.status)
     }
     @Test fun `advice and installation cannot inherit stock permission`() = runBlocking {
-        for(text in listOf("jak zamontować w Bochni", "a w Bochni pokaż ceny")) {
-            assertTrue(run(text).reads.isEmpty())
+        for(text in listOf("jak zamontować w Bochni", "a w Bochni pokaż ceny", "a w Bochni ile kosztuje?")) {
+            val r=run(text)
+            assertTrue(r.reads.isEmpty()); assertEquals("location_intent_required",r.evidence.reason)
         }
     }
     @Test fun `ASSISTANT suggestion alone cannot authorize inventory or tam`() = runBlocking {
@@ -135,7 +142,7 @@ class AdvisorNaturalFollowUpRegressionTest {
         assertTrue(r.reads.isEmpty()); assertEquals("rejected", r.evidence.status)
     }
     @Test fun `failed fresh turn cannot fabricate identity and reason asks for product`() = runBlocking {
-        val r=run("w Bochni", cards=emptyList(), prior=listOf(user("sprawdź stan A9Z01440/SCH w Bochni"), AdvisorLocationHistoryMessage("ASSISTANT", "Failed turn")))
+        val r=run("w Bochni", cards=emptyList(), prior=listOf(user("sprawdź stan A9Z01440/SCH w Bochni"), AdvisorLocationHistoryMessage("ASSISTANT", "Failed turn")),previousResponseId=null)
         assertTrue(r.reads.isEmpty()); assertEquals("untrusted_product",r.evidence.reason)
         assertFalse(r.state.text.contains("not authorized")); assertTrue(r.state.text.contains("produkt"))
     }
@@ -173,4 +180,111 @@ class AdvisorNaturalFollowUpRegressionTest {
     @Test fun `quantity and dimensions cannot authorize branches through short follow-ups`() = runBlocking {
         for(text in listOf("203 m", "203 x 205 mm", "produkt 203", "1000 W")) assertTrue(run(text).reads.isEmpty())
     }
+    @Test fun `unknown latest article cannot revive a different older card after failure`() = runBlocking {
+        val prior=history("kwant-pl") + user("sprawdź stan A9Z01441/SCH w Bochni") +
+            AdvisorLocationHistoryMessage("ASSISTANT","Synthetic failed turn")
+        val r=run("w Bochni",prior=prior)
+        assertTrue(r.reads.isEmpty()); assertEquals("untrusted_product",r.evidence.reason)
+    }
+    @Test fun `unknown explicitly labeled short product cannot fall back`() = runBlocking {
+        for(text in listOf("sprawdź stan produktu 203 w Bochni","sprawdź stan 203 w Bochni")) {
+            assertTrue(run(text).reads.isEmpty())
+        }
+    }
+    @Test fun `current verified short ID supersedes old product selection`() = runBlocking {
+        val r=run("sprawdź stan produktu 580 w Bochni",cards=listOf(card("kwant-pl"),card("kwant-pl","580")),modelId="580")
+        assertRead(r,"203"); assertEquals("580",r.evidence.productId)
+    }
+    @Test fun `ambiguous latest USER location prevents tam fallback to older unique market`() = runBlocking {
+        val r=run("a tam?","obi-pl",prior=history("obi-pl","sprawdź stan produktu 7000001 w OBI 003") + user("w Krakowie"))
+        assertTrue(r.reads.isEmpty()); assertEquals("ambiguous_location",r.evidence.reason)
+    }
+    @Test fun `unrelated context and provider cards never authorize either provider`() = runBlocking {
+        for(p in listOf("obi-pl","kwant-pl")) {
+            assertTrue(run("u nas?",p,prior=history(p)+user("pokaż ceny")).reads.isEmpty())
+            assertTrue(run("u nas?",p,cards=listOf(card(if(p=="obi-pl")"kwant-pl" else "obi-pl"))).reads.isEmpty())
+        }
+    }
+
+    @Test fun `no USER location defaults to profile despite wrong model hint`() = runBlocking {
+        assertRead(run("sprawdź stan A9Z01440/SCH",hints=listOf("203")),"205")
+        assertRead(run("sprawdź stan produktu 7000001","obi-pl",listOf("003")),"075")
+    }
+    @Test fun `repeated tam retains last USER selection and ignores ASSISTANT suggestion`() = runBlocking {
+        val prior=history("kwant-pl") + user("a tam?") + AdvisorLocationHistoryMessage("ASSISTANT","Maybe Tarnów")
+        assertRead(run("a tam?",prior=prior),"203")
+    }
+    @Test fun `wrong provider and duplicate directory stop inventory`() = runBlocking {
+        assertTrue(run("w Bochni",modelProvider="obi-pl").reads.isEmpty())
+        val r=run("w Bochni",suppliedDirectory=kwant+kwant[1])
+        assertTrue(r.reads.isEmpty()); assertEquals("directory_unavailable",r.evidence.reason)
+    }
+    @Test fun `combined two-product request returns truthful unsupported reason for both providers`() = runBlocking {
+        for(p in listOf("kwant-pl","obi-pl")) {
+            val cards=listOf(card(p),card(p,if(p=="obi-pl")"7000002" else "90002"))
+            val prior=listOf(user("sprawdź stan obu produktów w ${if(p=="obi-pl")"OBI 075" else "Bochni"}"),AdvisorLocationHistoryMessage("ASSISTANT","Synthetic",cards))
+            val r=run("obu",p,prior=prior,cards=cards)
+            assertTrue(r.reads.isEmpty()); assertEquals("multi_product_tool_contract",r.evidence.reason)
+            assertFalse(r.state.text.contains("not authorized")); assertTrue(r.state.text.contains("jeden"))
+        }
+    }
+    @Test fun `discovery unknown location has truthful local explanation without provider work`() = runBlocking {
+        var calls=0
+        val initial=AdvisorProxyCallResult.Success(AdvisorProxyResult.ToolRequest("resp_tool","call_tool",AdvisorToolArguments("205",listOf(AdvisorToolQuery("synthetic",1)),"kwant-pl")))
+        val c=AdvisorController(isConfigured={true},startAgent={_,_,_->initial},messageAgent={_,_,_,_->initial},
+            continueAgent={_,_,_,_,_,output->
+                assertTrue(output is AdvisorToolContinuation.RejectedStore)
+                AdvisorProxyCallResult.Success(AdvisorProxyResult.Answer("resp_final","Synthetic not authorized",emptyList()))
+            },executeObiTool={calls++;error("No provider read")},executeProviderTool={calls++;error("No provider read")},branchDirectory={ProviderBranchResult.Available(kwant)})
+        val result=c.runTurn("sprawdź stan A9Z01440/SCH w Nieznanowie",null,"205","kwant-pl"){} as AdvisorUiState.Success
+        assertEquals(0,calls); assertFalse(result.text.contains("not authorized")); assertTrue(result.text.contains("Nie rozpoznałam"))
+    }
+
+    @Test fun `fresh R1 discovery grounds product before R2 location follow-up`() = runBlocking {
+        val lookupBranches=mutableListOf<String>()
+        val provider=object:ProductProvider {
+            override val providerId=ProviderId("kwant-pl")
+            override fun branches()=ProviderBranchResult.Available(kwant)
+            override fun search(query:String,maxResults:Int)=ProviderSearchResult.Candidates(
+                listOf(ProviderProductCandidate(ProductRef(providerId,"90001"),"Synthetic","A9Z01440/SCH")))
+            override fun lookup(ref:ProductRef,branchId:BranchId):ProviderLookupResult {
+                lookupBranches+=branchId.value
+                return ProviderLookupResult.Found(ProviderProduct(ref,branchId,"Synthetic",9,
+                    grossPrice=BigDecimal.ONE,priceScope=ProviderPriceScope.ONLINE,
+                    productUrl="https://offline.invalid/product",ean=null,articleNumber="A9Z01440/SCH"))
+            }
+        }
+        val tool=FindProviderProductsTool(ProductProviderRegistry(listOf(provider)),now={1000L})
+        val firstRequest=AdvisorProxyCallResult.Success(AdvisorProxyResult.ToolRequest("resp_discovery","call_discovery",
+            AdvisorToolArguments("205",listOf(AdvisorToolQuery("A9Z01440/SCH",1)),"kwant-pl","Bochni")))
+        val firstController=AdvisorController(isConfigured={true},startAgent={_,_,_->firstRequest},messageAgent={_,_,_,_->error("Fresh START only")},
+            continueAgent={_,_,_,profile,_,output->
+                assertEquals("205",profile);assertTrue(output is AdvisorToolContinuation.Verified)
+                AdvisorProxyCallResult.Success(AdvisorProxyResult.Answer("resp_first","Synthetic verified product",
+                    listOf(AdvisorProductRef("203","90001","kwant-pl"))))
+            },executeObiTool={error("Wrong provider")},executeProviderTool=tool::execute,branchDirectory={provider.branches()})
+        val input="sprawdź stan A9Z01440/SCH w Bochni"
+        val first=firstController.runTurn(input,null,"205","kwant-pl"){} as AdvisorUiState.Success
+        assertEquals(listOf("203"),lookupBranches);assertEquals(1,first.products.size)
+        assertEquals("203",first.products.single().effectiveBranchId);assertEquals(9,first.products.single().stock)
+        val second=run("w Bochni",hints=listOf("205"),cards=first.products,
+            prior=listOf(user(input),AdvisorLocationHistoryMessage("ASSISTANT",first.text,first.products)),previousResponseId=first.responseId)
+        assertRead(second,"203")
+        assertEquals(7,second.evidence.locations.single().stock)
+        assertTrue(second.state.products.isEmpty())
+    }
+
+    @Test fun `two explicit historical product IDs cannot be narrowed by model or one ASSISTANT card`() = runBlocking {
+        val cards=listOf(card("kwant-pl","9911"),card("kwant-pl","9922"))
+        val prior=listOf(user("sprawdź stan produktu 9911 i produktu 9922 w Bochni"),AdvisorLocationHistoryMessage("ASSISTANT","Synthetic",listOf(cards.first())))
+        val r=run("w Bochni",cards=cards,prior=prior,modelId="9911")
+        assertTrue(r.reads.isEmpty());assertEquals("ambiguous_product",r.evidence.reason)
+    }
+    @Test fun `manufacturer suffix omission remains ambiguous when two verified articles share a base`() = runBlocking {
+        val cards=listOf(card("kwant-pl","9911").copy(articleNumber="MBN116E/HAG"),card("kwant-pl","9922").copy(articleNumber="MBN116E/OTHER"))
+        val prior=listOf(user("sprawdź stan MBN116E w Bochni"),AdvisorLocationHistoryMessage("ASSISTANT","Synthetic",cards))
+        val r=run("w Bochni",cards=cards,prior=prior,modelId="9911")
+        assertTrue(r.reads.isEmpty());assertEquals("ambiguous_product",r.evidence.reason)
+    }
+
 }

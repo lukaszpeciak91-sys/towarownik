@@ -127,7 +127,7 @@ class AdvisorLocationsNationwideTest {
 
     @Test fun `Krakow city scope expands to all four canonical markets`() = runBlocking {
         val fake = FakeInventory()
-        val result = fake.run("Sprawdź w Krakowie", hints = listOf("Kraków"))
+        val result = fake.run("Sprawdź we wszystkich marketach w Krakowie", hints = listOf("Kraków"))
         assertEquals("verified", result.status)
         assertEquals("requested_subset", result.coverage)
         assertEquals(setOf("019", "072", "003", "059"), result.checkedIds.toSet())
@@ -240,7 +240,7 @@ class AdvisorLocationsNationwideTest {
 
     @Test fun `explicit city with empty model hints checks every canonical city store`() = runBlocking {
         val fake = FakeInventory()
-        val result = fake.run("Sprawdź w Krakowie", hints = emptyList())
+        val result = fake.run("Sprawdź we wszystkich marketach w Krakowie", hints = emptyList())
         assertEquals(setOf("019", "072", "003", "059"), result.checkedIds.toSet())
         assertEquals("requested_subset", result.coverage)
         assertEquals(1, fake.serviceReads.size)
@@ -305,7 +305,7 @@ class AdvisorLocationsNationwideTest {
 
     @Test fun `known named city after availability request remains canonical`() = runBlocking {
         val fake = FakeInventory()
-        val result = fake.run("Sprawdź stany w Krakowie", hints = emptyList())
+        val result = fake.run("Sprawdź stany we wszystkich marketach w Krakowie", hints = emptyList())
         assertEquals("verified", result.status)
         assertEquals("requested_subset", result.coverage)
         assertEquals(setOf("019", "072", "003", "059"), result.checkedIds.toSet())

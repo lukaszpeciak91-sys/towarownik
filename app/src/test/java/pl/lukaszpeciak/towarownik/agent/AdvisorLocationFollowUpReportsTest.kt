@@ -244,7 +244,7 @@ class AdvisorLocationFollowUpReportsTest {
             )
             assertEquals(message, message, context.authorizedText)
         }
-        val (allowed, inventory) = lookup("a w Krakowie?", obiHistory)
+        val (allowed, inventory) = lookup("a w Krakowie na Wielickiej?", obiHistory)
         assertEquals("verified", allowed.status)
         assertTrue(allowed.checkedIds.isNotEmpty())
         assertTrue(inventory.http.isNotEmpty())

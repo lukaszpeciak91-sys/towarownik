@@ -1,6 +1,64 @@
 # Progress
 
-## 2026-10-14 — INC-006 R1 core discovery routing (awaiting independent audit)
+## 2026-10-14 — INC-006 R2 natural follow-ups and honest local reasons (audit pending)
+
+Preflight/main: `0b2a483a1193337032a04d32382dae74c116fe31`, merge of PR #123; ancestor check confirmed R1 `fffc2ca2b9b2a719cf696e483d38183b03ed98c6`. Rechecked main before publication. Read AGENTS, architecture/decisions/progress and exact Android/Worker location CONTINUE contracts before patching. Original INC-006 native harness remains unchanged (SHA-256 `e2ad0b2dc4f165fcce5770b093dd5f5e6bcd21944ff0c125bd0ff50f78bd3746`); reuse its offline fixture/source-extraction approach and the permanent R1 regression suite.
+
+Test-only RED local commit `9af744026998e687bafa59f04849756313368d1d`: **18 JUnit tests, 5 PASS / 13 expected FAIL / 0 SKIP**, exit 1 on unchanged merged-R1 production Kotlin. Captured status/reason, exact synthetic product-bound reads, checked IDs, returned cards and rendered text. Witnesses include plain `w Bochni` failing `location_intent_required`, model hint 205 blocking independently selected Bochnia/203, missing product/directory/unknown-place failures leaving generic model denial visible, `u nas`/`tam` failure, and unverified article / price-only inventory safety defects. No historical live tool arguments were inferred.
+
+Expanded runs deliberately exercise actual provider adapters and one real ProxyClient MockWebServer parser path. One intermediate **201-test / 19-failure** run exposed outdated single-city/model-veto assertions plus implementation regressions in legacy article/quantity/conflict forms; these were investigated rather than labeled baseline RED. Respecified USER-scope assertions, retained original unknown/conflicting/provider/HTTP negatives, restored valid INC-003 forms and the exact OBI 054-vs-052 no-read reason. Later added ambiguity/short-ID/latest-anchor safeguards and fresh R1 discovery -> R2 stock-read integration.
+
+Final local native result: **209 PASS / 0 FAIL / 0 SKIP**, across 11 JUnit classes; **31** permanent focused R2 tests and **178** existing/respecified Controller/R1/location authorization/coverage/follow-up/rendering tests. A Result-based runner records actual run/failure/ignore counts independently of test console capture. Native command/reproducibility (OpenJDK 17.0.20, Kotlin 2.3.21, coroutines 1.10.2, JUnit 4.13.2; OkHttp/MockWebServer 4.12.0, Okio 3.6.0, kotlinx serialization 1.9.0):
+
+```bash
+# From inc006-r2-evidence; refresh copies current production source, retaining
+# only the existing documented Android factory/network-wiring exclusions.
+python3 refresh_sources.py
+python3 run_native.py
+java -cp 'green-legacy-classes:deps/*' \
+  pl.lukaszpeciak.towarownik.agent.R2NativeRunnerKt
+# Canonical repository/CI equivalent for permanent focused tests:
+./gradlew :app:testDebugUnitTest --tests '*.AdvisorNaturalFollowUpRegressionTest'
+# Full PR CI gate:
+./gradlew check assembleDebug
+```
+
+The standalone runner compiles the actual Controller/follow-up/identity/scope/rendering/provider-adapter/ProxyClient methods. Android factories and network repository defaults are omitted or disabled; BuildConfig and attachment-storage wiring are explicit offline stubs, not credentials. Every provider request uses injected synthetic fetchers or loopback MockWebServer. This is not a local full Android SDK/Gradle/device run. CI must execute the final PR HEAD's complete `check assembleDebug`; definitive URLs/status are recorded in the focused PR description/checks.
+
+Additional executed checks under Node **22.23.3**:
+
+```bash
+cd proxy
+npm ci
+npm run typecheck
+npm test
+npm run eval:build
+node --check evals/run-taksula-behavior.mjs
+# From the evidence directory against this compiled, unchanged Worker:
+node --test inc006-r2-wire.test.mjs
+# Repository root:
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools python3 -m unittest discover -s tools -p 'test_*.py'
+```
+
+Proxy **636/636 PASS**, typecheck/eval build/CLI syntax PASS; focused wire **44/44 PASS / 0 SKIP** covers v2–v5 bounded local reasons, trace propagation, coherent positive/zero/unknown stock rows; Python **174/174 PASS**. No Proxy files changed, so the path-filtered Proxy PR workflow is not required to run. These overlapping JVM/Proxy runs are not summed. Skipped locally: full Android SDK/device and live model/provider/deployment checks; these are unexecuted activities, not fabricated test PASS/SKIP counts.
+
+| Scenario | Executed result |
+| --- | --- |
+| KWANT `w Bochni`, `we Włocławku`, `a w Tarnowie?` | Fresh exact-product reads in 203, 141, 204 |
+| OBI `w Krakowie na Wielickiej`, prefixed variant | Unique canonical market 003 |
+| `u nas`, no USER place + wrong model hint | Saved conversation KWANT 205 / OBI 075 |
+| `a tam?` / repeated `tam` | Last unique USER-selected branch only; no ASSISTANT-suggestion scope |
+| New R1 discovery -> `w Bochni` | Card freshly verified in 203 with stock 9; separate new product-bound stock read 7; no new historical-card promotion |
+| Price/advice/unrelated turn, wrong provider, corrupt directory | No inventory HTTP |
+| Unknown/ambiguous USER place, unverified new ID/article, failed new anchor with different older card | No inventory HTTP; bounded truthful reason |
+| Two explicit product identities or shared article base | Ambiguous product; no model/ASSISTANT narrowing |
+| `obu` for either provider | `multi_product_tool_contract`; no partial reads |
+| Historical card quantity 99 versus new read 7 | Only new stock/time evidence rendered; no old stock substitution |
+
+No Worker/model/prompt/schema/token/tool-budget/timeout/provider-API/UI/persistence changes. R1 discovery and separate multi-location stock window remain intact. No live request, secret extraction, merge, deploy, version bump or AAB. GO for independent audit after final CI; AAB 0.1.25 (26) and real-device verification remain after audit + owner merge. Old phone tool name/arguments and production behavior remain UNKNOWN.
+
+
+## 2026-10-14 — INC-006 R1 core discovery routing (merged PR #123)
 
 Base/main verified twice during preflight: `8b1b24c25a3cafb33c0446e3c046ceb2433498dc`, app 0.1.24 (25). Reused the completed INC-006 native harness and compiled-history evidence. Original harness was executed again: **79 checks, 63 PASS, 16 intentional RED, 0 unexpected failures, 0 SKIP**. Preserved original evidence; R1 does not claim every INC-006 finding is fixed.
 
