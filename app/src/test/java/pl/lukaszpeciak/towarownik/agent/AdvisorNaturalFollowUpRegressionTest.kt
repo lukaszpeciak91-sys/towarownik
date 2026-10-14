@@ -346,4 +346,45 @@ class AdvisorNaturalFollowUpRegressionTest {
         assertEquals("90001",state.products.single().effectiveProductId);assertEquals(1000L,state.products.single().verifiedAt)
     }
 
+    @Test fun `fresh unrelated discovery cannot overwrite USER-selected historical product`() = runBlocking {
+        val lookupBranches=mutableListOf<String>()
+        val provider=object:ProductProvider {
+            override val providerId=ProviderId("kwant-pl")
+            override fun branches()=ProviderBranchResult.Available(kwant)
+            override fun search(query:String,maxResults:Int)=ProviderSearchResult.Candidates(
+                listOf(ProviderProductCandidate(ProductRef(providerId,"90002"),"Synthetic","OTHER02/SCH")))
+            override fun lookup(ref:ProductRef,branchId:BranchId):ProviderLookupResult {
+                lookupBranches+=branchId.value
+                return ProviderLookupResult.Found(ProviderProduct(ref,branchId,"Synthetic",9,
+                    grossPrice=BigDecimal.ONE,priceScope=ProviderPriceScope.ONLINE,
+                    productUrl="https://offline.invalid/product",ean=null,articleNumber="OTHER02/SCH"))
+            }
+        }
+
+        val discovery=FindProviderProductsTool(ProductProviderRegistry(listOf(provider)),now={1000L})
+        var inventoryReads=0
+        val adapter=object:ProductLocationsAdapter {
+            override val providerId=ProviderId("kwant-pl")
+            override suspend fun read(ref:ProductRef,requested:List<BranchId>,trustedProduct:ProviderProduct?):ProductLocationsResult {
+                inventoryReads++;return ProductLocationsResult.Unavailable(LocationFailure.TRANSPORT)
+            }
+        }
+        val locations=AdvisorLocationsTool(ProductLocationsService(listOf(adapter)),{ProviderBranchResult.Available(obi)},{provider.branches()})
+        var continuations=0
+        val first=AdvisorProxyCallResult.Success(AdvisorProxyResult.ToolRequest("resp_discover","call_discover",AdvisorToolArguments("205",listOf(AdvisorToolQuery("OTHER02/SCH",1)),"kwant-pl","Bochni")))
+        val c=AdvisorController(isConfigured={true},startAgent={_,_,_->first},messageAgent={_,_,_,_->first},
+            continueAgent={_,_,_,_,_,output->
+                if(++continuations==1) {
+                    assertTrue(output is AdvisorToolContinuation.Verified)
+                    AdvisorProxyCallResult.Success(AdvisorProxyResult.LocationToolRequest("resp_stock","call_stock",AdvisorLocationArguments("kwant-pl","90002",listOf("203"))))
+                } else {
+                    val e=(output as AdvisorToolContinuation.Locations).evidence
+                    assertEquals("rejected",e.status);assertEquals("untrusted_product",e.reason)
+                    AdvisorProxyCallResult.Success(AdvisorProxyResult.Answer("resp_final","Synthetic",emptyList()))
+                }
+            },executeObiTool={error("Wrong provider")},executeProviderTool=discovery::execute,executeLocationsTool=locations::execute,branchDirectory={provider.branches()})
+        c.runTurn("w Bochni",null,"205","kwant-pl",historicalVerifiedProducts=listOf(card("kwant-pl")),locationHistory=history("kwant-pl")){}
+        assertEquals(0,inventoryReads);assertEquals(listOf("203"),lookupBranches)
+    }
+
 }

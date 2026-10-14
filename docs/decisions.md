@@ -2,6 +2,8 @@
 
 ## 2026-10-14 — INC-006 R2: bounded context, USER scope, local truth
 
+Current-turn discovery can repair missing verified identity, but a short inherited location request retains its USER-selected product set. Filter fresh facts to that set, reject ambiguous inherited identity, and do not let model-selected discovery overwrite an earlier product. The supplemental 215-test RED/GREEN witness checks zero stock reads for an unrelated discovered product.
+
 Start only after merged R1 PR #123: verified main `0b2a483a1193337032a04d32382dae74c116fe31` includes `fffc2ca2b9b2a719cf696e483d38183b03ed98c6`. The old phone traces remain evidence of the reported refusals, not actual tool arguments: `c6040017-245e-49ce-b812-544207b263c1` and `cf7cd16f-a03c-4cbc-9742-865fd82ff3df`. No live model/provider/Cloudflare requests were made in this repair.
 
 Native RED confirms plain location follow-ups were not admitted, model hints vetoed valid USER scope, and empty local rendering allowed broad model denial text to remain visible. Additional executable security witnesses found price-only checks reaching inventory and unknown explicit articles falling back to another historical product. Also preserve the exact OBI A availability-question anchor and re-evaluate missing identity after actual same-turn discovery; rejecting it forever despite fresh provider facts is not a security requirement. Choose small changes in the existing FollowUps/LocationsTool/LocationDetails/Controller boundaries: extend complete canonical location expressions; keep uninterrupted USER-owned context; distinguish `u nas` (profile) from `tam` (previous explicit unique USER selection); ignore location hints only after independent scope resolution; preserve product identity and HTTP result checks.

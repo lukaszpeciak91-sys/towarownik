@@ -473,7 +473,15 @@ internal class AdvisorController(
                                     conversationProviderId,
                                     conversationStoreNumber,
                                     followUp.authorizedText,
-                                    verifiedByKey.values.toList(),
+                                    // Fresh discovery may verify the USER target,
+                                    // but cannot replace an inherited product selection.
+                                    verifiedByKey.values.filter { fresh ->
+                                        !followUp.inheritsInventoryContext ||
+                                            followUp.historicalProducts.any { selected ->
+                                                selected.providerId == fresh.providerId &&
+                                                    selected.effectiveProductId == fresh.effectiveProductId
+                                            }
+                                    },
                                     followUp.historicalProducts,
                                 ) ?: AdvisorLocationEvidence(
                                 providerId = conversationProviderId,

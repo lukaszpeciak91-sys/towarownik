@@ -23,6 +23,7 @@ internal data class AdvisorLocationFollowUp(
     val hasPendingInventoryRequest: Boolean = false,
     val isContextualQuantityRequest: Boolean = false,
     val failureReason: String? = null,
+    val inheritsInventoryContext: Boolean = false,
 )
 
 /**
@@ -274,7 +275,10 @@ internal fun resolveAdvisorLocationFollowUp(
         bothProductIds = both,
         hasPendingInventoryRequest = continuation,
         isContextualQuantityRequest = quantityFollowUpLocation(current) != null,
-        failureReason = followUpFailure,
+        failureReason = followUpFailure ?: if (pending && !isInventoryRequest(input) &&
+            both.isEmpty() && selectedHistory.size > 1
+        ) "ambiguous_product" else null,
+        inheritsInventoryContext = pending && !isInventoryRequest(input),
     )
 }
 
