@@ -85,7 +85,9 @@ internal class AdvisorLocationsTool(
             directory.any { it.name.isBlank() } ||
             directory.none { it.branchId.value == currentBranchId }
         ) return empty(providerId, exactRef.productId, "unavailable", "directory_unavailable")
-        val userPlace = BranchResolver.resolve(userText, directory, BranchId(currentBranchId), allowBareBranchIds = false)
+        val userPlace = if (providerId == OBI_PROVIDER_ID.value) {
+            BranchResolver.resolveObiMarketScope(userText, directory, BranchId(currentBranchId), false)
+        } else BranchResolver.resolve(userText, directory, BranchId(currentBranchId), allowBareBranchIds = false)
         val explicitlyMultipleMarkets = Regex(
             """\b(?:wszystk[a-z]*|inne|innych|pozostale|pozostalych|markety|marketach|oddzialy|oddzialach)\b""",
         ).containsMatchIn(norm(userText))
@@ -101,13 +103,16 @@ internal class AdvisorLocationsTool(
         // Directory-grounded USER scope only; discard model vetoes, never USER
         // unknown/conflicting places. Existing complete multi-location parsers
         // still validate explicit broad/chain requests, without model hints.
-        val scopeText = if (unique == null) userText else {
+        val scopeText = if (userPlace is BranchResolution.Ambiguous && userPlace.isCityWideScope) {
+            "Sprawdź stan produktu w market OBI " + userPlace.candidates.joinToString(", ") { it.branchId.value }
+        } else if (unique == null) userText else {
             if (providerId == OBI_PROVIDER_ID.value) "Sprawdź stan produktu w market OBI ${unique.branchId.value}"
             else "Sprawdź stan produktu w oddziale ${unique.branchId.value}"
         }
         val authorizedScope = if (providerId == OBI_PROVIDER_ID.value) {
             when (val scope = authorizedObiLocations(
                 scopeText, emptyList(), directory, BranchId(currentBranchId),
+                allowCurrentBranchFallback = userPlace == BranchResolution.NotMentioned,
             )) {
                 is AuthorizedLocationScope.Rejected ->
                     return rejected(scope.reason, exactRef.productId)
@@ -430,6 +435,7 @@ internal class AdvisorLocationsTool(
         modelHints: List<String>,
         directory: List<ProviderBranch>,
         selected: BranchId,
+        allowCurrentBranchFallback: Boolean,
     ): AuthorizedLocationScope {
         if (directory.map { it.branchId }.distinct().size != directory.size ||
             directory.none { it.branchId == selected }) {
@@ -494,7 +500,9 @@ internal class AdvisorLocationsTool(
                 fullNetwork = false,
             )
         }
-        if (!broadRequested) return AuthorizedLocationScope.Accepted(listOf(selected), fullNetwork = false)
+        if (!broadRequested) return if (allowCurrentBranchFallback) {
+            AuthorizedLocationScope.Accepted(listOf(selected), fullNetwork = false)
+        } else AuthorizedLocationScope.Rejected("unknown_location")
         return AuthorizedLocationScope.Accepted(
             directory.map { it.branchId }.filterNot { it == selected },
             fullNetwork = true,
@@ -620,14 +628,22 @@ internal class AdvisorLocationsTool(
         // Common prepositional city syntax, at any point in the request.
         // "w innych marketach" is a generic noun phrase, not a locality.
         val placeNoun = Regex(
-            """^(?:[a-z]+\s+){0,2}(?:marketach|markecie|markety|sklepach|sklepie|oddzialach|oddziale|lokalizacjach|obi)\b""",
+            """^(?:(?:innych|wszystkich|pozostalych|naszych|tych)\s+){0,2}(?:market|marketach|markecie|markety|sklep|sklepach|sklepie|oddzial|oddzialach|oddziale|lokalizacjach|obi)\b""",
         )
         val prepositions = Regex("""\b(?:w|we|dla)\s+""")
         for (match in prepositions.findAll(text)) {
             val suffix = text.substring(match.range.last + 1)
-            if (placeNoun.containsMatchIn(suffix) ||
-                Regex("""^ktorych\b""").containsMatchIn(suffix)
-            ) continue
+            val noun = placeNoun.find(suffix)
+            if (noun != null) {
+                val tail = suffix.drop(noun.value.length).trim()
+                val canonicalIds = Regex("""^(?:obi )?[0-9]{3}(?:\s*(?:,|i|oraz)\s*[0-9]{3})*(?:\s+(?:ten produkt|tego produktu|prosze))?$""").matches(tail)
+                if (tail.isNotEmpty() && tail != "obi" && !canonicalIds && !Regex(
+                        """^(?:w|we|dla|jest|sa|tego|ten|produktu|produkt|prosze)\b""",
+                    ).containsMatchIn(tail) && !Regex("""^[0-9]{7,14}\b""").containsMatchIn(tail)
+                ) return ParsedLocationScope.Rejected
+                continue
+            }
+            if (Regex("""^ktorych\b""").containsMatchIn(suffix)) continue
             if (!resolveCityChain(suffix)) return ParsedLocationScope.Rejected
         }
 
