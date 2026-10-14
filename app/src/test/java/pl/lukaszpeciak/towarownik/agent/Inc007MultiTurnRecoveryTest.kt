@@ -36,6 +36,7 @@ class Inc007MultiTurnRecoveryTest {
         var modelProvider = provider
         var modelBranches = listOf("999")
         var verificationFailure = false
+        var recoverVerificationOnContinue = false
         var inventoryFailure = false
         var corruptIdentity = false
         var duplicateCandidates = false
@@ -122,8 +123,9 @@ class Inc007MultiTurnRecoveryTest {
                 ids += response to call
                 outputs += output
                 phase++
+                if (recoverVerificationOnContinue && phase == 1) verificationFailure = false
                 when {
-                    plan == "recover" && phase == 1 -> request(discover = true)
+                    plan in listOf("recover", "recovery_then_discovery") && phase == 1 -> request(discover = true)
                     plan == "recover" && phase == 2 -> { modelId = id; request() }
                     plan == "repeat" && phase < 3 -> request()
                     else -> {
@@ -198,6 +200,15 @@ class Inc007MultiTurnRecoveryTest {
         h.turn(h.article); assertEquals("unavailable", h.evidence().status)
         h.verificationFailure = false; h.id = "77557"; h.article = "A9Z01441/SCH"
         assertEquals("77557", h.turn(h.article).products.single().effectiveProductId); assertTrue(h.gets.isEmpty())
+    }
+    @Test fun successfulFinalDiscoveryClearsEarlierRecoveryRefusalWithinSameTurn() = runBlocking {
+        val h = Harness(); h.verificationFailure = true; h.recoverVerificationOnContinue = true
+        val result = h.turn(h.article, "recovery_then_discovery")
+        assertEquals(2, h.lookups.size); assertEquals(2, h.outputs.size)
+        assertTrue(h.outputs.last() is AdvisorToolContinuation.Verified)
+        assertEquals("77556", result.products.single().effectiveProductId)
+        assertTrue(result.text, result.text.contains("205 — Nowy Sącz — 0"))
+        assertFalse(result.text.contains("99")); assertTrue(h.gets.isEmpty())
     }
     @Test fun naturalRetryAndFillerKeepFreshExactProductAndUserScope() = runBlocking {
         val h = Harness(); h.anchor(); h.turn("a w oddziale w Mielcu?")

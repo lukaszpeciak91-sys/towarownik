@@ -36,10 +36,10 @@ Counts below describe separate executions; overlapping suites must not be summed
 | Current-main native baseline | 215 | 0 | 0 |
 | Current-main original diagnostic, 17 cases | 15 | 2 expected RED | 0 |
 | Permanent original Gradle RED before changes | 15 | 2 | 0 |
-| New focused baseline against immutable current-main production, 24 cases | 8 | 16 | 0 |
-| Final complete Android unit suite | 822 | 0 | 0 |
+| New focused baseline against immutable current-main production, 25 cases | 8 | 17 | 0 |
+| Final complete Android unit suite | 823 | 0 | 0 |
 | Final original diagnostic subset | 17 | 0 | 0 |
-| Final new recovery/security subset | 24 | 0 | 0 |
+| Final new recovery/security subset | 25 | 0 | 0 |
 | Final existing R1 OBI scope subset | 25 | 0 | 0 |
 | Final existing natural-follow-up subset | 34 | 0 | 0 |
 | Unchanged Proxy tests plus typecheck | 636 | 0 | 0 |
@@ -47,6 +47,8 @@ Counts below describe separate executions; overlapping suites must not be summed
 | Python tooling preflight | 174 | 0 | 0 |
 
 Native source extraction disables only the original documented Android factory/default network wiring; it is not a device run. Initial native execution used shell Java 21; an explicit JDK 17 recheck confirmed pinned/current native results. Gradle launcher/daemon is Temurin 17.0.16+8, Gradle 9.5.0; native Kotlin compiler is 2.3.21, Node 22.23.3, TypeScript 5.9.3. Three initial current-baseline MockWebServer tests were blocked by sandbox socket permission and passed when rerun with loopback permission; they are not source regressions. Fixture compilation errors are not executed test failures.
+
+A late review witness executed **1/1 RED** on the first R2 implementation: a successful later discovery left an earlier recovery refusal visible. The final 25-test suite covers replacing that refusal only with fresh verification of the exact USER query, using the same evidence mapper and no extra local call.
 
 Final build command is `./gradlew check assembleDebug`. Its completion and final-head GitHub Actions run/job URLs are recorded in PR delivery. No signed bundle workflow is invoked.
 
@@ -94,6 +96,7 @@ INC007 provider=kwant-pl turn=6 plan=locations continuation=Locations status=ver
 | Existing 40 normal searches per provider and 40 bare OBIKs | R1 suite remains GREEN, independently verified current cards |
 | Bare EAN routed to locations | Existing search/exact verification, fresh profile-bound card, no guessed-ID inventory |
 | Product A -> prices -> independent B -> `a w Tarnowie?` | B=77557, fresh check only 204; no A leakage |
+| Failed native discovery -> successful same-turn model discovery | Latest fresh selected-branch evidence replaces refusal within the three-call budget |
 | Provider failure -> independent B | New query succeeds; failure does not poison next turn |
 | New explicit article before command, or known + unknown article | Reject untrusted identity, zero inventory GETs |
 | Price/advice/mounting text and suffixes, unrelated short messages | No inventory GETs and no native recovery lookup |

@@ -350,33 +350,19 @@ internal class AdvisorController(
         val searchActionsByKey =
             linkedMapOf<String, AdvisorSearchAction>()
 
-        suspend fun recoverIndependentQuery(query: String): AdvisorLocationEvidence {
-            recoveredIndependentQuery = true
-            fun empty(reason: String, status: String = "rejected") = AdvisorLocationEvidence(
-                providerId = conversationProviderId, productId = null, status = status, reason = reason,
-                coverage = "unknown", checkedIds = emptyList(), returnedIds = emptyList(), missingIds = emptyList(),
-                locations = emptyList(), verifiedAtMillis = null, centralStock = null,
-            )
-            // The mistaken location request already consumed one call. Actual
-            // discovery consumes another; there are no synthesized model IDs
-            // or extra continuations. Never borrow next turn's allowance.
-            if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) return empty("local_tool_limit_reached")
-            toolCalls += 1
-            val proposed = AdvisorToolArguments(
-                storeNumber = conversationStoreNumber, providerId = conversationProviderId,
-                queries = listOf(AdvisorToolQuery(query, MAX_TOOL_PRODUCTS)),
-            )
-            val authorized = when (val result = authorizeToolArguments(proposed)) {
-                is ToolBranchAuthorization.Authorized -> result.arguments
-                is ToolBranchAuthorization.Rejected -> return empty(result.reason)
-                ToolBranchAuthorization.Unavailable -> return empty("directory_unavailable", "unavailable")
-            }
-            val discovery = when (val result = safeExecuteTool(conversationProviderId, authorized)) {
-                is AdvisorToolExecutionResult.Success -> result
-                else -> return empty("product_verification_unavailable", "unavailable")
-            }
+        fun emptyIndependentQuery(reason: String, status: String = "rejected") = AdvisorLocationEvidence(
+            providerId = conversationProviderId, productId = null, status = status, reason = reason,
+            coverage = "unknown", checkedIds = emptyList(), returnedIds = emptyList(), missingIds = emptyList(),
+            locations = emptyList(), verifiedAtMillis = null, centralStock = null,
+        )
+
+        fun independentQueryEvidence(
+            query: String,
+            expectedBranchId: String,
+            discovery: AdvisorToolExecutionResult.Success,
+        ): AdvisorLocationEvidence {
             val matches = discovery.snapshots.filter { product ->
-                product.providerId == conversationProviderId && product.effectiveBranchId == authorized.branchId &&
+                product.providerId == conversationProviderId && product.effectiveBranchId == expectedBranchId &&
                     product.verifiedAt > 0 && (product.stock == null || product.stock >= 0) &&
                     (product.centralStock == null || product.centralStock >= 0) &&
                     if (conversationProvider == OBI_PROVIDER_ID) {
@@ -388,12 +374,12 @@ internal class AdvisorController(
                                 advisorMatchesArticle(product.articleNumber, query))
                     }
             }.distinctBy { it.key }
-            val product = matches.singleOrNull() ?: return empty(
+            val product = matches.singleOrNull() ?: return emptyIndependentQuery(
                 if (matches.size > 1) "ambiguous_product" else "untrusted_product",
                 if (discovery.result.results.any { it.status == AdvisorQueryResultStatus.UNAVAILABLE }) "unavailable" else "rejected",
             )
             val branch = turnBranches?.singleOrNull { it.branchId.value == product.effectiveBranchId }
-                ?: return empty("directory_unavailable", "unavailable")
+                ?: return emptyIndependentQuery("directory_unavailable", "unavailable")
             verifiedByKey[product.key] = product
             // A bare identifier authorizes ordinary exact-product discovery,
             // not a departments/all-market scan. These are ONLY the fresh
@@ -412,6 +398,29 @@ internal class AdvisorController(
                 centralStock = if (confirmed) product.centralStock else null,
                 stockUnit = product.stockUnit,
             )
+        }
+
+        suspend fun recoverIndependentQuery(query: String): AdvisorLocationEvidence {
+            recoveredIndependentQuery = true
+            // The mistaken location request already consumed one call. Actual
+            // discovery consumes another; there are no synthesized model IDs
+            // or extra continuations. Never borrow next turn's allowance.
+            if (toolCalls >= MAX_LOCAL_TOOL_CALLS_PER_TURN) return emptyIndependentQuery("local_tool_limit_reached")
+            toolCalls += 1
+            val proposed = AdvisorToolArguments(
+                storeNumber = conversationStoreNumber, providerId = conversationProviderId,
+                queries = listOf(AdvisorToolQuery(query, MAX_TOOL_PRODUCTS)),
+            )
+            val authorized = when (val result = authorizeToolArguments(proposed)) {
+                is ToolBranchAuthorization.Authorized -> result.arguments
+                is ToolBranchAuthorization.Rejected -> return emptyIndependentQuery(result.reason)
+                ToolBranchAuthorization.Unavailable -> return emptyIndependentQuery("directory_unavailable", "unavailable")
+            }
+            val discovery = when (val result = safeExecuteTool(conversationProviderId, authorized)) {
+                is AdvisorToolExecutionResult.Success -> result
+                else -> return emptyIndependentQuery("product_verification_unavailable", "unavailable")
+            }
+            return independentQueryEvidence(query, authorized.branchId, discovery)
         }
 
         while (true) {
@@ -744,7 +753,16 @@ internal class AdvisorController(
                                     )
                                 ) {
                                 is AdvisorToolExecutionResult.Success -> {
-                                    localResult.snapshots.forEach {
+                                    val finishesIndependentRecovery = recoveredIndependentQuery && independentQuery != null &&
+                                        resolvedArguments.queries.singleOrNull()?.query?.trim()
+                                            ?.equals(independentQuery, ignoreCase = true) == true
+                                    if (finishesIndependentRecovery) {
+                                        // Latest exact USER-query verification replaces a prior
+                                        // recovery refusal without executing another local call.
+                                        lastLocationEvidence = independentQueryEvidence(
+                                            requireNotNull(independentQuery), resolvedArguments.branchId, localResult,
+                                        )
+                                    } else localResult.snapshots.forEach {
                                         verifiedByKey[it.key] = it
                                     }
                                     localResult.searchActions.forEach { action ->
