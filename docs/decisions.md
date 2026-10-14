@@ -1,5 +1,17 @@
 # Decisions
 
+## 2026-10-14 — INC-007 R2: classify current discovery before inherited inventory
+
+A standalone current USER identifier is an independent provider query, even after a denial or a price/advice turn. Its admission cannot depend on the model choosing the correct tool or an earlier inventory anchor. Recover a mistaken location selection locally using the existing bounded discovery tool; never reinterpret the model's supplied numeric ID as discovery authority. Validate provider, branch, exact article/OBIK identity and uniqueness before retaining a fresh snapshot. EAN discovery keeps the existing search/exact-verification behavior; absent historical alias evidence is not synthesized.
+
+Use the original location-result shape for the exact fresh selected-branch facts, not an invented discovery function-call output. Keep the original response/call IDs and count actual discovery against the unchanged three-call budget. Bare identifiers grant no network-wide inventory permission. Null stock carries checked/missing canonical rows and no verified stock timestamp/central stock in the location result. Fresh identity cards remain selectable through normal productRefs. No interface/protocol blocker was found: actual v2/v3 serialized bodies pass the unchanged strict Worker validator.
+
+For explicit stock requests with a new identifier, retain the safe existing rejected-location -> discovery -> location retry path, with USER scope preserved. Natural retry/courtesy normalization is limited to complete canonical location clauses and requires USER-owned context. Do not restore the old arbitrary-short-message policy. Retain legacy canonical clarification text as well as its scope, because existing wire/history tests depend on that form.
+
+Current explicit catalog codes before a command must reject unknown/multiple identities before any inventory; a historical single card or model ID cannot substitute. Do not classify embedded dimensions as articles. A newly exposed numeric-product/location case required a one-condition shared resolver correction: the old watt guard skipped every post-number `w`, allowing an unknown or ambiguous city to fall back during discovery.
+
+[Measured RED/GREEN and limitations](inc007-r2-recovery.md). GO for independent PR audit after final-head CI; no merge, deployment or AAB. Live model ordering, directory/stock behavior in 206/204 and the separate 502 remain device/trace acceptance work.
+
 ## 2026-10-14 — INC-007 R1: preserve identity and explicit OBI scope
 
 Pinned `fe9e8d79f1a736cd4cb2289b525d5bc872ce554b` reproduces the original diagnostic: 17 tests, 12 PASS / 5 expected RED, alongside 215 passing existing native tests. A test-only parent commit preserves 20 focused tests with 10 PASS / 10 FAIL before production repair. Original OBI witnesses are long bare product numbers rejected as unknown markets; a new 6346951 search rejected for the real plural Kraków phrase; and an already trusted product checked in default 075 instead of Kraków. Exact old live tool arguments remain unknown; these are executable source defects, not reconstructed live model output or a 502 diagnosis.

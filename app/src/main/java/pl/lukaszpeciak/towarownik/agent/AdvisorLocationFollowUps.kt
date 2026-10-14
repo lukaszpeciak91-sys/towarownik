@@ -73,8 +73,15 @@ internal fun resolveAdvisorLocationFollowUp(
         return match.groupValues[1] in canonicalLocations
     }
     val selectedBranch = branches.singleOrNull { it.branchId.value == currentBranchId }
+    fun locationClause(s: String): String {
+        val withoutFiller = normalized(s).replace(Regex("""^(?:dobrze|ok|no|prosze) (?:a )?"""), "")
+            .removePrefix("a ")
+        // Only a complete location clause can borrow intent. A retry is not
+        // a new unrestricted inventory anchor, and advice/price tails fail below.
+        return withoutFiller.replace(Regex("""^(?:nie )?sprawdzisz(?: mi)? (?=(?:w|we) )"""), "")
+    }
     fun naturalShortLocation(s: String): BranchResolution? {
-        val t = normalized(s).removePrefix("a ")
+        val t = locationClause(s)
         if (t == "u nas") return selectedBranch?.let { BranchResolution.CurrentBranch(it) }
         if (quantityFollowUpLocation(normalized(s)) != null) return null
         val legacyCityNumber = t.removePrefix("w ").removePrefix("we ")
@@ -95,7 +102,7 @@ internal fun resolveAdvisorLocationFollowUp(
         )
     }
     fun shortLocationCandidate(s: String): Boolean {
-        val t = normalized(s).removePrefix("a ")
+        val t = locationClause(s)
         return t in setOf("u nas", "tam") || naturalShortLocation(s) != null
     }
     fun isClarification(s: String): Boolean {
@@ -140,7 +147,9 @@ internal fun resolveAdvisorLocationFollowUp(
             !Regex("""\b(zamontowac|montaz|podlaczyc|odpowiednik|zamiennik|dobierz)\b""")
                 .containsMatchIn(t)
     }
-    val anchor = userHistory.indexOfLast { isInventoryRequest(it.text) }
+    val anchor = userHistory.indexOfLast {
+        isInventoryRequest(it.text) || advisorBareProductQuery(it.text, providerId) != null
+    }
     val continuation = anchor >= 0 &&
         userHistory.drop(anchor + 1).all { isClarification(it.text) }
     val currentIsShortFollowUp = isClarification(input)
@@ -164,14 +173,14 @@ internal fun resolveAdvisorLocationFollowUp(
     val currentLocation = naturalShortLocation(input)
     val anchorText = userHistory.getOrNull(anchor)?.text.orEmpty()
     val anchorNumbers = AdvisorProductIdentityReferences.fromUserText(anchorText).referencedNumericIds
-    val anchorArticle = advisorExplicitArticleId(anchorText)
+    val anchorArticles = advisorExplicitArticleIds(anchorText)
     val anchorShortId = advisorExplicitShortProductId(anchorText)
     val unknownAnchorIdentity = anchorNumbers.any { number -> candidates.none {
         it.effectiveProductId == number || it.articleNumber?.equals(number, ignoreCase = true) == true
     } } || anchorShortId?.let { id -> candidates.none { it.effectiveProductId == id } } == true ||
-        anchorArticle?.let { id -> candidates.none {
+        anchorArticles.any { id -> candidates.none {
             it.effectiveProductId.equals(id, ignoreCase = true) || advisorMatchesArticle(it.articleNumber, id)
-        } } == true
+        } }
     val followUpFailure = if (shortLocationCandidate(input)) {
         when {
             !continuation -> "location_intent_required"
@@ -194,7 +203,7 @@ internal fun resolveAdvisorLocationFollowUp(
         candidates.filter { candidate ->
             references.mentions(candidate.effectiveProductId) ||
                 candidate.effectiveProductId == advisorExplicitShortProductId(item.text) ||
-                advisorMatchesArticle(candidate.articleNumber, advisorExplicitArticleId(item.text)) ||
+                advisorExplicitArticleIds(item.text).any { advisorMatchesArticle(candidate.articleNumber, it) } ||
                 (candidate.articleNumber?.let(references::mentions) == true)
         }.map { it.effectiveProductId }.distinct()
     }.firstOrNull { it.isNotEmpty() }.orEmpty()
@@ -206,7 +215,7 @@ internal fun resolveAdvisorLocationFollowUp(
     val currentMatches = candidates.filter { candidate ->
         currentReferences.mentions(candidate.effectiveProductId) ||
             candidate.effectiveProductId == advisorExplicitShortProductId(input) ||
-            advisorMatchesArticle(candidate.articleNumber, advisorExplicitArticleId(input)) ||
+            advisorExplicitArticleIds(input).any { advisorMatchesArticle(candidate.articleNumber, it) } ||
             (candidate.articleNumber?.let(currentReferences::mentions) == true)
     }.distinctBy { it.providerId to it.effectiveProductId }
     val newestCard = recent.asReversed()
@@ -224,7 +233,7 @@ internal fun resolveAdvisorLocationFollowUp(
     // location-only clarifications can still carry a bounded prior "obu".
     val currentSelectsProduct = currentMatches.isNotEmpty() ||
         currentReferences.referencedNumericIds.isNotEmpty() || advisorExplicitShortProductId(input) != null ||
-        advisorExplicitArticleId(input) != null
+        advisorExplicitArticleIds(input).isNotEmpty()
     val currentRequestsBoth = Regex("""\b(?:obu|oba)\b""").containsMatchIn(current)
     val inheritedBoth = !currentSelectsProduct &&
         userHistory.drop(anchor.coerceAtLeast(0)).any {
@@ -245,7 +254,10 @@ internal fun resolveAdvisorLocationFollowUp(
         else -> previousUserLocation
     }
     val effective = if (pending && !isInventoryRequest(input) && followUpFailure == null) {
-        if (resolvedShortBranch != null && current.removePrefix("a ") in setOf("u nas", "tam")) {
+        if (resolvedShortBranch != null &&
+            (current.removePrefix("a ") in setOf("u nas", "tam") ||
+                locationClause(input) != current.removePrefix("a "))
+        ) {
             // Canonical scope is derived independently from USER + directory;
             // the user never has to type an internal numeric command.
             if (providerId != "obi-pl") "Sprawdź stan produktu w oddziale ${resolvedShortBranch.branchId.value}"
@@ -296,6 +308,38 @@ internal fun advisorExplicitShortProductId(input: String): String? {
 internal fun advisorExplicitArticleId(input: String): String? = Regex(
     """(?i)\b(?:sprawd[zź]\s+(?:stan|dost[eę]pno[sś][cć])|produkt(?:u)?|kod(?:u)?|artyku[lł](?:u)?)\s+([a-z0-9][a-z0-9/_-]*[0-9][a-z0-9/_-]*)\b""",
 ).find(input)?.groupValues?.get(1)?.takeIf { it.length <= 64 && it.any(Char::isLetter) }
+
+/** Exact USER identifier slots, including catalog codes before a stock command. */
+internal fun advisorExplicitArticleIds(input: String): Set<String> {
+    val labelled = Regex(
+        """(?i)\b(?:sprawd[zź]\s+(?:stan|dost[eę]pno[sś][cć])|produkt(?:u)?|kod(?:u)?|artyku[lł](?:u)?)\s+([a-z0-9][a-z0-9/_-]*[0-9][a-z0-9/_-]*)\b""",
+    ).findAll(input).map { it.groupValues[1] }
+    val catalog = Regex("""(?i)(?<![a-z0-9/_-])[a-z0-9][a-z0-9/_-]{2,63}(?![a-z0-9/_-])""")
+        .findAll(input).map { it.value }.filter { token ->
+            token.any(Char::isDigit) && token.any(Char::isLetter) &&
+                (token.first().isLetter() || input.trim().equals(token, ignoreCase = true)) &&
+                (input.trim().equals(token, ignoreCase = true) || token.any { it in "/_-" } ||
+                    Regex("""(?i)[a-z][0-9]+[a-z]""").containsMatchIn(token)) &&
+                !Regex("""(?i)[0-9]+(?:[x×][0-9]+)?(?:mm|cm|m2|m3|m|kg|kw|kwh|v|a|l|ml|szt|opak|w)""").matches(token)
+        }
+    return (labelled + catalog).filter { it.length <= 64 && it.any(Char::isLetter) }
+        .map { it.uppercase() }.toSet()
+}
+
+/** A standalone identifier is discovery intent, independently of conversation history. */
+internal fun advisorBareProductQuery(input: String, providerId: String?): String? {
+    val token = input.trim()
+    if (Regex("""[0-9]+""").matches(token)) return token.takeIf {
+        if (providerId == "obi-pl") it.length in setOf(7, 8, 12, 13, 14)
+        else providerId == "kwant-pl" && it.length in 4..14
+    }
+    return token.takeIf {
+        providerId in setOf("obi-pl", "kwant-pl") && it.length in 3..64 &&
+            Regex("""(?i)[a-z0-9][a-z0-9/_-]+""").matches(it) &&
+            it.any(Char::isDigit) && it.any(Char::isLetter) &&
+            !Regex("""(?i)[0-9]+(?:[x×][0-9]+)?(?:mm|cm|m2|m3|m|kg|kw|kwh|v|a|l|ml|szt|opak|w)""").matches(it)
+    }
+}
 
 /** Exact verified article, optionally USER omits its canonical manufacturer suffix. */
 internal fun advisorMatchesArticle(verifiedArticle: String?, requested: String?): Boolean =
