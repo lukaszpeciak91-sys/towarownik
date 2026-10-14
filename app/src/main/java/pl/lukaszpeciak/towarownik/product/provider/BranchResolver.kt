@@ -21,348 +21,248 @@ internal sealed interface BranchResolution {
     data object UnknownMention : BranchResolution
 }
 
+/** Resolves current USER discovery scope; model hints never participate here. */
 internal object BranchResolver {
     fun resolve(
         userText: String,
         branches: List<ProviderBranch>,
         currentBranchId: BranchId,
+        allowBareBranchIds: Boolean = true,
     ): BranchResolution {
-        if (branches.isEmpty()) return BranchResolution.NotMentioned
+        if (branches.isEmpty() || branches.size > 100 ||
+            branches.map { it.branchId }.distinct().size != branches.size ||
+            branches.any { it.name.isBlank() }
+        ) return BranchResolution.UnknownMention
 
-        val current = branches.singleOrNull {
-            it.branchId == currentBranchId
+        val current = branches.singleOrNull { it.branchId == currentBranchId }
+        val text = normalizedText(userText)
+        val scopes = mutableListOf<String>()
+        // Scope begins at a place phrase, not every city/number in a product query.
+        for (match in LOCATION_MARKER.findAll(text)) {
+            // A watt unit in "203 W w Bochni" is not a second place marker.
+            if (match.value.trim() == "w" &&
+                text.substring(0, match.range.first).trimEnd().lastOrNull()?.isDigit() == true
+            ) continue
+            val source = text.substring(match.range.last + 1).trimStart()
+            val first = source.substringBefore(' ')
+            if (source.isBlank() || first in CONTEXT_WORDS ||
+                first in LOCATION_NOUNS || first in setOf("obi", "kwant") ||
+                MEASUREMENT_PREFIX.containsMatchIn(source)
+            ) continue
+            scopes += source
         }
-        val textTokens = comparisonTokens(userText)
-        val naturalLocationIntent =
-            hasExplicitBranchLocationIntent(userText)
-        val metadataMatches = branches
-            .mapNotNull { branch ->
-                branchMentionScore(
-                    textTokens = textTokens,
-                    rawText = userText,
-                    branch = branch,
-                    allowNaturalMetadata =
-                        naturalLocationIntent &&
-                            hasScopedNaturalReference(
-                                userText = userText,
-                                branch = branch,
-                            ),
-                ).takeIf { it > 0 }?.let { score ->
-                    BranchMatch(branch, score)
-                }
-            }
+        // A standalone market ID and an explicit comparison of IDs remain supported.
+        val numericOnly = text.replaceFirst(Regex("""^porownaj\s+"""), "")
+        if ((allowBareBranchIds || text.startsWith("porownaj ")) && Regex("""[0-9]+(?:\s+(?:i|oraz)\s+[0-9]+)*""").matches(numericOnly) &&
+            !Regex("""[/\\x×*:.\-]""").containsMatchIn(userText)
+        ) scopes += numericOnly
 
-        val strongestMetadata = metadataMatches
-            .maxOfOrNull(BranchMatch::score)
-            ?.let { strongest ->
-                metadataMatches.filter { it.score == strongest }
-            }
-            .orEmpty()
-
-        val currentAliasMentioned =
-            current != null && currentBranchAliasMentioned(
-                userText = userText,
-                currentBranch = current,
-            )
-
-        val candidates = buildList {
-            strongestMetadata.forEach { add(it.branch) }
-            if (
-                currentAliasMentioned &&
-                current != null &&
-                none { it.branchId == current.branchId }
-            ) {
-                add(current)
-            }
-        }.distinctBy(ProviderBranch::branchId)
-
-        if (candidates.size > 1) {
-            return BranchResolution.Ambiguous(
-                candidates = candidates.sortedBy { it.branchId.value },
-                allowsExplicitBranchHint = candidates.all {
-                    containsExactBranchId(
-                        userText,
-                        it.branchId.value,
-                    )
-                },
-            )
-        }
-
-        candidates.singleOrNull()?.let { branch ->
-            return if (branch.branchId == currentBranchId) {
-                BranchResolution.CurrentBranch(branch)
-            } else {
-                BranchResolution.Resolved(branch)
+        val candidates = linkedSetOf<ProviderBranch>()
+        for (scope in scopes.distinct()) {
+            var tail = scope
+            var place = consumePlace(tail, branches, current)
+                ?: return BranchResolution.UnknownMention
+            candidates += place.branches
+            tail = place.tail
+            while (true) {
+                val connector = Regex("""^(?:i|oraz)\s+""").find(tail) ?: break
+                tail = tail.drop(connector.value.length)
+                    .replaceFirst(Regex("""^(?:w|we|na)\s+"""), "")
+                place = consumePlace(tail, branches, current)
+                    ?: return BranchResolution.UnknownMention
+                candidates += place.branches
+                tail = place.tail
             }
         }
-
-        return if (naturalLocationIntent) {
-            BranchResolution.UnknownMention
-        } else {
-            BranchResolution.NotMentioned
-        }
+        if (current != null && CURRENT_BRANCH_PHRASES.any {
+                containsNormalizedPhrase(text, it)
+            }
+        ) candidates += current
+        if (candidates.isEmpty()) return BranchResolution.NotMentioned
+        if (candidates.size > 1) return BranchResolution.Ambiguous(
+            candidates = candidates.sortedBy { it.branchId.value },
+            // Only an entirely USER-named numeric set can be selected per call.
+            allowsExplicitBranchHint = candidates.all {
+                explicitNumericScopeContains(scopes, it.branchId.value)
+            },
+        )
+        val branch = candidates.single()
+        return if (branch.branchId == currentBranchId) {
+            BranchResolution.CurrentBranch(branch)
+        } else BranchResolution.Resolved(branch)
     }
 
-    fun resolveHint(
-        hint: String,
+    fun resolveHint(hint: String, branches: List<ProviderBranch>): ProviderBranch? =
+        consumePlace(normalizedText(hint), branches, null)
+            ?.takeIf { it.tail.isBlank() }?.branches?.singleOrNull()
+
+    private data class Place(val branches: List<ProviderBranch>, val tail: String)
+
+    private fun consumePlace(
+        source: String,
         branches: List<ProviderBranch>,
-    ): ProviderBranch? {
-        val textTokens = comparisonTokens(hint)
-        val matches = branches.mapNotNull { branch ->
-            branchMentionScore(
-                textTokens = textTokens,
-                rawText = hint,
-                branch = branch,
-            ).takeIf { it > 0 }?.let { score ->
-                BranchMatch(branch, score)
+        current: ProviderBranch?,
+    ): Place? {
+        var remaining = source.replaceFirst(
+            Regex("""^(?:(?:w|we|na)\s+)?(?:obi|kwant|market|markecie|sklep|sklepie|oddzial|oddziale|hurtownia|hurtowni|magazyn|magazynie)\s+(?:nr\s+)?"""), "",
+        ).replaceFirst(Regex("""^(?:w|we|na)\s+"""), "")
+        var matched: List<ProviderBranch>
+        val number = Regex("""^[0-9]+\b""").find(remaining)
+        val names = branches.flatMap { branch -> cityAliases(branch.name).map { it to branch } }
+        val city = names.map { it.first }.sortedByDescending(String::length)
+            .firstOrNull { startsWithPhrase(remaining, it) }
+        val alias = CURRENT_BRANCH_PHRASES.firstOrNull { startsWithPhrase(remaining, it) }
+        when {
+            number != null -> {
+                if (MEASUREMENT_PREFIX.containsMatchIn(remaining)) return null
+                matched = branches.filter { it.branchId.value == number.value }
+                if (matched.size != 1) return null
+                remaining = remaining.drop(number.value.length).trimStart()
+            }
+            city != null -> {
+                matched = names.filter { it.first == city }.map { it.second }.distinct()
+                remaining = remaining.drop(city.length).trimStart()
+            }
+            alias != null && current != null -> {
+                matched = listOf(current)
+                remaining = remaining.drop(alias.length).trimStart()
+            }
+            else -> {
+                val street = matchStreet(remaining, branches) ?: return null
+                return street
             }
         }
-        val strongest = matches.maxOfOrNull(BranchMatch::score)
-            ?: return null
-        return matches
-            .filter { it.score == strongest }
-            .map(BranchMatch::branch)
-            .distinctBy(ProviderBranch::branchId)
-            .singleOrNull()
+        // A paired city/ID is one location description and must agree.
+        val pairedCity = names.map { it.first }.sortedByDescending(String::length)
+            .firstOrNull { startsWithPhrase(remaining, it) }
+        val pairedNumber = Regex("""^[0-9]+\b""").find(remaining)
+        if (pairedCity != null) {
+            val ids = names.filter { it.first == pairedCity }.map { it.second.branchId }
+            matched = matched.filter { it.branchId in ids }
+            remaining = remaining.drop(pairedCity.length).trimStart()
+        } else if (pairedNumber != null && !MEASUREMENT_PREFIX.containsMatchIn(remaining)) {
+            matched = matched.filter { it.branchId.value == pairedNumber.value }
+            remaining = remaining.drop(pairedNumber.value.length).trimStart()
+        }
+        if (matched.isEmpty()) return null
+        val streetSource = remaining.replaceFirst(Regex("""^(?:na|przy)\s+"""), "")
+        val hasStreetMarker = streetSource != remaining ||
+            Regex("""^(?:ul|ulica|al|aleja)\s+""").containsMatchIn(streetSource)
+        val street = matchStreet(streetSource, branches)
+        if (hasStreetMarker || street != null) {
+            if (street == null) return null
+            val ids = street.branches.map { it.branchId }
+            matched = matched.filter { it.branchId in ids }
+            if (matched.isEmpty()) return null
+            remaining = street.tail
+        }
+        if (remaining.isNotBlank() && remaining.substringBefore(' ') !in CONTEXT_WORDS &&
+            !Regex("""^(?:i|oraz|w|we|na)\b""").containsMatchIn(remaining) &&
+            !MEASUREMENT_PREFIX.containsMatchIn(remaining)
+        ) return null
+        return Place(matched, remaining)
     }
 
-    private fun branchMentionScore(
-        textTokens: List<String>,
-        rawText: String,
-        branch: ProviderBranch,
-        allowNaturalMetadata: Boolean = true,
-    ): Int {
-        var score = 0
-
-        if (containsExactBranchId(rawText, branch.branchId.value)) {
-            score += 1_000
+    private fun matchStreet(source: String, branches: List<ProviderBranch>): Place? {
+        val street = source.replaceFirst(Regex("""^(?:ul|ulica|al|aleja)\s+"""), "")
+        val first = street.substringBefore(' ')
+        if (first.isBlank()) return null
+        var positions = branches.mapNotNull { branch ->
+            val address = comparisonTokens(branch.address.orEmpty())
+            val index = address.indexOf(canonicalLocationToken(first))
+            if (index < 0 || first.length < 3 || first.any(Char::isDigit) ||
+                canonicalLocationToken(first) in ADDRESS_NOISE ||
+                canonicalLocationToken(first) in comparisonTokens(branch.name)
+            ) null else AddressPosition(branch, address, index)
         }
-
-        if (allowNaturalMetadata) {
-            val nameTokens = comparisonTokens(branch.name)
-            if (
-                nameTokens.isNotEmpty() &&
-                containsTokenSequence(textTokens, nameTokens)
-            ) {
-                score += 200
+        if (positions.isEmpty()) return null
+        var words = street.split(' ')
+        while (words.isNotEmpty()) {
+            val matching = positions.filter {
+                it.address.getOrNull(it.index) == canonicalLocationToken(words.first())
             }
-
-            val addressTokens = significantAddressTokens(branch.address)
-            val addressMatches = addressTokens.count(textTokens::contains)
-            if (addressMatches > 0) {
-                score += 300 + addressMatches * 20
-            }
+            if (matching.isEmpty()) break
+            positions = matching.map { it.copy(index = it.index + 1) }
+            words = words.drop(1)
         }
-
-        return score
+        // The whole supplied street description must match, not an arbitrary
+        // bag of address tokens assembled from different branches.
+        if (words.isNotEmpty() && words.first() !in CONTEXT_WORDS &&
+            words.first() !in setOf("i", "oraz", "w", "we", "na") &&
+            !MEASUREMENT_PREFIX.containsMatchIn(words.joinToString(" "))
+        ) return null
+        return Place(positions.map { it.branch }.distinct(), words.joinToString(" "))
     }
 
-    private fun currentBranchAliasMentioned(
-        userText: String,
-        currentBranch: ProviderBranch,
-    ): Boolean {
-        val normalized = normalizedText(userText)
-        if (CURRENT_BRANCH_PHRASES.any {
-                containsNormalizedPhrase(normalized, it)
-            }
-        ) {
-            return true
+    private data class AddressPosition(
+        val branch: ProviderBranch,
+        val address: List<String>,
+        val index: Int,
+    )
+
+    private fun explicitNumericScopeContains(scopes: List<String>, id: String): Boolean =
+        scopes.any { scope ->
+            val stripped = scope.replaceFirst(Regex("""^(?:nr\s+)?"""), "")
+            Regex("""[0-9]+(?:\s+(?:i|oraz)\s+[0-9]+)*""").matches(stripped) &&
+                id in stripped.split(' ')
         }
 
-        val currentName = normalizedText(currentBranch.name)
-        val aliases = CURRENT_BRANCH_NAME_ALIASES[currentName].orEmpty()
-        return aliases.any {
-            containsNormalizedPhrase(normalized, it)
-        }
+    private fun cityAliases(name: String): List<String> {
+        val canonical = normalizedText(name)
+        // Exact aliases bind ONLY to a canonical name present in this directory.
+        // No fuzzy matching and no static alias-to-branch-ID table.
+        return listOfNotNull(canonical, CITY_LOCATIVES[canonical]) +
+            if (canonical == "nowy sacz") listOf("sacz", "saczu", "nowym sacz") else emptyList()
     }
 
-    private fun hasExplicitBranchLocationIntent(
-        userText: String,
-    ): Boolean {
-        val normalized = normalizedText(userText)
-        return PROVIDER_LOCATION_INTENT.containsMatchIn(normalized) ||
-            BRANCH_NOUN_LOCATION_INTENT.containsMatchIn(normalized)
-    }
+    private fun startsWithPhrase(text: String, phrase: String): Boolean =
+        text == phrase || text.startsWith("$phrase ")
 
-    private fun hasScopedNaturalReference(
-        userText: String,
-        branch: ProviderBranch,
-    ): Boolean {
-        val tokens = normalizedText(userText)
-            .split(' ')
-            .filter(String::isNotBlank)
-            .map(::canonicalLocationToken)
-        val branchNameTokens = comparisonTokens(branch.name)
-        val addressTokens = significantAddressTokens(branch.address)
-
-        return tokens.indices.any { index ->
-            if (tokens[index] !in LOCATION_INTENT_MARKERS) {
-                return@any false
-            }
-            var locationIndex = index + 1
-            while (
-                locationIndex < tokens.size &&
-                tokens[locationIndex] in LOCATION_CONNECTORS
-            ) {
-                locationIndex += 1
-            }
-            if (locationIndex >= tokens.size) {
-                return@any false
-            }
-
-            val afterMarker = tokens.drop(locationIndex)
-            (
-                branchNameTokens.isNotEmpty() &&
-                    afterMarker.take(branchNameTokens.size) ==
-                    branchNameTokens
-                ) ||
-                afterMarker.first() in addressTokens
-        }
-    }
-
-    private fun significantAddressTokens(
-        address: String?,
-    ): Set<String> =
-        address
-            ?.let(::comparisonTokens)
-            .orEmpty()
-            .filter { token ->
-                token.length >= 3 &&
-                    token !in ADDRESS_NOISE &&
-                    token.none(Char::isDigit)
-            }
-            .toSet()
-
-    private fun comparisonTokens(text: String): List<String> =
-        normalizedText(text)
-            .split(' ')
-            .asSequence()
-            .filter(String::isNotBlank)
-            .filterNot(STREET_PREFIXES::contains)
-            .map(::canonicalLocationToken)
-            .toList()
+    private fun containsNormalizedPhrase(text: String, phrase: String): Boolean =
+        (" $text ").contains(" $phrase ")
 
     private fun normalizedText(text: String): String =
-        Normalizer.normalize(
-            text.lowercase(),
-            Normalizer.Form.NFD,
-        )
+        Normalizer.normalize(text.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
             .replace(Regex("""\p{M}+"""), "")
             .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
-            .replace(Regex("""\s+"""), " ")
-            .trim()
+            .replace(Regex("""\s+"""), " ").trim()
 
-    private fun canonicalLocationToken(token: String): String =
-        when {
-            token.length > 5 && token.endsWith("iej") ->
-                token.dropLast(3) + "a"
-            token.length > 5 && token.endsWith("sciu") ->
-                token.dropLast(2)
-            token.length > 5 && token.endsWith("owie") ->
-                token.dropLast(2)
-            else -> token
-        }
+    private fun comparisonTokens(text: String): List<String> =
+        normalizedText(text).split(' ').map(::canonicalLocationToken)
 
-    private fun containsTokenSequence(
-        haystack: List<String>,
-        needle: List<String>,
-    ): Boolean {
-        if (needle.isEmpty() || needle.size > haystack.size) return false
-        return haystack
-            .windowed(needle.size)
-            .any { it == needle }
+    private fun canonicalLocationToken(token: String): String = when {
+        token.length > 5 && token.endsWith("iej") -> token.dropLast(3) + "a"
+        else -> token
     }
 
-    private fun containsExactBranchId(
-        text: String,
-        branchId: String,
-    ): Boolean =
-        Regex(
-            """(?<!\p{L}|\p{N})""" +
-                Regex.escape(branchId) +
-                """(?!\p{L}|\p{N})""",
-        ).containsMatchIn(text)
-
-    private fun containsNormalizedPhrase(
-        normalizedText: String,
-        normalizedPhrase: String,
-    ): Boolean =
-        (" $normalizedText ").contains(" $normalizedPhrase ")
-
-    private data class BranchMatch(
-        val branch: ProviderBranch,
-        val score: Int,
+    private val LOCATION_NOUNS = setOf("market", "markecie", "sklep", "sklepie", "oddzial", "oddziale", "hurtownia", "hurtowni", "magazyn", "magazynie", "oddzialy", "oddzialach")
+    private val LOCATION_MARKER = Regex(
+        """\b(?:obi|kwant|market|markecie|sklep|sklepie|oddzial|oddziale|oddzialy|oddzialach|hurtownia|hurtowni|magazyn|magazynie|w|we|na)\s+""",
     )
-
-    private val LOCATION_INTENT_MARKERS = setOf(
-        "obi",
-        "kwant",
-        "market",
-        "markecie",
-        "sklep",
-        "sklepie",
-        "oddzial",
-        "oddziale",
-        "hurtownia",
-        "hurtowni",
-        "magazyn",
-        "magazynie",
+    private val MEASUREMENT_PREFIX = Regex(
+        """^[0-9]+\s+(?:m|mm|cm|m2|m3|kg|l|ml|szt|opak|w|kw|v|a|zl|x)\b""",
     )
-
-    private val LOCATION_CONNECTORS = setOf(
-        "w",
-        "we",
-        "na",
-        "ul",
-        "ulica",
-        "al",
-        "aleja",
+    private val CONTEXT_WORDS = setOf(
+        "jesli", "jezeli", "czy", "nie", "to", "ma", "mam", "mamy", "jest", "sa", "byl", "byla", "bylo", "moze",
+        "prosze", "potrzebuje", "szukam", "dostepne", "dostepny", "podobne", "takie", "tym", "tej", "naszym", "naszej",
+        "podobnych", "tych", "parametrach", "przyklad", "peszlu", "rurze", "jutro", "dzis", "teraz", "kolorze", "rozmiarze", "opakowaniu", "ziemi", "domu", "ogrodzie", "scianie", "drzwiach", "stanie", "sprzedazy", "sztukach",
     )
-
-    private val STREET_PREFIXES = setOf(
-        "ul",
-        "ulica",
-        "al",
-        "aleja",
-    )
-
-    private val ADDRESS_NOISE = setOf(
-        "centrum",
-        "ch",
-    )
-
+    private val ADDRESS_NOISE = setOf("centrum", "ch", "ul", "ulica", "al", "aleja")
     private val CURRENT_BRANCH_PHRASES = setOf(
-        "u nas",
-        "na naszym magazynie",
-        "w naszym magazynie",
-        "na naszym oddziale",
-        "w naszym oddziale",
-        "w naszym sklepie",
-        "w naszym markecie",
+        "u nas", "na naszym magazynie", "w naszym magazynie", "na naszym oddziale", "w naszym oddziale", "w naszym sklepie", "w naszym markecie",
     )
-
-    private val CURRENT_BRANCH_NAME_ALIASES = mapOf(
-        "nowy sacz" to setOf(
-            "w nowym saczu",
-            "w nowym sacz",
-            "nowym saczu",
-            "nowym sacz",
-            "w saczu",
-            "w sacz",
-            "saczu",
-            "sacz",
-        ),
-    )
-
-    private val PROVIDER_LOCATION_INTENT = Regex(
-        """\b(?:obi|kwant)\b(?:\s+(?:w|we|na))?\s+[\p{L}]{3,}""" +
-            """|\b(?:w|we|na)\s+(?:obi|kwant)\b""",
-    )
-
-    private val BRANCH_NOUN_LOCATION_INTENT = Regex(
-        """\b(?:w|we|na)\s+(?:markecie|sklepie|oddziale|hurtowni|""" +
-            """magazynie)\b""" +
-            """|\b(?:market|sklep|oddzial|hurtownia|magazyn)""" +
-            """\s+(?:w|we|na\s+)?[\p{L}]{3,}""",
+    private val CITY_LOCATIVES = mapOf(
+        "bialystok" to "bialymstoku", "bochnia" to "bochni", "brzesko" to "brzesku", "bydgoszcz" to "bydgoszczy", "chelm" to "chelmie",
+        "dabrowa tarnowska" to "dabrowie tarnowskiej", "kielce" to "kielcach", "krakow" to "krakowie", "krosno" to "krosnie", "lublin" to "lublinie",
+        "lodz" to "lodzi", "mielec" to "mielcu", "nowy sacz" to "nowym saczu", "ostroleka" to "ostrolece", "piaseczno" to "piasecznie",
+        "rzeszow" to "rzeszowie", "suwalki" to "suwalkach", "tarnow" to "tarnowie", "warszawa" to "warszawie", "wloclawek" to "wloclawku",
+        "zamosc" to "zamosciu", "miejsce piastowe" to "miejscu piastowym", "wroclaw" to "wroclawiu", "gdansk" to "gdansku", "poznan" to "poznaniu",
+        "bytom" to "bytomiu", "czeladz" to "czeladzi", "czestochowa" to "czestochowie", "gdynia" to "gdyni",
+        "jablonna" to "jablonnie", "jastrzebie zdroj" to "jastrzebiu zdroju", "katowice" to "katowicach", "kobierzyce" to "kobierzycach",
+        "kobylnica k slupska" to "kobylnicy k slupska", "leszno" to "lesznie", "lipienice" to "lipienicach", "lubin" to "lubinie",
+        "mysiadlo" to "mysiadle", "olsztyn" to "olsztynie", "opole" to "opolu", "ostrow wielkopolski" to "ostrowie wielkopolskim",
+        "piotrkow trybunalski" to "piotrkowie trybunalskim", "plock" to "plocku", "radom" to "radomiu", "rybnik" to "rybniku",
+        "sochaczew" to "sochaczewie", "szczecin" to "szczecinie", "tychy" to "tychach", "walbrzych" to "walbrzychu", "zabki" to "zabkach", "zabrze" to "zabrzu",
+        "torun" to "toruniu", "dabrowa gornicza" to "dabrowie gorniczej", "gorzow wielkopolski" to "gorzowie wielkopolskim",
     )
 }

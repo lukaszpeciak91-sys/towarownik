@@ -796,7 +796,7 @@ class AdvisorControllerTest {
     fun `incidental OBI metadata cannot authorize branch through model hint`() =
         runBlocking {
             var toolCalls = 0
-            var rejected = false
+            val executedBranches = mutableListOf<String>()
             val controller = controller(
                 start = {
                     AdvisorProxyCallResult.Success(
@@ -817,13 +817,22 @@ class AdvisorControllerTest {
                         ),
                     )
                 },
-                rejectedContinueCall = { _, _, _ ->
-                    rejected = true
-                    successAnswer("resp_final", "Clarify")
+                continueCall = { _, _, result ->
+                    assertEquals("075", result.storeNumber)
+                    successAnswer("resp_final", "Verified profile lookup")
                 },
-                obiTool = {
+                obiTool = { arguments ->
                     toolCalls += 1
-                    error("incidental metadata must not authorize a branch")
+                    executedBranches += arguments.storeNumber
+                    // Incidental metadata/model hints still cannot grant another branch.
+                    AdvisorToolExecutionResult.Success(
+                        AdvisorVerifiedToolResult(
+                            storeNumber = arguments.storeNumber,
+                            results = emptyList(),
+                            providerId = "obi-pl",
+                        ),
+                        snapshots = emptyList(),
+                    )
                 },
             )
 
@@ -834,8 +843,8 @@ class AdvisorControllerTest {
                 conversationProviderId = "obi-pl",
             ) { }
 
-            assertEquals(0, toolCalls)
-            assertTrue(rejected)
+            assertEquals(1, toolCalls)
+            assertEquals(listOf("075"), executedBranches)
         }
 
     @Test
@@ -976,7 +985,7 @@ class AdvisorControllerTest {
     fun `model requestedBranch cannot authorize location absent from user text`() =
         runBlocking {
             var toolCalls = 0
-            var rejected = false
+            val executedBranches = mutableListOf<String>()
             val controller = controller(
                 start = {
                     AdvisorProxyCallResult.Success(
@@ -994,13 +1003,22 @@ class AdvisorControllerTest {
                         ),
                     )
                 },
-                rejectedContinueCall = { _, _, _ ->
-                    rejected = true
-                    successAnswer("resp_final", "Clarify")
+                continueCall = { _, _, result ->
+                    assertEquals("205", result.storeNumber)
+                    successAnswer("resp_final", "Verified profile lookup")
                 },
-                providerTool = {
+                providerTool = { arguments ->
                     toolCalls += 1
-                    error("model hint must not authorize a branch")
+                    executedBranches += arguments.storeNumber
+                    // Incidental metadata/model hints still cannot grant another branch.
+                    AdvisorToolExecutionResult.Success(
+                        AdvisorVerifiedToolResult(
+                            storeNumber = arguments.storeNumber,
+                            results = emptyList(),
+                            providerId = "kwant-pl",
+                        ),
+                        snapshots = emptyList(),
+                    )
                 },
             )
 
@@ -1011,8 +1029,8 @@ class AdvisorControllerTest {
                 conversationProviderId = "kwant-pl",
             ) { }
 
-            assertEquals(0, toolCalls)
-            assertTrue(rejected)
+            assertEquals(1, toolCalls)
+            assertEquals(listOf("205"), executedBranches)
         }
 
     @Test
