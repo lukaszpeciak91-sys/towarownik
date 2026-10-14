@@ -374,7 +374,9 @@ internal class AdvisorController(
                     val followUp = resolveAdvisorLocationFollowUp(
                         input = normalizedInput,
                         history = locationHistory,
-                        historicalProducts = historicalVerifiedProducts
+                        // Fresh same-turn discovery can establish identity, never
+                        // USER intent or location authority. Current facts win.
+                        historicalProducts = (verifiedByKey.values + historicalVerifiedProducts)
                             .filter { it.providerId == conversationProviderId },
                         branches = (loadTurnBranches() as? ProviderBranchResult.Available)
                             ?.branches.orEmpty(),

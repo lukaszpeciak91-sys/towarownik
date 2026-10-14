@@ -132,7 +132,10 @@ internal fun resolveAdvisorLocationFollowUp(
         val explicitStoreCheck = Regex(
             """\bsprawdz\b.*\b(?:w|we|market|markety|sklep|obi|oddzial)\b""",
         ).containsMatchIn(t)
-        return (inventory || explicitStoreCheck) &&
+        val availabilityQuestion = Regex(
+            """\bczy\s+(?:jest|sa)\s+(?:(?:w|we)\s+(?:obi|kwant)|u\s+nas)\b""",
+        ).containsMatchIn(t)
+        return (inventory || explicitStoreCheck || availabilityQuestion) &&
             !Regex("""\b(zamontowac|montaz|podlaczyc|odpowiednik|zamiennik|dobierz)\b""")
                 .containsMatchIn(t)
     }
