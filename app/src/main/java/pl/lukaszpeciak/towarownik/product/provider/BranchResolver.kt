@@ -42,7 +42,8 @@ internal object BranchResolver {
         for (match in LOCATION_MARKER.findAll(text)) {
             // A watt unit in "203 W w Bochni" is not a second place marker.
             if (match.value.trim() == "w" &&
-                text.substring(0, match.range.first).trimEnd().lastOrNull()?.isDigit() == true
+                text.substring(0, match.range.first).trimEnd().lastOrNull()?.isDigit() == true &&
+                Regex("""^\s*(?:w|we)\s+""").containsMatchIn(text.substring(match.range.last + 1))
             ) continue
             val source = text.substring(match.range.last + 1).trimStart()
             val first = source.substringBefore(' ')

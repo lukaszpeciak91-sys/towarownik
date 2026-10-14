@@ -1,5 +1,17 @@
 # Architecture
 
+## 2026-10-14 — INC-007 R2 independent identifiers and bounded recovery
+
+Current standalone USER identifiers are classified as independent discovery before historical inventory admission. If the model sends such an identifier to `find_product_locations`, Controller executes the existing provider discovery tool with only that USER identifier, the saved conversation branch and the existing five-product bound. The mistaken request and actual discovery consume two of the existing three local calls. Exactly one matching, provider-verified identity is required; guessed model IDs, historical stock and unrelated cards do not enter the recovered result.
+
+Recovery returns the fresh selected-branch lookup facts through the original location continuation, retaining its response/call IDs, transport family, trace and saved profile. It performs no departments/other-market inventory scan for a bare identifier. A null stock remains a coherent unknown result and a fresh card may retain its verified identity. Original productRefs filtering still selects only current-turn snapshots; final recovery prose comes from local evidence. A new explicit stock request without identity can still reject -> discover -> retry within the existing three model calls; the current USER location remains authoritative throughout.
+
+Bounded location clauses accept courtesy prefixes and natural `nie sprawdzisz mi w …?` retries only after an uninterrupted USER-owned product/inventory request. The complete location expression must resolve through the active canonical directory. Price, advice and unrelated USER turns still break inheritance; ASSISTANT suggestions never bind `tam`. A verified standalone product query can start its own new follow-up chain after an unrelated turn. Every explicit catalog identity, including codes before a command, is checked rather than allowing a newer unknown code to revive an older card. Embedded numeric dimensions such as `30/20G` are not catalog identity.
+
+The shared BranchResolver's watt guard previously hid `w [city]` immediately after a numeric product ID. It now distinguishes the unit in `1000 W w Bochni` from the location preposition in `produkt 77556 w Tarnowie`; unknown and ambiguous cities reject before discovery rather than defaulting. R1 OBI bare identifiers, quantities and complete Kraków 003/019/059/072 scope remain covered.
+
+No Worker, prompt, provider API, tool schema, call/product limit, persistence, UI, version or timeout change. [Executed evidence and exact histories](inc007-r2-recovery.md) distinguish synthetic provider controls from live stock, which remains unverified for 206/204.
+
 ## 2026-10-14 — INC-007 R1 OBI identity and city-wide market scope
 
 An independent USER search is eligible on every turn; existing local-call counters reset in `runTurn`, not per conversation. Bare OBIK/EAN identifiers are product queries. Only a bare **three-digit** reference/comparison can select an OBI market; labelled market references still require canonical directory validation. Quantities, dimensions and product labels do not grant market authority. No location continues to use the saved conversation WorkingProfile.

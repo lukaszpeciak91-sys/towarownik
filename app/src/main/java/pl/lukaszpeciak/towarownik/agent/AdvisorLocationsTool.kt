@@ -340,12 +340,12 @@ internal class AdvisorLocationsTool(
         if (explicitShort != null && candidates.none { it.effectiveProductId == explicitShort }) return null
         // An explicitly requested article with digits cannot be replaced by
         // a different historical product merely because the model reused its ID.
-        val article = advisorExplicitArticleId(userText)
-        if (article != null && article.any(Char::isLetter) && candidates.none {
+        val articles = advisorExplicitArticleIds(userText)
+        if (articles.any { article -> candidates.none {
                 it.effectiveProductId.equals(article, ignoreCase = true) ||
                     advisorMatchesArticle(it.articleNumber, article)
             }
-        ) return null
+        }) return null
         val references = AdvisorProductIdentityReferences.fromUserText(userText)
         if (references.referencedNumericIds.any { number -> candidates.none {
                 it.effectiveProductId.equals(number, ignoreCase = true) ||
@@ -355,7 +355,7 @@ internal class AdvisorLocationsTool(
 
         val explicit = candidates.filter { candidate ->
             references.mentions(candidate.effectiveProductId) || candidate.effectiveProductId == explicitShort ||
-                advisorMatchesArticle(candidate.articleNumber, article) ||
+                articles.any { advisorMatchesArticle(candidate.articleNumber, it) } ||
                 (candidate.articleNumber?.let(references::mentions) == true)
         }
         val trusted = when {
