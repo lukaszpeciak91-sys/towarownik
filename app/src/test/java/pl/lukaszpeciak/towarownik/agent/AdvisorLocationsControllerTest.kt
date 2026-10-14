@@ -1249,7 +1249,7 @@ class AdvisorLocationsControllerTest {
             Scenario("Sprawdź stan produktu 580 w Zamościu",
                 listOf("Zamość"), "verified", listOf("128"), 1),
             Scenario("Sprawdź stan produktu 580 w Zamościu",
-                listOf("Tarnów"), "rejected", emptyList(), 0),
+                listOf("Tarnów"), "verified", listOf("128"), 1),
             Scenario("Sprawdź stan produktu 580 we wszystkich oddziałach",
                 emptyList(), "verified", listOf("205", "128", "204"), 1),
         )) {
@@ -1343,7 +1343,7 @@ class AdvisorLocationsControllerTest {
             Case("Sprawdź stan 7027 w oddziale 128 Tarnów",
                 emptyList(), emptyList(), "location_conflict"),
             Case("Sprawdź stan 7027 w Zamościu i Tarnowie",
-                listOf("Nowy Sącz"), emptyList(), "location_not_authorized"),
+                listOf("Nowy Sącz"), listOf("128", "204"), null),
         )
         for (scenario in scenarios) {
             var httpReads = 0
@@ -1439,7 +1439,7 @@ class AdvisorLocationsControllerTest {
             Scenario("Sprawdź stan 7027 w oddziale 216 Tarnów",
                 emptyList(), emptySet(), "location_conflict"),
             Scenario("Sprawdź stan 7027 w Białymstoku",
-                listOf("Tarnów"), emptySet(), "location_not_authorized"),
+                listOf("Tarnów"), setOf("216"), null),
         )
         for (case in cases) {
             var httpCalls = 0

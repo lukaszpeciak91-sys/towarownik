@@ -6,6 +6,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
+import pl.lukaszpeciak.towarownik.product.provider.BranchResolution
+import pl.lukaszpeciak.towarownik.product.provider.BranchResolver
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.KWANT_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.KwantProductProvider
@@ -67,22 +69,45 @@ internal class AdvisorLocationsTool(
             if (known.size > 1) "ambiguous_product" else "untrusted_product",
         )
         val exactRef = ProductRef(ProviderId(providerId), selected.effectiveProductId)
-        val directory = if (providerId == OBI_PROVIDER_ID.value) {
-            (obiBranches() as? ProviderBranchResult.Available)?.branches
-        } else {
-            try {
-                withContext(Dispatchers.IO) {
-                    (kwantBranches() as? ProviderBranchResult.Available)?.branches
-                }
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (_: Exception) {
-                null
+        val directory = try {
+            if (providerId == OBI_PROVIDER_ID.value) {
+                (obiBranches() as? ProviderBranchResult.Available)?.branches
+            } else withContext(Dispatchers.IO) {
+                (kwantBranches() as? ProviderBranchResult.Available)?.branches
             }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            null
         } ?: return empty(providerId, exactRef.productId, "unavailable", "directory_unavailable")
+        if (directory.isEmpty() || directory.size > 100 ||
+            directory.map { it.branchId }.distinct().size != directory.size ||
+            directory.any { it.name.isBlank() } ||
+            directory.none { it.branchId.value == currentBranchId }
+        ) return empty(providerId, exactRef.productId, "unavailable", "directory_unavailable")
+        val userPlace = BranchResolver.resolve(userText, directory, BranchId(currentBranchId), allowBareBranchIds = false)
+        val explicitlyMultipleMarkets = Regex(
+            """\b(?:wszystk[a-z]*|inne|innych|pozostale|pozostalych|markety|marketach|oddzialy|oddzialach)\b""",
+        ).containsMatchIn(norm(userText))
+        if (userPlace is BranchResolution.Ambiguous &&
+            userPlace.candidates.map { norm(it.name) }.distinct().size == 1 &&
+            !explicitlyMultipleMarkets
+        ) return rejected("ambiguous_location", exactRef.productId)
+        val unique = when (userPlace) {
+            is BranchResolution.Resolved -> userPlace.branch
+            is BranchResolution.CurrentBranch -> userPlace.branch
+            else -> null
+        }
+        // Directory-grounded USER scope only; discard model vetoes, never USER
+        // unknown/conflicting places. Existing complete multi-location parsers
+        // still validate explicit broad/chain requests, without model hints.
+        val scopeText = if (unique == null) userText else {
+            if (providerId == OBI_PROVIDER_ID.value) "Sprawdź stan produktu w market OBI ${unique.branchId.value}"
+            else "Sprawdź stan produktu w oddziale ${unique.branchId.value}"
+        }
         val authorizedScope = if (providerId == OBI_PROVIDER_ID.value) {
             when (val scope = authorizedObiLocations(
-                userText, arguments.locations, directory, BranchId(currentBranchId),
+                scopeText, emptyList(), directory, BranchId(currentBranchId),
             )) {
                 is AuthorizedLocationScope.Rejected ->
                     return rejected(scope.reason, exactRef.productId)
@@ -93,7 +118,7 @@ internal class AdvisorLocationsTool(
         }
         val kwantScope = if (providerId == KWANT_PROVIDER_ID.value) {
             when (val authorization = authorizeKwantLocations(
-                userText, arguments.locations, directory, BranchId(currentBranchId),
+                scopeText, emptyList(), directory, BranchId(currentBranchId),
             )) {
                 is KwantAuthorizedLocations.Denied ->
                     return rejected(authorization.reason, exactRef.productId)
@@ -306,6 +331,16 @@ internal class AdvisorLocationsTool(
         // History selection and location authorization share one bounded
         // USER-only identity grammar, so measurements cannot be upgraded to
         // explicit verified product IDs by either layer.
+        val explicitShort = advisorExplicitShortProductId(userText)
+        if (explicitShort != null && candidates.none { it.effectiveProductId == explicitShort }) return null
+        // An explicitly requested article with digits cannot be replaced by
+        // a different historical product merely because the model reused its ID.
+        val article = advisorExplicitArticleId(userText)
+        if (article != null && article.any(Char::isLetter) && candidates.none {
+                it.effectiveProductId.equals(article, ignoreCase = true) ||
+                    advisorMatchesArticle(it.articleNumber, article)
+            }
+        ) return null
         val references = AdvisorProductIdentityReferences.fromUserText(userText)
         if (references.referencedNumericIds.any { number -> candidates.none {
                 it.effectiveProductId.equals(number, ignoreCase = true) ||
@@ -314,7 +349,8 @@ internal class AdvisorLocationsTool(
         ) return null
 
         val explicit = candidates.filter { candidate ->
-            references.mentions(candidate.effectiveProductId) ||
+            references.mentions(candidate.effectiveProductId) || candidate.effectiveProductId == explicitShort ||
+                advisorMatchesArticle(candidate.articleNumber, article) ||
                 (candidate.articleNumber?.let(references::mentions) == true)
         }
         val trusted = when {
@@ -344,7 +380,8 @@ internal class AdvisorLocationsTool(
         val explicitInventoryTerms = Regex(
             """\b(stan|stany|dostepnosc|dostepny|dostepna|dostepne|zapasy|zapas|magazynach)\b""",
         ).containsMatchIn(text)
-        if (adviceTopic && !explicitInventoryTerms) return false
+        val priceOnly = Regex("""\b(?:cena|ceny|cene|cen|koszt|kosztuje)\b""").containsMatchIn(text)
+        if ((adviceTopic || priceOnly) && !explicitInventoryTerms) return false
         val multiLocation = Regex(
             """\b(jeszcze|inne|innych|innym|pozostale|pozostalych|wszystkie|wszystkich|oddzialach|marketach)\b""",
         ).containsMatchIn(text)
@@ -368,6 +405,7 @@ internal class AdvisorLocationsTool(
         ).containsMatchIn(locationText)
         return (multiLocation && (stockOrAvailability || locationNoun || where)) ||
             (locationNoun && (check || where) && stockOrAvailability) ||
+            (check && explicitInventoryTerms) ||
             (check && explicitlyLocated) ||
             (stockOrAvailability && explicitlyLocated) ||
             (check && explicitCityPhrase) ||
@@ -456,7 +494,7 @@ internal class AdvisorLocationsTool(
                 fullNetwork = false,
             )
         }
-        if (!broadRequested) return AuthorizedLocationScope.Rejected("unknown_location")
+        if (!broadRequested) return AuthorizedLocationScope.Accepted(listOf(selected), fullNetwork = false)
         return AuthorizedLocationScope.Accepted(
             directory.map { it.branchId }.filterNot { it == selected },
             fullNetwork = true,

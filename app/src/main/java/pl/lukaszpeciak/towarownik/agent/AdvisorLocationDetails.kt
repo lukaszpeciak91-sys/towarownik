@@ -22,10 +22,9 @@ internal fun renderAdvisorLocationDetails(
             "produkt osobno albo skontaktować się z hurtownią. " +
             "Nie wykonano sprawdzenia stanów w innych oddziałach."
     }
-    if (evidence.providerId == "kwant-pl" &&
-        evidence.reason == "multi_product_tool_contract"
+    if (evidence.reason == "multi_product_tool_contract"
     ) {
-        return "Wybrano dwa produkty KWANT, ale narzędzie stanów obsługuje " +
+        return "Wybrano dwa produkty, ale narzędzie stanów obsługuje " +
             "jeden zweryfikowany produkt na wywołanie. Nie sprawdziłam " +
             "żadnego z nich, żeby nie pominąć drugiego. " +
             "Wskaż jeden produkt, a potem drugi."
@@ -47,6 +46,9 @@ internal fun renderAdvisorLocationDetails(
                     "Nie wykonano sprawdzenia stanów."
             }
         }
+    }
+    if (evidence.status != "verified" && evidence.locations.isEmpty()) {
+        return renderAdvisorLocalFailure(evidence.reason)
     }
     if (evidence.providerId == "kwant-pl" &&
         evidence.locations.isEmpty() && evidence.checkedIds.isNotEmpty()
@@ -113,3 +115,19 @@ internal fun renderAdvisorLocationDetails(
         if (unknown > 0) append("Brak potwierdzenia nie oznacza stanu 0.")
     }.trimEnd()
 }
+
+
+/** Bounded local categories, never raw model/provider error text. */
+internal fun renderAdvisorLocalFailure(reason: String?): String =
+    when (reason) {
+            "unknown_location" -> "Nie rozpoznałam wskazanej lokalizacji w katalogu firmy. Podaj miasto i ulicę lub numer marketu. Nie sprawdziłam stanów."
+            "ambiguous_location" -> "Nie mam jednoznacznie wskazanego oddziału lub marketu. O które miasto i ulicę chodzi? Nie sprawdziłam stanów."
+            "untrusted_product" -> "Nie mam potwierdzonej tożsamości wskazanego produktu. Podaj jego kod artykułu lub OBIK, żebym mogła najpierw go zweryfikować. Nie sprawdziłam stanów."
+            "ambiguous_product" -> "W kontekście jest więcej niż jeden produkt. Który kod artykułu lub OBIK mam sprawdzić? Nie sprawdziłam stanów."
+            "directory_unavailable" -> "Nie udało się pobrać lub potwierdzić katalogu oddziałów. Nie sprawdziłam stanów; spróbuj ponownie później."
+            "location_intent_required" -> "Nie mam aktualnej prośby użytkownika o sprawdzenie stanów ani nieprzerwanego kontekstu takiej prośby. Czy chcesz sprawdzić stan konkretnego produktu? Nie sprawdziłam stanów."
+            "wrong_provider", "unsupported_provider", "location_not_authorized", "tool_rejected" -> "Żądanie narzędzia nie zgadza się z firmą lub lokalizacją wybraną przez użytkownika. Nie sprawdziłam stanów."
+            "local_tool_limit_reached" -> "Osiągnięto limit sprawdzeń w tej turze. Nie wykonałam kolejnego sprawdzenia stanów."
+            "location_service_unavailable" -> "Narzędzie sprawdzania stanów jest niedostępne. Nie sprawdziłam stanów."
+            else -> "Nie udało się potwierdzić aktualnych stanów. Stan pozostaje nieznany; to nie jest potwierdzone zero."
+        }

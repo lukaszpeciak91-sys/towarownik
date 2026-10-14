@@ -99,9 +99,9 @@ class AdvisorLocationDetailsTest {
         assertTrue(explanation.contains("Miejsce Piastowe"))
         assertTrue(explanation.contains("Potwierdź"))
         assertTrue(explanation.contains("Nie wykonano sprawdzenia stanów"))
-        assertEquals("", renderAdvisorLocationDetails(
+        assertTrue(renderAdvisorLocationDetails(
             evidence.copy(reason = "unknown_location"),
-        ))
+        ).contains("Nie rozpoznałam wskazanej lokalizacji"))
     }
 
 

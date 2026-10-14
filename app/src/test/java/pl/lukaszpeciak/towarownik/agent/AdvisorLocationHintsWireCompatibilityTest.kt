@@ -62,7 +62,7 @@ class AdvisorLocationHintsWireCompatibilityTest {
                         baseUrl = server.url("/"),
                     )
                     val response = proxy.start(
-                        message = "Sprawdź w Krakowie",
+                        message = "Sprawdź we wszystkich marketach w Krakowie",
                         providerId = "obi-pl",
                         branchId = "075",
                     ) as AdvisorProxyCallResult.Success
@@ -111,7 +111,7 @@ class AdvisorLocationHintsWireCompatibilityTest {
                         arguments = location.arguments,
                         providerId = "obi-pl",
                         currentBranchId = "075",
-                        userText = "Sprawdź w Krakowie",
+                        userText = "Sprawdź we wszystkich marketach w Krakowie",
                         currentVerified = emptyList(),
                         historicalVerified = listOf(trusted),
                     )
