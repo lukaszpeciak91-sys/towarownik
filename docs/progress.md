@@ -1,5 +1,52 @@
 # Progress
 
+## 2026-10-14 — INC-006 R1 core discovery routing (awaiting independent audit)
+
+Base/main verified twice during preflight: `8b1b24c25a3cafb33c0446e3c046ceb2433498dc`, app 0.1.24 (25). Reused the completed INC-006 native harness and compiled-history evidence. Original harness was executed again: **79 checks, 63 PASS, 16 intentional RED, 0 unexpected failures, 0 SKIP**. Preserved original evidence; R1 does not claim every INC-006 finding is fixed.
+
+New permanent `AdvisorDiscoveryRoutingRegressionTest` executed on pre-repair Android production Controller/resolver: **15 JUnit tests, 6 PASS / 9 expected RED / 0 SKIP**. A failed with no lookup; B with hint 205/null executed 205 instead of 203; C executed 203 for `203 m`; D rejected the selected profile. RED local commit `203c81d` contains tests only. Additional RED covered generic provider context, city/street resolution, ambiguous city, conflicting descriptors and known-city/current-alias conflict.
+
+GREEN local native execution: **49 JUnit tests, 49 PASS / 0 FAIL / 0 SKIP**: 19 discovery Controller tests, 14 unchanged BranchResolver tests, 2 additional directory/locative tests (63 canonical/locative/lowercase city inputs), and 14 unchanged KWANT location-authorization tests. Exact B covers 205/null, 205/Bochni, 205/Bochnia, 203/Bochni, 203/Bochnia and conflicting 128/Zamość; asserts actual provider reads and verified-card branch 203. A covers matching/conflicting hints and verified profile cards. Tests cover measurements/codes/dimensions, known market numbers, unknown/ambiguous/conflicting locations, duplicate/unavailable directory, wrong provider, street disambiguation and explicit numeric comparison containment. Three existing Controller security assertions were respecified from false rejection to verified profile lookup while retaining the forbidden-branch invariant.
+
+First full Android PR CI [38517785528](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/38517785528) at `a24a692d59b84d91b24da0d7303f806c6ec2baea` executed **721 unit tests, 719 passed / 2 failed** and failed the build. These were additional unexpected full-suite failures, not the intentional pre-repair RED: the old unscoped-product-number assertion expected total rejection, while the prior-turn “tam” case exposed an unresolved deictic location falling back to the profile. The former now asserts profile lookup for a product-shaped token plus zero lookup for explicit unknown market 999; the latter retains rejection with a current-turn unresolved-location guard. No historical location is inherited. Added a permanent “tam / w innym markecie” negative regression. Final local rerun broadened to the complete existing Controller test class: **93 JUnit tests, 93 PASS / 0 FAIL / 0 SKIP** (44 existing Controller tests + the 49-test subset). Full final-head Android CI remains the PR check, not inferred from local execution.
+
+Commands actually executed locally (OpenJDK 17.0.20; Kotlin 2.3.21/coroutines 1.10.2/JUnit 4.13.2; offline synthetic provider data):
+
+```bash
+# From the existing INC-006 evidence directory:
+java -cp 'classes:deps/*' pl.lukaszpeciak.towarownik.agent.Inc006HarnessKt
+# New evidence directory, source copies and existing dependency jars:
+python3 refresh_sources.py
+java -cp 'deps/*' org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect \
+  -classpath deps/kotlin-stdlib-2.3.21.jar:deps/kotlinx-coroutines-core-jvm-1.10.2.jar:deps/annotations-26.0.2.jar:deps/junit-4.13.2.jar \
+  -d green-classes src/*.kt
+java -cp 'green-classes:deps/*' org.junit.runner.JUnitCore \
+  pl.lukaszpeciak.towarownik.agent.AdvisorDiscoveryRoutingRegressionTest \
+  pl.lukaszpeciak.towarownik.product.provider.BranchResolverTest \
+  pl.lukaszpeciak.towarownik.product.provider.BranchResolverDiscoveryTest \
+  pl.lukaszpeciak.towarownik.agent.KwantLocationAuthorizationTest
+# Expanded native run after full-CI findings, same compiler options with
+# -d green-full-controller-classes and unchanged complete Controller tests:
+java -cp 'green-full-controller-classes:deps/*' org.junit.runner.JUnitCore \
+  pl.lukaszpeciak.towarownik.agent.AdvisorControllerTest \
+  pl.lukaszpeciak.towarownik.agent.AdvisorDiscoveryRoutingRegressionTest \
+  pl.lukaszpeciak.towarownik.product.provider.BranchResolverTest \
+  pl.lukaszpeciak.towarownik.product.provider.BranchResolverDiscoveryTest \
+  pl.lukaszpeciak.towarownik.agent.KwantLocationAuthorizationTest
+PYTHONPATH=tools python3 -m unittest discover -s tools -p 'test_*.py'
+cd proxy
+npm ci
+npm run typecheck
+npm test
+npm run eval:build
+node --check evals/run-taksula-behavior.mjs
+```
+
+The native harness compiles unchanged production domain/authorization methods; only unused Android network/factory wiring and network repository implementation are omitted, using the same explicit offline stubs as INC-006. The repository JUnit tests are executed unchanged. This is not full Android Gradle locally; PR `Android checks` must execute `./gradlew check assembleDebug` against final HEAD. No Android SDK/device execution is claimed locally. Local Python **174/174 PASS**; Node **22.23.3**, Proxy **636/636 PASS**, typecheck and eval build/CLI syntax PASS. Proxy source is unchanged, so its path-filtered PR workflow is not required to trigger; local full Proxy validation was nevertheless executed. Final CI URLs/status are recorded in the focused PR description/checks.
+
+Security: provider matching, invalid-directory rejection, USER-only scope and numeric/descriptor containment remain tested before any lookup; real FindProviderProductsTool verifies synthetic provider results and Controller filters refs to current-turn snapshots. Separate location-tool and follow-up source is unchanged; their existing full Android suites remain required in CI. No stock, price or identity is inferred; no raw prompts/product data/errors/secrets are logged. No prompt tuning, Worker change, HTTP/API change, UI change, PR merge, deployment or AAB build. R2 plain “w Bochni” follow-up after a failed turn, location-tool hint mismatch, two-product locations and live OBI coverage remain excluded. Independent audit and separately authorized bounded device smoke tests are required before treating the release as proven on-device.
+
+
 ## 2026-10-13 — INC-005 F4 production exhaustion → bounded Worker repair (audit pending)
 
 Timeline/evidence: R5.1 could not access production identity/logs; later the incident investigator supplied a real Cloudflare record: trace **`3d3e40fa-5b3b-4abf-bbcd-f587c3dcf49e`**, Worker version **`cd218e15-8264-4f4f-a32c-ff2d14e81314`**, October 13 `/v1/agent/continue`, KWANT `kwant-pl`/`205`, protocol v3, 3 verified groups / 5 products, upstream 200 → Worker 502, `upstream_incomplete_output_budget`, 6070 ms, investigated source cap 384. CONFIRMED exhaustion for that request; exact incident timestamp/token split and deployed git SHA were not supplied. The October 12 pump failure remains **UNKNOWN**. No independent production-log access or live traffic was performed by the implementer.

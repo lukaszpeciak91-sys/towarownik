@@ -1,5 +1,16 @@
 # Architecture
 
+## 2026-10-14 — INC-006 R1 discovery location authority
+
+Product discovery defaults to the saved conversation WorkingProfile branch. Ordinary provider context such as “czy jest w OBI” does not select a new location. A current USER place phrase (“w Bochni”, “KWANT Bochnia”, city + street, or an explicit market/branch number) is resolved only against the active provider's verified directory. Reviewed nominative/locative aliases bind to directory names, never hardcoded branch IDs; KWANT needs no special command or numeric department knowledge. An OBI market number may also stand alone. Bare KWANT product numbers, quantities, dimensions, article codes and unscoped numeric tokens are not branch authorization.
+
+BranchResolver now parses scoped place descriptions instead of globally ranking every matching number/address token. City/ID/street pairs must agree. Supplied multiword street tokens must match one contiguous directory address, not a bag assembled across branches. Unknown explicit locations, unresolved “tam / innym markecie” references, incomplete/contradictory descriptions and multiple city matches reject before lookup; e.g. Kraków without street/market selection remains ambiguous. The existing bounded rejection continuation asks the advisor to clarify; this PR does not guarantee live model wording or tune prompts. An entirely explicit USER-named numeric comparison set retains per-call selection only within that set. Discovery does not fan out and does not alter the separate multi-location availability window.
+
+Controller rejects wrong provider, missing selected branch, and unavailable/empty/oversized/duplicate-ID/blank-name directory before product execution. With a uniquely resolved USER location it overwrites only turn-local tool branch and clears requestedBranch; with no USER location it does the same for the profile branch. Contradictory model branch hints cannot authorize another branch or veto a valid default lookup. Provider adapters, product limits, verified-stock semantics, current-turn snapshot/card grounding, conversation profile and continuation identity remain unchanged.
+
+This is current-turn discovery only. AdvisorLocationFollowUps, AdvisorLocationsTool, KWANT inventory-scope authorization, Worker/model/prompts/schemas/budgets, provider HTTP, persistence and UI are unchanged. R2 must separately repair a plain “w Bochni” clarification after a failed previous turn and location-tool hint/identity behavior.
+
+
 ## 2026-10-13 — INC-005 F4 bounded continuation output and incomplete usage
 
 START and MESSAGE retain `max_output_tokens=384`. CONTINUE selects **1024** only after the existing strict client-result validator accepts a product result with at least two query-result groups or at least two returned products (including legacy v1 multi-product output). A single group with zero/one product, authorization/tool-limit rejection, and location-inventory result keep **384**. Complexity is determined from typed counts, never prompt text, model hints or a client budget override. The three-local-call/five-product caps, provider authorization, `gpt-6-luna`, low reasoning, prompts, schemas, network deadlines, no-retry behavior and response/call identity are unchanged. This is a bounded reliability candidate, not a measured guarantee that 1024 suffices for every continuation.
@@ -302,11 +313,9 @@ On cold start the most recently updated useful retained conversation is restored
 
 ## Multi-store authorization boundary
 
-The selected store is conversation state, not inferred location. New conversations start at `075`. For an existing conversation, the explicit UI selector persists `Conversation.storeNumber`; changing the selector never rewrites historical product snapshots. For a not-yet-persisted new conversation, selection remains transient until the first USER send creates the row.
+The conversation captures the active WorkingProfile provider/branch at creation; the global fallback is OBI 075 only when no saved profile exists. Historical product snapshots retain their original branch. Current USER text may authorize one-off discovery in another uniquely resolved canonical location without mutating the conversation profile.
 
-At the beginning of each USER turn Android captures one immutable conversation-store value and the set of allowlisted exact three-digit store tokens literally present in that current USER message. A tool request is authorized only when its requested store equals the conversation store, or when the requested store is allowlisted and appears in that captured token set. Matching uses digit boundaries, so `1074` does not authorize `074`, and earlier USER turns do not authorize an alternate store in the current turn.
-
-Authorization runs before the OBI tool adapter and before any OBI HTTP request. Unauthorized/unsupported stores produce bounded `store_not_authorized` continuation data for the advisor; Android never substitutes another store or fabricates an empty OBI result. The proxy validates exact three-digit shape but does not duplicate the full allowlist.
+The current policy is the INC-006 R1 boundary described above: default to the saved profile without a USER place selection; otherwise resolve city/street or explicit branch references from the active provider directory and reject unknown/ambiguous/conflicting scope. Arbitrary three-digit tokens inside products or measurements do not authorize inventory. Authorization precedes every local provider lookup. A model hint may select only within an entirely explicit USER-named numeric comparison set, never outside it.
 
 Room v2→v3 adds `conversations.storeNumber` and `message_products.storeNumber` with deterministic historical default `075`. Verified product identity is therefore `(storeNumber, obik)`, both in current-turn dedupe and persisted history.
 

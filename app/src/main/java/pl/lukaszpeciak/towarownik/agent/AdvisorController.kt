@@ -194,6 +194,12 @@ internal class AdvisorController(
                 is ProviderBranchResult.Unavailable ->
                     return ToolBranchAuthorization.Unavailable
             }
+            if (branches.isEmpty() || branches.size > 100 ||
+                branches.map { it.branchId }.distinct().size != branches.size ||
+                branches.any { it.name.isBlank() }
+            ) {
+                return ToolBranchAuthorization.Unavailable
+            }
             if (branches.none { it.branchId == currentBranchId }) {
                 return ToolBranchAuthorization.Rejected
             }
@@ -203,6 +209,7 @@ internal class AdvisorController(
                     userText = normalizedInput,
                     branches = branches,
                     currentBranchId = currentBranchId,
+                    allowBareBranchIds = conversationProvider == OBI_PROVIDER_ID,
                 )
             ) {
                 is BranchResolution.CurrentBranch ->
@@ -244,24 +251,12 @@ internal class AdvisorController(
                 BranchResolution.UnknownMention ->
                     ToolBranchAuthorization.Rejected
 
-                BranchResolution.NotMentioned -> {
-                    val hinted = arguments.resolveBranchHint(branches)
-                    val modelRequestedOtherBranch =
-                        arguments.storeNumber != currentBranchId.value ||
-                            (
-                                arguments.requestedBranch != null &&
-                                    hinted?.branchId != currentBranchId
-                            )
-                    if (modelRequestedOtherBranch) {
-                        ToolBranchAuthorization.Rejected
-                    } else {
-                        ToolBranchAuthorization.Authorized(
-                            arguments.forResolvedBranch(
-                                currentBranchId,
-                            ),
-                        )
-                    }
-                }
+                // A model hint is not USER-owned branch authority. With no
+                // location selection, normalize execution to the saved profile.
+                BranchResolution.NotMentioned ->
+                    ToolBranchAuthorization.Authorized(
+                        arguments.forResolvedBranch(currentBranchId),
+                    )
             }
         }
 
