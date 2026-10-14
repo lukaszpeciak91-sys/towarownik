@@ -6,7 +6,9 @@ Base/main verified twice during preflight: `8b1b24c25a3cafb33c0446e3c046ceb24334
 
 New permanent `AdvisorDiscoveryRoutingRegressionTest` executed on pre-repair Android production Controller/resolver: **15 JUnit tests, 6 PASS / 9 expected RED / 0 SKIP**. A failed with no lookup; B with hint 205/null executed 205 instead of 203; C executed 203 for `203 m`; D rejected the selected profile. RED local commit `203c81d` contains tests only. Additional RED covered generic provider context, city/street resolution, ambiguous city, conflicting descriptors and known-city/current-alias conflict.
 
-GREEN local native execution: **48 JUnit tests, 48 PASS / 0 FAIL / 0 SKIP**: 18 discovery Controller tests, 14 unchanged BranchResolver tests, 2 additional directory/locative tests (63 canonical/locative/lowercase city inputs), and 14 unchanged KWANT location-authorization tests. Exact B covers 205/null, 205/Bochni, 205/Bochnia, 203/Bochni, 203/Bochnia and conflicting 128/Zamość; asserts actual provider reads and verified-card branch 203. A covers matching/conflicting hints and verified profile cards. Tests cover measurements/codes/dimensions, known market numbers, unknown/ambiguous/conflicting locations, duplicate/unavailable directory, wrong provider, street disambiguation and explicit numeric comparison containment. Two existing Controller security assertions were respecified from false rejection to verified profile lookup while retaining the forbidden-branch invariant.
+GREEN local native execution: **49 JUnit tests, 49 PASS / 0 FAIL / 0 SKIP**: 19 discovery Controller tests, 14 unchanged BranchResolver tests, 2 additional directory/locative tests (63 canonical/locative/lowercase city inputs), and 14 unchanged KWANT location-authorization tests. Exact B covers 205/null, 205/Bochni, 205/Bochnia, 203/Bochni, 203/Bochnia and conflicting 128/Zamość; asserts actual provider reads and verified-card branch 203. A covers matching/conflicting hints and verified profile cards. Tests cover measurements/codes/dimensions, known market numbers, unknown/ambiguous/conflicting locations, duplicate/unavailable directory, wrong provider, street disambiguation and explicit numeric comparison containment. Three existing Controller security assertions were respecified from false rejection to verified profile lookup while retaining the forbidden-branch invariant.
+
+First full Android PR CI [38517785528](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/38517785528) at `a24a692d59b84d91b24da0d7303f806c6ec2baea` executed **721 unit tests, 719 passed / 2 failed** and failed the build. These were additional unexpected full-suite failures, not the intentional pre-repair RED: the old unscoped-product-number assertion expected total rejection, while the prior-turn “tam” case exposed an unresolved deictic location falling back to the profile. The former now asserts profile lookup for a product-shaped token plus zero lookup for explicit unknown market 999; the latter retains rejection with a current-turn unresolved-location guard. No historical location is inherited. Added a permanent “tam / w innym markecie” negative regression. Final local rerun broadened to the complete existing Controller test class: **93 JUnit tests, 93 PASS / 0 FAIL / 0 SKIP** (44 existing Controller tests + the 49-test subset). Full final-head Android CI remains the PR check, not inferred from local execution.
 
 Commands actually executed locally (OpenJDK 17.0.20; Kotlin 2.3.21/coroutines 1.10.2/JUnit 4.13.2; offline synthetic provider data):
 
@@ -19,6 +21,14 @@ java -cp 'deps/*' org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-refl
   -classpath deps/kotlin-stdlib-2.3.21.jar:deps/kotlinx-coroutines-core-jvm-1.10.2.jar:deps/annotations-26.0.2.jar:deps/junit-4.13.2.jar \
   -d green-classes src/*.kt
 java -cp 'green-classes:deps/*' org.junit.runner.JUnitCore \
+  pl.lukaszpeciak.towarownik.agent.AdvisorDiscoveryRoutingRegressionTest \
+  pl.lukaszpeciak.towarownik.product.provider.BranchResolverTest \
+  pl.lukaszpeciak.towarownik.product.provider.BranchResolverDiscoveryTest \
+  pl.lukaszpeciak.towarownik.agent.KwantLocationAuthorizationTest
+# Expanded native run after full-CI findings, same compiler options with
+# -d green-full-controller-classes and unchanged complete Controller tests:
+java -cp 'green-full-controller-classes:deps/*' org.junit.runner.JUnitCore \
+  pl.lukaszpeciak.towarownik.agent.AdvisorControllerTest \
   pl.lukaszpeciak.towarownik.agent.AdvisorDiscoveryRoutingRegressionTest \
   pl.lukaszpeciak.towarownik.product.provider.BranchResolverTest \
   pl.lukaszpeciak.towarownik.product.provider.BranchResolverDiscoveryTest \

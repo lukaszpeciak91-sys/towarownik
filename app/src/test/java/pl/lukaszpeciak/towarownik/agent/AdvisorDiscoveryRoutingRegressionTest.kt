@@ -241,6 +241,11 @@ class AdvisorDiscoveryRoutingRegressionTest {
             assertEquals(text,"203",search(text,"kwant-pl","205","205").called)
         }
     }
+    @Test fun `unresolved deictic branch selection never falls back to profile`() = runBlocking {
+        for(text in listOf("sprawdź tam klej", "sprawdź w innym markecie")) {
+            assertEquals(text,"",search(text,"obi-pl","075","003").called)
+        }
+    }
     @Test fun `explicit numeric comparison retains bounded per-call authorization`() = runBlocking {
         assertEquals("203",search("porównaj oddziały 203 i 128","kwant-pl","205","203").called)
         assertEquals("",search("porównaj oddziały 203 i 128","kwant-pl","205","205").called)

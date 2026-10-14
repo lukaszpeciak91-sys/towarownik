@@ -78,7 +78,9 @@ internal object BranchResolver {
                 containsNormalizedPhrase(text, it)
             }
         ) candidates += current
-        if (candidates.isEmpty()) return BranchResolution.NotMentioned
+        if (candidates.isEmpty()) return if (UNRESOLVED_LOCATION.containsMatchIn(text)) {
+            BranchResolution.UnknownMention
+        } else BranchResolution.NotMentioned
         if (candidates.size > 1) return BranchResolution.Ambiguous(
             candidates = candidates.sortedBy { it.branchId.value },
             // Only an entirely USER-named numeric set can be selected per call.
@@ -239,6 +241,9 @@ internal object BranchResolver {
     private val LOCATION_MARKER = Regex(
         """\b(?:obi|kwant|market|markecie|sklep|sklepie|oddzial|oddziale|oddzialy|oddzialach|hurtownia|hurtowni|magazyn|magazynie|w|we|na)\s+""",
     )
+    // Deictic selection has no current-turn canonical authority; history/model
+    // hints cannot supply it. This does not add follow-up history inheritance.
+    private val UNRESOLVED_LOCATION = Regex("""\btam\b|\b(?:innym|innej)\s+(?:markecie|sklepie|oddziale|hurtowni|magazynie)\b""")
     private val MEASUREMENT_PREFIX = Regex(
         """^[0-9]+\s+(?:m|mm|cm|m2|m3|kg|l|ml|szt|opak|w|kw|v|a|zl|x)\b""",
     )

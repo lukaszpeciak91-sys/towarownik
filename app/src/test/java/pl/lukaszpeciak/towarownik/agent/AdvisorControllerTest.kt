@@ -1573,40 +1573,41 @@ class AdvisorControllerTest {
     }
 
     @Test
-    fun `embedded digits and unsupported stores are not authorized`() = runBlocking {
+    fun `embedded product digits do not authorize alternate store and explicit unknown store rejects`() = runBlocking {
         listOf(
             "Sprawdź 1074" to "074",
-            "Sprawdź 999" to "999",
+            "Sprawdź w markecie 999" to "999",
         ).forEach { (message, requestedStore) ->
             var toolCalls = 0
             var rejected = false
+            val executedStores = mutableListOf<String>()
             val controller = controller(
-                start = {
-                    successTool(
-                        "resp_tool",
-                        "call_tool",
-                        "klej",
-                        requestedStore,
-                    )
-                },
+                start = { successTool("resp_tool", "call_tool", "klej", requestedStore) },
                 rejectedContinueCall = { _, _, _ ->
                     rejected = true
                     successAnswer("resp_final", "Clarify")
                 },
+                continueCall = { _, _, result ->
+                    assertEquals("075", result.storeNumber)
+                    successAnswer("resp_final", "Verified profile lookup")
+                },
                 tool = {
                     toolCalls += 1
+                    executedStores += it.storeNumber
                     verifiedResult(it.query)
                 },
             )
-
-            controller.runTurn(
-                input = message,
-                previousResponseId = null,
-                conversationStoreNumber = "075",
-            ) { }
-
-            assertEquals(0, toolCalls)
-            assertTrue(rejected)
+            controller.runTurn(message, null, "075") { }
+            if (requestedStore == "999") {
+                assertEquals(0, toolCalls)
+                assertTrue(rejected)
+            } else {
+                // A product-shaped numeric token grants no alternate store;
+                // normal profile search remains authorized despite a model hint.
+                assertEquals(1, toolCalls)
+                assertEquals(listOf("075"), executedStores)
+                assertTrue(!rejected)
+            }
         }
     }
 
