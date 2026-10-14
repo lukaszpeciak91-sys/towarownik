@@ -2,6 +2,9 @@ package pl.lukaszpeciak.towarownik.agent
 
 import java.math.BigDecimal
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.*
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.*
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.product.*
@@ -16,35 +19,20 @@ class Inc007ObiScopeRegressionTest {
         ProviderBranch(BranchId("204"), "Tarnów"),
     )
     private val obi = OBI_STORES.map { ProviderBranch(BranchId(it.storeNumber), it.city, it.address) }
-    private val kwantUsers = listOf(
-        "sprawdź proszę stan A9Z01440/SCH w Bochni",
-        "a w oddziale w Mielcu?",
-        "nie sprawdzisz mi w Mielcu?",
-        "dobrze a w oddziale Tarnów?",
-        "A9Z01440/SCH",
-        "co do kurwy? a co to niby jest jak nie prośba? A9Z01440/SCH weź kurwa sprawdź stan w Tarnowie",
-    )
-    private val kwantReplies = listOf(
-        "W Bochni stan A9Z01440/SCH wynosi 0 szt. W magazynie centralnym jest 53 szt. — to osobny stan, nie zapas oddziału. Cena online: 254,13 zł.",
-        "Wskazane oddziały KWANT — wyniki niepełne: sprawdzono 1, dodatni stan: 0, zero: 0, niepotwierdzone: 1\n206 — Mielec — brak potwierdzenia (stan nieznany)\nBrak potwierdzenia nie oznacza stanu 0.",
-        "Sprawdziłem — system nie zwrócił potwierdzonego stanu dla Mielca, więc nie mogę podać liczby sztuk. Wynik jest nieznany, a nie równy zero.",
-        "Nie mam aktualnej prośby użytkownika o sprawdzenie stanów ani nieprzerwanego kontekstu takiej prośby. Czy chcesz sprawdzić stan konkretnego produktu? Nie sprawdziłam stanów.",
-        "Nie mam aktualnej prośby użytkownika o sprawdzenie stanów ani nieprzerwanego kontekstu takiej prośby. Czy chcesz sprawdzić stan konkretnego produktu? Nie sprawdziłam stanów.",
-        "Wskazane oddziały KWANT — wyniki niepełne: sprawdzono 1, dodatni stan: 0, zero: 0, niepotwierdzone: 1\n204 — Tarnów — brak potwierdzenia (stan nieznany)\nBrak potwierdzenia nie oznacza stanu 0.",
-    )
     private val obiUsers = listOf(
         "potrzebuje wkładki do drzwi 30/20g lub coś o podobnych parametrach, czy jest coś takiego u nas?",
         "6346951 czy mają w krakowskich marketach? sprawdź proszę",
     )
     private val obiFirstReply = "Wkładki dokładnie 30/20 G nie udało mi się potwierdzić w naszym markecie. Znalazłem podobne rozmiary: Gerda 30/30 oraz Domino 26/36, ale obie mają obecnie potwierdzony stan 0 w wybranym markecie, więc nie mogę polecić ich jako dostępnych u nas.\n\nPrzed doborem sprawdź, czy oznaczenie „G” dotyczy strony z gałką — wkładki 30/20 i 30/20G nie są zamienne. Najpewniej zmierzyć starą wkładkę od środka śruby mocującej do obu końców, osobno po każdej stronie, i potwierdzić, czy ma gałkę. Jeśli podasz te wymiary i informację o gałce, pomogę dobrać właściwy wariant."
 
-    private inner class Scenario(val provider: String, var failure: String = "complete") {
+    private inner class Scenario(val provider: String, var failure: String = "complete", suppliedDirectory: List<ProviderBranch>? = null) {
         val selected = if (provider == "kwant-pl") "205" else "075"
-        val directory = if (provider == "kwant-pl") kwant else obi
+        val directory = suppliedDirectory ?: if (provider == "kwant-pl") kwant else obi
         val history = mutableListOf<AdvisorLocationHistoryMessage>()
         val events = mutableListOf<String>()
         val lookups = mutableListOf<Pair<String,String>>()
         val gets = mutableListOf<String>()
+        var verificationUnavailable = false
         var queryId = if(provider == "kwant-pl") "77556" else "6346951"
         var query = if(provider == "kwant-pl") "A9Z01440/SCH" else "wkładka 30/20G"
         var plan = "discovery"
@@ -55,7 +43,6 @@ class Inc007ObiScopeRegressionTest {
         var phase = 0
         var freshRef: AdvisorProductRef? = null
         val outputs = mutableListOf<AdvisorToolContinuation>()
-        var current = ""
         var previous: String? = null
         var serial = 0
         var evidence: AdvisorLocationEvidence? = null
@@ -76,6 +63,7 @@ class Inc007ObiScopeRegressionTest {
         val obiTool = FindObiProductsTool(
             searchProducts={ProductSearchResult.Candidates(listOf(ProductSearchCandidate(queryId,"Synthetic")))},
             lookupObik={id,branch-> lookups += id to branch
+                if(verificationUnavailable) ProductLookupResult.Unavailable(ProductLookupFailure.NETWORK,"Synthetic unavailable") else
                 ProductLookupResult.Found(LocalProduct(id,"Synthetic",0,BigDecimal.ONE,"https://offline.invalid/product",null,branch))},
             now={1000L})
         val fetcher = LocationsHttpFetcher { url ->
@@ -100,7 +88,7 @@ class Inc007ObiScopeRegressionTest {
         val service = ProductLocationsService(listOf(
             KwantProductLocationsAdapter(fetcher,{ProviderBranchResult.Available(kwant)},now={2000L}),
             ObiProductLocationsAdapter(fetcher,{ProviderBranchResult.Available(obi)},now={2000L})))
-        val locationsTool = AdvisorLocationsTool(service,{ProviderBranchResult.Available(obi)},{ProviderBranchResult.Available(kwant)})
+        val locationsTool = AdvisorLocationsTool(service,{ProviderBranchResult.Available(if(provider=="obi-pl")directory else obi)},{ProviderBranchResult.Available(if(provider=="kwant-pl")directory else kwant)})
         fun initial():AdvisorProxyCallResult {
             events += "${if(previous==null)"START" else "MESSAGE"}:$serial:$plan"
             val result = if(plan.startsWith("discovery")) AdvisorProxyResult.ToolRequest("resp_${serial}_$phase","call_${serial}_$phase",
@@ -119,34 +107,43 @@ class Inc007ObiScopeRegressionTest {
                     freshRef=output.result.results.flatMap{it.products}.firstOrNull{it.obik==queryId}
                         ?.let {AdvisorProductRef(output.result.storeNumber,it.obik,provider)}
                 }
-                if (plan=="discovery_then_locations" && phase==0) {
+                if(plan=="locations_discovery_locations" && phase==0) {
+                    phase++
+                    AdvisorProxyCallResult.Success(AdvisorProxyResult.ToolRequest("resp_${serial}_$phase","call_${serial}_$phase",AdvisorToolArguments(modelBranch,listOf(AdvisorToolQuery(query,1)),modelProvider,null)))
+                } else if ((plan=="discovery_then_locations" && phase==0) || (plan=="locations_discovery_locations" && phase==1)) {
                     phase++
                     AdvisorProxyCallResult.Success(AdvisorProxyResult.LocationToolRequest("resp_${serial}_$phase","call_${serial}_$phase",AdvisorLocationArguments(modelProvider,locationProductId?:queryId,hints)))
                 } else AdvisorProxyCallResult.Success(AdvisorProxyResult.Answer("final_$serial","Synthetic model: all requested markets have stock 99",listOfNotNull(freshRef)))
             },executeObiTool=obiTool::execute,executeProviderTool=productTool::execute,
             executeLocationsTool=locationsTool::execute,branchDirectory={ProviderBranchResult.Available(directory)})
-        suspend fun turn(input:String,tool:String,reportedReply:String?=null):AdvisorUiState.Success {
-            serial++;current=input;plan=tool;evidence=null;continuation=null;phase=0;freshRef=null;outputs.clear()
+        suspend fun turn(input:String,tool:String,reportedReply:String?=null):AdvisorUiState.Success =
+            run(input,tool,reportedReply) as AdvisorUiState.Success
+
+        suspend fun run(input:String,tool:String,reportedReply:String?=null):AdvisorUiState {
+            serial++;plan=tool;evidence=null;continuation=null;phase=0;freshRef=null;outputs.clear()
             // Same filtering as MainActivity: previous 12 messages, newest 3 nonempty ASSISTANT card sets.
             val historical=history.takeLast(12).asReversed().filter {it.role=="ASSISTANT"&&it.products.isNotEmpty()}.take(3).flatMap {it.products}
             val before=gets.size
-            val state=controller.runTurn(input,previous,selected,provider,historicalVerifiedProducts=historical,locationHistory=history.takeLast(12)){} as AdvisorUiState.Success
-            println("INC007 provider=$provider turn=$serial plan=$tool continuation=${continuation?.javaClass?.simpleName} status=${evidence?.status} reason=${evidence?.reason} checked=${evidence?.checkedIds} getDelta=${gets.size-before} cards=${state.products.map{it.effectiveProductId+"@"+it.effectiveBranchId}} text=${state.text.replace('\n','|')}")
+            val result=controller.runTurn(input,previous,selected,provider,historicalVerifiedProducts=historical,locationHistory=history.takeLast(12)){}
+            val state=result as? AdvisorUiState.Success
+            println("INC007_R1_SYNTHETIC provider=$provider turn=$serial plan=$tool continuation=${continuation?.javaClass?.simpleName} status=${evidence?.status} reason=${evidence?.reason} checked=${evidence?.checkedIds} getDelta=${gets.size-before} cards=${state?.products.orEmpty().map{it.effectiveProductId+"@"+it.effectiveBranchId}} text=${state?.text?.replace('\n','|')?:result.toString()}")
             history += AdvisorLocationHistoryMessage("USER",input)
-            history += AdvisorLocationHistoryMessage("ASSISTANT",reportedReply?:state.text,state.products)
-            previous=state.responseId
-            return state
+            if(state!=null) {
+                history += AdvisorLocationHistoryMessage("ASSISTANT",reportedReply?:state.text,state.products)
+                previous=state.responseId
+            }
+            return result
         }
     }
 
-    @Test fun `RED exact OBI two turn history new product discovery`()=runBlocking {
+    @Test fun `exact OBI two turn history new product discovery`()=runBlocking {
         val s=Scenario("obi-pl");s.queryId="7777000"
         assertEquals(1,s.turn(obiUsers[0],"discovery",obiFirstReply).products.size)
         s.queryId="6346951";s.query="6346951"
         val state=s.turn(obiUsers[1],"discovery")
         assertEquals("A new exact identity must be verifiable before plural inventory scope",1,state.products.size)
     }
-    @Test fun `RED exact OBI plural query with already trusted matching product`()=runBlocking {
+    @Test fun `exact OBI plural query with already trusted matching product`()=runBlocking {
         val scopes=mutableListOf<Set<String>>()
         for(h in listOf(emptyList(),listOf("003"),listOf("075"))) {
             val s=Scenario("obi-pl");s.turn(obiUsers[0],"discovery",obiFirstReply);s.hints=h
@@ -155,13 +152,13 @@ class Inc007ObiScopeRegressionTest {
         val expected=obi.filter{it.name=="Kraków"}.map{it.branchId.value}.toSet()
         assertEquals(List(3){expected},scopes)
     }
-    @Test fun `GREEN explicitly worded all Krakow markets is supported`()=runBlocking {
+    @Test fun `explicitly worded all Krakow markets is supported`()=runBlocking {
         val s=Scenario("obi-pl");s.turn(obiUsers[0],"discovery",obiFirstReply)
         s.hints=listOf("075")
         s.turn("6346951 sprawdź stan we wszystkich marketach w Krakowie","locations")
         assertEquals(obi.filter{it.name=="Kraków"}.map{it.branchId.value}.toSet(),s.evidence?.checkedIds?.toSet())
     }
-    @Test fun `GREEN forty independent back to back searches reset budgets for both providers`()=runBlocking {
+    @Test fun `forty independent back to back searches reset budgets for both providers`()=runBlocking {
         for(p in listOf("kwant-pl","obi-pl")) {
             val s=Scenario(p)
             repeat(40) { i ->
@@ -173,7 +170,7 @@ class Inc007ObiScopeRegressionTest {
             assertEquals(40,s.lookups.size);assertEquals(39,s.events.count{it.startsWith("MESSAGE")})
         }
     }
-    @Test fun `RED bare OBI identifiers are products not unknown market numbers`()=runBlocking {
+    @Test fun `bare OBI identifiers are products not unknown market numbers`()=runBlocking {
         val s=Scenario("obi-pl");val failures=mutableListOf<Int>()
         repeat(40) {i ->
             s.queryId="${6346951+i}";s.query=s.queryId
@@ -181,9 +178,6 @@ class Inc007ObiScopeRegressionTest {
         }
         assertEquals("Numeric OBIKs must not become location selections",emptyList<Int>(),failures)
     }
-
-
-
 
     private fun krakowIds()=obi.filter{it.name=="Kraków"}.map{it.branchId.value}.toSet()
 
@@ -283,5 +277,58 @@ class Inc007ObiScopeRegressionTest {
         val state=s.turn(obiUsers[1],"discovery")
         assertEquals(1,state.products.size);assertTrue(s.gets.isEmpty());assertFalse(state.text.contains("stock 99"))
         assertTrue(state.text.contains("Nie sprawdziłam"))
+    }
+    @Test fun `unavailable product verification never creates identity or performs stock reads`()=runBlocking {
+        val s=Scenario("obi-pl");s.query="6346951";s.verificationUnavailable=true
+        val state=s.turn(obiUsers[1],"discovery_then_locations")
+        assertTrue(state.products.isEmpty());assertTrue(s.gets.isEmpty())
+        assertEquals(emptyList<String>(),s.evidence?.checkedIds);assertEquals("untrusted_product",s.evidence?.reason)
+        assertEquals(AdvisorQueryResultStatus.UNAVAILABLE,(s.outputs.first() as AdvisorToolContinuation.Verified).result.results.single().status)
+    }
+    @Test fun `city adjective cannot authorize an absent or invalid directory location`()=runBlocking {
+        for(d in listOf(obi.filter{it.name!="Kraków"},obi+obi.first(),emptyList())) {
+            val s=Scenario("obi-pl",suppliedDirectory=d)
+            val state=s.run(obiUsers[1],"discovery_then_locations")
+            assertTrue((state as? AdvisorUiState.Success)?.products.orEmpty().isEmpty());assertTrue(s.lookups.isEmpty());assertTrue(s.gets.isEmpty())
+        }
+    }
+    @Test fun `premature inventory then discovery and full inventory fit the existing three call budget`()=runBlocking {
+        val s=Scenario("obi-pl");s.query="6346951"
+        s.turn(obiUsers[1],"locations_discovery_locations")
+        assertEquals(3,s.outputs.size)
+        assertEquals("untrusted_product",(s.outputs.first() as AdvisorToolContinuation.Locations).evidence.reason)
+        assertEquals("6346951",s.evidence?.productId);assertEquals(krakowIds(),s.evidence?.checkedIds?.toSet())
+        assertEquals(listOf("6346951" to "003"),s.lookups);assertEquals(1,s.gets.size)
+    }
+    @Test fun `wrong discovered identity never authorizes stock or claimed verification of the USER product`()=runBlocking {
+        val s=Scenario("obi-pl");s.queryId="7777000";s.query=s.queryId
+        val state=s.turn(obiUsers[1],"discovery")
+        assertFalse(state.text.contains("Potwierdziłam tożsamość"));assertTrue(s.gets.isEmpty())
+        s.turn(obiUsers[1],"discovery_then_locations")
+        assertTrue(s.gets.isEmpty());assertEquals("untrusted_product",s.evidence?.reason)
+    }
+    @Test fun `actual proxy serializer preserves profile seed identity and full scope in v2 and v3`()=runBlocking {
+        val s=Scenario("obi-pl");s.query="6346951"
+        s.turn(obiUsers[1],"discovery_then_locations")
+        for(version in listOf(2,3)) MockWebServer().use { server ->
+            val proxy=AdvisorProxyClient(appToken="test-token",baseUrl=server.url("/"))
+            for((index,output) in s.outputs.withIndex()) {
+                server.enqueue(MockResponse().setHeader("Content-Type","application/json")
+                    .setBody("""{"type":"answer","responseId":"final_wire","text":"Synthetic","productRefs":[]}"""))
+                val result=if(version==2) proxy.continueTurn("resp_wire_$index","call_wire_$index","075",output)
+                    else proxy.continueTurn("resp_wire_$index","call_wire_$index","obi-pl","075",output,version)
+                assertTrue(result is AdvisorProxyCallResult.Success)
+                val request=server.takeRequest();assertEquals("/v1/agent/continue",request.path)
+                val raw=request.body.readUtf8();val body=Json.parseToJsonElement(raw).jsonObject
+                assertEquals("resp_wire_$index",body["responseId"]!!.jsonPrimitive.content)
+                assertEquals("call_wire_$index",body["callId"]!!.jsonPrimitive.content)
+                assertEquals("075",body[if(version==2)"storeNumber" else "branchId"]!!.jsonPrimitive.content)
+                val facts=body["result"]!!.jsonObject
+                if(index==0) assertEquals("003",facts[if(version==2)"storeNumber" else "branchId"]!!.jsonPrimitive.content)
+                else assertEquals(krakowIds(),facts["checkedIds"]!!.jsonArray.map{it.jsonPrimitive.content}.toSet())
+                // Synthetic serialized evidence also permits offline replay into the unchanged Worker validator.
+                println("INC007_R1_WIRE=$raw")
+            }
+        }
     }
 }

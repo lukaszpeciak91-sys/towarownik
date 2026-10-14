@@ -1,5 +1,50 @@
 # Progress
 
+## 2026-10-14 — INC-007 R1 OBI recovery (independent audit pending)
+
+Base/latest main verified as `fe9e8d79f1a736cd4cb2289b525d5bc872ce554b`, including merged INC-006 #123/#124. AGENTS, source/contracts, complete INC-007 report and original reproduction were read. Reference SHA-256: report `c0477907f1021d0d479a154ad36f73b904131f41781918dc16dacac3db8506ff`; script `62759f79d43ca3956c0ef3c6a8cee4a635557b0ddb7a0ab19c36e6559c9715df`. Re-ran the pinned script: compile exit 0; existing native **215 PASS / 0 FAIL / 0 SKIP**; original **17 total / 12 PASS / 5 FAIL / 0 SKIP**, focused JVM exit 1.
+
+Test-only local RED commit `bf64921ce3b4171090ecc6572f55a5e5e07a8c51` (tree `923debce4b9948694f32b863fe662fbff92e5cb6`) preserves the pre-repair regression fixtures: **20 total / 10 PASS / 10 FAIL / 0 SKIP**. Remote PR ancestry preserves the identical RED tree; its commit identity and final SHA are recorded in the PR. RED includes all 40 bare OBIKs rejected, exact two-turn discovery failure, trusted plural inventory incorrectly checking 075, unknown adjective/broad-scope authorization and supported EAN rejection. Do not silently remove these witnesses.
+
+Patched only BranchResolver, AdvisorController and AdvisorLocationsTool; added permanent Inc007ObiScopeRegressionTest. Existing canonical directory confirms Kraków 003/019/059/072 (ObiStores.kt), with IDs dynamically derived in production. Current profile 075 is preserved on continuation while fresh identity is verified in seed 003; separate fresh inventory checks the complete city set. Two-call discovery/inventory and three-call rejected-inventory/discovery/retry paths retain exact response/call IDs and the existing budget. Model hints 075/003/999 and empty/003/075/Atlantyda locations cannot alter USER scope.
+
+Actual final native results: **25/25 focused PASS**, **215/215 existing PASS**, **0 SKIP**. Original 17 diagnostic fixtures/expectations are unchanged: **15 PASS / 2 expected RED / 0 SKIP**. The original script deliberately reads git objects at its pinned HEAD; final replay uses its byte-identical Inc007E2eTest/Inc007Runner helpers with refreshed current production copies. It is not claimed that the pinned script itself accepts a different HEAD. Intermediate strict noun parsing caused 26 legacy failures, then one legitimate “w markecie OBI 075 ten produkt” failure; the bounded canonical-label suffix was repaired without deleting/respecifying existing tests. A negative directory fixture's Success cast was corrected to inspect the actual Error state. Final security witnesses also reject wrong freshly discovered identity before stock and prevent a false verification claim.
+
+Executed commands (paths shown relative to the evidence workspace; all provider responses synthetic or loopback):
+
+```bash
+python3 reference-reproduce.py --repo ../taksula-inc007 \
+  --deps ../inc007-evidence/deps --out pinned-red
+# From current/: copies actual production Kotlin; disables only Android factory/network wiring.
+python3 refresh_sources.py
+python3 run_native.py
+java -cp 'green-legacy-classes:deps/*' pl.lukaszpeciak.towarownik.agent.R1RunnerKt
+java -cp 'green-legacy-classes:deps/*' pl.lukaszpeciak.towarownik.agent.R2NativeRunnerKt
+java -cp 'green-legacy-classes:deps/*' pl.lukaszpeciak.towarownik.agent.Inc007RunnerKt
+# Node 22.23.3, actual serialized synthetic payloads, unchanged compiled Worker:
+node --test wire-replay.mjs
+# Reproducible repository equivalent for permanent focused suite:
+./gradlew :app:testDebugUnitTest --tests '*.Inc007ObiScopeRegressionTest'
+# Required complete final-head PR CI:
+./gradlew check assembleDebug
+```
+
+Runtime: OpenJDK 17.0.20, Kotlin 2.3.21, coroutines 1.10.2, JUnit 4.13.2, serialization 1.9.0, OkHttp/MockWebServer 4.12.0. Real ProxyClient serializer/parser exercised in the focused suite; four actual v2/v3 continuations replayed into unchanged Worker parseContinueRequest: **4 PASS / 0 FAIL / 0 SKIP**. No schema/transport blocker. Offline Kotlin excludes Android factories, BuildConfig and attachment storage/network default wiring; it is not a full SDK/device run. Final-head CI URLs/status are recorded in the PR checks/description, not inferred from native tests. Proxy source/workflow unchanged, so its path-filtered workflow is not affected. No live requests, merge, deploy, AAB, version change or production configuration change.
+
+| Acceptance witness | Executed result |
+| --- | --- |
+| Exact 6346951; 40 distinct bare seven-digit searches in one conversation | Fresh provider-verified cards in selected 075; no historical permission gate |
+| 40 further independent OBI and KWANT product queries | Per-turn execution retained; MESSAGE identity/profile preserved |
+| Exact original two-turn OBI history, fresh new identity then inventory | Seed 003; exact product 6346951; checked 003/019/059/072; no inventory GET for 075 |
+| Trusted matching product, all location hints; explicit all-markets positive control | Complete canonical Kraków scope, not hint-selected subset |
+| Premature stock tool without identity | Rejection, actual discovery, fresh inventory within three calls |
+| Singular Kraków; unknown/conflicting city/market; wrong provider/product | No unauthorized inventory; singular city clarifies instead of choosing |
+| Missing/duplicate/empty directory; provider verification unavailable | No inventory; honest Error/unavailable/no card |
+| Omitted, malformed, null or transport stock | Exact checked scope retained; unknown never rendered as zero or stock 99 |
+| Model stops after identity verification | Honest incomplete full-scope statement; no city-wide stock claim |
+
+Remaining diagnostic REDs are INC-007 R2: exact KWANT six-turn history rejects turns 4/5/6 when stock-tool routed; independent bare-code discovery variant rejects turns 4/5. No new failure. KWANT 206/204 actual stock/coverage and the separate OBI CONTINUE 502 remain unknown; no root-cause attribution or provider change here. Live model call ordering, live OBI city coverage and device product links/dedicated availability UI require controlled release verification after independent review. GO for focused PR audit only; merge requires final-head CI and independent approval, broader Android release remains NO-GO until R2 and device acceptance are complete.
+
 ## 2026-10-14 — INC-006 R2 natural follow-ups and honest local reasons (audit pending)
 
 Preflight/main: `0b2a483a1193337032a04d32382dae74c116fe31`, merge of PR #123; ancestor check confirmed R1 `fffc2ca2b9b2a719cf696e483d38183b03ed98c6`. Rechecked main before publication. Read AGENTS, architecture/decisions/progress and exact Android/Worker location CONTINUE contracts before patching. Original INC-006 native harness remains unchanged (SHA-256 `e2ad0b2dc4f165fcce5770b093dd5f5e6bcd21944ff0c125bd0ff50f78bd3746`); reuse its offline fixture/source-extraction approach and the permanent R1 regression suite.

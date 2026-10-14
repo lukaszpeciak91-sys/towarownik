@@ -183,6 +183,8 @@ internal class AdvisorController(
             }
         }
 
+        var obiCityWideMarketIds: Set<String> = emptySet()
+
         suspend fun authorizeToolArguments(
             arguments: AdvisorToolArguments,
         ): ToolBranchAuthorization {
@@ -205,7 +207,9 @@ internal class AdvisorController(
             }
 
             return when (
-                val resolution = BranchResolver.resolve(
+                val resolution = if (conversationProvider == OBI_PROVIDER_ID) BranchResolver.resolveObiMarketScope(
+                    normalizedInput, branches, currentBranchId,
+                ) else BranchResolver.resolve(
                     userText = normalizedInput,
                     branches = branches,
                     currentBranchId = currentBranchId,
@@ -227,7 +231,14 @@ internal class AdvisorController(
                     )
 
                 is BranchResolution.Ambiguous -> {
-                    if (!resolution.allowsExplicitBranchHint) {
+                    if (resolution.isCityWideScope) {
+                        obiCityWideMarketIds = resolution.candidates.map { it.branchId.value }.toSet()
+                        // Identity verification uses one USER-authorized member, deterministically.
+                        // The original full scope remains pending for the separate inventory tool.
+                        ToolBranchAuthorization.Authorized(arguments.forResolvedBranch(
+                            resolution.candidates.minBy { it.branchId.value }.branchId,
+                        ))
+                    } else if (!resolution.allowsExplicitBranchHint) {
                         ToolBranchAuthorization.Rejected("ambiguous_location")
                     } else {
                         val hinted = arguments.resolveBranchHint(branches)
@@ -346,20 +357,30 @@ internal class AdvisorController(
                             verifiedByKey[reference.key]
                         }
                         .take(MAX_TOOL_PRODUCTS)
-                    val completeLocationList = lastLocationEvidence
+                    val identityOnlyCityWide = obiCityWideMarketIds.isNotEmpty() &&
+                        lastLocationEvidence == null && lastDiscoveryRejectionReason == null
+                    val requestedIds = AdvisorProductIdentityReferences.fromUserText(normalizedInput).referencedNumericIds
+                    val requestedIdentityVerified = verifiedByKey.isNotEmpty() && requestedIds.all { id ->
+                        verifiedByKey.values.any { it.effectiveProductId == id || it.articleNumber == id }
+                    }
+                    val completeLocationList = if (identityOnlyCityWide) {
+                        if (!requestedIdentityVerified) renderAdvisorLocalFailure("untrusted_product") else
+                            "Potwierdziłam tożsamość produktu. Nie sprawdziłam jeszcze stanów we wszystkich wskazanych marketach."
+                    } else lastLocationEvidence
                         ?.let(::renderAdvisorLocationDetails)
                         ?: lastDiscoveryRejectionReason?.let(::renderAdvisorLocalFailure).orEmpty()
-                    val authoritativeFailure = lastLocationEvidence?.let {
+                    val authoritativeLocalText = lastLocationEvidence?.let {
                         completeLocationList.isNotBlank() &&
                             (verifiedByKey.isEmpty() || it.status != "verified" || it.coverage == "partial" || it.coverage == "unknown")
-                    } == true || lastDiscoveryRejectionReason != null && lastLocationEvidence == null
+                    } == true || lastDiscoveryRejectionReason != null && lastLocationEvidence == null ||
+                        obiCityWideMarketIds.isNotEmpty()
                     return AdvisorUiState.Success(
-                        text = if (authoritativeFailure) completeLocationList else if (completeLocationList.isBlank()) proxyResult.text else {
+                        text = if (authoritativeLocalText) completeLocationList else if (completeLocationList.isBlank()) proxyResult.text else {
                             proxyResult.text + "\n\n" + completeLocationList
                         },
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
-                        sources = if (authoritativeFailure) emptyList() else proxyResult.sources,
+                        sources = if (authoritativeLocalText) emptyList() else proxyResult.sources,
                         searchActions = searchActionsByKey.values.toList(),
                         traceId = turnTraceId,
                     ).also(onState)
@@ -371,6 +392,13 @@ internal class AdvisorController(
                         toolAssistedObserved = true
                         observeToolSafely(onToolRequestObserved)
                     }
+                    val directory = (loadTurnBranches() as? ProviderBranchResult.Available)?.branches.orEmpty()
+                    if (conversationProvider == OBI_PROVIDER_ID) {
+                        val scope = BranchResolver.resolveObiMarketScope(normalizedInput, directory, currentBranchId, false)
+                        if (scope is BranchResolution.Ambiguous && scope.isCityWideScope) {
+                            obiCityWideMarketIds = scope.candidates.map { it.branchId.value }.toSet()
+                        }
+                    }
                     val followUp = resolveAdvisorLocationFollowUp(
                         input = normalizedInput,
                         history = locationHistory,
@@ -378,8 +406,7 @@ internal class AdvisorController(
                         // USER intent or location authority. Current facts win.
                         historicalProducts = (verifiedByKey.values + historicalVerifiedProducts)
                             .filter { it.providerId == conversationProviderId },
-                        branches = (loadTurnBranches() as? ProviderBranchResult.Available)
-                            ?.branches.orEmpty(),
+                        branches = directory,
                         providerId = conversationProviderId,
                         currentBranchId = conversationStoreNumber,
                     )

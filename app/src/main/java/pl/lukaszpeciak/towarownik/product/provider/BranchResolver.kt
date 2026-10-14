@@ -16,6 +16,7 @@ internal sealed interface BranchResolution {
     data class Ambiguous(
         val candidates: List<ProviderBranch>,
         val allowsExplicitBranchHint: Boolean = false,
+        val isCityWideScope: Boolean = false,
     ) : BranchResolution
 
     data object UnknownMention : BranchResolution
@@ -53,7 +54,7 @@ internal object BranchResolver {
         }
         // A standalone market ID and an explicit comparison of IDs remain supported.
         val numericOnly = text.replaceFirst(Regex("""^porownaj\s+"""), "")
-        if ((allowBareBranchIds || text.startsWith("porownaj ")) && Regex("""[0-9]+(?:\s+(?:i|oraz)\s+[0-9]+)*""").matches(numericOnly) &&
+        if ((allowBareBranchIds || text.startsWith("porownaj ")) && Regex("""[0-9]{3}(?:\s+(?:i|oraz)\s+[0-9]{3})*""").matches(numericOnly) &&
             !Regex("""[/\\x×*:.\-]""").containsMatchIn(userText)
         ) scopes += numericOnly
 
@@ -97,6 +98,42 @@ internal object BranchResolver {
     fun resolveHint(hint: String, branches: List<ProviderBranch>): ProviderBranch? =
         consumePlace(normalizedText(hint), branches, null)
             ?.takeIf { it.tail.isBlank() }?.branches?.singleOrNull()
+
+    /** OBI-only plural scope; the same canonical resolver checks the complete USER selection. */
+    fun resolveObiMarketScope(
+        userText: String,
+        branches: List<ProviderBranch>,
+        currentBranchId: BranchId,
+        allowBareBranchIds: Boolean = true,
+    ): BranchResolution {
+        val resolution = resolve(
+            canonicalObiMarketLocationText(userText, branches), branches,
+            currentBranchId, allowBareBranchIds,
+        )
+        return if (resolution is BranchResolution.Ambiguous &&
+            Regex("""\b(?:marketach|markety|sklepach|sklepy)\b""").containsMatchIn(normalizedText(userText)) &&
+            resolution.candidates.map { normalizedText(it.name) }.distinct().size == 1
+        ) resolution.copy(allowsExplicitBranchHint = false, isCityWideScope = true) else resolution
+    }
+
+    private fun canonicalObiMarketLocationText(userText: String, branches: List<ProviderBranch>): String {
+        val original = normalizedText(userText)
+        var text = original
+        // Reviewed name-only adjective, eligible only when that city exists in the directory.
+        if (branches.any { normalizedText(it.name) == "krakow" }) {
+            text = text.replace(
+                Regex("""\b(?:w|we) krakowskich (?:marketach|sklepach)(?: obi)?\b"""),
+                "w krakowie",
+            )
+        }
+        text = text.replace(
+            Regex("""\b(?:w|we) (?:wszystkich )?(?:marketach|sklepach)(?: obi)? (?:w|we) """),
+            "w ",
+        )
+        // Courtesy after a recognized market-scope phrase does not become an address.
+        if (text != original) text = text.replace(Regex("""\s+sprawdz prosze$"""), "")
+        return text
+    }
 
     private data class Place(val branches: List<ProviderBranch>, val tail: String)
 
