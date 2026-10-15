@@ -67,9 +67,19 @@ class AdvisorLocationsToolTest {
         locationsService = ProductLocationsService(listOf(fake)),
     )
 
+    // Raw tool fixtures now supply the USER selection that previously existed only as cards.
+    // Multiple cards remain multiple USER selections; no model ID chooses the anchor.
+    private suspend fun AdvisorLocationsTool.executeWithUserContext(
+        arguments: AdvisorLocationArguments, providerId: String, currentBranchId: String,
+        userText: String, currentVerified: Collection<VerifiedProductSnapshot>,
+        historicalVerified: List<VerifiedProductSnapshot>,
+    ) = execute(arguments, providerId, currentBranchId, userText, currentVerified, historicalVerified,
+        listOf(AdvisorLocationHistoryMessage("USER", "Sprawdź stan produktu " +
+            historicalVerified.joinToString(" i produktu ") { it.effectiveProductId })))
+
     @Test fun `historical single exact assistant card authorizes product but not new product card`() = runBlocking {
         val fake = StockAdapter()
-        val evidence = tool(fake).execute(
+        val evidence = tool(fake).executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
             "obi-pl",
             "075",
@@ -86,7 +96,7 @@ class AdvisorLocationsToolTest {
 
     @Test fun `same-turn exact verified product is trusted`() = runBlocking {
         val fake = StockAdapter()
-        val result = tool(fake).execute(
+        val result = tool(fake).executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
             "obi-pl",
             "075",
@@ -100,7 +110,7 @@ class AdvisorLocationsToolTest {
     @Test fun `ambiguous history and hallucinated identity never authorize HTTP`() = runBlocking {
         val fake = StockAdapter()
         val svc = tool(fake)
-        val ambiguous = svc.execute(
+        val ambiguous = svc.executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
             "obi-pl",
             "075",
@@ -109,7 +119,7 @@ class AdvisorLocationsToolTest {
         )
         assertEquals("rejected", ambiguous.status)
         assertEquals("ambiguous_product", ambiguous.reason)
-        val invented = svc.execute(
+        val invented = svc.executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "9999999", listOf("075")),
             "obi-pl",
             "075",
@@ -118,7 +128,7 @@ class AdvisorLocationsToolTest {
         )
         assertEquals("rejected", invented.status)
         assertEquals("untrusted_product", invented.reason)
-        val cross = svc.execute(
+        val cross = svc.executeWithUserContext(
             AdvisorLocationArguments("kwant-pl", "3496072", emptyList()),
             "kwant-pl",
             "205",
@@ -132,7 +142,7 @@ class AdvisorLocationsToolTest {
     @Test fun `model cannot replace user market and explicit broad scope still checks all other`() = runBlocking {
         val fake = StockAdapter()
         val svc = tool(fake)
-        val invented = svc.execute(
+        val invented = svc.executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("003")),
             "obi-pl",
             "075",
@@ -142,7 +152,7 @@ class AdvisorLocationsToolTest {
         assertEquals("verified", invented.status)
         assertEquals(listOf("075"), invented.checkedIds)
         assertEquals(listOf(BranchId("075")), fake.lastRequested)
-        val broad = svc.execute(
+        val broad = svc.executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", emptyList()),
             "obi-pl",
             "075",
@@ -159,7 +169,7 @@ class AdvisorLocationsToolTest {
 
     @Test fun `OBI city scope includes all four canonical Krakow markets`() = runBlocking {
         val fake = StockAdapter()
-        val evidence = tool(fake).execute(
+        val evidence = tool(fake).executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("Kraków")),
             "obi-pl",
             "075",
@@ -174,7 +184,7 @@ class AdvisorLocationsToolTest {
 
     @Test fun `OBI canonical exact store scope remains bound to user text`() = runBlocking {
         val fake = StockAdapter()
-        val evidence = tool(fake).execute(
+        val evidence = tool(fake).executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("003", "075")),
             "obi-pl",
             "075",
@@ -211,7 +221,7 @@ class AdvisorLocationsToolTest {
             providerId = "kwant-pl", productId = "580", obik = "580",
             branchId = "205", centralStock = 999,
         )
-        val evidence = tool.execute(
+        val evidence = tool.executeWithUserContext(
             AdvisorLocationArguments("kwant-pl", "580", emptyList()),
             "kwant-pl", "205",
             "Sprawdź ten produkt w innych oddziałach",
@@ -232,7 +242,7 @@ class AdvisorLocationsToolTest {
             listOf("OBI 003"),
         )) {
             val fake = StockAdapter()
-            val result = tool(fake).execute(
+            val result = tool(fake).executeWithUserContext(
                 AdvisorLocationArguments("obi-pl", "3496072", hints),
                 "obi-pl", "075", "Sprawdź we wszystkich marketach w Krakowie",
                 emptyList(), listOf(one),
@@ -247,7 +257,7 @@ class AdvisorLocationsToolTest {
     @Test fun `Nowy Sacz canonical and inflected model hints resolve selected market`() = runBlocking {
         for (hint in listOf("Nowy Sącz", "Nowym Sączu", "075", "OBI 075")) {
             val fake = StockAdapter()
-            val result = tool(fake).execute(
+            val result = tool(fake).executeWithUserContext(
                 AdvisorLocationArguments("obi-pl", "3496072", listOf(hint)),
                 "obi-pl", "075", "Sprawdź w Nowym Sączu",
                 emptyList(), listOf(one),
@@ -261,7 +271,7 @@ class AdvisorLocationsToolTest {
     @Test fun `explicit OBI 003 user scope accepts contextual model market hint only`() = runBlocking {
         for (hint in listOf("003", "OBI 003", "market OBI 003", "market nr 003")) {
             val fake = StockAdapter()
-            val result = tool(fake).execute(
+            val result = tool(fake).executeWithUserContext(
                 AdvisorLocationArguments("obi-pl", "3496072", listOf(hint)),
                 "obi-pl", "075", "Sprawdź market OBI 003",
                 emptyList(), listOf(one),
@@ -282,7 +292,7 @@ class AdvisorLocationsToolTest {
         )
         for ((message, hints) in cases) {
             val fake = StockAdapter()
-            val result = tool(fake).execute(
+            val result = tool(fake).executeWithUserContext(
                 AdvisorLocationArguments("obi-pl", "3496072", hints),
                 "obi-pl", "075", message,
                 emptyList(), listOf(one),
@@ -302,7 +312,7 @@ class AdvisorLocationsToolTest {
 
     @Test fun `unknown user city cannot be repaired with canonical model hints`() = runBlocking {
         val fake = StockAdapter()
-        val result = tool(fake).execute(
+        val result = tool(fake).executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", listOf("Kraków")),
             "obi-pl", "075", "Sprawdź w Tarnowie",
             emptyList(), listOf(one),
@@ -318,10 +328,10 @@ class AdvisorLocationsToolTest {
             "Gdzie jeszcze jest listwa 100 cm?",
         )) {
             val fake = StockAdapter()
-            val result = tool(fake).execute(
+            val result = tool(fake).executeWithUserContext(
                 AdvisorLocationArguments("obi-pl", "3496072", emptyList()),
                 "obi-pl", "075", message,
-                emptyList(), listOf(one),
+                if (message.contains("listwa")) listOf(one.copy(name = "Fixture listwa 100 cm")) else emptyList(), listOf(one),
             )
             assertEquals(message, "verified", result.status)
             assertEquals(message, "all_other_locations", result.coverage)

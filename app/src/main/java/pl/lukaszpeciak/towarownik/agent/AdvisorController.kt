@@ -89,12 +89,7 @@ internal class AdvisorController(
         ProviderId,
     ) -> ProviderBranchResult,
     private val executeLocationsTool: (suspend (
-        AdvisorLocationArguments,
-        String,
-        String,
-        String,
-        Collection<VerifiedProductSnapshot>,
-        List<VerifiedProductSnapshot>,
+        AdvisorInventoryAuthorization.Inventory,
     ) -> AdvisorLocationEvidence)? = null,
     private val startAgentWithAttachment: (suspend (
         String,
@@ -472,17 +467,6 @@ internal class AdvisorController(
                             obiCityWideMarketIds = scope.candidates.map { it.branchId.value }.toSet()
                         }
                     }
-                    val followUp = resolveAdvisorLocationFollowUp(
-                        input = normalizedInput,
-                        history = locationHistory,
-                        // Fresh same-turn discovery can establish identity, never
-                        // USER intent or location authority. Current facts win.
-                        historicalProducts = (verifiedByKey.values + historicalVerifiedProducts)
-                            .filter { it.providerId == conversationProviderId },
-                        branches = directory,
-                        providerId = conversationProviderId,
-                        currentBranchId = conversationStoreNumber,
-                    )
                     val repeatKey = Triple(
                         locationRequest.arguments.providerId,
                         locationRequest.arguments.productId,
@@ -519,92 +503,21 @@ internal class AdvisorController(
                         toolCalls += 1
                         onState(AdvisorUiState.RunningLocalTool)
                         try {
-                            if (locationRequest.arguments.providerId != conversationProviderId
-                            ) {
-                                AdvisorLocationEvidence(
-                                    providerId = conversationProviderId, productId = null, status = "rejected", reason = "wrong_provider",
-                                    coverage = "unknown", checkedIds = emptyList(), returnedIds = emptyList(), missingIds = emptyList(),
-                                    locations = emptyList(), verifiedAtMillis = null, centralStock = null,
-                                )
-                            } else if (independentQuery != null) {
-                                // Classify current independent discovery BEFORE
-                                // historical inventory admission or model-ID trust.
-                                recoverIndependentQuery(independentQuery)
-                            } else if (followUp.failureReason != null
-                            ) {
-                                AdvisorLocationEvidence(
-                                    providerId = conversationProviderId, productId = null,
-                                    status = if (followUp.failureReason == "directory_unavailable") "unavailable" else "rejected",
-                                    reason = if (locationRequest.arguments.providerId != conversationProviderId) "wrong_provider" else followUp.failureReason,
-                                    coverage = "unknown", checkedIds = emptyList(), returnedIds = emptyList(),
-                                    missingIds = emptyList(), locations = emptyList(), verifiedAtMillis = null, centralStock = null,
-                                )
-                            } else if (conversationProviderId == "kwant-pl" &&
-                                followUp.isContextualQuantityRequest &&
-                                !followUp.hasPendingInventoryRequest
-                            ) {
-                                // An unrelated USER turn breaks "same product".
-                                // A model hint or previous ASSISTANT card alone
-                                // cannot restore that product authorization.
-                                AdvisorLocationEvidence(
-                                    providerId = conversationProviderId,
-                                    productId = null,
-                                    status = "rejected",
-                                    reason = "untrusted_product",
-                                    coverage = "unknown",
-                                    checkedIds = emptyList(),
-                                    returnedIds = emptyList(),
-                                    missingIds = emptyList(),
-                                    locations = emptyList(),
-                                    verifiedAtMillis = null,
-                                    centralStock = null,
-                                )
-                            } else if (followUp.bothProductIds.size == 2
-                            ) {
-                                // The public endpoint is verified, but the single-
-                                // product location tool cannot represent two
-                                // independent reads. Never report only one.
-                                AdvisorLocationEvidence(
-                                    providerId = conversationProviderId,
-                                    productId = null,
-                                    status = "unavailable",
-                                    reason = "multi_product_tool_contract",
-                                    coverage = "unknown",
-                                    checkedIds = emptyList(),
-                                    returnedIds = emptyList(),
-                                    missingIds = emptyList(),
-                                    locations = emptyList(),
-                                    verifiedAtMillis = null,
-                                    centralStock = null,
-                                )
-                            } else {
-                                executeLocationsTool?.invoke(
-                                    locationRequest.arguments,
+                            val authority = AdvisorInventoryAuthorizer.resolve(
+                                locationRequest.arguments, conversationProviderId, conversationStoreNumber,
+                                normalizedInput, verifiedByKey.values, historicalVerifiedProducts,
+                                directory, locationHistory,
+                            )
+                            when (authority) {
+                                is AdvisorInventoryAuthorization.Discovery -> recoverIndependentQuery(authority.query)
+                                is AdvisorInventoryAuthorization.Inventory -> executeLocationsTool?.invoke(authority)
+                                    ?: inventoryAuthorizationFailure("location_service_unavailable", "unavailable", conversationProviderId)
+                                is AdvisorInventoryAuthorization.ClarificationRequired ->
+                                    inventoryAuthorizationFailure(authority.reason, "rejected", conversationProviderId)
+                                is AdvisorInventoryAuthorization.Denied -> inventoryAuthorizationFailure(
+                                    authority.reason,
+                                    if (authority.reason in setOf("directory_unavailable", "multi_product_tool_contract")) "unavailable" else "rejected",
                                     conversationProviderId,
-                                    conversationStoreNumber,
-                                    followUp.authorizedText,
-                                    // Fresh discovery may verify the USER target,
-                                    // but cannot replace an inherited product selection.
-                                    verifiedByKey.values.filter { fresh ->
-                                        !followUp.inheritsInventoryContext ||
-                                            followUp.historicalProducts.any { selected ->
-                                                selected.providerId == fresh.providerId &&
-                                                    selected.effectiveProductId == fresh.effectiveProductId
-                                            }
-                                    },
-                                    followUp.historicalProducts,
-                                ) ?: AdvisorLocationEvidence(
-                                providerId = conversationProviderId,
-                                productId = null,
-                                status = "unavailable",
-                                reason = "location_service_unavailable",
-                                coverage = "unknown",
-                                checkedIds = emptyList(),
-                                returnedIds = emptyList(),
-                                missingIds = emptyList(),
-                                locations = emptyList(),
-                                verifiedAtMillis = null,
-                                centralStock = null,
                                 )
                             }
                         } catch (cancel: CancellationException) {
@@ -925,6 +838,12 @@ internal class AdvisorController(
             "unsupported_provider",
         ) || reason?.startsWith("location_conflict_") == true
 
+
+    private fun inventoryAuthorizationFailure(reason: String, status: String, providerId: String) =
+        AdvisorLocationEvidence(
+            providerId, null, status, reason, "unknown", emptyList(), emptyList(), emptyList(),
+            emptyList(), null, null,
+        )
 
     companion object {
         fun production(context: android.content.Context): AdvisorController {

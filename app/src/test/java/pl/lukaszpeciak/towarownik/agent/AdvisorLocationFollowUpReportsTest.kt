@@ -67,8 +67,8 @@ class AdvisorLocationFollowUpReportsTest {
         val followUp = resolveAdvisorLocationFollowUp(message, history, cards, branches)
         val result = inventory.tool.execute(
             AdvisorLocationArguments("obi-pl", id, emptyList()),
-            "obi-pl", "075", followUp.authorizedText,
-            emptyList(), followUp.historicalProducts,
+            "obi-pl", "075", followUp.userText,
+            emptyList(), followUp.historicalProducts, history,
         )
         return result to inventory
     }
@@ -141,7 +141,7 @@ class AdvisorLocationFollowUpReportsTest {
         val afterBoth = initial + user("obu") + assistant()
         val city = resolveAdvisorLocationFollowUp("Zamość", afterBoth, listOf(first, second), kwantBranches)
         assertEquals(setOf("7035", "7027"), city.bothProductIds)
-        assertEquals("Sprawdź stan produktu w Zamość", city.authorizedText)
+        assertEquals("Zamość", city.userText)
         val afterCity = afterBoth + user("Zamość") + assistant()
         val explicit = resolveAdvisorLocationFollowUp(
             "sprawdź stan obu gniazd w Zamościu", afterCity, listOf(first, second), kwantBranches,
@@ -154,7 +154,7 @@ class AdvisorLocationFollowUpReportsTest {
             kwantBranches,
         )
         assertEquals(setOf("7035", "7027"), tarnow.bothProductIds)
-        assertTrue(tarnow.authorizedText.startsWith("Sprawdź stan produktu:"))
+        assertEquals("a w oddziale Tarnów?", tarnow.userText)
     }
 
     @Test fun noPriorInventoryOrOrdinaryAdviceDoesNotAuthorize() = runBlocking {
@@ -242,7 +242,7 @@ class AdvisorLocationFollowUpReportsTest {
             val context = resolveAdvisorLocationFollowUp(
                 message, obiHistory, listOf(portable, fixed), aliases,
             )
-            assertEquals(message, message, context.authorizedText)
+            assertEquals(message, message, context.userText)
         }
         val (allowed, inventory) = lookup("a w Krakowie na Wielickiej?", obiHistory)
         assertEquals("verified", allowed.status)
@@ -295,6 +295,8 @@ class AdvisorLocationFollowUpReportsTest {
             providerId = "kwant-pl", currentBranchId = "205",
             userText = message, currentVerified = emptyList(),
             historicalVerified = trusted,
+            history = listOf(AdvisorLocationHistoryMessage("USER", "Sprawdź stan produktu " +
+                trusted.joinToString(" i produktu ") { it.effectiveProductId })),
         )
     }
 
@@ -471,9 +473,9 @@ class AdvisorLocationFollowUpReportsTest {
             assertTrue(message, followUp.hasPendingInventoryRequest)
             assertEquals(message, listOf("7027"),
                 followUp.historicalProducts.map { it.effectiveProductId })
-            assertTrue(message, followUp.authorizedText.startsWith("Sprawdź stan produktu:"))
+            assertEquals(message, followUp.userText)
             val scope = authorizeKwantLocations(
-                followUp.authorizedText, emptyList(), branches, BranchId("205"),
+                followUp.userText, emptyList(), branches, BranchId("205"),
             ) as KwantAuthorizedLocations.Allowed
             assertEquals(message, listOf(BranchId(id)), scope.requested)
         }
@@ -481,14 +483,14 @@ class AdvisorLocationFollowUpReportsTest {
         val broken = resolveAdvisorLocationFollowUp(
             "a w Białymstoku?", unrelatedHistory, listOf(product), branches,
         )
-        assertEquals(false, broken.hasPendingInventoryRequest)
-        assertEquals("a w Białymstoku?", broken.authorizedText)
+        assertEquals(false, broken.hasPendingInventoryRequest) // bare location after price is ambiguous
+        assertEquals("a w Białymstoku?", broken.userText)
         val unverifiedCity = resolveAdvisorLocationFollowUp(
             "a w Nieznanowie?", history, listOf(product), branches,
         )
         // Historical inventory is still pending, but an unknown city cannot
         // be promoted to an authorized inventory request by the resolver.
-        assertEquals("a w Nieznanowie?", unverifiedCity.authorizedText)
+        assertEquals("a w Nieznanowie?", unverifiedCity.userText)
     }
 
 }

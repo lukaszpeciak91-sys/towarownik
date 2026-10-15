@@ -257,7 +257,10 @@ internal object BranchResolver {
             if (matched.isEmpty()) return null
             remaining = street.tail
         }
-        if (remaining.isNotBlank() && remaining.substringBefore(' ') !in CONTEXT_WORDS &&
+        // A complete product-reference tail follows an already verified place; it is
+        // never a context-word exception at the start of an unknown place selection.
+        val productReferenceTail = Regex("""^(?:ten produkt|tego produktu)$""").matches(remaining)
+        if (remaining.isNotBlank() && !productReferenceTail && remaining.substringBefore(' ') !in CONTEXT_WORDS &&
             !Regex("""^(?:i|oraz|w|we|na)\b""").containsMatchIn(remaining) &&
             !MEASUREMENT_PREFIX.containsMatchIn(remaining)
         ) return null
