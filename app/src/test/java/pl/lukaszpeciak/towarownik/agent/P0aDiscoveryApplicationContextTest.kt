@@ -20,13 +20,15 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
         val branch: String?,
         val modelProvider: String = provider,
         val stock: Int? = 7,
+        val branches: List<Triple<String, String, String?>>? = null,
     ) {
         override fun toString() = name
     }
 
     private val profile = if (case.provider == "obi-pl") "075" else "205"
     private val productId = if (case.provider == "obi-pl") "6346951" else "77556"
-    private val directory = if (case.provider == "obi-pl") {
+    private val directory = case.branches?.map { ProviderBranch(BranchId(it.first), it.second, it.third) }
+        ?: if (case.provider == "obi-pl") {
         OBI_STORES.map { ProviderBranch(BranchId(it.storeNumber), it.city, it.address) }
     } else listOf(
         ProviderBranch(BranchId("205"), "Nowy Sącz", "Tarnowska 149"),
@@ -36,9 +38,9 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
     )
 
     @Test fun canonicalUserScope() {
-        val result = if (case.provider == "obi-pl") BranchResolver.resolveObiMarketScope(
-            case.text, directory, BranchId(profile),
-        ) else BranchResolver.resolve(case.text, directory, BranchId(profile), allowBareBranchIds = false)
+        val result = BranchResolver.resolveDiscovery(
+            case.text, directory, BranchId(profile), obiMarketScope = case.provider == "obi-pl",
+        )
         val actual = when (result) {
             BranchResolution.NotMentioned -> "absent"
             BranchResolution.UnknownMention -> "unknown"
@@ -59,6 +61,7 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
         val lookups = mutableListOf<Pair<String, String>>()
         var inventoryCalls = 0
         var continued = 0
+        var continuation: AdvisorToolContinuation? = null
         val provider = object : ProductProvider {
             override val providerId = ProviderId(case.provider)
             override fun branches() = ProviderBranchResult.Available(directory)
@@ -90,7 +93,9 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
                 ))
             }, now = { 2000L },
         )
-        val query = if (case.provider == "obi-pl") productId else "A9Z01440/SCH"
+        val query = if (case.provider == "obi-pl") {
+            case.text.takeIf { it.matches(Regex("""[0-9]{8,14}""")) } ?: productId
+        } else "A9Z01440/SCH"
         val request = AdvisorProxyCallResult.Success(AdvisorProxyResult.ToolRequest(
             "response-original", "call-original",
             AdvisorToolArguments("999", listOf(AdvisorToolQuery(query, 1)), case.modelProvider, "Atlantyda"),
@@ -101,13 +106,10 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
             messageAgent = { _, _, _, _ -> error("Fresh turn") },
             continueAgent = { response, call, p, b, _, output ->
                 continued++
+                continuation = output
                 assertEquals("response-original", response); assertEquals("call-original", call)
                 assertEquals(case.provider, p); assertEquals(profile, b)
-                if (case.branch == null) assertTrue(output is AdvisorToolContinuation.RejectedStore)
-                else {
-                    assertTrue(output is AdvisorToolContinuation.Verified)
-                    assertEquals(case.branch, (output as AdvisorToolContinuation.Verified).result.storeNumber)
-                }
+                println("P0A_AUTH ${case.name}: continuation=${output.javaClass.simpleName} lookups=$lookups searches=${searches.size} inventory=$inventoryCalls")
                 AdvisorProxyCallResult.Success(AdvisorProxyResult.Answer(
                     "response-final", "Synthetic answer",
                     // Include an unverified model ref: it must not create a card.
@@ -131,10 +133,13 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
         assertEquals(1, continued)
         assertEquals(0, inventoryCalls)
         if (case.branch == null) {
+            assertTrue(continuation is AdvisorToolContinuation.RejectedStore)
             assertTrue(lookups.isEmpty()); assertTrue(searches.isEmpty()); assertTrue(state.products.isEmpty())
         } else {
+            assertTrue(continuation is AdvisorToolContinuation.Verified)
+            assertEquals(case.branch, (continuation as AdvisorToolContinuation.Verified).result.storeNumber)
             assertEquals(listOf(productId to case.branch), lookups)
-            assertEquals(if (case.provider == "obi-pl") 0 else 1, searches.size)
+            assertEquals(if (case.provider == "obi-pl" && query == productId) 0 else 1, searches.size)
             val card = state.products.single()
             assertEquals(case.provider, card.providerId); assertEquals(case.branch, card.effectiveBranchId)
             assertEquals(productId, card.effectiveProductId); assertEquals(case.stock, card.stock)
@@ -155,6 +160,10 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
                 "Szukam zabezpieczenia do rozdzielnicy",
                 "Szukam lampy do montażu na suficie",
                 "Szukam złączki na szynę TH35 w rozdzielnicy",
+                "Szukam uszczelniacza we własnym mieszkaniu",
+                "Szukam uszczelniacza w nowej łazience",
+                "Szukam kleju na betonową ścianę",
+                "Szukam różnicówki na metalową szynę TH35",
             )
             for (p in listOf("obi-pl", "kwant-pl")) {
                 val saved = if (p == "obi-pl") "075" else "205"
@@ -165,7 +174,12 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
                     modelProvider = if (p == "obi-pl") "kwant-pl" else "obi-pl")
                 for (text in listOf("Szukam kabla w Zakopanem", "sprawdź w zakopanem",
                     "Szukam kabla w mieście Atlantyda", "sprawdź w oddziale Nieznanym",
-                    "Szukam złączki na szynę DIN w Zakopanem", "Szukam lampy do montażu na suficie w oddziale Nieznanym")) {
+                    "Szukam złączki na szynę DIN w Zakopanem", "Szukam lampy do montażu na suficie w oddziale Nieznanym",
+                    "sprawdź w oddziale w mieszkaniu", "sprawdź w mieście na suficie",
+                    "Szukam lampy na suficie i w zakopanem", "Szukam lampy na suficie przy ulicy Nieznanej",
+                    "Szukam kabla w Mieszkaniu", "Szukam kabla na Suficie",
+                    "Szukam lampy na suficie tam", "sprawdź w oddziałach w mieszkaniu",
+                    "Szukam kabla w nowym Mieszkaniu")) {
                     rows += Case("$p unknown $text", p, text, "unknown", null)
                 }
             }
@@ -174,6 +188,10 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
                 Case("KWANT city and street", "kwant-pl", "Szukam kabla w Bochni na Krakowskiej", "resolved:203", "203"),
                 Case("KWANT application then city", "kwant-pl", "Szukam różnicówki na szynę DIN w Bochni", "resolved:203", "203"),
                 Case("KWANT city then application", "kwant-pl", "Szukam różnicówki w Bochni na szynę DIN", "resolved:203", "203"),
+                Case("KWANT city then purpose", "kwant-pl", "Szukam lampy w Bochni do montażu na suficie", "resolved:203", "203"),
+                Case("KWANT city then enclosure", "kwant-pl", "Szukam różnicówki w Bochni do rozdzielnicy", "resolved:203", "203"),
+                Case("KWANT application then enclosure then city", "kwant-pl", "Szukam złączki na szynę TH35 w rozdzielnicy w Bochni", "resolved:203", "203"),
+                Case("KWANT adjacent application frames", "kwant-pl", "Szukam lampy w mieszkaniu do montażu na suficie w Bochni", "resolved:203", "203"),
                 Case("KWANT unknown street", "kwant-pl", "Szukam kabla w Bochni na Nieistniejącej", "unknown", null),
                 Case("KWANT mixed places", "kwant-pl", "sprawdź w Bochni i Zakopanem", "unknown", null),
                 Case("KWANT conflict", "kwant-pl", "sprawdź w oddziale 205 Bochnia", "unknown", null),
@@ -191,6 +209,12 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
                 Case("OBI bare OBIK", "obi-pl", "6346951", "absent", "075"),
                 Case("OBI bare EAN", "obi-pl", "4007871634695", "absent", "075"),
                 Case("OBI units and codes", "obi-pl", "203 m kabla 6346951 203 x 205 mm 40 A", "absent", "075"),
+                Case("OBI code is not a market", "obi-pl", "003/205", "absent", "075"),
+                Case("OBI application cannot synthesize market", "obi-pl", "003 na szynę DIN", "absent", "075"),
+                Case("canonical city takes priority", "kwant-pl", "Szukam lampy w mieszkaniu", "resolved:203", "203",
+                    branches = listOf(Triple("205", "Nowy Sącz", null), Triple("203", "Mieszkaniu", null))),
+                Case("canonical street takes priority", "kwant-pl", "Szukam lampy na sufit", "resolved:203", "203",
+                    branches = listOf(Triple("205", "Nowy Sącz", null), Triple("203", "Bochnia", "Sufit 20"))),
             )
             return rows.map { arrayOf(it) }
         }

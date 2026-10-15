@@ -24,6 +24,67 @@ internal sealed interface BranchResolution {
 
 /** Resolves current USER discovery scope; model hints never participate here. */
 internal object BranchResolver {
+    /**
+     * Discovery distinguishes a product's application clause from a selected
+     * place BEFORE canonical resolution. Inventory/history keep resolve().
+     * Unrecognized place clauses are never converted into profile fallback.
+     */
+    fun resolveDiscovery(
+        userText: String,
+        branches: List<ProviderBranch>,
+        currentBranchId: BranchId,
+        obiMarketScope: Boolean = false,
+    ): BranchResolution {
+        val text = discoveryLocationText(userText, branches)
+        return if (obiMarketScope) resolveObiMarketScope(
+            text, branches, currentBranchId, allowBareBranchIds = text == userText,
+        )
+        else resolve(text, branches, currentBranchId, allowBareBranchIds = false)
+    }
+
+    private fun discoveryLocationText(userText: String, branches: List<ProviderBranch>): String {
+        val text = normalizedText(userText)
+        if (UNRESOLVED_LOCATION.containsMatchIn(text)) return userText
+        val originalCase = normalizedText(userText, preserveCase = true)
+        if (originalCase.length != text.length) return userText
+        val markers = LOCATION_MARKER.findAll(text).toList()
+        val clauses = APPLICATION_CLAUSE.findAll(text).toList()
+        val applications = clauses.mapIndexedNotNull { index, application ->
+            val source = text.substring(application.range.first).substringAfter(' ')
+            // A real directory city/street wins even if its name resembles an
+            // application target. Explicit geography cannot be masked either.
+            if (branches.any { branch -> cityAliases(branch.name).any { startsWithPhrase(source, it) } } ||
+                matchStreet(source, branches) != null ||
+                EXPLICIT_PLACE_PREFIX.containsMatchIn(text.take(application.range.first)) ||
+                originalCase.substring(application.range).split(' ').drop(1).any { it.first().isUpperCase() }
+            ) return@mapIndexedNotNull null
+            // Bound the application to its own clause. Every following place
+            // marker or joined locality must still reach canonical validation.
+            val nextMarker = markers.firstOrNull { it.range.first > application.range.first }
+                ?.range?.first ?: text.length
+            val connector = Regex("""\b(?:i|oraz)\b""").find(text, application.range.last + 1)
+                ?.range?.first ?: text.length
+            val end = minOf(nextMarker, connector, clauses.getOrNull(index + 1)?.range?.first ?: text.length)
+            // Never erase a supplied geographical label within a purpose tail.
+            if (GEOGRAPHICAL_LABEL.containsMatchIn(text.substring(application.range.last + 1, end))) {
+                return@mapIndexedNotNull null
+            }
+            application.range.first until end
+        }
+        // Leave existing parsing unchanged when no application was removed.
+        // Removing an application cannot synthesize a bare market ID.
+        if (applications.isEmpty()) return userText
+        return buildString {
+            var cursor = 0
+            applications.forEach { range ->
+                append(text, cursor, range.first)
+                append(' ')
+                cursor = range.last + 1
+            }
+            append(text, cursor, text.length)
+        }.replace(Regex("""\s+"""), " ").trim()
+    }
+
     fun resolve(
         userText: String,
         branches: List<ProviderBranch>,
@@ -261,8 +322,8 @@ internal object BranchResolver {
     private fun containsNormalizedPhrase(text: String, phrase: String): Boolean =
         (" $text ").contains(" $phrase ")
 
-    private fun normalizedText(text: String): String =
-        Normalizer.normalize(text.lowercase().replace('ł', 'l'), Normalizer.Form.NFD)
+    private fun normalizedText(text: String, preserveCase: Boolean = false): String =
+        Normalizer.normalize((if (preserveCase) text else text.lowercase()).replace('ł', 'l').replace('Ł', 'L'), Normalizer.Form.NFD)
             .replace(Regex("""\p{M}+"""), "")
             .replace(Regex("""[^\p{L}\p{N}]+"""), " ")
             .replace(Regex("""\s+"""), " ").trim()
@@ -279,6 +340,18 @@ internal object BranchResolver {
     private val LOCATION_MARKER = Regex(
         """\b(?:obi|kwant|market|markecie|sklep|sklepie|oddzial|oddziale|oddzialy|oddzialach|hurtownia|hurtowni|magazyn|magazynie|w|we|na)\s+""",
     )
+    // Bounded spatial application frames, not product intent or a city guess.
+    // Descriptors (DIN/TH35, etc.) need no exceptions; subsequent place clauses
+    // remain intact. Other unknown phrases retain the existing fail-closed path.
+    private val APPLICATION_CLAUSE = Regex(
+        """\b(?:(?:w|we) (?:[a-z]+(?:ym|im|ej) ){0,2}(?:mieszkaniu|lazience|rozdzielnicy)|""" +
+            """na (?:[a-z]+(?:a|e|y|ej|ym) ){0,2}(?:szyne|szynie|sciane|scianie|sufit|suficie)|""" +
+            """do (?:rozdzielnicy|montazu))\b""",
+    )
+    private val EXPLICIT_PLACE_PREFIX = Regex(
+        """\b(?:obi|kwant|${LOCATION_NOUNS.joinToString("|")}|miasto|miescie|miejscowosc|miejscowosci|ulica|ulicy)(?: (?:w|we|na))?\s*$""",
+    )
+    private val GEOGRAPHICAL_LABEL = Regex("""\b(?:miasto|miescie|miejscowosc|miejscowosci|ulica|ulicy|ul|adres|adresie)\b""")
     // Deictic selection has no current-turn canonical authority; history/model
     // hints cannot supply it. This does not add follow-up history inheritance.
     private val UNRESOLVED_LOCATION = Regex("""\btam\b|\b(?:innym|innej)\s+(?:markecie|sklepie|oddziale|hurtowni|magazynie)\b""")
