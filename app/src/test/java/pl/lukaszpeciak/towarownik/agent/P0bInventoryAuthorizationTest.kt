@@ -341,4 +341,18 @@ class P0bInventoryAuthorizationTest {
         assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77556/departments?"))
     }
 
+    @Test fun newNaturalProductDescriptionCannotBorrowOlderVerifiedIdentity() = runBlocking {
+        val h = Harness(); h.anchor()
+        h.turn("Sprawdź stan lampy sufitowej w Tarnowie")
+        trace(h, "new unverified lamp description, stale model RCD identity")
+        assertTrue(h.gets.isEmpty()); assertEquals("untrusted_product", h.evidence().reason)
+    }
+    @Test fun currentDiscoveryOfNewDescriptionOverridesOlderReferentAndRecovers() = runBlocking {
+        val h = Harness(); h.anchor(); h.id = "77557"; h.article = "LAMP01/SYN"; h.modelId = "77556"
+        h.turn("Sprawdź stan lampy sufitowej w Tarnowie", "recover")
+        trace(h, "new lamp description locations discovery retry")
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
+        assertEquals(listOf("204"), h.evidence().checkedIds); assertEquals("77557", h.evidence().productId)
+    }
+
 }
