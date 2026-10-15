@@ -22,6 +22,7 @@ internal data class AdvisorLocationFollowUp(
     val historicalProducts: List<VerifiedProductSnapshot>,
     val bothProductIds: Set<String> = emptySet(),
     val hasPendingInventoryRequest: Boolean = false,
+    val hasBoundedProductReferent: Boolean = false,
     val isContextualQuantityRequest: Boolean = false,
     val failureReason: String? = null,
     val inheritsInventoryContext: Boolean = false,
@@ -41,6 +42,7 @@ internal fun resolveAdvisorLocationFollowUp(
     branches: List<ProviderBranch> = emptyList(),
     providerId: String? = null,
     currentBranchId: String? = null,
+    currentVerifiedIds: Set<String> = emptySet(),
 ): AdvisorLocationFollowUp {
     val recent = history.takeLast(12)
     val candidates = historicalProducts.distinctBy { it.providerId to it.effectiveProductId }
@@ -75,12 +77,13 @@ internal fun resolveAdvisorLocationFollowUp(
         return match.groupValues[1] in canonicalLocations
     }
     val selectedBranch = branches.singleOrNull { it.branchId.value == currentBranchId }
+    val locationRequestPrefix = Regex("""^(?:nie )?sprawdzisz(?: mi)? (?=(?:w|we) |u nas\b)""")
     fun locationClause(s: String): String {
         val withoutFiller = normalized(s).replace(Regex("""^(?:dobrze|ok|no|prosze) (?:a )?"""), "")
             .removePrefix("a ")
         // Only a complete location clause can borrow intent. A retry is not
         // a new unrestricted inventory anchor, and advice/price tails fail below.
-        return withoutFiller.replace(Regex("""^(?:nie )?sprawdzisz(?: mi)? (?=(?:w|we) )"""), "")
+        return withoutFiller.replace(locationRequestPrefix, "")
     }
     fun naturalShortLocation(s: String): BranchResolution? {
         val t = locationClause(s)
@@ -132,16 +135,28 @@ internal fun resolveAdvisorLocationFollowUp(
             """^ok podaj markety w ktorych (?:jest|sa) dostepn(?:y|e)(?: ten produkt)?$""",
         ).matches(t)
     }
+    fun verifiedForUser(item: AdvisorLocationHistoryMessage): List<String> {
+        val index = recent.indexOfLast { it === item }
+        if (index < 0) return emptyList()
+        return recent.drop(index + 1).takeWhile { it.role != "USER" }
+            .filter { it.role == "ASSISTANT" }.flatMap { it.products }
+            .filter { product -> candidates.any { it.providerId == product.providerId && it.effectiveProductId == product.effectiveProductId } }
+            .map { it.effectiveProductId }.distinct()
+    }
     val anchor = userHistory.indexOfLast {
         advisorHasCurrentProductEvidence(it.text) || advisorHasStockEvidence(it.text) ||
+            verifiedForUser(it).isNotEmpty() && !advisorNonInventoryRequest(it.text) ||
             Regex("""\bczy (?:jest|sa) (?:(?:w|we) (?:obi|kwant)|u nas)\b""").containsMatchIn(normalized(it.text))
     }
     val intervening = userHistory.drop(anchor + 1)
-    val explicitRetry = Regex("""^(?:nie )?sprawdzisz(?: mi)? (?:w|we) """).containsMatchIn(
+    val explicitRetry = locationRequestPrefix.containsMatchIn(
         normalized(input).replace(Regex("""^(?:dobrze|ok|no|prosze) (?:a )?"""), "").removePrefix("a "),
     ) || quantityFollowUpLocation(current) != null || advisorHasStockEvidence(input)
+    fun retainsProductReference(text: String): Boolean = advisorNeutralPriceReference(text) ||
+        advisorNonInventoryRequest(text) && advisorIsBoundedHistoricalScopeReference(text, branches)
+    val boundedReferent = anchor >= 0 && intervening.all { isClarification(it.text) || retainsProductReference(it.text) }
     val continuation = anchor >= 0 && (intervening.all { isClarification(it.text) } ||
-        explicitRetry && intervening.all { isClarification(it.text) || advisorNeutralPriceReference(it.text) })
+        explicitRetry && intervening.all { isClarification(it.text) || retainsProductReference(it.text) })
     val currentIsShortFollowUp = isClarification(input)
     val pending = continuation && currentIsShortFollowUp && candidates.isNotEmpty()
     // Only current/preceding USER place expressions bind "tam". Neither a
@@ -162,7 +177,19 @@ internal fun resolveAdvisorLocationFollowUp(
     } else null
     val currentLocation = naturalShortLocation(input)
     val anchorText = userHistory.getOrNull(anchor)?.text.orEmpty()
-    val unknownAnchorIdentity = advisorHasUnknownProductEvidence(anchorText, candidates)
+    val anchorCards = userHistory.getOrNull(anchor)?.let(::verifiedForUser).orEmpty().ifEmpty {
+        // A new, previously unverified descriptive USER request can be repaired by
+        // unique same-turn verification. It cannot replace an already selected card/ID.
+        currentVerifiedIds.takeIf { anchor >= 0 && !advisorHasCurrentProductEvidence(anchorText) }
+            ?.singleOrNull()?.let(::listOf).orEmpty()
+    }
+    val unverifiedNewDescription = anchor >= 0 && !advisorHasCurrentProductEvidence(anchorText) &&
+        anchorCards.isEmpty() && !advisorIsBoundedHistoricalScopeReference(anchorText, branches) &&
+        !Regex("""\b(?:obu|oba|dwoch)\b""").containsMatchIn(normalized(anchorText)) &&
+        !userHistory.drop(anchor.coerceAtLeast(0)).any {
+            Regex("""\b(?:obu|oba)\b""").containsMatchIn(normalized(it.text))
+        } && !Regex("""\b(?:obu|oba)\b""").containsMatchIn(current)
+    val unknownAnchorIdentity = advisorHasUnknownProductEvidence(anchorText, candidates) || unverifiedNewDescription
     val followUpFailure = if (shortLocationCandidate(input)) {
         when {
             !continuation -> "location_intent_required"
@@ -180,12 +207,13 @@ internal fun resolveAdvisorLocationFollowUp(
 
     // A current explicit inventory request can still use a previous unambiguous
     // user-selected product. No product is selected from a model hint.
-    val latestIdentityTurn = userHistory.asReversed().firstOrNull {
+    val identityHistory = if (anchorCards.isNotEmpty()) userHistory.drop(anchor.coerceAtLeast(0)) else userHistory
+    val latestIdentityTurn = identityHistory.asReversed().firstOrNull {
         advisorHasCurrentProductEvidence(it.text)
     }
     val recentSelection = latestIdentityTurn?.let { item ->
         advisorMatchingProducts(item.text, candidates).map { it.effectiveProductId }.distinct()
-    }.orEmpty()
+    } ?: anchorCards
     val unknownLatestIdentity = latestIdentityTurn?.let {
         advisorHasUnknownProductEvidence(it.text, candidates)
     } == true
@@ -201,7 +229,7 @@ internal fun resolveAdvisorLocationFollowUp(
         ?.singleOrNull()?.effectiveProductId
     val provenId = when (currentMatches.size) {
         1 -> currentMatches.single().effectiveProductId
-        0 -> if (recentSelection.size > 1 || unknownLatestIdentity) null else selectedId ?: newestCard?.takeIf { continuation }
+        0 -> if (recentSelection.size > 1 || unknownLatestIdentity) null else selectedId ?: newestCard?.takeIf { continuation && !unverifiedNewDescription }
         else -> null // Explicitly named multiple candidates remain ambiguous.
     }
     // A NEW explicit product identity (including an as-yet unverified numeric
@@ -241,6 +269,7 @@ internal fun resolveAdvisorLocationFollowUp(
         historicalProducts = selectedHistory,
         bothProductIds = both,
         hasPendingInventoryRequest = continuation,
+        hasBoundedProductReferent = boundedReferent && !unknownAnchorIdentity,
         isContextualQuantityRequest = quantityFollowUpLocation(current) != null,
         failureReason = followUpFailure ?: if (unknownLatestIdentity && !currentSelectsProduct) "untrusted_product" else if (pending && !currentSelectsProduct &&
             both.isEmpty() && selectedHistory.size > 1

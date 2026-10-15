@@ -331,7 +331,7 @@ class AdvisorLocationsToolTest {
             val result = tool(fake).executeWithUserContext(
                 AdvisorLocationArguments("obi-pl", "3496072", emptyList()),
                 "obi-pl", "075", message,
-                emptyList(), listOf(one),
+                if (message.contains("listwa")) listOf(one.copy(name = "Fixture listwa 100 cm")) else emptyList(), listOf(one),
             )
             assertEquals(message, "verified", result.status)
             assertEquals(message, "all_other_locations", result.coverage)

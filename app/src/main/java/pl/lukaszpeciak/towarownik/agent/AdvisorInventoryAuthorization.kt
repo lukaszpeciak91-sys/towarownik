@@ -29,7 +29,7 @@ internal sealed interface AdvisorInventoryAuthorization {
     data class ClarificationRequired(val reason: String) : AdvisorInventoryAuthorization
     data class Denied(val reason: String) : AdvisorInventoryAuthorization
 
-    enum class ProductProvenance { CURRENT_USER, BOUNDED_USER_HISTORY, CURRENT_TURN_VERIFICATION }
+    enum class ProductProvenance { CURRENT_USER, CURRENT_USER_REFERENCE, BOUNDED_USER_HISTORY, CURRENT_TURN_VERIFICATION }
     enum class LocationProvenance { CURRENT_USER, BOUNDED_USER_HISTORY, WORKING_PROFILE }
 }
 
@@ -99,6 +99,7 @@ internal object AdvisorInventoryAuthorizer {
             .distinctBy { it.effectiveProductId }.take(20)
         val followUp = resolveAdvisorLocationFollowUp(
             userText, history, known, directory, providerId, currentBranchId,
+            currentVerified.filter { it.providerId == providerId }.map { it.effectiveProductId }.toSet(),
         )
         followUp.failureReason?.let { return clarify(it) }
         if (known.isEmpty()) return clarify("untrusted_product")
@@ -106,7 +107,8 @@ internal object AdvisorInventoryAuthorizer {
         if (followUp.isContextualQuantityRequest && !followUp.hasPendingInventoryRequest) return clarify("untrusted_product")
         val candidates = if (followUp.inheritsInventoryContext) {
             known.filter { fresh -> followUp.historicalProducts.any { it.effectiveProductId == fresh.effectiveProductId } }
-        } else followUp.historicalProducts
+        } else (currentVerified.filter { it.providerId == providerId } + followUp.historicalProducts)
+            .distinctBy { it.effectiveProductId }
         val selected = resolveTrustedProduct(userText, arguments.productId, candidates,
             currentVerified.map { it.effectiveProductId }.filter { id -> candidates.any { it.effectiveProductId == id } }.toSet())
             ?: return if (candidates.size > 1) clarify("ambiguous_product") else denied("untrusted_product")
@@ -154,7 +156,7 @@ internal object AdvisorInventoryAuthorizer {
             if (chainPlace == BranchResolution.UnknownMention) return clarify("unknown_location")
         }
         val explicit = advisorHasCurrentProductEvidence(userText)
-        val userSelectedHistory = followUp.hasPendingInventoryRequest
+        val userSelectedHistory = followUp.hasBoundedProductReferent
         val userReference = Regex("""\b(?:ten|tego|tym) (?:sam[a-z]* )?produkt[a-z]*\b""").containsMatchIn(norm(userText))
         // No stock verb allowlist: identity and bounded USER-owned location/referent evidence
         // authorize the model's chosen operation. Ordinary acknowledgement grants nothing.
@@ -164,15 +166,22 @@ internal object AdvisorInventoryAuthorizer {
             !(currentVerified.isNotEmpty() && scopeEvidence) &&
             !(userReference && scopeEvidence) && !(userSelectedHistory && scopeEvidence)
         ) return clarify("location_intent_required")
-        if (!explicit && currentVerified.isEmpty() && !userSelectedHistory && !userReference && history.isNotEmpty()) return clarify("untrusted_product")
+        val currentProduct = currentVerified.firstOrNull {
+            it.providerId == providerId && it.effectiveProductId == selected.effectiveProductId
+        }
+        if (!explicit && currentProduct == null && !followUp.inheritsInventoryContext &&
+            (!(userSelectedHistory || userReference && history.none { it.role == "USER" }) ||
+                !advisorIsBoundedHistoricalScopeReference(userText, directory))
+        ) return clarify("untrusted_product")
         return AdvisorInventoryAuthorization.Inventory(
             ProviderId(providerId), selected,
-            currentVerified.firstOrNull { it.providerId == providerId && it.effectiveProductId == selected.effectiveProductId },
+            currentProduct,
             scope.branches, scope.fullNetwork, directory,
             when {
                 explicit -> AdvisorInventoryAuthorization.ProductProvenance.CURRENT_USER
                 currentVerified.any { it.effectiveProductId == selected.effectiveProductId } ->
                     AdvisorInventoryAuthorization.ProductProvenance.CURRENT_TURN_VERIFICATION
+                userReference -> AdvisorInventoryAuthorization.ProductProvenance.CURRENT_USER_REFERENCE
                 else -> AdvisorInventoryAuthorization.ProductProvenance.BOUNDED_USER_HISTORY
             },
             when {
@@ -435,4 +444,53 @@ internal object AdvisorInventoryAuthorizer {
             .replace(Regex("""[^a-z0-9]+"""), " ")
             .trim()
 
+}
+
+/** Historical identity needs a complete reference, not merely a stock noun plus an old card.
+ * Reuse existing canonical place matching; unknown product-description text cannot be erased.
+ * These bounded scope-only forms do not gate current USER IDs or current-turn discovery.
+ */
+internal fun advisorIsBoundedHistoricalScopeReference(text: String, directory: List<ProviderBranch>): Boolean {
+    val normalized = advisorAuthorityText(text.replace(",", " i "))
+    val reference = Regex("""\b(?:ten(?: sam)? produkt|tego(?: samego)? produktu)\b""").find(normalized)
+    val deicticBody = reference?.let {
+        val before = normalized.take(it.range.first).trim()
+        // A genitive attachment such as "lampy do tego produktu" identifies another object.
+        val attached = Regex("""\b(?:do|dla|od|z|bez|i|oraz)$""").containsMatchIn(before)
+        if (attached) null else normalized.drop(it.range.last + 1).trim()
+    }
+    if (Regex("""^gdzie jeszcze (?:jest|sa)(?: ten produkt)?$""").matches(normalized)) return true
+    val prefix = Regex(
+        """^(?:(?:sprawdz(?:cie)?|pokaz|podaj|zweryfikuj|weryfikuj)(?: (?:stan|stany|dostepnosc))?|""" +
+            """(?:czy|gdzie) (?:jest|sa)) (?:produktu )?""",
+    ).find(normalized)
+    if (deicticBody == null && prefix == null) return false
+    var body = (deicticBody ?: normalized.drop(requireNotNull(prefix).value.length))
+        .replaceFirst(Regex("""^(?:ten produkt|tego produktu)\s*"""), "")
+        .replace(Regex("""\s+(?:ten produkt|tego produktu)$"""), "")
+        .removeSuffix(" i prosze").removeSuffix(" prosze").trim()
+    if (reference != null && deicticBody != null && body.isEmpty()) return true
+    if (body == "u nas") return true // WorkingProfile was independently validated above.
+    body = body.replaceFirst(Regex("""^[0-9]+ (?:w|kw|m|mm|cm|kg|l|szt|opak) (?=(?:w|we) )"""), "")
+    if (Regex("""^(?:wszystkie )?(?:inne|pozostale|wszystkie) (?:markety|oddzialy)(?: (?:i )?(?:rowniez|takze|razem z) (?:(?:market(?: obi)?|obi) )?[0-9]{3})?$""").matches(body)) return true
+    val broadPrefix = Regex("""^(?:w|we) (?:(?:wszystkich|innych|pozostalych) )?(?:marketach|oddzialach|hurtowniach)\b\s*""").find(body)
+    if (broadPrefix != null) {
+        body = body.drop(broadPrefix.value.length)
+        if (body.isEmpty()) return true
+    }
+    body = body.replaceFirst(Regex("""^(?:markety|sklepy) (?=[0-9])"""), "market ")
+        .replace(Regex("""\b(?:market|markecie|sklep|sklepie) obi """), "market ")
+    val clauses = body.split(Regex("""\s*(?:,|\bi\b|\boraz\b)\s*"""))
+    var placeFound = false
+    for (clause in clauses) {
+        if (clause.isBlank()) return false
+        // Exact matching to a singleton here proves the COMPLETE clause, not a new
+        // scope choice. The full directory/scope/ambiguity decision already ran above.
+        if (directory.any { BranchResolver.resolveHint(clause, listOf(it)) != null }) {
+            placeFound = true
+        } else if (!Regex("""^(?:potrzebuje )?[0-9]+ (?:w|kw|m|mm|cm|kg|l|szt|opak)$""").matches(clause)) {
+            return false
+        }
+    }
+    return placeFound
 }

@@ -114,6 +114,7 @@ class AdvisorLocationHintsWireCompatibilityTest {
                         userText = "Sprawdź we wszystkich marketach w Krakowie",
                         currentVerified = emptyList(),
                         historicalVerified = listOf(trusted),
+                        history = listOf(AdvisorLocationHistoryMessage("USER", "Sprawdź stan produktu 3496072")),
                     )
                     assertEquals(hints, "verified", result.status)
                     assertEquals(hints, "requested_subset", result.coverage)

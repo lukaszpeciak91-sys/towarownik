@@ -73,9 +73,10 @@ class AdvisorLocationsNationwideTest {
             message: String,
             hints: List<String> = emptyList(),
             current: String = "075",
+            currentVerified: List<VerifiedProductSnapshot> = emptyList(),
         ): AdvisorLocationEvidence = tool.execute(
             AdvisorLocationArguments("obi-pl", "3496072", hints),
-            "obi-pl", current, message, emptyList(), listOf(snapshot),
+            "obi-pl", current, message, currentVerified, listOf(snapshot),
             listOf(AdvisorLocationHistoryMessage("USER", "Sprawdź stan produktu 3496072")),
         )
     }
@@ -231,7 +232,7 @@ class AdvisorLocationsNationwideTest {
 
     @Test fun `user product dimension 100 cm never becomes an OBI store id`() = runBlocking {
         val fake = FakeInventory()
-        val result = fake.run("Gdzie jeszcze jest listwa 100 cm?")
+        val result = fake.run("Gdzie jeszcze jest listwa 100 cm?", currentVerified = listOf(snapshot.copy(name = "Fixture listwa 100 cm")))
         assertEquals("verified", result.status)
         assertEquals("all_other_locations", result.coverage)
         assertEquals(61, result.checkedIds.size)
