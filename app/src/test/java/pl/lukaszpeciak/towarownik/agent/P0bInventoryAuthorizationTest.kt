@@ -207,7 +207,7 @@ class P0bInventoryAuthorizationTest {
         assertEquals(listOf("204"), h.evidence().checkedIds)
         assertEquals("77557", h.evidence().productId)
         assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
-        assertEquals(3, h.ids.size)
+        assertEquals(4, h.ids.size) // anchor + three current-turn continuations
     }
     @Test fun priceOnlyAndAdviceNeverAuthorizeStock() = runBlocking {
         for (input in listOf("pokaż ceny", "pokaż ceny A9Z01440/SCH w Tarnowie", "jak zamontować A9Z01440/SCH w Tarnowie", "a w Tarnowie pokaż ceny", "dobrze", "nie sprawdzisz mi tego?")) {
@@ -256,4 +256,89 @@ class P0bInventoryAuthorizationTest {
         assertEquals(listOf("003", "019", "059", "072"), h.evidence().checkedIds.sorted())
         assertEquals(listOf("003", "019", "059", "072"), h.gets.flatMap { it.toHttpUrl().queryParameter("storeIds")!!.split(",") }.sorted())
     }
+    private fun authority(h: Harness, text: String): AdvisorInventoryAuthorization = AdvisorInventoryAuthorizer.resolve(
+        AdvisorLocationArguments(h.modelProvider, h.modelId, h.modelBranches), h.provider, h.profile, text,
+        emptyList(), h.history.filter { it.role == "ASSISTANT" }.flatMap { it.products }, h.directory, h.history,
+    )
+    @Test fun typedAuthorityCarriesCurrentUserEvidenceAndCanonicalScope() = runBlocking {
+        val h = Harness(); h.anchor()
+        val text = "Czy dostaniemy A9Z01440/SCH w Nowym Sączu?"
+        val a = authority(h, text) as AdvisorInventoryAuthorization.Inventory
+        assertEquals(ProviderId("kwant-pl"), a.provider)
+        assertEquals("77556", a.product.effectiveProductId)
+        assertEquals(setOf("A9Z01440/SCH"), a.currentUserProductEvidence)
+        assertEquals(AdvisorInventoryAuthorization.ProductProvenance.CURRENT_USER, a.productProvenance)
+        assertEquals(AdvisorInventoryAuthorization.LocationProvenance.CURRENT_USER, a.locationProvenance)
+        assertEquals(listOf(BranchId("205")), a.branches)
+        assertEquals(text, a.originalUserText); assertFalse(a.fullNetwork)
+        assertNull(a.currentProduct); assertTrue(h.gets.isEmpty()) // resolving authority is pure
+    }
+    @Test fun typedHistoricalAuthorityAfterPriceExecutesOnlyFreshProductBoundRead() = runBlocking {
+        val h = Harness(); h.anchor(); h.turn("pokaż ceny")
+        val text = "nie sprawdzisz mi w Mielcu?"
+        val a = authority(h, text) as AdvisorInventoryAuthorization.Inventory
+        assertEquals(AdvisorInventoryAuthorization.ProductProvenance.BOUNDED_USER_HISTORY, a.productProvenance)
+        assertEquals(text, a.originalUserText); assertEquals(listOf(BranchId("206")), a.branches)
+        val fresh = h.locations.execute(a)
+        assertEquals(listOf("206"), fresh.checkedIds); assertEquals(11, fresh.locations.single().stock)
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77556/departments?"))
+        assertEquals(2000L, fresh.verifiedAtMillis); assertNull(fresh.centralStock)
+    }
+    @Test fun referenceOutsideFourUserTurnWindowRequiresClarification() = runBlocking {
+        val h = Harness(); h.anchor(); repeat(5) { h.turn("pokaż ceny") }
+        h.turn("nie sprawdzisz mi w Mielcu?")
+        assertTrue(h.gets.isEmpty()); assertEquals("location_intent_required", h.evidence().reason)
+    }
+    @Test fun failedExplicitNewProductCancelsOldReferentUntilVerified() = runBlocking {
+        val h = Harness(); h.anchor(); h.id = "77557"; h.article = "A9Z01441/SCH"
+        h.verificationFailure = true; h.turn(h.article)
+        h.turn("nie sprawdzisz mi w Tarnowie?"); assertTrue(h.gets.isEmpty())
+        assertEquals("untrusted_product", h.evidence().reason)
+        h.verificationFailure = false; h.turn(h.article); h.modelId = h.id; h.turn("a w Tarnowie?")
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
+        assertEquals(listOf("204"), h.evidence().checkedIds)
+    }
+    @Test fun broadWordingCannotEraseUnknownStreetOrConflictingMarket() = runBlocking {
+        for (place in listOf("w innych marketach na Nieznanej", "w Krakowie na Nieznanej we wszystkich marketach", "w Krakowie market OBI 075 we wszystkich marketach", "we wszystkich marketach w Atlantydzie")) {
+            val h = Harness("obi-pl"); h.turn("sprawdź stan produktu 6346951", "discovery")
+            h.turn("Czy dostaniemy produkt 6346951 $place?"); trace(h, place)
+            assertTrue(place, h.gets.isEmpty())
+        }
+    }
+    @Test fun modelNetworkHintsCannotExpandSavedBranchRead() = runBlocking {
+        val h = Harness(); h.anchor(); h.modelBranches = listOf("203", "204", "205", "206")
+        h.turn("Macie może A9Z01440/SCH u nas?")
+        assertEquals(listOf("205"), h.evidence().checkedIds)
+        assertEquals(listOf("205"), h.evidence().returnedIds)
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77556/departments?"))
+    }
+
+    @Test fun sameProductAdviceWithExplicitUserIdentityDoesNotEraseReferent() = runBlocking {
+        val h = Harness(); h.anchor()
+        h.turn("Jak podłączyć A9Z01440/SCH?"); assertTrue(h.gets.isEmpty())
+        h.turn("nie sprawdzisz mi w Mielcu?")
+        assertEquals(1, h.gets.size); assertEquals(listOf("206"), h.evidence().checkedIds)
+        assertTrue(h.gets.single().contains("/77556/departments?"))
+    }
+    @Test fun currentProductReferenceTailCannotHideUnknownPlaceSelection() = runBlocking {
+        for (place in listOf("w mieście Ten", "w mieście Tego", "w Atlantydzie ten produkt")) {
+            val h = Harness(); h.anchor(); h.turn("Czy dostaniemy A9Z01440/SCH $place?")
+            assertTrue(place, h.gets.isEmpty())
+        }
+    }
+    @Test fun fabricatedModelIdentityIsTypedDenial() = runBlocking {
+        val h = Harness(); h.anchor(); h.modelId = "99999"
+        val a = authority(h, "Czy dostaniemy A9Z01440/SCH w Nowym Sączu?")
+        assertTrue(a is AdvisorInventoryAuthorization.Denied)
+        assertEquals("untrusted_product", (a as AdvisorInventoryAuthorization.Denied).reason)
+        assertTrue(h.gets.isEmpty())
+    }
+
+    @Test fun explicitKwantNetworkScopePreservesAllPublicCoverageAndOneExactGet() = runBlocking {
+        val h = Harness(); h.anchor(); h.turn("Sprawdź stan A9Z01440/SCH we wszystkich oddziałach")
+        assertEquals(listOf("203", "204", "205", "206"), h.evidence().checkedIds.sorted())
+        assertEquals("all_public_locations", h.evidence().coverage)
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77556/departments?"))
+    }
+
 }

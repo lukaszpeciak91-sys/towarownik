@@ -12,6 +12,14 @@ Admission validates evidence for a model-selected operation rather than requirin
 
 The design preserves three-call accounting, recovery order, original Responses IDs/wire shape, current-turn snapshot whitelist, adapters, zero/null/unknown/partial semantics and the G13 multi-product refusal. It requires no Worker/schema/prompt/UI/persistence changes. Unsupported referent wording remains a clarification limitation, not permission to reuse arbitrary historical products. P1 multi-product and final narration work remains separate. Implementation and GREEN evidence follow this design checkpoint; independent audit remains required before merge.
 
+### P0-B implementation verification
+
+Implement the design with one pure `AdvisorInventoryAuthorizer` and a typed executor. Move existing complete OBI scope parsing rather than adding another product/location resolver. Share exact USER identity evidence and prevent a newer unknown selection from falling through to an older match. Keep bounded referent grammar; the neutral price exception is admitted only for an explicit retry/quantity operation, so original price→plain-location negatives stay valid. Explicit identifier evidence in an advice turn can establish the same-product referent without granting inventory during that advice turn.
+
+A newly admitted colloquial request exposed a latent city/market conflict that the old verb denial had masked. Retain full canonical validation alongside complete list/broad parsing, including unknown streets; do not interpret a contradictory singular city/market as an authorized union. The only BranchResolver addition accepts a complete product-reference tail after an already verified place. It does not add `ten`/`tego` to the initial-place context allowlist.
+
+Preserve fixture security outcomes and actual read scope. Test-only invocation-count changes follow moving denial before execution; direct fixtures now supply explicit USER identity provenance, with multi-card ambiguity retained. Original INC-007 E2E remains byte-identical. Architecture/progress and the focused PR record executed native counts, blocked socket cases, compatibility verification and final-head full CI. No live behavior or aggregate CI test count is inferred from synthetic facts.
+
 ## 2026-10-15 — P0-A: application context before discovery place resolution
 
 Base is merged INC-007 #126, `9aa50c856e541768778a9380d59fa3c9bc2daf3f`. The resolver conflated two questions: whether a prepositional clause selected a geographical branch, and whether that selection matched the directory. An unmatched mounting/application object therefore produced the same denial as an unknown city. A permanent test-only RED captured **110 cases: 70 PASS / 40 expected FAIL / 0 SKIP**, through actual `BranchResolver` and `AdvisorController` discovery plus real discovery-tool implementations with synthetic provider facts. `na szynę DIN` and `w mieszkaniu` failed; `w domu` remained a passing control.

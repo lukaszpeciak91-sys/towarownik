@@ -216,9 +216,10 @@ class Inc007MultiTurnRecoveryTest {
         h.turn("dobrze a w oddziale Tarnów?"); assertEquals(listOf("204"), h.evidence().checkedIds)
         assertEquals(3, h.gets.size); assertTrue(h.gets.all { it.contains("/77556/departments?") })
     }
-    @Test fun unrelatedPriceTurnStopsNaturalRetry() = runBlocking {
+    @Test fun neutralPriceTurnRetainsUniqueReferentForNaturalRetry() = runBlocking {
         val h = Harness(); h.anchor(); h.turn("pokaż ceny"); h.turn("nie sprawdzisz mi w Mielcu?")
-        assertTrue(h.gets.isEmpty()); assertEquals("location_intent_required", h.evidence().reason)
+        assertEquals(1, h.gets.size); assertEquals(listOf("206"), h.evidence().checkedIds)
+        assertTrue(h.gets.single().contains("/77556/departments?")); assertEquals(11, h.evidence().locations.single().stock)
     }
     @Test fun adviceAndPriceTailsCannotBecomeLocationClarifications() = runBlocking {
         for (input in listOf("dobrze a w oddziale Tarnów pokaż ceny", "nie sprawdzisz mi w Mielcu jak podłączyć pompę",

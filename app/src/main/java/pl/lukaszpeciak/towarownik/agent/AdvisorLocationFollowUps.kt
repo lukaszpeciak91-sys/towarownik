@@ -8,7 +8,7 @@ import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
 
 /**
  * Bounded, same-conversation evidence supplied by Android; never model text.
- * Only the user's own preceding inventory request may authorize a clarification.
+ * Only bounded USER-owned evidence can authorize a product/location reference.
  */
 internal data class AdvisorLocationHistoryMessage(
     val role: String,
@@ -17,7 +17,8 @@ internal data class AdvisorLocationHistoryMessage(
 )
 
 internal data class AdvisorLocationFollowUp(
-    val authorizedText: String,
+    val userText: String,
+    val resolvedBranch: ProviderBranch? = null,
     val historicalProducts: List<VerifiedProductSnapshot>,
     val bothProductIds: Set<String> = emptySet(),
     val hasPendingInventoryRequest: Boolean = false,
@@ -29,7 +30,8 @@ internal data class AdvisorLocationFollowUp(
 /**
  * Strictly previous messages only (not the current USER message).
  * At most 12 messages and four preceding USER turns are examined. Any
- * unrelated USER turn breaks the authorization chain; ASSISTANT suggestions
+ * unrelated USER turn breaks the referent chain; a neutral price reference
+ * retains the same product without authorizing stock. ASSISTANT suggestions
  * cannot establish permission. The model's productId is never consulted here.
  */
 internal fun resolveAdvisorLocationFollowUp(
@@ -130,28 +132,16 @@ internal fun resolveAdvisorLocationFollowUp(
             """^ok podaj markety w ktorych (?:jest|sa) dostepn(?:y|e)(?: ten produkt)?$""",
         ).matches(t)
     }
-    // Explicit inventory must mention a requested stock/availability check or
-    // a requested store; merely mentioning a city in technical advice is not one.
-    fun isInventoryRequest(s: String): Boolean {
-        val t = normalized(s)
-        val inventory = Regex(
-            """\b(stan|stany|dostepnosc|dostepny|dostepna|dostepne|gdzie jeszcze)\b""",
-        ).containsMatchIn(t)
-        val explicitStoreCheck = Regex(
-            """\bsprawdz\b.*\b(?:w|we|market|markety|sklep|obi|oddzial)\b""",
-        ).containsMatchIn(t)
-        val availabilityQuestion = Regex(
-            """\bczy\s+(?:jest|sa)\s+(?:(?:w|we)\s+(?:obi|kwant)|u\s+nas)\b""",
-        ).containsMatchIn(t)
-        return (inventory || explicitStoreCheck || availabilityQuestion) &&
-            !Regex("""\b(zamontowac|montaz|podlaczyc|odpowiednik|zamiennik|dobierz)\b""")
-                .containsMatchIn(t)
-    }
     val anchor = userHistory.indexOfLast {
-        isInventoryRequest(it.text) || advisorBareProductQuery(it.text, providerId) != null
+        advisorHasCurrentProductEvidence(it.text) || advisorHasStockEvidence(it.text) ||
+            Regex("""\bczy (?:jest|sa) (?:(?:w|we) (?:obi|kwant)|u nas)\b""").containsMatchIn(normalized(it.text))
     }
-    val continuation = anchor >= 0 &&
-        userHistory.drop(anchor + 1).all { isClarification(it.text) }
+    val intervening = userHistory.drop(anchor + 1)
+    val explicitRetry = Regex("""^(?:nie )?sprawdzisz(?: mi)? (?:w|we) """).containsMatchIn(
+        normalized(input).replace(Regex("""^(?:dobrze|ok|no|prosze) (?:a )?"""), "").removePrefix("a "),
+    ) || quantityFollowUpLocation(current) != null || advisorHasStockEvidence(input)
+    val continuation = anchor >= 0 && (intervening.all { isClarification(it.text) } ||
+        explicitRetry && intervening.all { isClarification(it.text) || advisorNeutralPriceReference(it.text) })
     val currentIsShortFollowUp = isClarification(input)
     val pending = continuation && currentIsShortFollowUp && candidates.isNotEmpty()
     // Only current/preceding USER place expressions bind "tam". Neither a
@@ -172,15 +162,7 @@ internal fun resolveAdvisorLocationFollowUp(
     } else null
     val currentLocation = naturalShortLocation(input)
     val anchorText = userHistory.getOrNull(anchor)?.text.orEmpty()
-    val anchorNumbers = AdvisorProductIdentityReferences.fromUserText(anchorText).referencedNumericIds
-    val anchorArticles = advisorExplicitArticleIds(anchorText)
-    val anchorShortId = advisorExplicitShortProductId(anchorText)
-    val unknownAnchorIdentity = anchorNumbers.any { number -> candidates.none {
-        it.effectiveProductId == number || it.articleNumber?.equals(number, ignoreCase = true) == true
-    } } || anchorShortId?.let { id -> candidates.none { it.effectiveProductId == id } } == true ||
-        anchorArticles.any { id -> candidates.none {
-            it.effectiveProductId.equals(id, ignoreCase = true) || advisorMatchesArticle(it.articleNumber, id)
-        } }
+    val unknownAnchorIdentity = advisorHasUnknownProductEvidence(anchorText, candidates)
     val followUpFailure = if (shortLocationCandidate(input)) {
         when {
             !continuation -> "location_intent_required"
@@ -198,42 +180,35 @@ internal fun resolveAdvisorLocationFollowUp(
 
     // A current explicit inventory request can still use a previous unambiguous
     // user-selected product. No product is selected from a model hint.
-    val recentSelection = userHistory.asReversed().map { item ->
-        val references = AdvisorProductIdentityReferences.fromUserText(item.text)
-        candidates.filter { candidate ->
-            references.mentions(candidate.effectiveProductId) ||
-                candidate.effectiveProductId == advisorExplicitShortProductId(item.text) ||
-                advisorExplicitArticleIds(item.text).any { advisorMatchesArticle(candidate.articleNumber, it) } ||
-                (candidate.articleNumber?.let(references::mentions) == true)
-        }.map { it.effectiveProductId }.distinct()
-    }.firstOrNull { it.isNotEmpty() }.orEmpty()
+    val latestIdentityTurn = userHistory.asReversed().firstOrNull {
+        advisorHasCurrentProductEvidence(it.text)
+    }
+    val recentSelection = latestIdentityTurn?.let { item ->
+        advisorMatchingProducts(item.text, candidates).map { it.effectiveProductId }.distinct()
+    }.orEmpty()
+    val unknownLatestIdentity = latestIdentityTurn?.let {
+        advisorHasUnknownProductEvidence(it.text, candidates)
+    } == true
     val selectedId = recentSelection.singleOrNull()
     // Both the present request and older USER selections use the exact same
     // numeric-ID safety boundary as the inventory tool. "1000 W" may describe
     // a measurement, never an explicit request for verified product 1000.
-    val currentReferences = AdvisorProductIdentityReferences.fromUserText(input)
-    val currentMatches = candidates.filter { candidate ->
-        currentReferences.mentions(candidate.effectiveProductId) ||
-            candidate.effectiveProductId == advisorExplicitShortProductId(input) ||
-            advisorExplicitArticleIds(input).any { advisorMatchesArticle(candidate.articleNumber, it) } ||
-            (candidate.articleNumber?.let(currentReferences::mentions) == true)
-    }.distinctBy { it.providerId to it.effectiveProductId }
+    val currentMatches = advisorMatchingProducts(input, candidates)
+        .distinctBy { it.providerId to it.effectiveProductId }
     val newestCard = recent.asReversed()
         .firstOrNull { it.role == "ASSISTANT" && it.products.isNotEmpty() }
         ?.products?.distinctBy { it.effectiveProductId }
         ?.singleOrNull()?.effectiveProductId
     val provenId = when (currentMatches.size) {
         1 -> currentMatches.single().effectiveProductId
-        0 -> if (recentSelection.size > 1) null else selectedId ?: newestCard
+        0 -> if (recentSelection.size > 1 || unknownLatestIdentity) null else selectedId ?: newestCard?.takeIf { continuation }
         else -> null // Explicitly named multiple candidates remain ambiguous.
     }
     // A NEW explicit product identity (including an as-yet unverified numeric
     // ID) supersedes any older "obu". The model never decides this: the
     // shared USER-text identity policy is the only source. Current "obu" and
     // location-only clarifications can still carry a bounded prior "obu".
-    val currentSelectsProduct = currentMatches.isNotEmpty() ||
-        currentReferences.referencedNumericIds.isNotEmpty() || advisorExplicitShortProductId(input) != null ||
-        advisorExplicitArticleIds(input).isNotEmpty()
+    val currentSelectsProduct = advisorHasCurrentProductEvidence(input)
     val currentRequestsBoth = Regex("""\b(?:obu|oba)\b""").containsMatchIn(current)
     val inheritedBoth = !currentSelectsProduct &&
         userHistory.drop(anchor.coerceAtLeast(0)).any {
@@ -248,49 +223,29 @@ internal fun resolveAdvisorLocationFollowUp(
         candidates.filter { it.effectiveProductId == provenId }
             .takeIf { it.isNotEmpty() } ?: candidates
     } else candidates
+    val quantityBranch = quantityFollowUpLocation(current)?.let { city ->
+        branches.filter { branch ->
+            val name = normalized(branch.name)
+            city in if (providerId == "kwant-pl") kwantCanonicalBranchAliases(name)
+                else listOfNotNull(name, advisorCityLocative(name))
+        }.singleOrNull()
+    }
     val resolvedShortBranch = when (currentLocation) {
         is BranchResolution.CurrentBranch -> currentLocation.branch
         is BranchResolution.Resolved -> currentLocation.branch
-        else -> previousUserLocation
+        else -> quantityBranch ?: previousUserLocation
     }
-    val effective = if (pending && !isInventoryRequest(input) && followUpFailure == null) {
-        if (resolvedShortBranch != null &&
-            (current.removePrefix("a ") in setOf("u nas", "tam") ||
-                locationClause(input) != current.removePrefix("a "))
-        ) {
-            // Canonical scope is derived independently from USER + directory;
-            // the user never has to type an internal numeric command.
-            if (providerId != "obi-pl") "Sprawdź stan produktu w oddziale ${resolvedShortBranch.branchId.value}"
-            else "Sprawdź stan produktu w market OBI ${resolvedShortBranch.branchId.value}"
-        } else {
-            val quantityDestination = quantityFollowUpLocation(current)
-            if (quantityDestination != null) {
-                // Rewrite only the bounded location expression from USER text.
-                // Product identity still comes exclusively from verified history.
-                "Sprawdź stan produktu w $quantityDestination"
-            } else if (current == "obu" || current == "oba") {
-                "Sprawdź stan obu produktów"
-            } else if (current.startsWith("w ") || current.startsWith("we ") ||
-                current.startsWith("a w ") || current.startsWith("a we ") ||
-                current.startsWith("no jak market ") ||
-                current.startsWith("ok podaj markety ")
-            ) {
-                "Sprawdź stan produktu: $input"
-            } else {
-                "Sprawdź stan produktu w $input"
-            }
-        }
-    } else input
     return AdvisorLocationFollowUp(
-        authorizedText = effective,
+        userText = input,
+        resolvedBranch = resolvedShortBranch,
         historicalProducts = selectedHistory,
         bothProductIds = both,
         hasPendingInventoryRequest = continuation,
         isContextualQuantityRequest = quantityFollowUpLocation(current) != null,
-        failureReason = followUpFailure ?: if (pending && !isInventoryRequest(input) &&
+        failureReason = followUpFailure ?: if (unknownLatestIdentity && !currentSelectsProduct) "untrusted_product" else if (pending && !currentSelectsProduct &&
             both.isEmpty() && selectedHistory.size > 1
         ) "ambiguous_product" else null,
-        inheritsInventoryContext = pending && !isInventoryRequest(input),
+        inheritsInventoryContext = pending && !currentSelectsProduct,
     )
 }
 

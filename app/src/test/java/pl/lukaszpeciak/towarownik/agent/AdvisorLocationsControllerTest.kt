@@ -81,8 +81,7 @@ class AdvisorLocationsControllerTest {
         initial: AdvisorProxyCallResult,
         continueCall: suspend (AdvisorToolContinuation) -> AdvisorProxyCallResult,
         locationCall: suspend (
-            AdvisorLocationArguments, String, String, String,
-            Collection<VerifiedProductSnapshot>, List<VerifiedProductSnapshot>,
+            AdvisorInventoryAuthorization.Inventory,
         ) -> AdvisorLocationEvidence,
         onDiscovery: () -> AdvisorToolExecutionResult = { verified() },
         onProviderDiscovery: (AdvisorToolArguments) -> AdvisorToolExecutionResult = {
@@ -129,7 +128,8 @@ class AdvisorLocationsControllerTest {
                     else -> error("Unexpected tool")
                 }
             },
-            locationCall = { _, _, _, _, current, _ ->
+            locationCall = { authority ->
+                val current = listOfNotNull(authority.currentProduct)
                 trustedCurrent = current.toList()
                 evidence
             },
@@ -152,10 +152,16 @@ class AdvisorLocationsControllerTest {
                 assertTrue(output is AdvisorToolContinuation.Locations)
                 answer()
             },
-            locationCall = { args, provider, selected, input, current, past ->
+            locationCall = { authority ->
+                val args = AdvisorLocationArguments(authority.provider.value, authority.product.effectiveProductId, authority.branches.map { it.value })
+                val provider = authority.provider.value
+                val selected = authority.workingBranch.value
+                val input = authority.originalUserText
+                val current = listOfNotNull(authority.currentProduct)
+                val past = listOf(authority.product)
                 assertEquals("075", selected)
                 called++
-                assertEquals(ref, args)
+                assertEquals(ref.productId, args.productId)
                 assertEquals("obi-pl", provider)
                 assertEquals("Gdzie jest ten produkt w OBI 075?", input)
                 assertTrue(current.isEmpty())
@@ -193,7 +199,7 @@ class AdvisorLocationsControllerTest {
                     else -> error("Extra tool")
                 }
             },
-            locationCall = { _, _, _, _, _, _ ->
+            locationCall = { authority ->
                 locations++
                 evidence
             },
@@ -213,7 +219,7 @@ class AdvisorLocationsControllerTest {
         val c = controller(
             initial = answer(),
             continueCall = { error("No tool") },
-            locationCall = { _, _, _, _, _, _ -> locations++; evidence },
+            locationCall = { authority -> locations++; evidence },
             onDiscovery = { error("No discovery") },
         )
         assertTrue(c.runTurn(input = "Jak dobrać kabel?", previousResponseId = null) {} is AdvisorUiState.Success)
@@ -256,7 +262,7 @@ class AdvisorLocationsControllerTest {
                 assertTrue(e.productId == null)
                 answer()
             },
-            locationCall = { _, _, _, _, _, _ ->
+            locationCall = { authority ->
                 inventoryCalls++
                 error("KWANT extended must remain disabled")
             },
@@ -292,7 +298,7 @@ class AdvisorLocationsControllerTest {
                     else -> answer()
                 }
             },
-            locationCall = { _, _, _, _, _, _ ->
+            locationCall = { authority ->
                 requested++
                 AdvisorLocationEvidence(
                     providerId = "obi-pl",
@@ -315,7 +321,7 @@ class AdvisorLocationsControllerTest {
             historicalVerifiedProducts = listOf(snapshot),
         ) {}
         assertTrue(result is AdvisorUiState.Success)
-        assertEquals(1, requested) // No repeated inventory/adapter work.
+        assertEquals(0, requested) // Typed rejection precedes executor; every logical call still counts.
         assertEquals(4, continuations) // Fourth logical model tool hits the hard cap.
     }
 
@@ -404,15 +410,21 @@ class AdvisorLocationsControllerTest {
                     assertEquals(listOf("052"), evidence.checkedIds)
                     answer()
                 },
-                locationCall = { args, provider, selected, input, current, past ->
+                locationCall = { authority ->
+                    val args = AdvisorLocationArguments(authority.provider.value, authority.product.effectiveProductId, authority.branches.map { it.value })
+                    val provider = authority.provider.value
+                    val selected = authority.workingBranch.value
+                    val input = authority.originalUserText
+                    val current = listOfNotNull(authority.currentProduct)
+                    val past = listOf(authority.product)
                     locationCalls++
                     assertEquals("6117543", args.productId)
                     assertEquals("obi-pl", provider)
                     assertEquals("075", selected)
-                    assertTrue(input.startsWith("Sprawdź stan produktu:"))
+                    assertEquals(listOf(BranchId("052")), authority.branches)
                     assertTrue(current.isEmpty())
                     assertEquals(listOf(product), past)
-                    realTool.execute(args, provider, selected, input, current, past)
+                    realTool.execute(authority)
                 },
             )
             val final = c.runTurn(
@@ -498,9 +510,15 @@ class AdvisorLocationsControllerTest {
                     else -> error("Unexpected fourth tool")
                 }
             },
-            locationCall = { args, provider, selected, input, current, past ->
+            locationCall = { authority ->
+                val args = AdvisorLocationArguments(authority.provider.value, authority.product.effectiveProductId, authority.branches.map { it.value })
+                val provider = authority.provider.value
+                val selected = authority.workingBranch.value
+                val input = authority.originalUserText
+                val current = listOfNotNull(authority.currentProduct)
+                val past = listOf(authority.product)
                 locationCalls++
-                realTool.execute(args, provider, selected, input, current, past)
+                realTool.execute(authority)
             },
             onDiscovery = { verified() },
         )
@@ -509,7 +527,7 @@ class AdvisorLocationsControllerTest {
             previousResponseId = "resp_prior",
         ) {}
         assertTrue(result is AdvisorUiState.Success)
-        assertEquals(2, locationCalls) // First denied, second re-evaluated after verification.
+        assertEquals(1, locationCalls) // Only authorized retry reaches execution; logical calls still count.
         assertEquals(1, inventoryReads)
         assertEquals(3, continuations) // All three logical local calls accounted for.
     }
@@ -553,7 +571,7 @@ class AdvisorLocationsControllerTest {
                     assertEquals("7027", verifiedResult.results.single().products.single().productId)
                     answer()
                 },
-                locationCall = { _, _, _, _, _, _ ->
+                locationCall = { authority ->
                     locationCalls++
                     error("find_product_locations must remain independent")
                 },
@@ -635,7 +653,7 @@ class AdvisorLocationsControllerTest {
                     })
                     answer()
                 },
-                locationCall = { _, _, _, _, _, _ ->
+                locationCall = { authority ->
                     locationCalls++
                     error("Grouped find_products must not invoke find_product_locations")
                 },
@@ -707,10 +725,10 @@ class AdvisorLocationsControllerTest {
         )
         assertEquals(listOf("580"), follow.historicalProducts.map { it.effectiveProductId })
         assertEquals(true, follow.hasPendingInventoryRequest)
-        assertEquals(true, follow.authorizedText.contains("Sprawdź stan"))
+        assertEquals("A ile tego samego produktu jest w Nowym Sączu?", follow.userText)
         assertEquals(
             listOf(BranchId("205")),
-            (authorizeKwantLocations(follow.authorizedText,
+            (authorizeKwantLocations(follow.userText,
                 listOf("Nowy Sącz"), branches, BranchId("205"))
                 as KwantAuthorizedLocations.Allowed).requested,
         )
@@ -719,9 +737,9 @@ class AdvisorLocationsControllerTest {
             history = history, historicalProducts = listOf(product), branches = branches,
             providerId = "kwant-pl",
         )
-        assertEquals(true, next.authorizedText.contains("Sprawdź stan"))
+        assertEquals("A w Sączu ile jest tego samego?", next.userText)
         assertEquals(listOf(BranchId("205")),
-            (authorizeKwantLocations(next.authorizedText,
+            (authorizeKwantLocations(next.userText,
                 listOf("Nowy Sącz"), branches, BranchId("205"))
                 as KwantAuthorizedLocations.Allowed).requested)
         val unrelated = resolveAdvisorLocationFollowUp(
@@ -793,8 +811,8 @@ class AdvisorLocationsControllerTest {
                     reads += evidence.productId!! to evidence.checkedIds
                     answer()
                 },
-                locationCall = { args, provider, branch, authorizedText, current, past ->
-                    tool.execute(args, provider, branch, authorizedText, current, past)
+                locationCall = { authority ->
+                    tool.execute(authority)
                 },
                 onProviderDiscovery = { error("History location test must not invoke discovery") },
                 kwantBranches = branches,
@@ -832,7 +850,7 @@ class AdvisorLocationsControllerTest {
         ), reads)
     }
 
-    @Test fun inc003UnrelatedUserTurnNeverGrantsOldProductLocationRead() = runBlocking {
+    @Test fun inc003ExplicitQuantityRetryAfterNeutralPriceUsesFreshRead() = runBlocking {
         val branches = listOf(
             ProviderBranch(BranchId("205"), "Nowy Sącz"),
             ProviderBranch(BranchId("128"), "Zamość"),
@@ -849,6 +867,8 @@ class AdvisorLocationsControllerTest {
                 trustedProduct: ProviderProduct?,
             ): ProductLocationsResult {
                 httpCalls++
+                assertEquals("580", ref.productId)
+                assertEquals(listOf(BranchId("205")), requested)
                 return ProductLocationsResult.Unavailable(LocationFailure.TRANSPORT)
             }
         }
@@ -874,12 +894,13 @@ class AdvisorLocationsControllerTest {
             ),
             continueCall = { output ->
                 val evidence = (output as AdvisorToolContinuation.Locations).evidence
-                assertEquals("rejected", evidence.status)
-                assertEquals("untrusted_product", evidence.reason)
+                assertEquals("unavailable", evidence.status)
+                assertEquals("transport", evidence.reason)
+                assertTrue(evidence.locations.isEmpty())
                 answer()
             },
-            locationCall = { args, provider, selected, text, current, past ->
-                tool.execute(args, provider, selected, text, current, past)
+            locationCall = { authority ->
+                    tool.execute(authority)
             },
             onProviderDiscovery = { error("Model may not discover historical products here") },
             kwantBranches = branches,
@@ -892,7 +913,7 @@ class AdvisorLocationsControllerTest {
             historicalVerifiedProducts = listOf(product),
             locationHistory = history,
         ) {} is AdvisorUiState.Success)
-        assertEquals(0, httpCalls)
+        assertEquals(1, httpCalls)
     }
 
     @Test fun controllerAndRealLocationsToolShareNumericProductIdentityBoundary() = runBlocking {
@@ -991,12 +1012,18 @@ class AdvisorLocationsControllerTest {
                     assertEquals(scenario.user, scenario.expectedReason, evidence.reason)
                     answer()
                 },
-                locationCall = { args, provider, selectedBranch, userText, current, past ->
+                locationCall = { authority ->
+                    val args = AdvisorLocationArguments(authority.provider.value, authority.product.effectiveProductId, authority.branches.map { it.value })
+                    val provider = authority.provider.value
+                    val selectedBranch = authority.workingBranch.value
+                    val userText = authority.originalUserText
+                    val current = listOfNotNull(authority.currentProduct)
+                    val past = listOf(authority.product)
                     serviceInvocations++
                     assertEquals(scenario.user, scenario.user, userText)
                     assertEquals(scenario.user, scenario.expectedHistorical,
                         past.map { it.effectiveProductId })
-                    realLocations.execute(args, provider, selectedBranch, userText, current, past)
+                    realLocations.execute(authority)
                 },
                 onProviderDiscovery = { error("No find_products needed for history test") },
             )
@@ -1009,7 +1036,7 @@ class AdvisorLocationsControllerTest {
                 locationHistory = previousTurns,
             ) {}
             assertTrue(scenario.user, state is AdvisorUiState.Success)
-            assertEquals(scenario.user, 1, serviceInvocations)
+            assertEquals(scenario.user, if (scenario.expectedStatus == "rejected") 0 else 1, serviceInvocations)
             assertEquals(scenario.user, 1, continuations)
             assertEquals(scenario.user, scenario.expectedReads, adapterReads)
         }
@@ -1072,9 +1099,15 @@ class AdvisorLocationsControllerTest {
                     assertEquals(text, listOf(market), result.checkedIds)
                     answer()
                 },
-                locationCall = { args, provider, selectedBranch, userText, current, past ->
+                locationCall = { authority ->
+                    val args = AdvisorLocationArguments(authority.provider.value, authority.product.effectiveProductId, authority.branches.map { it.value })
+                    val provider = authority.provider.value
+                    val selectedBranch = authority.workingBranch.value
+                    val userText = authority.originalUserText
+                    val current = listOfNotNull(authority.currentProduct)
+                    val past = listOf(authority.product)
                     assertEquals(text, listOf("6117543"), past.map { it.effectiveProductId })
-                    realTool.execute(args, provider, selectedBranch, userText, current, past)
+                    realTool.execute(authority)
                 },
             )
             assertTrue(c.runTurn(
@@ -1130,12 +1163,12 @@ class AdvisorLocationsControllerTest {
             Case(
                 "Sprawdź stan produktu 7027 w Tarnowie", "7035",
                 emptySet(), listOf("7027"),
-                "rejected", "untrusted_product", null, 1,
+                "rejected", "untrusted_product", null, 0,
             ),
             Case(
                 "Sprawdź stan produktu 9999 w Tarnowie", "7035",
                 emptySet(), listOf("7035", "7027"),
-                "rejected", "ambiguous_product", null, 1,
+                "rejected", "ambiguous_product", null, 0,
             ),
             // The current explicit "obu" remains valid; it must not
             // collapse into silently selecting the model's single product.
@@ -1199,16 +1232,20 @@ class AdvisorLocationsControllerTest {
                     assertEquals(scenario.input, scenario.expectedProductId, evidence.productId)
                     answer()
                 },
-                locationCall = { args, provider, selectedBranch, userText, current, past ->
+                locationCall = { authority ->
+                    val args = AdvisorLocationArguments(authority.provider.value, authority.product.effectiveProductId, authority.branches.map { it.value })
+                    val provider = authority.provider.value
+                    val selectedBranch = authority.workingBranch.value
+                    val userText = authority.originalUserText
+                    val current = listOfNotNull(authority.currentProduct)
+                    val past = listOf(authority.product)
                     locationToolCalls++
-                    assertEquals(scenario.input, followed.authorizedText, userText)
+                    assertEquals(scenario.input, followed.userText, userText)
                     assertEquals(
                         scenario.input, scenario.expectedHistory,
                         past.map { it.effectiveProductId },
                     )
-                    locationsTool.execute(
-                        args, provider, selectedBranch, userText, current, past,
-                    )
+                    locationsTool.execute(authority)
                 },
                 onProviderDiscovery = { error("find_products not involved") },
             )
@@ -1295,8 +1332,8 @@ class AdvisorLocationsControllerTest {
                     }
                     answer()
                 },
-                locationCall = { args, provider, selected, text, current, past ->
-                    tool.execute(args, provider, selected, text, current, past)
+                locationCall = { authority ->
+                    tool.execute(authority)
                 },
                 onProviderDiscovery = { error("find_products must remain independent") },
             )
@@ -1385,8 +1422,8 @@ class AdvisorLocationsControllerTest {
                     }
                     answer()
                 },
-                locationCall = { args, provider, branch, text, current, history ->
-                    tool.execute(args, provider, branch, text, current, history)
+                locationCall = { authority ->
+                    tool.execute(authority)
                 },
                 onProviderDiscovery = { error("find_products must not execute") },
             )
@@ -1490,8 +1527,8 @@ class AdvisorLocationsControllerTest {
                     }
                     answer()
                 },
-                locationCall = { args, provider, branch, text, current, history ->
-                    tool.execute(args, provider, branch, text, current, history)
+                locationCall = { authority ->
+                    tool.execute(authority)
                 },
                 onProviderDiscovery = { error("find_products must stay independent") },
                 kwantBranches = branches,

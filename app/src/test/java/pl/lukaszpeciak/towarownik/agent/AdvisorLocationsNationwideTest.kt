@@ -76,6 +76,7 @@ class AdvisorLocationsNationwideTest {
         ): AdvisorLocationEvidence = tool.execute(
             AdvisorLocationArguments("obi-pl", "3496072", hints),
             "obi-pl", current, message, emptyList(), listOf(snapshot),
+            listOf(AdvisorLocationHistoryMessage("USER", "Sprawdź stan produktu 3496072")),
         )
     }
 

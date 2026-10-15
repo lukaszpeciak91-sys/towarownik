@@ -127,9 +127,9 @@ class AdvisorNaturalFollowUpRegressionTest {
         assertRead(run("sprawdź stan A9Z01440/SCH w Bochni", hints = listOf("205")), "203")
         assertRead(run("sprawdź stan produktu 7000001 w OBI 003", "obi-pl", listOf("075")), "003")
     }
-    @Test fun `price request breaks follow-up permission`() = runBlocking {
-        val r=run("w Bochni", prior=history("kwant-pl") + user("pokaż ceny"))
-        assertTrue(r.reads.isEmpty()); assertEquals("rejected", r.evidence.status)
+    @Test fun `neutral price reference retains same verified product without stock reuse`() = runBlocking {
+        val r=run("nie sprawdzisz mi w Bochni?", prior=history("kwant-pl") + user("pokaż ceny"))
+        assertRead(r, "203")
     }
     @Test fun `advice and installation cannot inherit stock permission`() = runBlocking {
         for(text in listOf("jak zamontować w Bochni", "a w Bochni pokaż ceny", "a w Bochni ile kosztuje?")) {

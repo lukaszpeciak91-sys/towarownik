@@ -120,7 +120,7 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
             executeObiTool = obiTool::execute,
             executeProviderTool = providerTool::execute,
             branchDirectory = { ProviderBranchResult.Available(directory) },
-            executeLocationsTool = { _, _, _, _, _, _ -> inventoryCalls++; error("Discovery cannot start inventory") },
+            executeLocationsTool = { _ -> inventoryCalls++; error("Discovery cannot start inventory") },
         )
         val stale = VerifiedProductSnapshot(
             "1111111", "Old card", 99, grossPrice = BigDecimal.TEN,
