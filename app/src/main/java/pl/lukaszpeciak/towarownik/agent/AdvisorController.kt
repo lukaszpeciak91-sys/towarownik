@@ -207,13 +207,11 @@ internal class AdvisorController(
             }
 
             return when (
-                val resolution = if (conversationProvider == OBI_PROVIDER_ID) BranchResolver.resolveObiMarketScope(
-                    normalizedInput, branches, currentBranchId,
-                ) else BranchResolver.resolve(
+                val resolution = BranchResolver.resolveDiscovery(
                     userText = normalizedInput,
                     branches = branches,
                     currentBranchId = currentBranchId,
-                    allowBareBranchIds = conversationProvider == OBI_PROVIDER_ID,
+                    obiMarketScope = conversationProvider == OBI_PROVIDER_ID,
                 )
             ) {
                 is BranchResolution.CurrentBranch ->

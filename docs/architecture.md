@@ -1,5 +1,15 @@
 # Architecture
 
+## 2026-10-15 — P0-A discovery application clauses
+
+Only discovery authorization in `AdvisorController` uses `BranchResolver.resolveDiscovery`. It first distinguishes bounded spatial/purpose application clauses from a geographical selection, then delegates to the existing canonical resolver and OBI plural-market expansion. It does not decide whether a product search is appropriate: the model still initiates the unchanged discovery tool with its original query.
+
+The confirmed counterexamples were `Szukam różnicówki Schneider 40 A na szynę DIN` and `Szukam uszczelniacza do łazienki w mieszkaniu`: generic prepositions created a purported place and `UnknownMention` vetoed discovery. The `w domu` control already used the saved profile. The discovery projection now recognizes bounded room/enclosure, mounting-surface and purpose frames, including limited adjective slots, without a DIN/TH35/model-name vocabulary. It removes only that application clause, ending before another place marker, joined locality or application clause. Application wording before or after a real location no longer obscures that selection.
+
+This is not an unconditional word exclusion: directory city/street matches take precedence, explicit geographical labels and capitalized name-like heads remain subject to canonical resolution, and unresolved `tam`/other-branch references cannot be erased. Subsequent unknown cities, unknown streets, conflicts and ambiguities still reject. A projection cannot create a standalone numeric market selection. Original parsing is used unchanged when no application frame is recognized. Unsupported wording remains fail-closed; this bounded grammar is not a general Polish semantic classifier, and capitalized application nouns can still need clarification.
+
+The active provider and saved WorkingProfile remain authoritative defaults. Model branch hints grant no scope and cannot veto a valid independently resolved selection. Exact provider lookup, fresh/null/zero stock, current-turn card whitelist and plural Kraków scope are unchanged. The existing inventory and historical-follow-up callers still use their original resolver entry points; their intent/inheritance restrictions, including combined inventory/application wording, remain P0-B work. No Worker, prompts, tool budgets, provider HTTP, UI or persistence change.
+
 ## 2026-10-14 — INC-007 R2 independent identifiers and bounded recovery
 
 Current standalone USER identifiers are classified as independent discovery before historical inventory admission. If the model sends such an identifier to `find_product_locations`, Controller executes the existing provider discovery tool with only that USER identifier, the saved conversation branch and the existing five-product bound. The mistaken request and actual discovery consume two of the existing three local calls. Exactly one matching, provider-verified identity is required; guessed model IDs, historical stock and unrelated cards do not enter the recovered result.
