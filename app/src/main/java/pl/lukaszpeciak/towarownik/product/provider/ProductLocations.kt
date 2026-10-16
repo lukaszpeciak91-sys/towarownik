@@ -49,6 +49,7 @@ internal sealed interface ProductLocationsResult {
         /** Only separately verified exact-product context may supply this; never departments.total_stock. */
         val centralStock: Int? = null,
         val stockUnit: String? = null,
+        val httpDiagnostic: LocationsHttpDiagnostic? = null,
     ) : ProductLocationsResult
 
     data class Invalid(val failure: LocationFailure) : ProductLocationsResult
@@ -56,6 +57,7 @@ internal sealed interface ProductLocationsResult {
     data class Unavailable(
         val failure: LocationFailure,
         val coverage: LocationCoverage? = null,
+        val httpDiagnostic: LocationsHttpDiagnostic? = null,
     ) : ProductLocationsResult
 
     data object UnsupportedProvider : ProductLocationsResult

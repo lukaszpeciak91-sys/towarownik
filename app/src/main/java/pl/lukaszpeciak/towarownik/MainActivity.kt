@@ -322,6 +322,7 @@ private fun TowarownikApp() {
         mutableStateOf<AdvisorUiState>(AdvisorUiState.Idle)
     }
     val failureEvidenceStore = remember { AdvisorFailureReportEvidenceStore() }
+    val responseEvidenceStore = remember { AdvisorResponseReportEvidenceStore() }
     var pendingAttachments by rememberSaveable(saver = PendingAttachmentsSaver) {
         mutableStateOf<List<AdvisorAttachment>>(emptyList())
     }
@@ -629,6 +630,7 @@ private fun TowarownikApp() {
 
             conversationRepository.deleteConversation(conversationId)
             failureEvidenceStore.clearConversation(conversationId)
+            responseEvidenceStore.clearConversation(conversationId)
 
             if (freshCase != null) {
                 clearManualProfileContext()
@@ -859,7 +861,7 @@ private fun TowarownikApp() {
                         raw = finalState.text,
                         sources = finalState.sources,
                     )
-                    conversationRepository.completeAssistantTurn(
+                    val assistantMessageId = conversationRepository.completeAssistantTurn(
                         conversationId = turn.conversationId,
                         text = display.text,
                         finalResponseId = finalState.responseId,
@@ -874,6 +876,9 @@ private fun TowarownikApp() {
                                     action.reportedTotalCount,
                             )
                         },
+                    )
+                    responseEvidenceStore.record(
+                        turn.conversationId, assistantMessageId, finalState.locationReportEvidence,
                     )
                     if (
                         advisorRequestGuard.isCurrent(
@@ -1385,6 +1390,7 @@ private fun TowarownikApp() {
                             subject = subject,
                             body = body,
                             recorder = ObiDiagnostics.recorder,
+                            responseEvidence = responseEvidenceStore,
                         )
                         val payload = result.getOrNull()
                         if (payload != null) {

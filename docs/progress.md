@@ -1,5 +1,11 @@
 # Progress
 
+## 2026-10-16 — INC-008 D1 minimal KWANT report evidence (independent audit pending)
+
+Base main `6ea345a486b9457aa64d146c1687c393e984e68a`, including #127/#128. Inspected reporting, persistence, Controller and production locations flow before editing. Reuse existing location identity/status/reason/coverage; add only HTTP status/content-type class as local metadata. Completed ASSISTANT reports select immutable sanitized session evidence by exact conversation and inserted message ID, not latest lookup. Bounds: 16 responses, three results each, 100 numeric IDs/list; no persistence migration or raw bodies/headers/descriptions. Existing completion transaction returns its already-created ID.
+
+Focused current-source native tests and full final-head Android CI are recorded in the PR. Local full Gradle startup is environment-blocked by `FileLockContentionHandler` / unavailable wildcard IP; it is not reported as a pass. Python tooling 174/174 passes. Stock parser byte-identical; no search/routing/request/authorization/Worker/schema/prompt/budget/stock-rendering changes, live provider calls, merge, deployment or AAB. [Evidence flow, sanitized samples, privacy review, limitations and single-branch routing assessment](inc008-d1-kwant-report-diagnostics.md). Routing recommendation: INSUFFICIENT EVIDENCE; collect the failing local category and adjacent endpoint evidence before a separate routing proposal.
+
 ## 2026-10-15 — P0-B RED → typed authorization → GREEN (independent audit required)
 
 Base main `a305b826cab1347f24d2b507d86854ac86ec02f3` includes merged #125, #126 and P0-A #127. Exact remote signed commit/tree imported into isolated `/workspace/taksula-p0b`; original workspaces remain unchanged. Latest main was rechecked before delivery. No shell Git networking was assumed.

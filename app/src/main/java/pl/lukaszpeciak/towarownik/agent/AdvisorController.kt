@@ -42,6 +42,7 @@ internal sealed interface AdvisorUiState {
         val sources: List<AdvisorWebSource> = emptyList(),
         val searchActions: List<AdvisorSearchAction> = emptyList(),
         val traceId: String? = null,
+        val locationReportEvidence: List<AdvisorLocationEvidence> = emptyList(),
     ) : AdvisorUiState
     data class Error(
         val error: AdvisorError,
@@ -331,6 +332,7 @@ internal class AdvisorController(
 
         var toolCalls = 0
         var lastLocationEvidence: AdvisorLocationEvidence? = null
+        val locationReportEvidence = mutableListOf<AdvisorLocationEvidence>()
         var lastDiscoveryRejectionReason: String? = null
         var localToolLimitContinuationSent = false
         var toolAssistedObserved = false
@@ -451,6 +453,7 @@ internal class AdvisorController(
                         sources = if (authoritativeLocalText) emptyList() else proxyResult.sources,
                         searchActions = searchActionsByKey.values.toList(),
                         traceId = turnTraceId,
+                        locationReportEvidence = locationReportEvidence.toList(),
                     ).also(onState)
                 }
 
@@ -548,6 +551,9 @@ internal class AdvisorController(
                         deterministicLocationOutcomes[repeatKey] = evidence
                     }
                     lastLocationEvidence = evidence
+                    if (evidence.providerId == "kwant-pl" && locationReportEvidence.size < MAX_LOCAL_TOOL_CALLS_PER_TURN) {
+                        locationReportEvidence += evidence
+                    }
                     onState(AdvisorUiState.WaitingForFinalAnswer)
                     proxyResult = when (
                         val continued = safeProxyCall {

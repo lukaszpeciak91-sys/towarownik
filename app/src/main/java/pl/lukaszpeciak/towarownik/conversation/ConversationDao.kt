@@ -307,7 +307,7 @@ internal abstract class ConversationDao {
         sources: List<PersistedWebSource> = emptyList(),
         searchActions: List<PersistedSearchAction> = emptyList(),
         advisorTraceId: String? = null,
-    ) {
+    ): Long {
         checkNotNull(getConversation(conversationId))
         require(products.size <= 5)
         require(products.map { it.key }.distinct().size == products.size)
@@ -403,6 +403,7 @@ internal abstract class ConversationDao {
             lastResponseId = lastResponseId,
             updatedAt = createdAt,
         )
+        return messageId
     }
 
     @Transaction
