@@ -127,6 +127,7 @@ internal class AdvisorLocationsTool(
                 verifiedAtMillis = result.verifiedAtMillis,
                 centralStock = result.centralStock,
                 stockUnit = result.stockUnit,
+                httpDiagnostic = result.httpDiagnostic,
             )
             }
             is ProductLocationsResult.Unavailable -> empty(
@@ -135,12 +136,12 @@ internal class AdvisorLocationsTool(
                 // The Worker requires a canonical null-stock row for EVERY
                 // checked ID, including failed, malformed and empty reads.
                 directory,
-            )
+            ).copy(httpDiagnostic = result.httpDiagnostic)
             is ProductLocationsResult.Invalid ->
                 rejected(result.failure.name.lowercase(), exactRef.productId)
             ProductLocationsResult.UnsupportedProvider ->
                 rejected("unsupported_provider", exactRef.productId)
-        }
+        }.copy(authorizedBranchIds = authority.branches.map { it.value })
     }
 
     /** The 20-market budget belongs to EACH service invocation, never a nationwide truncation.

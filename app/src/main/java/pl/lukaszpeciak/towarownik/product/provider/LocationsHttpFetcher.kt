@@ -13,8 +13,18 @@ import okhttp3.Response
 import pl.lukaszpeciak.towarownik.product.ObiBrowserCompatibilityProfile
 
 internal sealed interface LocationsHttpResult {
-    data class Success(val json: String) : LocationsHttpResult
-    data class Failure(val failure: LocationFailure) : LocationsHttpResult
+    data class Success(val json: String, val diagnostic: LocationsHttpDiagnostic? = null) : LocationsHttpResult
+    data class Failure(val failure: LocationFailure, val diagnostic: LocationsHttpDiagnostic? = null) : LocationsHttpResult
+}
+
+/** Local report metadata only. Never retain a header value, URL, body or exception text. */
+internal enum class LocationsContentType { JSON, HTML, OTHER, MISSING }
+
+internal data class LocationsHttpDiagnostic(
+    val status: Int,
+    val contentType: LocationsContentType,
+) {
+    init { require(status in 100..599) }
 }
 
 internal fun interface LocationsHttpFetcher {
@@ -70,29 +80,38 @@ internal class OkHttpLocationsFetcher(
     }
 
     private fun safeResponse(response: Response, expected: HttpUrl): LocationsHttpResult {
+        val mediaType = response.header("Content-Type")?.substringBefore(';')?.trim()?.lowercase()
+        val diagnostic = response.code.takeIf { it in 100..599 }?.let { status ->
+            LocationsHttpDiagnostic(status, when {
+                mediaType == null -> LocationsContentType.MISSING
+                mediaType == "application/json" || mediaType.endsWith("+json") -> LocationsContentType.JSON
+                mediaType == "text/html" -> LocationsContentType.HTML
+                else -> LocationsContentType.OTHER
+            })
+        }
         if (response.request.url != expected || !trustedLocationsEndpoint(response.request.url)) {
-            return LocationsHttpResult.Failure(LocationFailure.TRANSPORT)
+            return LocationsHttpResult.Failure(LocationFailure.TRANSPORT, diagnostic)
         }
         if (!response.isSuccessful) {
-            return LocationsHttpResult.Failure(LocationFailure.TRANSPORT)
+            return LocationsHttpResult.Failure(LocationFailure.TRANSPORT, diagnostic)
         }
         val contentType = response.header("Content-Type")?.lowercase()
         if (contentType == null || !(contentType.contains("application/json") ||
                     contentType.contains("+json"))) {
-            return LocationsHttpResult.Failure(LocationFailure.MALFORMED_RESPONSE)
+            return LocationsHttpResult.Failure(LocationFailure.MALFORMED_RESPONSE, diagnostic)
         }
         if (response.body == null) {
-            return LocationsHttpResult.Failure(LocationFailure.MALFORMED_RESPONSE)
+            return LocationsHttpResult.Failure(LocationFailure.MALFORMED_RESPONSE, diagnostic)
         }
         return try {
             val bytes = response.peekBody(MAX_JSON_BYTES + 1L).bytes()
             if (bytes.isEmpty() || bytes.size > MAX_JSON_BYTES) {
-                LocationsHttpResult.Failure(LocationFailure.MALFORMED_RESPONSE)
+                LocationsHttpResult.Failure(LocationFailure.MALFORMED_RESPONSE, diagnostic)
             } else {
-                LocationsHttpResult.Success(bytes.toString(Charsets.UTF_8))
+                LocationsHttpResult.Success(bytes.toString(Charsets.UTF_8), diagnostic)
             }
         } catch (_: IOException) {
-            LocationsHttpResult.Failure(LocationFailure.TRANSPORT)
+            LocationsHttpResult.Failure(LocationFailure.TRANSPORT, diagnostic)
         }
     }
 

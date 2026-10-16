@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -42,6 +43,38 @@ class ProblemReportResolverTest {
     fun tearDown() {
         database.close()
         context.deleteDatabase(DB_NAME)
+    }
+
+    @Test
+    fun `INC008 report uses committed message id after later response and never latest lookup`() = runBlocking {
+        val store = AdvisorResponseReportEvidenceStore()
+        val turn = repository.beginUserTurn(null, "Synthetic inventory", 100L)
+        val reportedId = repository.completeAssistantTurn(turn.conversationId, "Unknown stock", "resp_one", 200L)
+        store.record(turn.conversationId, reportedId, listOf(pl.lukaszpeciak.towarownik.agent.AdvisorLocationEvidence(
+            "kwant-pl", "580", "unavailable", "transport", "unknown", listOf("205"), emptyList(), listOf("205"),
+            listOf(pl.lukaszpeciak.towarownik.agent.AdvisorLocationEntry("205", "SECRET_NAME_CANARY", null)), null, null,
+        )))
+        repository.beginUserTurn(turn.conversationId, "Later turn", 300L)
+        val laterId = repository.completeAssistantTurn(turn.conversationId, "LATER_RESPONSE_CANARY", "resp_two", 400L)
+        store.record(turn.conversationId, laterId, listOf(pl.lukaszpeciak.towarownik.agent.AdvisorLocationEvidence(
+            "kwant-pl", "7027", "unavailable", "malformed_response", "unknown", listOf("204"), emptyList(), listOf("204"),
+            listOf(pl.lukaszpeciak.towarownik.agent.AdvisorLocationEntry("204", "Tarnów", null)), null, null,
+        )))
+        assertTrue(reportedId > 0); assertTrue(laterId > reportedId)
+        val request = ProblemReportRequest(ProblemReportType.ASSISTANT_RESPONSE, ProblemReportCategory.ASSISTANT_OTHER,
+            "", false, false, turn.conversationId, reportedId)
+        val resolved = ProblemReportResolver(repository, store).resolve(request) as ProblemReportResolution.Success
+        assertEquals(reportedId, resolved.evidence.reportedMessage!!.id)
+        val metadata = ProblemReportTechnicalMetadata(1000L, "2026-10-16T00:00:00Z", "Taksula", "test", 1, "13", 33, "Synthetic", "Device", "pl")
+        val report = ProblemReportFormatter.format(request, resolved.evidence, metadata, null)
+        assertTrue(report.contains("product_id=580")); assertTrue(report.contains("requested_ids=[205]"))
+        assertTrue(report.contains("reason=transport"))
+        assertFalse(report.contains("7027")); assertFalse(report.contains("SECRET_")); assertFalse(report.contains("LATER_RESPONSE_CANARY"))
+        val restored = ProblemReportResolver(repository, AdvisorResponseReportEvidenceStore()).resolve(request) as ProblemReportResolution.Success
+        assertNull(restored.evidence.kwantInventoryDiagnostics)
+        val general = ProblemReportResolver(repository, store).resolve(ProblemReportRequest(ProblemReportType.GENERAL,
+            ProblemReportCategory.APP_PROBLEM, "General", false, false, turn.conversationId)) as ProblemReportResolution.Success
+        assertNull(general.evidence.kwantInventoryDiagnostics)
     }
 
     @Test

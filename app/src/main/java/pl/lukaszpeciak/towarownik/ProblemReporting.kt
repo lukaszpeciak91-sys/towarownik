@@ -149,6 +149,7 @@ internal data class ProblemReportEvidence(
     val conversationId: Long?,
     val reportedMessage: PersistedMessage?,
     val conversationMessages: List<PersistedMessage>,
+    val kwantInventoryDiagnostics: String? = null,
 )
 
 internal enum class ProblemReportUiError {
@@ -168,6 +169,7 @@ internal sealed interface ProblemReportResolution {
 
 internal class ProblemReportResolver(
     private val repository: ConversationRepository,
+    private val responseEvidence: AdvisorResponseReportEvidenceStore? = null,
 ) {
     suspend fun resolve(
         request: ProblemReportRequest,
@@ -211,6 +213,7 @@ internal class ProblemReportResolver(
             ProblemReportEvidence(
                 conversationId = conversation.id,
                 reportedMessage = message,
+                kwantInventoryDiagnostics = responseEvidence?.get(conversation.id, message.id),
                 conversationMessages = if (request.includeConversation) {
                     conversation.messages.take(messageIndex + 1)
                 } else {
@@ -367,6 +370,9 @@ internal object ProblemReportFormatter {
             }
             appendSection("VERIFIED PRODUCTS") {
                 appendProducts(reported)
+            }
+            appendSection("KWANT INVENTORY DIAGNOSTICS") {
+                appendLine(evidence.kwantInventoryDiagnostics ?: "unavailable (not captured in this app session or evicted)")
             }
         }
 
@@ -529,6 +535,7 @@ internal suspend fun createProblemReportSharePayload(
     subject: String,
     body: String,
     recorder: ObiDiagnosticRecorder,
+    responseEvidence: AdvisorResponseReportEvidenceStore? = null,
 ): Result<ProblemReportSharePayload> {
     if (
         request.type == ProblemReportType.GENERAL &&
@@ -539,7 +546,7 @@ internal suspend fun createProblemReportSharePayload(
         )
     }
 
-    val resolver = ProblemReportResolver(repository)
+    val resolver = ProblemReportResolver(repository, responseEvidence)
     val resolution = resolver.resolve(request)
     if (resolution !is ProblemReportResolution.Success) {
         return Result.failure(

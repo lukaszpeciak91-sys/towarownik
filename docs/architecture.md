@@ -1,5 +1,9 @@
 # Architecture
 
+## INC-008 D1: local inventory evidence in response reports
+
+KWANT location results retain optional local-only HTTP status/content-type classification alongside existing identity, failure and coverage fields. The Controller carries at most three result references in its turn result. After the existing assistant-message completion transaction returns its inserted ID, the reporting evidence store projects sanitized facts into a 16-message session map keyed by conversation/message IDs. The existing report resolver validates the persisted ASSISTANT target before selecting that exact snapshot. No Room schema, Worker protocol, parser, request policy, stock UI or routing changes. Details and limitations: [INC-008 D1](inc008-d1-kwant-report-diagnostics.md).
+
 ## 2026-10-15 — P0-B typed inventory authority
 
 `AdvisorInventoryAuthorizer.resolve` is the Android-only, side-effect-free inventory admission boundary. Controller passes original current USER text, the captured WorkingProfile, validated provider directory, current-turn verified snapshots and bounded same-conversation history. It returns `Discovery`, `Inventory`, `ClarificationRequired` or `Denied`. Only `Inventory` reaches `AdvisorLocationsTool.execute(authority)`. That executor receives trusted provider/product/scope/directory plus product/location provenance and current USER identifier evidence; it interprets neither USER wording nor model hints. No new Worker fields or wire variant are introduced.

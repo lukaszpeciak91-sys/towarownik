@@ -68,6 +68,7 @@ internal class KwantProductLocationsAdapter(
                 ProductLocationsResult.Unavailable(
                     response.failure,
                     coverage = unknownCoverage(if (requested.isEmpty()) branches.keys.toList() else requested),
+                    httpDiagnostic = response.diagnostic,
                 )
             is LocationsHttpResult.Success -> {
                 val parsed = parseKwantDepartmentResponse(
@@ -75,6 +76,7 @@ internal class KwantProductLocationsAdapter(
                 ) ?: return ProductLocationsResult.Unavailable(
                     LocationFailure.MALFORMED_RESPONSE,
                     coverage = unknownCoverage((if (requested.isEmpty()) branches.keys.toList() else requested)),
+                    httpDiagnostic = response.diagnostic,
                 )
                 val wanted = if (requested.isEmpty()) branches.keys.toList() else requested
                 val mapped = parsed.rows.associateBy { it.branch.branchId }
@@ -93,7 +95,7 @@ internal class KwantProductLocationsAdapter(
                 )
                 if (returned.isEmpty()) {
                     ProductLocationsResult.Unavailable(
-                        LocationFailure.NO_TRUSTED_ROWS, coverage,
+                        LocationFailure.NO_TRUSTED_ROWS, coverage, response.diagnostic,
                     )
                 } else {
                     val trustedUnit = trustedProduct?.stockUnit
@@ -107,6 +109,7 @@ internal class KwantProductLocationsAdapter(
                         verifiedAtMillis = now(),
                         centralStock = separateTrustedCentralStock(ref, trustedProduct),
                         stockUnit = unit,
+                        httpDiagnostic = response.diagnostic,
                     )
                 }
             }

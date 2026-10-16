@@ -281,7 +281,7 @@ internal class ConversationRepository(
         sources: List<PersistedWebSource> = emptyList(),
         searchActions: List<PersistedSearchAction> = emptyList(),
         advisorTraceId: String? = null,
-    ) {
+    ): Long =
         dao.completeAssistantTurn(
             conversationId = conversationId,
             text = text,
@@ -292,7 +292,6 @@ internal class ConversationRepository(
             searchActions = searchActions,
             advisorTraceId = advisorTraceIdOrNull(advisorTraceId),
         )
-    }
 
     suspend fun isAttachmentPersisted(
         localId: String,

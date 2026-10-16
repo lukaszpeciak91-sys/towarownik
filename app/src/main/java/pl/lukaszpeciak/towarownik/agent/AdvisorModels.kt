@@ -222,6 +222,9 @@ internal data class AdvisorLocationEvidence(
     val centralStock: Int?,
     // Local-only deterministic label; not added to the Worker JSON schema.
     val stockUnit: String? = null,
+    // Local report evidence only; omitted from every Worker request body.
+    val httpDiagnostic: pl.lukaszpeciak.towarownik.product.provider.LocationsHttpDiagnostic? = null,
+    val authorizedBranchIds: List<String> = checkedIds,
 )
 
 internal sealed interface AdvisorToolContinuation {
