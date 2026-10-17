@@ -97,6 +97,7 @@ class AdvisorLocationHintsWireCompatibilityTest {
                     }
                     val tool = AdvisorLocationsTool(
                         locationsService = ProductLocationsService(listOf(adapter)),
+                        providers = exactLookupProviders { ref, branch -> reads++; exactLookupFound(ref, branch, 2) }, now = { 123456L },
                     )
                     val trusted = VerifiedProductSnapshot(
                         obik = "3496072",

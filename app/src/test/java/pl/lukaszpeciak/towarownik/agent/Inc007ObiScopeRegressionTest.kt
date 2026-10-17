@@ -88,7 +88,18 @@ class Inc007ObiScopeRegressionTest {
         val service = ProductLocationsService(listOf(
             KwantProductLocationsAdapter(fetcher,{ProviderBranchResult.Available(kwant)},now={2000L}),
             ObiProductLocationsAdapter(fetcher,{ProviderBranchResult.Available(obi)},now={2000L})))
-        val locationsTool = AdvisorLocationsTool(service,{ProviderBranchResult.Available(if(provider=="obi-pl")directory else obi)},{ProviderBranchResult.Available(if(provider=="kwant-pl")directory else kwant)})
+        val locationsTool = AdvisorLocationsTool(service,{ProviderBranchResult.Available(if(provider=="obi-pl")directory else obi)},{ProviderBranchResult.Available(if(provider=="kwant-pl")directory else kwant)},
+            providers = exactLookupProviders { ref, branch ->
+                // These are synthetic ordinary-lookup events, not inventory adapter reads.
+                gets += if (provider == "kwant-pl") "https://services.kwant.net.pl/api/front/products/${ref.productId}/current?depstock=${branch.value}"
+                    else "https://www.obi.pl/api/disc/store/change?storeNumber=${branch.value}&redirectUrl=/p/${ref.productId}"
+                when (failure) {
+                    "transport" -> ProviderLookupResult.Unavailable(ProductProviderFailure.NETWORK, "Synthetic failure")
+                    "bad", "wrong_identity", "extra_field" -> ProviderLookupResult.Unavailable(ProductProviderFailure.DATA, "Synthetic malformed product")
+                    "null", "omitted" -> exactLookupFound(ref, branch, null)
+                    else -> exactLookupFound(ref, branch, if (provider == "obi-pl") 7 else when (branch.value) { "203" -> 0; "206" -> 11; "204" -> 13; else -> 17 })
+                }
+            }, now = { 2000L })
         fun initial():AdvisorProxyCallResult {
             events += "${if(previous==null)"START" else "MESSAGE"}:$serial:$plan"
             val result = if(plan.startsWith("discovery")) AdvisorProxyResult.ToolRequest("resp_${serial}_$phase","call_${serial}_$phase",

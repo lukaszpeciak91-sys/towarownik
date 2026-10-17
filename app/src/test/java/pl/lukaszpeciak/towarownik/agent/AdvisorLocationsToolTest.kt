@@ -40,6 +40,7 @@ class AdvisorLocationsToolTest {
     private class StockAdapter : ProductLocationsAdapter {
         override val providerId = OBI_PROVIDER_ID
         var calls = 0
+        val exactBranches = mutableListOf<BranchId>()
         var lastRequested = emptyList<BranchId>()
         override suspend fun read(
             ref: ProductRef,
@@ -65,6 +66,7 @@ class AdvisorLocationsToolTest {
 
     private fun tool(fake: StockAdapter): AdvisorLocationsTool = AdvisorLocationsTool(
         locationsService = ProductLocationsService(listOf(fake)),
+        providers = exactLookupProviders { ref, branch -> fake.exactBranches += branch; exactLookupFound(ref, branch, 0) },
     )
 
     // Raw tool fixtures now supply the USER selection that previously existed only as cards.
@@ -89,9 +91,10 @@ class AdvisorLocationsToolTest {
         assertEquals("verified", evidence.status)
         assertEquals("3496072", evidence.productId)
         assertEquals(listOf("075"), evidence.checkedIds)
-        assertEquals(listOf(BranchId("075")), fake.lastRequested)
+        assertEquals(listOf(BranchId("075")), fake.exactBranches)
         assertEquals(0, evidence.locations.single().stock)
-        assertEquals(1, fake.calls)
+        assertEquals(0, fake.calls)
+        assertEquals(1, fake.exactBranches.size)
     }
 
     @Test fun `same-turn exact verified product is trusted`() = runBlocking {
@@ -104,7 +107,8 @@ class AdvisorLocationsToolTest {
             listOf(one), emptyList(),
         )
         assertEquals("verified", result.status)
-        assertEquals(1, fake.calls)
+        assertEquals(0, fake.calls)
+        assertEquals(1, fake.exactBranches.size)
     }
 
     @Test fun `ambiguous history and hallucinated identity never authorize HTTP`() = runBlocking {
@@ -151,7 +155,7 @@ class AdvisorLocationsToolTest {
         )
         assertEquals("verified", invented.status)
         assertEquals(listOf("075"), invented.checkedIds)
-        assertEquals(listOf(BranchId("075")), fake.lastRequested)
+        assertEquals(listOf(BranchId("075")), fake.exactBranches)
         val broad = svc.executeWithUserContext(
             AdvisorLocationArguments("obi-pl", "3496072", emptyList()),
             "obi-pl",
@@ -163,7 +167,8 @@ class AdvisorLocationsToolTest {
         assertEquals("all_other_locations", broad.coverage)
         assertEquals(61, broad.checkedIds.size)
         assertTrue("Default selected market excluded", "075" !in broad.checkedIds)
-        assertEquals(5, fake.calls)
+        assertEquals(4, fake.calls)
+        assertEquals(1, fake.exactBranches.size)
         assertTrue(fake.lastRequested.size <= 20)
     }
 
@@ -264,7 +269,8 @@ class AdvisorLocationsToolTest {
             )
             assertEquals(hint, "verified", result.status)
             assertEquals(hint, listOf("075"), result.checkedIds)
-            assertEquals(hint, 1, fake.calls)
+            assertEquals(hint, 0, fake.calls)
+            assertEquals(hint, 1, fake.exactBranches.size)
         }
     }
 
@@ -278,7 +284,8 @@ class AdvisorLocationsToolTest {
             )
             assertEquals(hint, "verified", result.status)
             assertEquals(hint, listOf("003"), result.checkedIds)
-            assertEquals(hint, 1, fake.calls)
+            assertEquals(hint, 0, fake.calls)
+            assertEquals(hint, 1, fake.exactBranches.size)
         }
     }
 
@@ -304,8 +311,9 @@ class AdvisorLocationsToolTest {
             } else {
                 assertEquals(message + hints, "verified", result.status)
                 assertEquals(message + hints, listOf("003"), result.checkedIds)
-                assertEquals(message + hints, listOf(BranchId("003")), fake.lastRequested)
-                assertEquals(message + hints, 1, fake.calls)
+                assertEquals(message + hints, listOf(BranchId("003")), fake.exactBranches)
+                assertEquals(message + hints, 0, fake.calls)
+                assertEquals(message + hints, 1, fake.exactBranches.size)
             }
         }
     }
