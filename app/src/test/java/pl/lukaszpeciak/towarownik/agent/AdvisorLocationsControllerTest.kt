@@ -374,7 +374,7 @@ class AdvisorLocationsControllerTest {
                 storeNumber = "003", branchId = "003",
             )
             var locationCalls = 0
-            var inventoryReads = 0
+            var providerReads = 0
             val stockAdapter = object : ProductLocationsAdapter {
                 override val providerId = OBI_PROVIDER_ID
                 override suspend fun read(
@@ -382,7 +382,7 @@ class AdvisorLocationsControllerTest {
                     requested: List<BranchId>,
                     trustedProduct: ProviderProduct?,
                 ): ProductLocationsResult {
-                    inventoryReads++
+                    providerReads++
                     assertEquals(listOf(BranchId("052")), requested)
                     assertEquals("6117543", ref.productId)
                     return ProductLocationsResult.Available(
@@ -399,6 +399,7 @@ class AdvisorLocationsControllerTest {
                 }
             }
             val realTool = AdvisorLocationsTool(
+                providers = exactLookupProviders { ref, branch -> providerReads++; exactLookupFound(ref, branch, 4) }, now = { 123L },
                 locationsService = ProductLocationsService(listOf(stockAdapter)),
             )
             val c = controller(
@@ -445,7 +446,7 @@ class AdvisorLocationsControllerTest {
             ) {}
             assertTrue(final is AdvisorUiState.Success)
             assertEquals(1, locationCalls)
-            assertEquals(1, inventoryReads)
+            assertEquals(1, providerReads)
             assertEquals(
                 "33333333-3333-4333-8333-333333333333",
                 (final as AdvisorUiState.Success).traceId,
@@ -457,7 +458,7 @@ class AdvisorLocationsControllerTest {
 
     @Test fun untrustedLocationRequestMustBeReevaluatedAfterDiscoveryInSameTurn() = runBlocking {
         var locationCalls = 0
-        var inventoryReads = 0
+        var providerReads = 0
         val adapter = object : ProductLocationsAdapter {
             override val providerId = OBI_PROVIDER_ID
             override suspend fun read(
@@ -465,7 +466,7 @@ class AdvisorLocationsControllerTest {
                 requested: List<BranchId>,
                 trustedProduct: ProviderProduct?,
             ): ProductLocationsResult {
-                inventoryReads++
+                providerReads++
                 assertEquals("3496072", ref.productId)
                 assertEquals(listOf(BranchId("075")), requested)
                 return ProductLocationsResult.Available(
@@ -481,6 +482,7 @@ class AdvisorLocationsControllerTest {
             }
         }
         val realTool = AdvisorLocationsTool(
+            providers = exactLookupProviders { ref, branch -> providerReads++; exactLookupFound(ref, branch, 3) }, now = { 123L },
             locationsService = ProductLocationsService(listOf(adapter)),
         )
         var continuations = 0
@@ -493,7 +495,7 @@ class AdvisorLocationsControllerTest {
                         val first = (output as AdvisorToolContinuation.Locations).evidence
                         assertEquals("rejected", first.status)
                         assertEquals("untrusted_product", first.reason)
-                        assertEquals(0, inventoryReads)
+                        assertEquals(0, providerReads)
                         discovery()
                     }
                     2 -> {
@@ -504,7 +506,7 @@ class AdvisorLocationsControllerTest {
                         val second = (output as AdvisorToolContinuation.Locations).evidence
                         assertEquals("verified", second.status)
                         assertEquals(listOf("075"), second.checkedIds)
-                        assertEquals(1, inventoryReads)
+                        assertEquals(1, providerReads)
                         answer()
                     }
                     else -> error("Unexpected fourth tool")
@@ -528,7 +530,7 @@ class AdvisorLocationsControllerTest {
         ) {}
         assertTrue(result is AdvisorUiState.Success)
         assertEquals(1, locationCalls) // Only authorized retry reaches execution; logical calls still count.
-        assertEquals(1, inventoryReads)
+        assertEquals(1, providerReads)
         assertEquals(3, continuations) // All three logical local calls accounted for.
     }
 
@@ -776,6 +778,7 @@ class AdvisorLocationsControllerTest {
             },
         )
         val tool = AdvisorLocationsTool(
+            providers = exactLookupProviders { ref, branch -> exactLookupFound(ref, branch, if (branch.value == "128") 11 else 7) }, now = { 123L },
             locationsService = ProductLocationsService(listOf(adapter)),
             kwantBranches = { ProviderBranchResult.Available(branches) },
         )
@@ -859,20 +862,21 @@ class AdvisorLocationsControllerTest {
             obik = "580", productId = "580", providerId = "kwant-pl",
             articleNumber = "MBN116E/HAG", storeNumber = "205", branchId = "205",
         )
-        var httpCalls = 0
+        var stockReadCalls = 0
         val adapter = object : ProductLocationsAdapter {
             override val providerId = KWANT_PROVIDER_ID
             override suspend fun read(
                 ref: ProductRef, requested: List<BranchId>,
                 trustedProduct: ProviderProduct?,
             ): ProductLocationsResult {
-                httpCalls++
+                stockReadCalls++
                 assertEquals("580", ref.productId)
                 assertEquals(listOf(BranchId("205")), requested)
                 return ProductLocationsResult.Unavailable(LocationFailure.TRANSPORT)
             }
         }
         val tool = AdvisorLocationsTool(
+            providers = exactLookupProviders { ref, branch -> stockReadCalls++; pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult.Unavailable(pl.lukaszpeciak.towarownik.product.provider.ProductProviderFailure.NETWORK, "Synthetic failure") }, now = { 123L },
             locationsService = ProductLocationsService(listOf(adapter)),
             kwantBranches = { ProviderBranchResult.Available(branches) },
         )
@@ -896,7 +900,8 @@ class AdvisorLocationsControllerTest {
                 val evidence = (output as AdvisorToolContinuation.Locations).evidence
                 assertEquals("unavailable", evidence.status)
                 assertEquals("transport", evidence.reason)
-                assertTrue(evidence.locations.isEmpty())
+                assertEquals(listOf("205"), evidence.checkedIds)
+                assertEquals(null, evidence.locations.single().stock)
                 answer()
             },
             locationCall = { authority ->
@@ -913,7 +918,7 @@ class AdvisorLocationsControllerTest {
             historicalVerifiedProducts = listOf(product),
             locationHistory = history,
         ) {} is AdvisorUiState.Success)
-        assertEquals(1, httpCalls)
+        assertEquals(1, stockReadCalls)
     }
 
     @Test fun controllerAndRealLocationsToolShareNumericProductIdentityBoundary() = runBlocking {
@@ -949,7 +954,7 @@ class AdvisorLocationsControllerTest {
             Scenario(
                 "Sprawdź stan produktu 1000 w Zamościu",
                 "1000", listOf("1000"),
-                "unavailable", "unverified_request_contract", listOf("1000"),
+                "unavailable", "transport", listOf("1000"),
             ),
             Scenario(
                 "Sprawdź stan produktu 7027 w Zamościu",
@@ -964,11 +969,11 @@ class AdvisorLocationsControllerTest {
             Scenario(
                 "Sprawdź stan produktu 7035 w oddziale Zamość, 1000 W, 25 m i 5 szt.",
                 "7035", listOf("7035"),
-                "unavailable", "unverified_request_contract", listOf("7035"),
+                "unavailable", "transport", listOf("7035"),
             ),
         )
         for (scenario in scenarios) {
-            val adapterReads = mutableListOf<String>()
+            val stockReadProducts = mutableListOf<String>()
             val adapter = object : ProductLocationsAdapter {
                 override val providerId = KWANT_PROVIDER_ID
                 override suspend fun read(
@@ -976,13 +981,14 @@ class AdvisorLocationsControllerTest {
                     requested: List<BranchId>,
                     trustedProduct: ProviderProduct?,
                 ): ProductLocationsResult {
-                    adapterReads += ref.productId
+                    stockReadProducts += ref.productId
                     return ProductLocationsResult.Unavailable(
                         LocationFailure.UNVERIFIED_REQUEST_CONTRACT,
                     )
                 }
             }
             val realLocations = AdvisorLocationsTool(
+                providers = exactLookupProviders { ref, branch -> stockReadProducts += ref.productId; pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult.Unavailable(pl.lukaszpeciak.towarownik.product.provider.ProductProviderFailure.NETWORK, "Synthetic failure") }, now = { 123L },
                 locationsService = ProductLocationsService(listOf(adapter)),
                 kwantBranches = {
                     ProviderBranchResult.Available(listOf(
@@ -1038,7 +1044,7 @@ class AdvisorLocationsControllerTest {
             assertTrue(scenario.user, state is AdvisorUiState.Success)
             assertEquals(scenario.user, if (scenario.expectedStatus == "rejected") 0 else 1, serviceInvocations)
             assertEquals(scenario.user, 1, continuations)
-            assertEquals(scenario.user, scenario.expectedReads, adapterReads)
+            assertEquals(scenario.user, scenario.expectedReads, stockReadProducts)
         }
     }
 
@@ -1057,7 +1063,7 @@ class AdvisorLocationsControllerTest {
                 ),
                 AdvisorLocationHistoryMessage("ASSISTANT", "OK"),
             )
-            val locationAdapterReads = mutableListOf<String>()
+            val locationReadProducts = mutableListOf<String>()
             val adapter = object : ProductLocationsAdapter {
                 override val providerId = OBI_PROVIDER_ID
                 override suspend fun read(
@@ -1065,7 +1071,7 @@ class AdvisorLocationsControllerTest {
                     requested: List<BranchId>,
                     trustedProduct: ProviderProduct?,
                 ): ProductLocationsResult {
-                    locationAdapterReads += ref.productId
+                    locationReadProducts += ref.productId
                     return ProductLocationsResult.Available(
                         ref,
                         requested.map { id -> LocationStock(ProviderBranch(id, "Test"), 2) },
@@ -1080,6 +1086,7 @@ class AdvisorLocationsControllerTest {
                 }
             }
             val realTool = AdvisorLocationsTool(
+                providers = exactLookupProviders { ref, branch -> locationReadProducts += ref.productId; exactLookupFound(ref, branch, 2) }, now = { 123L },
                 locationsService = ProductLocationsService(listOf(adapter)),
             )
             val text = "Sprawdź stan produktu OBIK 6117543 w market OBI $market"
@@ -1116,7 +1123,7 @@ class AdvisorLocationsControllerTest {
                 historicalVerifiedProducts = listOf(product, marketNumber),
                 locationHistory = oldMessages,
             ) {} is AdvisorUiState.Success)
-            assertEquals(text, listOf("6117543"), locationAdapterReads)
+            assertEquals(text, listOf("6117543"), locationReadProducts)
         }
     }
 
@@ -1187,10 +1194,10 @@ class AdvisorLocationsControllerTest {
         for (scenario in cases) {
             // Real endpoint is enabled. A synthetic fetcher reports transport
             // failure for a selected single product; obu invokes no HTTP.
-            var httpCalls = 0
+            var stockReadCalls = 0
             val adapter = KwantProductLocationsAdapter(
                 fetcher = LocationsHttpFetcher {
-                    httpCalls++
+                    stockReadCalls++
                     pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Failure(
                         LocationFailure.TRANSPORT,
                     )
@@ -1198,6 +1205,7 @@ class AdvisorLocationsControllerTest {
                 directory = { ProviderBranchResult.Available(kwantBranches) },
             )
             val locationsTool = AdvisorLocationsTool(
+                providers = exactLookupProviders { ref, branch -> stockReadCalls++; pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult.Unavailable(pl.lukaszpeciak.towarownik.product.provider.ProductProviderFailure.NETWORK, "Synthetic failure") }, now = { 123L },
                 locationsService = ProductLocationsService(listOf(adapter)),
                 kwantBranches = { ProviderBranchResult.Available(kwantBranches) },
             )
@@ -1261,7 +1269,7 @@ class AdvisorLocationsControllerTest {
             assertEquals(scenario.input, 1, continuations)
             assertEquals(scenario.input, scenario.expectedToolCalls, locationToolCalls)
             assertEquals(scenario.input, if (scenario.expectedToolCalls == 0) 0 else
-                if (scenario.expectedReason == "transport") 1 else 0, httpCalls)
+                if (scenario.expectedReason == "transport") 1 else 0, stockReadCalls)
         }
     }
 
@@ -1290,11 +1298,11 @@ class AdvisorLocationsControllerTest {
             Scenario("Sprawdź stan produktu 580 we wszystkich oddziałach",
                 emptyList(), "verified", listOf("205", "128", "204"), 1),
         )) {
-            var inventoryHttpCalls = 0
+            var scopeReadCalls = 0
             val adapter = KwantProductLocationsAdapter(
                 directory = { ProviderBranchResult.Available(branches) },
                 fetcher = LocationsHttpFetcher { url ->
-                    inventoryHttpCalls++
+                    scopeReadCalls++
                     assertEquals("1", url.queryParameter("extended"))
                     pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
                         """{"list":[{"department_id":205,"stock":2},""" +
@@ -1304,6 +1312,7 @@ class AdvisorLocationsControllerTest {
                 },
             )
             val tool = AdvisorLocationsTool(
+                providers = exactLookupProviders { ref, branch -> scopeReadCalls++; exactLookupFound(ref, branch, when (branch.value) { "128" -> 0; "204" -> 9; else -> 2 }) }, now = { 123L },
                 locationsService = ProductLocationsService(listOf(adapter)),
                 kwantBranches = { ProviderBranchResult.Available(branches) },
             )
@@ -1344,7 +1353,7 @@ class AdvisorLocationsControllerTest {
             ) {}
             assertTrue(case.user, result is AdvisorUiState.Success)
             assertEquals(case.user, 1, continuations)
-            assertEquals(case.user, case.expectedHttp, inventoryHttpCalls)
+            assertEquals(case.user, case.expectedHttp, scopeReadCalls)
         }
     }
 
@@ -1383,11 +1392,11 @@ class AdvisorLocationsControllerTest {
                 listOf("Nowy Sącz"), listOf("128", "204"), null),
         )
         for (scenario in scenarios) {
-            var httpReads = 0
+            var stockReadCalls = 0
             val adapter = KwantProductLocationsAdapter(
                 directory = { ProviderBranchResult.Available(branches) },
                 fetcher = LocationsHttpFetcher {
-                    httpReads++
+                    stockReadCalls++
                     pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
                         """{"list":[{"department_id":205,"stock":1},""" +
                             """{"department_id":128,"stock":0},""" +
@@ -1396,6 +1405,7 @@ class AdvisorLocationsControllerTest {
                 },
             )
             val tool = AdvisorLocationsTool(
+                providers = exactLookupProviders { ref, branch -> stockReadCalls++; exactLookupFound(ref, branch, when (branch.value) { "128" -> 0; "204" -> 5; else -> 1 }) }, now = { 123L },
                 locationsService = ProductLocationsService(listOf(adapter)),
                 kwantBranches = { ProviderBranchResult.Available(branches) },
             )
@@ -1432,7 +1442,7 @@ class AdvisorLocationsControllerTest {
                 conversationProviderId = "kwant-pl", conversationStoreNumber = "205",
                 historicalVerifiedProducts = listOf(product),
             ) {} is AdvisorUiState.Success)
-            assertEquals(scenario.text, if (scenario.rejection == null) 1 else 0, httpReads)
+            assertEquals(scenario.text, if (scenario.rejection == null) 1 else 0, stockReadCalls)
         }
     }
 
@@ -1479,11 +1489,11 @@ class AdvisorLocationsControllerTest {
                 listOf("Tarnów"), setOf("216"), null),
         )
         for (case in cases) {
-            var httpCalls = 0
+            var stockReadCalls = 0
             val adapter = KwantProductLocationsAdapter(
                 directory = { ProviderBranchResult.Available(branches) },
                 fetcher = LocationsHttpFetcher { url ->
-                    httpCalls++
+                    stockReadCalls++
                     assertEquals("/api/front/products/7027/departments", url.encodedPath)
                     assertEquals("1", url.queryParameter("extended"))
                     pl.lukaszpeciak.towarownik.product.provider.LocationsHttpResult.Success(
@@ -1497,6 +1507,7 @@ class AdvisorLocationsControllerTest {
                 },
             )
             val tool = AdvisorLocationsTool(
+                providers = exactLookupProviders { ref, branch -> stockReadCalls++; exactLookupFound(ref, branch, when (branch.value) { "128" -> 5; "216" -> 0; "204" -> 3; "141" -> 4; "161" -> 1; else -> 2 }) }, now = { 123L },
                 locationsService = ProductLocationsService(listOf(adapter)),
                 kwantBranches = { ProviderBranchResult.Available(branches) },
             )
@@ -1544,7 +1555,7 @@ class AdvisorLocationsControllerTest {
             assertTrue(case.text, state is AdvisorUiState.Success)
             assertEquals(case.text, 1, continuationCount)
             assertEquals(case.text, if (case.expectedReason == null) 1 else 0,
-                httpCalls)
+                stockReadCalls)
         }
     }
 

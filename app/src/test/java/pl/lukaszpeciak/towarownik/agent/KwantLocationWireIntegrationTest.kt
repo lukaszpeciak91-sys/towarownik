@@ -47,9 +47,11 @@ class KwantLocationWireIntegrationTest {
             ),
         )
         for ((name, upstream) in samples) {
+            // This adapter/wire fixture retains explicit network intent; singleton exact reads are tested separately.
+            val fixtureBranches = branches.filter { it.branchId.value == "128" }
             var inventoryCalls = 0
             val adapter = KwantProductLocationsAdapter(
-                directory = { ProviderBranchResult.Available(branches) },
+                directory = { ProviderBranchResult.Available(fixtureBranches) },
                 fetcher = LocationsHttpFetcher {
                     inventoryCalls++
                     upstream
@@ -57,12 +59,12 @@ class KwantLocationWireIntegrationTest {
             )
             val tool = AdvisorLocationsTool(
                 locationsService = ProductLocationsService(listOf(adapter)),
-                kwantBranches = { ProviderBranchResult.Available(branches) },
+                kwantBranches = { ProviderBranchResult.Available(fixtureBranches) },
             )
             val evidence = tool.execute(
                 AdvisorLocationArguments("kwant-pl", "580", listOf("Zamość")),
-                "kwant-pl", "205",
-                "Sprawdź stan produktu 580 w Zamościu",
+                "kwant-pl", "128",
+                "Sprawdź stan produktu 580 we wszystkich oddziałach",
                 emptyList(), listOf(snapshot),
             )
             assertEquals(name, "unavailable", evidence.status)

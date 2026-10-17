@@ -24,6 +24,8 @@ class Inc008InventoryDiagnosticsTest {
     )
 
     private suspend fun lookup(body: String, id: String = "205", status: Int = 200, media: String = "application/json", ioFailure: Boolean = false): AdvisorLocationEvidence {
+        // Keep D1 adapter diagnostics on explicit network intent, even with one directory entry.
+        val fixtureBranches = branches.filter { it.branchId.value == id }
         var requests = 0
         val http = OkHttpClient.Builder().addInterceptor { chain ->
             requests++
@@ -36,10 +38,10 @@ class Inc008InventoryDiagnosticsTest {
                 .header("Content-Type", media).header("Set-Cookie", "SECRET_COOKIE_CANARY")
                 .body(body.toResponseBody()).build()
         }.build()
-        val adapter = KwantProductLocationsAdapter(fetcher = OkHttpLocationsFetcher(http), directory = { ProviderBranchResult.Available(branches) }, now = { 1234L })
-        val tool = AdvisorLocationsTool(ProductLocationsService(listOf(adapter)), kwantBranches = { ProviderBranchResult.Available(branches) })
-        val evidence = tool.execute(AdvisorLocationArguments("kwant-pl", "580", listOf("wrong_hint")), "kwant-pl", "205",
-            "Sprawdź stan MBN116E w ${if (id == "205") "Nowym Sączu" else "Tarnowie"}", emptyList(), listOf(product))
+        val adapter = KwantProductLocationsAdapter(fetcher = OkHttpLocationsFetcher(http), directory = { ProviderBranchResult.Available(fixtureBranches) }, now = { 1234L })
+        val tool = AdvisorLocationsTool(ProductLocationsService(listOf(adapter)), kwantBranches = { ProviderBranchResult.Available(fixtureBranches) })
+        val evidence = tool.execute(AdvisorLocationArguments("kwant-pl", "580", listOf("wrong_hint")), "kwant-pl", id,
+            "Sprawdź stan MBN116E we wszystkich oddziałach", emptyList(), listOf(product))
         assertEquals(1, requests)
         assertEquals("580", evidence.productId)
         assertEquals("kwant-pl", evidence.providerId)
@@ -67,7 +69,7 @@ class Inc008InventoryDiagnosticsTest {
     }
 
     @Test fun nullMissingStockAndMissingRequestedRowExposeNoTrustedRows() = runBlocking {
-        for (body in listOf("""{"list":[{"department_id":205,"stock":null}]}""", """{"list":[{"department_id":205}]}""", """{"list":[{"department_id":204,"stock":7}]}""")) {
+        for (body in listOf("""{"list":[{"department_id":205,"stock":null}]}""", """{"list":[{"department_id":205}]}""", """{"list":[]}""")) {
             val evidence = lookup(body)
             assertEquals("no_trusted_rows", evidence.reason)
             assertTrue(report(evidence).contains("coverage=partial"))
@@ -138,12 +140,12 @@ class Inc008InventoryDiagnosticsTest {
 
     @Test fun directoryFailureRetainsAuthorizedScopeButDoesNotInventCheckedRows() = runBlocking {
         val authority = AdvisorInventoryAuthorizer.resolve(AdvisorLocationArguments("kwant-pl", "580", emptyList()), "kwant-pl", "205",
-            "Sprawdź stan MBN116E w Tarnowie", emptyList(), listOf(product), branches, emptyList()) as AdvisorInventoryAuthorization.Inventory
+            "Sprawdź stan MBN116E we wszystkich oddziałach", emptyList(), listOf(product), branches, emptyList()) as AdvisorInventoryAuthorization.Inventory
         val adapter = KwantProductLocationsAdapter(directory = { error("SECRET_DIRECTORY_CANARY") }, fetcher = LocationsHttpFetcher { error("no HTTP") })
         val evidence = AdvisorLocationsTool(ProductLocationsService(listOf(adapter))).execute(authority)
         assertEquals("directory_unavailable", evidence.reason)
         assertTrue(evidence.checkedIds.isEmpty())
-        assertTrue(report(evidence).contains("requested_ids=[204]"))
+        assertTrue(report(evidence).contains("requested_ids=[205,204]"))
         assertFalse(report(evidence).contains("SECRET_"))
     }
 

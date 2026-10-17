@@ -53,6 +53,10 @@ class AdvisorLocationFollowUpReportsTest {
         }
         val tool = AdvisorLocationsTool(
             locationsService = ProductLocationsService(listOf(adapter)),
+            providers = exactLookupProviders { ref, branch ->
+                reads += listOf(branch.value); http += listOf(branch.value)
+                exactLookupFound(ref, branch, 2)
+            }, now = { 1234L },
         )
     }
 
@@ -278,6 +282,11 @@ class AdvisorLocationFollowUpReportsTest {
         }
         private val tool = AdvisorLocationsTool(
             locationsService = ProductLocationsService(listOf(adapter)),
+            providers = exactLookupProviders { ref, _ ->
+                adapterReads += ref.productId
+                pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult.Unavailable(
+                    pl.lukaszpeciak.towarownik.product.provider.ProductProviderFailure.NETWORK, "Synthetic failure")
+            },
             kwantBranches = {
                 ProviderBranchResult.Available(listOf(
                     ProviderBranch(BranchId("205"), "Nowy Sącz"),
@@ -333,7 +342,7 @@ class AdvisorLocationFollowUpReportsTest {
         val request = "Sprawdź stan produktu 7027 w oddziale Zamość"
         val after = f.check(request, listOf(f.old, f.newlyVerified), "7027")
         assertEquals("unavailable", after.status)
-        assertEquals("unverified_request_contract", after.reason)
+        assertEquals("transport", after.reason)
         assertEquals(listOf("7027"), f.adapterReads)
         val mismatch = f.check(request, listOf(f.old, f.newlyVerified), "7035")
         assertEquals("rejected", mismatch.status)
@@ -381,7 +390,7 @@ class AdvisorLocationFollowUpReportsTest {
             val trusted = listOf(f.old, f.newlyVerified)
             val correct = f.check(message, trusted, "7027")
             assertEquals(message, "unavailable", correct.status)
-            assertEquals(message, "unverified_request_contract", correct.reason)
+            assertEquals(message, "transport", correct.reason)
             assertEquals(message, listOf("7027"), f.adapterReads)
             val substituted = f.check(message, trusted, "7035")
             assertEquals(message, "rejected", substituted.status)

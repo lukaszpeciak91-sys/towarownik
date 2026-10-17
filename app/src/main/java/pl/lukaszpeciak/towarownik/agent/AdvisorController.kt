@@ -857,7 +857,7 @@ internal class AdvisorController(
             val proxyClient = AdvisorProxyClient(attachmentStorage = attachmentStorage)
             val providers = ProductProviderRegistry.production()
             val obiTool = FindObiProductsTool()
-            val locationsTool = AdvisorLocationsTool()
+            val locationsTool = AdvisorLocationsTool(providers = providers)
             val providerTool = FindProviderProductsTool(
                 providers = providers,
             )

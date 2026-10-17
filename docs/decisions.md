@@ -1,5 +1,9 @@
 # Decisions
 
+## 2026-10-17 — Reuse ordinary verification for authorized singleton scope
+
+Choose the existing exact provider lookup after typed authorization when `!fullNetwork && branches.size == 1`; retain inventory for all other scopes. RED checkpoint `ba7af82366ecd28ccd1e4df19c7972575b024ef6` proves the previous singleton used the network adapter. Preserve the original location continuation rather than adding tools/schemas, modifying language admission or duplicating HTTP/parsers. Returned identity/branch mismatches and failed/null stock stay unknown without historical/central fallback. [Repair evidence and boundaries](single-branch-exact-lookup-repair.md). This does not establish the original INC-008 live failure cause.
+
 ## 2026-10-15 — P0-B typed inventory authority: design before implementation
 
 Verified base: merged P0-A #127, main `a305b826cab1347f24d2b507d86854ac86ec02f3` (tree `30586c2aca648fc5c69606e8c52a4bee39bd3d0c`). Before production edits, the new actual-Controller/adapters fixture ran 12 JUnit methods: 7 passed, 5 failed. Equivalent `Czy dostaniemy …` was refused as `location_intent_required`; fresh B discovery in branch 204 could not repair that gate; the price → Mielec retry made no inventory GET. One negative failure concerns the expected rejection category, not an unauthorized read: unknown B still made zero GETs. Fixtures log actual URLs, product IDs, selected branch IDs and exact lookups. No live model/provider behavior is inferred.

@@ -67,6 +67,8 @@ class AdvisorLocationsNationwideTest {
         val tool = AdvisorLocationsTool(
             locationsService = ProductLocationsService(listOf(counter)),
             scopeExecutionBudgetMillis = totalBudgetMillis,
+            providers = exactLookupProviders { ref, branch -> exactLookupFound(ref, branch, 2) },
+            now = { 123456L },
         )
 
         suspend fun run(
@@ -183,8 +185,8 @@ class AdvisorLocationsNationwideTest {
         val fake = FakeInventory()
         val result = fake.run("Sprawdź market OBI 075", hints = listOf("075"))
         assertEquals(listOf("075"), result.checkedIds)
-        assertEquals(listOf(listOf(BranchId("075"))), fake.serviceReads)
-        assertEquals(1, fake.httpBatches.size)
+        assertTrue(fake.serviceReads.isEmpty())
+        assertTrue(fake.httpBatches.isEmpty())
     }
 
     @Test fun `model cannot narrow broad all-other request by invented IDs`() = runBlocking {

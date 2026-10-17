@@ -67,7 +67,11 @@ class AdvisorNaturalFollowUpRegressionTest {
         }
         val branches = { if (directoryUnavailable) ProviderBranchResult.Unavailable(ProductProviderFailure.NETWORK, "offline")
             else ProviderBranchResult.Available(directory) }
-        val tool = AdvisorLocationsTool(ProductLocationsService(listOf(adapter)), branches, branches)
+        val tool = AdvisorLocationsTool(ProductLocationsService(listOf(adapter)), branches, branches,
+            providers = exactLookupProviders { ref, branch ->
+                reads += ref.productId to listOf(branch.value)
+                exactLookupFound(ref, branch, 7)
+            }, now = { 2000L })
         var evidence: AdvisorLocationEvidence? = null
         val initial = AdvisorProxyCallResult.Success(AdvisorProxyResult.LocationToolRequest(
             "resp_locations", "call_locations", AdvisorLocationArguments(modelProvider, modelId, hints),
@@ -317,7 +321,7 @@ class AdvisorNaturalFollowUpRegressionTest {
                     LocationCoverage(LocationCoverageKind.REQUESTED_SUBSET,requested,requested,1),2000)
             }
         }
-        val locations=AdvisorLocationsTool(ProductLocationsService(listOf(adapter)),{ProviderBranchResult.Available(obi)},{provider.branches()})
+        val locations=AdvisorLocationsTool(ProductLocationsService(listOf(adapter)),{ProviderBranchResult.Available(obi)},{provider.branches()}, providers = ProductProviderRegistry(listOf(provider)), now = { 2000L })
         fun request(suffix:String)=AdvisorProxyCallResult.Success(AdvisorProxyResult.LocationToolRequest("resp_$suffix","call_$suffix",AdvisorLocationArguments("kwant-pl","90001",listOf("205"))))
         var continuations=0
         val c=AdvisorController(isConfigured={true},startAgent={_,_,_->request("one")},messageAgent={_,_,_,_->request("one")},
@@ -342,7 +346,7 @@ class AdvisorNaturalFollowUpRegressionTest {
             },executeObiTool={error("Wrong provider")},executeProviderTool=discovery::execute,executeLocationsTool=locations::execute,branchDirectory={provider.branches()})
         val prior=listOf(user("sprawdź stan A9Z01440/SCH w Bochni"),AdvisorLocationHistoryMessage("ASSISTANT","Synthetic failed turn"))
         val state=c.runTurn("w Bochni",null,"205","kwant-pl",locationHistory=prior){} as AdvisorUiState.Success
-        assertEquals(3,continuations);assertEquals(1,inventoryReads);assertEquals(listOf("203"),lookupBranches)
+        assertEquals(3,continuations);assertEquals(0,inventoryReads);assertEquals(listOf("203", "203"),lookupBranches)
         assertEquals("90001",state.products.single().effectiveProductId);assertEquals(1000L,state.products.single().verifiedAt)
     }
 
@@ -369,7 +373,7 @@ class AdvisorNaturalFollowUpRegressionTest {
                 inventoryReads++;return ProductLocationsResult.Unavailable(LocationFailure.TRANSPORT)
             }
         }
-        val locations=AdvisorLocationsTool(ProductLocationsService(listOf(adapter)),{ProviderBranchResult.Available(obi)},{provider.branches()})
+        val locations=AdvisorLocationsTool(ProductLocationsService(listOf(adapter)),{ProviderBranchResult.Available(obi)},{provider.branches()}, providers = ProductProviderRegistry(listOf(provider)), now = { 2000L })
         var continuations=0
         val first=AdvisorProxyCallResult.Success(AdvisorProxyResult.ToolRequest("resp_discover","call_discover",AdvisorToolArguments("205",listOf(AdvisorToolQuery("OTHER02/SCH",1)),"kwant-pl","Bochni")))
         val c=AdvisorController(isConfigured={true},startAgent={_,_,_->first},messageAgent={_,_,_,_->first},

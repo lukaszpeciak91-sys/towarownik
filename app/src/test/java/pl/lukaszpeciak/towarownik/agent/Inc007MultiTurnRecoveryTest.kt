@@ -100,6 +100,13 @@ class Inc007MultiTurnRecoveryTest {
                 KwantProductLocationsAdapter(fetcher, branches, now = { 2000L }),
                 ObiProductLocationsAdapter(fetcher, branches, now = { 2000L }),
             )), branches, branches,
+            providers = exactLookupProviders { ref, branch ->
+                // Exact fixture operation, separate from the unchanged inventory fetcher.
+                gets += if (provider == "kwant-pl") "https://services.kwant.net.pl/api/front/products/${ref.productId}/current?depstock=${branch.value}"
+                    else "https://www.obi.pl/api/disc/store/change?storeNumber=${branch.value}&redirectUrl=/p/${ref.productId}"
+                if (inventoryFailure) ProviderLookupResult.Unavailable(ProductProviderFailure.NETWORK, "Synthetic failure")
+                else exactLookupFound(ref, branch, if (provider == "obi-pl") 7 else when (branch.value) { "203" -> 0; "206" -> 11; "204" -> 13; else -> 17 })
+            }, now = { 2000L },
         )
         fun request(discover: Boolean = false): AdvisorProxyCallResult.Success {
             val response = "resp_" + turnNumber + "_" + phase
@@ -193,7 +200,7 @@ class Inc007MultiTurnRecoveryTest {
         h.turn(h.article); h.modelId = h.id
         h.turn("a w Tarnowie?")
         assertEquals("77557", h.evidence().productId); assertEquals(listOf("204"), h.evidence().checkedIds)
-        assertTrue(h.gets.single().contains("/77557/departments?")); assertEquals(13, h.evidence().locations.single().stock)
+        assertTrue(h.gets.single().contains("/77557/current?")); assertEquals(13, h.evidence().locations.single().stock)
     }
     @Test fun providerVerificationFailureDoesNotPoisonNextIndependentSearch() = runBlocking {
         val h = Harness(); h.verificationFailure = true
@@ -214,12 +221,12 @@ class Inc007MultiTurnRecoveryTest {
         val h = Harness(); h.anchor(); h.turn("a w oddziale w Mielcu?")
         h.turn("nie sprawdzisz mi w Mielcu?"); assertEquals(listOf("206"), h.evidence().checkedIds)
         h.turn("dobrze a w oddziale Tarnów?"); assertEquals(listOf("204"), h.evidence().checkedIds)
-        assertEquals(3, h.gets.size); assertTrue(h.gets.all { it.contains("/77556/departments?") })
+        assertEquals(3, h.gets.size); assertTrue(h.gets.all { it.contains("/77556/current?") })
     }
     @Test fun neutralPriceTurnRetainsUniqueReferentForNaturalRetry() = runBlocking {
         val h = Harness(); h.anchor(); h.turn("pokaż ceny"); h.turn("nie sprawdzisz mi w Mielcu?")
         assertEquals(1, h.gets.size); assertEquals(listOf("206"), h.evidence().checkedIds)
-        assertTrue(h.gets.single().contains("/77556/departments?")); assertEquals(11, h.evidence().locations.single().stock)
+        assertTrue(h.gets.single().contains("/77556/current?")); assertEquals(11, h.evidence().locations.single().stock)
     }
     @Test fun adviceAndPriceTailsCannotBecomeLocationClarifications() = runBlocking {
         for (input in listOf("dobrze a w oddziale Tarnów pokaż ceny", "nie sprawdzisz mi w Mielcu jak podłączyć pompę",

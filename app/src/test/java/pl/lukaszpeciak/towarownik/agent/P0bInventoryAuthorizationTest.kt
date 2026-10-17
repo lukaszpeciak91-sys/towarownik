@@ -101,6 +101,13 @@ class P0bInventoryAuthorizationTest {
                 KwantProductLocationsAdapter(fetcher, branches, now = { 2000L }),
                 ObiProductLocationsAdapter(fetcher, branches, now = { 2000L }),
             )), branches, branches,
+            providers = exactLookupProviders { ref, branch ->
+                // Exact fixture operation, separate from the unchanged inventory fetcher.
+                gets += if (provider == "kwant-pl") "https://services.kwant.net.pl/api/front/products/${ref.productId}/current?depstock=${branch.value}"
+                    else "https://www.obi.pl/api/disc/store/change?storeNumber=${branch.value}&redirectUrl=/p/${ref.productId}"
+                if (inventoryFailure) ProviderLookupResult.Unavailable(ProductProviderFailure.NETWORK, "Synthetic failure")
+                else exactLookupFound(ref, branch, if (provider == "obi-pl") 7 else when (branch.value) { "203" -> 0; "206" -> 11; "204" -> 13; else -> 17 })
+            }, now = { 2000L },
         )
         fun request(discover: Boolean = false): AdvisorProxyCallResult.Success {
             val response = "resp_" + turnNumber + "_" + phase
@@ -166,7 +173,7 @@ class P0bInventoryAuthorizationTest {
             assertEquals(input, listOf("205"), h.evidence().checkedIds)
             assertEquals(input, "77556", h.evidence().productId)
             assertEquals(input, 1, h.gets.size)
-            assertTrue(h.gets.single().contains("/77556/departments?"))
+            assertTrue(h.gets.single().contains("/77556/current?"))
             assertEquals(17, h.evidence().locations.single().stock)
         }
     }
@@ -198,7 +205,7 @@ class P0bInventoryAuthorizationTest {
         assertTrue(h.gets.isEmpty()) // old model product must be rejected, never silently executed
         h.modelId = "77557"; h.turn("a w Tarnowie?"); trace(h, "verified B retry")
         assertEquals(listOf("204"), h.evidence().checkedIds)
-        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/current?"))
     }
     @Test fun currentIdentityOverridesHistoryOnColloquialRecovery() = runBlocking {
         val h = Harness(); h.anchor(); h.id = "77557"; h.article = "A9Z01441/SCH"; h.modelId = "77556"
@@ -206,7 +213,7 @@ class P0bInventoryAuthorizationTest {
         trace(h, "new B locations discovery retry")
         assertEquals(listOf("204"), h.evidence().checkedIds)
         assertEquals("77557", h.evidence().productId)
-        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/current?"))
         assertEquals(4, h.ids.size) // anchor + three current-turn continuations
     }
     @Test fun priceOnlyAndAdviceNeverAuthorizeStock() = runBlocking {
@@ -281,7 +288,7 @@ class P0bInventoryAuthorizationTest {
         assertEquals(text, a.originalUserText); assertEquals(listOf(BranchId("206")), a.branches)
         val fresh = h.locations.execute(a)
         assertEquals(listOf("206"), fresh.checkedIds); assertEquals(11, fresh.locations.single().stock)
-        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77556/departments?"))
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77556/current?"))
         assertEquals(2000L, fresh.verifiedAtMillis); assertNull(fresh.centralStock)
     }
     @Test fun referenceOutsideFourUserTurnWindowRequiresClarification() = runBlocking {
@@ -295,7 +302,7 @@ class P0bInventoryAuthorizationTest {
         h.turn("nie sprawdzisz mi w Tarnowie?"); assertTrue(h.gets.isEmpty())
         assertEquals("untrusted_product", h.evidence().reason)
         h.verificationFailure = false; h.turn(h.article); h.modelId = h.id; h.turn("a w Tarnowie?")
-        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/current?"))
         assertEquals(listOf("204"), h.evidence().checkedIds)
     }
     @Test fun broadWordingCannotEraseUnknownStreetOrConflictingMarket() = runBlocking {
@@ -310,7 +317,7 @@ class P0bInventoryAuthorizationTest {
         h.turn("Macie może A9Z01440/SCH u nas?")
         assertEquals(listOf("205"), h.evidence().checkedIds)
         assertEquals(listOf("205"), h.evidence().returnedIds)
-        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77556/departments?"))
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77556/current?"))
     }
 
     @Test fun sameProductAdviceWithUserIdentityOrCompleteReferenceDoesNotEraseReferent() = runBlocking {
@@ -319,7 +326,7 @@ class P0bInventoryAuthorizationTest {
             h.turn(advice); assertTrue(h.gets.isEmpty())
             h.turn("nie sprawdzisz mi w Mielcu?")
             assertEquals(1, h.gets.size); assertEquals(listOf("206"), h.evidence().checkedIds)
-            assertTrue(h.gets.single().contains("/77556/departments?"))
+            assertTrue(h.gets.single().contains("/77556/current?"))
         }
     }
     @Test fun currentProductReferenceTailCannotHideUnknownPlaceSelection() = runBlocking {
@@ -355,14 +362,14 @@ class P0bInventoryAuthorizationTest {
         val h = Harness(); h.anchor(); h.id = "77557"; h.article = "LAMP01/SYN"; h.modelId = "77556"
         h.turn("Sprawdź stan lampy sufitowej w Tarnowie", "recover")
         trace(h, "new lamp description locations discovery retry")
-        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/current?"))
         assertEquals(listOf("204"), h.evidence().checkedIds); assertEquals("77557", h.evidence().productId)
     }
 
     @Test fun naturalIndependentDiscoveryReplacesOlderHistoricalSelection() = runBlocking {
         val h = Harness(); h.anchor(); h.id = "77557"; h.article = "LAMP01/SYN"; h.modelId = h.id
         h.turn("Szukam lampy sufitowej", "discovery"); h.turn("a w Tarnowie?")
-        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/current?"))
         assertEquals("77557", h.evidence().productId); assertEquals(listOf("204"), h.evidence().checkedIds)
     }
     @Test fun failedDescriptiveRequestCanRecoverThroughCurrentVerificationWithinThreeCalls() = runBlocking {
@@ -370,7 +377,7 @@ class P0bInventoryAuthorizationTest {
         assertTrue(h.gets.isEmpty())
         h.id = "77557"; h.article = "LAMP01/SYN"
         h.turn("a w Tarnowie?", "recover")
-        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/departments?"))
+        assertEquals(1, h.gets.size); assertTrue(h.gets.single().contains("/77557/current?"))
         assertEquals(listOf("204"), h.evidence().checkedIds); assertEquals("77557", h.evidence().productId)
     }
     @Test fun explicitDeicticReferenceDoesNotRequireAnInventoryVerbDictionary() = runBlocking {
@@ -381,7 +388,7 @@ class P0bInventoryAuthorizationTest {
             assertEquals(AdvisorInventoryAuthorization.ProductProvenance.CURRENT_USER_REFERENCE, a.productProvenance)
             h.turn(text)
             assertEquals(prefix, 1, h.gets.size)
-            assertTrue(h.gets.single().contains("/77556/departments?"))
+            assertTrue(h.gets.single().contains("/77556/current?"))
             assertEquals(listOf("206"), h.evidence().checkedIds)
         }
     }
