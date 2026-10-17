@@ -15,6 +15,7 @@ import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ObiProductProvider
 import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsResult
 import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsService
+import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
 import pl.lukaszpeciak.towarownik.product.provider.ProductRef
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
@@ -30,6 +31,8 @@ internal class AdvisorLocationsTool(
     private val obiBranches: () -> ProviderBranchResult = ObiProductProvider()::branches,
     private val kwantBranches: () -> ProviderBranchResult = KwantProductProvider()::branches,
     private val scopeExecutionBudgetMillis: Long = 45_000L,
+    private val providers: ProductProviderRegistry = ProductProviderRegistry.production(),
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     init {
         require(scopeExecutionBudgetMillis in 1L..60_000L)
