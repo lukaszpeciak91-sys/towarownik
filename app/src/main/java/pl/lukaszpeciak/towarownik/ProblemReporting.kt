@@ -473,33 +473,45 @@ internal class ProblemReportFileStore(
         reportText: String,
         createdAtMillis: Long,
         zoneId: ZoneId = ZoneId.systemDefault(),
+        prefix: String = "taksula-report",
     ): File {
+        require(prefix in setOf("taksula-report", "taksula-diagnostics"))
         val directory = File(cacheDir, REPORT_CACHE_DIRECTORY)
         check(directory.exists() || directory.mkdirs()) {
             "Could not create report cache directory"
         }
 
+        // The system SAF picker may recreate the Activity. Never delete a
+        // freshly prepared report on another export (or overwrite same-second
+        // reports). Prune only unrelated or expired private-cache files.
+        val now = System.currentTimeMillis()
         directory.listFiles()?.forEach { file ->
-            if (file.isFile) {
+            if (file.isFile && (!EXPORT_FILE_NAME.matches(file.name) ||
+                    now - file.lastModified() > EXPORT_CACHE_MAX_AGE_MS)) {
                 file.delete()
             }
         }
-
         val timestamp = Instant.ofEpochMilli(createdAtMillis)
             .atZone(zoneId)
             .format(FILE_NAME_TIMESTAMP)
-        val reportFile = File(
-            directory,
-            "taksula-report-$timestamp.txt",
-        )
-        reportFile.writeText(
-            text = reportText,
-            charset = StandardCharsets.UTF_8,
-        )
+        val reportFile = File.createTempFile("$prefix-$timestamp-", ".txt", directory)
+        reportFile.writeText(text = reportText, charset = StandardCharsets.UTF_8)
         return reportFile
     }
 
+    /** Restore only a generated file within the private reports directory.
+     *  Persist the basename via rememberSaveable, never report contents or paths.
+     */
+    fun pending(name: String?): File? {
+        if (name == null || !EXPORT_FILE_NAME.matches(name)) return null
+        return File(File(cacheDir, REPORT_CACHE_DIRECTORY), name).takeIf { it.isFile }
+    }
+
     private companion object {
+        const val EXPORT_CACHE_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1_000
+        val EXPORT_FILE_NAME = Regex(
+            """^taksula-(?:report|diagnostics)-[0-9]{8}-[0-9]{6}-[A-Za-z0-9]+\.txt$""",
+        )
         val FILE_NAME_TIMESTAMP: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
     }
