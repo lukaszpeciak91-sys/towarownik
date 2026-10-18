@@ -75,6 +75,25 @@ class UnifiedDiagnosticsExportTest {
         assertTrue(REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT)
     }
 
+
+    @Test fun preparedSafReportMustSurviveAnotherExportAndSameSecondFilename() {
+        val root = Files.createTempDirectory("taksula-pending-recreate-red").toFile()
+        try {
+            val store = ProblemReportFileStore(root)
+            val first = store.write("PENDING ORIGINAL – zażółć", 1_000L)
+            val pendingNameFromSavedUiState = first.name
+            val unrelated = store.write("NEW REPORT", 1_000L)
+
+            // Simulates a recreated screen referring back to the pending file by name.
+            assertTrue("Prepared report deleted before SAF callback", first.isFile)
+            assertTrue("Same-second exports must not overwrite the pending report", unrelated.name != pendingNameFromSavedUiState)
+            assertEquals("PENDING ORIGINAL – zażółć", first.readText())
+            assertEquals("NEW REPORT", unrelated.readText())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test fun exportedFileUsesIdenticalUtf8BytesAsSharedReport() {
         val root = Files.createTempDirectory("taksula-save-test").toFile()
         try {
