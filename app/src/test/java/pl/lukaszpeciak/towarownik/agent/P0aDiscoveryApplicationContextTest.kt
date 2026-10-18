@@ -196,7 +196,7 @@ class P0aDiscoveryApplicationContextTest(private val case: Case) {
                 Case("KWANT mixed places", "kwant-pl", "sprawdź w Bochni i Zakopanem", "unknown", null),
                 Case("KWANT conflict", "kwant-pl", "sprawdź w oddziale 205 Bochnia", "unknown", null),
                 Case("KWANT units and codes", "kwant-pl", "203 m kabla A9Z203/SCH 203 x 205 mm 40 A", "absent", "205"),
-                Case("OBI ambiguous city", "obi-pl", "Szukam kabla w Krakowie", "ambiguous", null),
+                Case("OBI whole-city identity seed", "obi-pl", "Szukam kabla w Krakowie", "city-wide", "003"),
                 Case("OBI street", "obi-pl", "Szukam kabla w Krakowie na Wielickiej", "resolved:003", "003"),
                 Case("OBI application then street", "obi-pl", "Szukam lampy do montażu na suficie w Krakowie na Wielickiej", "resolved:003", "003"),
                 Case("OBI city conflict", "obi-pl", "Szukam kabla w OBI 075 Kraków", "unknown", null),
