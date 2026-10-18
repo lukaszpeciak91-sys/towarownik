@@ -25,9 +25,9 @@ import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
 @Config(sdk = [33])
 class ProblemReportSharingTest {
     @Test
-    fun `conversation and diagnostics inclusion default to off`() {
+    fun `conversation remains opt-in and safe diagnostics are visibly preselected`() {
         assertFalse(REPORT_INCLUDE_CONVERSATION_DEFAULT)
-        assertFalse(REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT)
+        assertTrue(REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT)
     }
 
     @Test

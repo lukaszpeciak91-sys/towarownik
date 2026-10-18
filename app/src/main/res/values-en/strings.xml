@@ -107,10 +107,14 @@
     <string name="open_in_obi">Open in OBI</string>
     <string name="open_in_kwant">Open in KWANT</string>
 
-    <string name="diagnostics_title">OBI diagnostics</string>
+    <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_mode_on">Diagnostic mode: ON</string>
     <string name="diagnostics_mode_off">Diagnostic mode: OFF</string>
-    <string name="diagnostics_retention_notice">The report keeps up to the last 10 operations in this session only. It does not store cookie values or response bodies.</string>
+    <string name="diagnostics_retention_notice">Detailed OBI capture keeps up to 10 operations in this session, without cookie values or response bodies.</string>
+    <string name="diagnostics_core_notice">Safe Advisor, OBI and KWANT events are recorded automatically (up to 64 this session). The switch controls additional OBI details.</string>
+    <string name="diagnostics_save_txt">Save TXT</string>
+    <string name="diagnostics_save_success">TXT file saved.</string>
+    <string name="diagnostics_save_failed">Could not save TXT file.</string>
     <string name="diagnostics_probe_success">OBI test finished.</string>
     <string name="diagnostics_probe_failure">OBI test failed: %1$s</string>
     <string name="diagnostics_probe_running">OBI test in progress…</string>
@@ -120,9 +124,9 @@
     <string name="diagnostics_copy_report">Copy report</string>
     <string name="diagnostics_share_report">Share report</string>
     <string name="diagnostics_clear_report">Clear report</string>
-    <string name="diagnostics_share_subject">Taksula — OBI diagnostics</string>
+    <string name="diagnostics_share_subject">Taksula — diagnostics</string>
     <string name="diagnostics_share_chooser">Share report</string>
-    <string name="diagnostics_clipboard_label">Taksula OBI diagnostics</string>
+    <string name="diagnostics_clipboard_label">Taksula diagnostics</string>
     <string name="back">Back</string>
 
     <string name="cd_open_navigation">Open conversation history</string>
@@ -197,16 +201,19 @@
     <string name="report_description_count">%1$d / %2$d</string>
     <string name="report_include_conversation">Include conversation</string>
     <string name="report_include_current_conversation">Include current conversation</string>
-    <string name="report_include_obi_diagnostics">Include OBI diagnostics</string>
-    <string name="report_include_obi_diagnostics_hint">Safe diagnostic data from this session is available.</string>
+    <string name="report_include_obi_diagnostics">Include app diagnostics</string>
+    <string name="report_include_obi_diagnostics_hint">Advisor, OBI and KWANT metadata; no conversation text, secrets or attachments.</string>
     <string name="report_privacy_assistant_without_conversation">The report contains the reported response and its product data. Other conversation text is not included.</string>
     <string name="report_privacy_assistant_with_conversation">The report contains the reported response, earlier conversation content, and product data shown in the conversation.</string>
     <string name="report_privacy_general_without_conversation">The report contains your description and technical app/device metadata. Conversation text is not included.</string>
     <string name="report_privacy_general_with_conversation">The report contains your description, the current persisted conversation, and product data shown in that conversation.</string>
-    <string name="report_privacy_obi_diagnostics_included">The report also contains existing OBI diagnostic data from this session.</string>
-    <string name="report_privacy_obi_diagnostics_not_included">OBI diagnostic data will not be included.</string>
+    <string name="report_privacy_obi_diagnostics_included">The report includes safe session diagnostic data; detailed OBI data only if enabled.</string>
+    <string name="report_privacy_obi_diagnostics_not_included">Additional diagnostic data will not be included.</string>
     <string name="report_screenshot_hint">After the message opens, you can add screenshots before sending.</string>
     <string name="report_create_and_share">Create and share report</string>
+    <string name="report_save_txt">Save report as TXT</string>
+    <string name="report_saved_txt">Report saved as TXT.</string>
+    <string name="report_error_save_failed">Could not save TXT in the selected folder.</string>
     <string name="report_creating">Creating report…</string>
     <string name="report_error_target_unavailable">The reported message or conversation is no longer available.</string>
     <string name="report_error_description_required">Add a short problem description.</string>

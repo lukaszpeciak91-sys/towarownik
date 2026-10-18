@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.IOException
+import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -19,6 +21,7 @@ import pl.lukaszpeciak.towarownik.conversation.ConversationRepository
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.PersistedMessage
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
+import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
 
 internal const val REPORT_RECIPIENT_EMAIL = "napahustudios@gmail.com"
 internal const val REPORT_DESCRIPTION_MAX_CHARS = 2_000
@@ -26,7 +29,7 @@ internal const val REPORT_ADVISOR_FAILURE_DIAGNOSTIC_MAX_CHARS = 256
 internal const val REPORT_CACHE_DIRECTORY = "reports"
 internal const val REPORT_FILE_PROVIDER_AUTHORITY_SUFFIX = ".fileprovider"
 internal const val REPORT_INCLUDE_CONVERSATION_DEFAULT = false
-internal const val REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT = false
+internal const val REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT = true
 
 internal enum class ProblemReportType {
     ASSISTANT_RESPONSE,
@@ -157,6 +160,7 @@ internal enum class ProblemReportUiError {
     DESCRIPTION_REQUIRED,
     GENERATION_FAILED,
     SHARE_UNAVAILABLE,
+    SAVE_FAILED,
 }
 
 internal sealed interface ProblemReportResolution {
@@ -318,6 +322,7 @@ internal object ProblemReportFormatter {
         evidence: ProblemReportEvidence,
         metadata: ProblemReportTechnicalMetadata,
         safeObiDiagnostics: String?,
+        safeDiagnosticEvents: String? = null,
     ): String = buildString {
         appendLine("TAKSULA PROBLEM REPORT")
         appendLine()
@@ -399,6 +404,14 @@ internal object ProblemReportFormatter {
                     }
                 }
             }
+        }
+
+        appendSection("APPLICATION DIAGNOSTICS") {
+            appendLine(
+                if (request.includeObiDiagnostics) {
+                    safeDiagnosticEvents ?: "No captured safe application events in this session."
+                } else "Diagnostics: not included"
+            )
         }
 
         appendSection("OBI DIAGNOSTICS") {
@@ -492,6 +505,23 @@ internal class ProblemReportFileStore(
     }
 }
 
+/** Android Storage Access Framework destination; no storage permission and no share chooser. */
+internal fun saveProblemReportToUri(
+    context: Context,
+    destination: Uri,
+    reportFile: File,
+) {
+    check(reportFile.isFile) { "Report file unavailable" }
+    val output = context.contentResolver.openOutputStream(destination, "wt")
+        ?: throw IOException("Cannot open selected destination")
+    output.use { stream -> copyProblemReportToStream(reportFile, stream) }
+}
+
+/** Shared UTF-8 bytes for file export; independent of Android's chooser implementation. */
+internal fun copyProblemReportToStream(file: File, output: OutputStream) {
+    file.inputStream().use { it.copyTo(output) }
+}
+
 internal fun problemReportUri(
     context: Context,
     reportFile: File,
@@ -564,6 +594,9 @@ internal suspend fun createProblemReportSharePayload(
                 recorder = recorder,
                 include = request.includeObiDiagnostics,
             ),
+            safeDiagnosticEvents = if (request.includeObiDiagnostics) {
+                TaksulaDiagnostics.recorder.report()
+            } else null,
         )
         val file = withContext(Dispatchers.IO) {
             ProblemReportFileStore(context.cacheDir).write(

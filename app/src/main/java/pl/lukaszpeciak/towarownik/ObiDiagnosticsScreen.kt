@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,10 +37,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.nio.charset.StandardCharsets
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import pl.lukaszpeciak.towarownik.diagnostics.OBI_PROBE_CANONICAL_PRODUCT_URL
 import pl.lukaszpeciak.towarownik.diagnostics.OBI_PROBE_SEARCH_URL
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.diagnostics.ObiLiveProbeRunner
+import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
 
 private sealed interface ProbeUiStatus {
     data object Success : ProbeUiStatus
@@ -65,7 +73,28 @@ internal fun ObiDiagnosticsScreen(
     var probeRunning by remember { mutableStateOf(false) }
     var probeStatus by remember { mutableStateOf<ProbeUiStatus?>(null) }
     var reportRevision by remember { mutableIntStateOf(0) }
-    val report = remember(enabled, reportRevision) { recorder.report() }
+    fun combinedReport() = TaksulaDiagnostics.recorder.report() +
+        "\n--- DETAILED OBI TRANSPORT (OPTIONAL) ---\n" + recorder.report()
+    val report = remember(enabled, reportRevision) { combinedReport() }
+    var pendingExportText by remember { mutableStateOf<String?>(null) }
+    var saveResult by remember { mutableStateOf<Boolean?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        val snapshot = pendingExportText
+        pendingExportText = null
+        if (uri != null && snapshot != null) {
+            scope.launch {
+                saveResult = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val output = context.contentResolver.openOutputStream(uri, "wt")
+                            ?: error("Could not open selected destination")
+                        output.use { it.write(snapshot.toByteArray(StandardCharsets.UTF_8)) }
+                    }.isSuccess
+                }
+            }
+        }
+    }
     val clipboardLabel = stringResource(R.string.diagnostics_clipboard_label)
     val shareSubject = stringResource(R.string.diagnostics_share_subject)
     val shareChooserTitle = stringResource(R.string.diagnostics_share_chooser)
@@ -114,6 +143,10 @@ internal fun ObiDiagnosticsScreen(
 
             Text(
                 text = stringResource(R.string.diagnostics_retention_notice),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = stringResource(R.string.diagnostics_core_notice),
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -193,7 +226,7 @@ internal fun ObiDiagnosticsScreen(
                     onClick = {
                         val clipboard = context.getSystemService(ClipboardManager::class.java)
                         clipboard?.setPrimaryClip(
-                            ClipData.newPlainText(clipboardLabel, recorder.report()),
+                            ClipData.newPlainText(clipboardLabel, combinedReport()),
                         )
                         reportRevision += 1
                     },
@@ -207,7 +240,7 @@ internal fun ObiDiagnosticsScreen(
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_SUBJECT, shareSubject)
-                            putExtra(Intent.EXTRA_TEXT, recorder.report())
+                            putExtra(Intent.EXTRA_TEXT, combinedReport())
                         }
                         context.startActivity(
                             Intent.createChooser(shareIntent, shareChooserTitle),
@@ -221,7 +254,27 @@ internal fun ObiDiagnosticsScreen(
 
             OutlinedButton(
                 onClick = {
+                    pendingExportText = combinedReport()
+                    saveResult = null
+                    val name = "taksula-diagnostics-" +
+                        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".txt"
+                    saveLauncher.launch(name)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.diagnostics_save_txt))
+            }
+            saveResult?.let { saved ->
+                Text(
+                    text = stringResource(if (saved) R.string.diagnostics_save_success else R.string.diagnostics_save_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            OutlinedButton(
+                onClick = {
                     recorder.clear()
+                    TaksulaDiagnostics.recorder.clear()
                     reportRevision += 1
                 },
                 modifier = Modifier.fillMaxWidth(),

@@ -145,6 +145,10 @@ import pl.lukaszpeciak.towarownik.conversation.PersistedSearchAction
 import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
+import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
+import pl.lukaszpeciak.towarownik.diagnostics.SafeDiagnosticEvent
+import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticSource
+import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticStage
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
 import pl.lukaszpeciak.towarownik.product.provider.DEFAULT_WORKING_PROFILE
@@ -752,6 +756,13 @@ private fun TowarownikApp() {
                 workingProfile = turnProfile,
                 attachments = submittedAttachments,
             )
+            TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+                source = DiagnosticSource.ADVISOR,
+                stage = DiagnosticStage.TURN_START,
+                providerId = turn.workingProfile.providerId.value,
+                branchId = turn.workingProfile.branchId.value,
+                turnId = failedTurnId,
+            ))
             pendingAttachmentOwnership.handoffToPersisted(submittedAttachments)
             pendingAttachments = emptyList()
 
@@ -802,6 +813,9 @@ private fun TowarownikApp() {
                             products = it.products,
                         ) }
                         .orEmpty(),
+                    onDiagnosticEvent = { event ->
+                        TaksulaDiagnostics.recorder.record(event.copy(turnId = failedTurnId))
+                    },
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
                         aiUsageRepository.recordOpenAiResponse(
@@ -827,6 +841,16 @@ private fun TowarownikApp() {
                         )
                     ) {
                         advisorState = state
+                        val stage = when (state) {
+                            AdvisorUiState.RunningLocalTool -> DiagnosticStage.TOOL_START
+                            AdvisorUiState.WaitingForFinalAnswer -> DiagnosticStage.TOOL_RESULT
+                            else -> null
+                        }
+                        if (stage != null) TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+                            source = DiagnosticSource.ADVISOR, stage = stage,
+                            providerId = turn.workingProfile.providerId.value,
+                            branchId = turn.workingProfile.branchId.value, turnId = failedTurnId,
+                        ))
                     }
                 }
             }.also { state ->
@@ -877,6 +901,14 @@ private fun TowarownikApp() {
                             )
                         },
                     )
+                    TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+                        source = DiagnosticSource.ADVISOR,
+                        stage = DiagnosticStage.TURN_SUCCESS,
+                        providerId = turn.workingProfile.providerId.value,
+                        branchId = turn.workingProfile.branchId.value,
+                        turnId = failedTurnId, traceId = finalState.traceId,
+                        outcome = "success",
+                    ))
                     responseEvidenceStore.record(
                         turn.conversationId, assistantMessageId, finalState.locationReportEvidence,
                     )
@@ -894,6 +926,19 @@ private fun TowarownikApp() {
                 }
 
                 is AdvisorUiState.Error -> {
+                    TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+                        source = DiagnosticSource.ADVISOR,
+                        stage = DiagnosticStage.TURN_FAILURE,
+                        providerId = turn.workingProfile.providerId.value,
+                        branchId = turn.workingProfile.branchId.value,
+                        turnId = failedTurnId,
+                        traceId = finalState.diagnostic?.traceId,
+                        endpoint = finalState.diagnostic?.endpoint,
+                        httpStatus = finalState.diagnostic?.httpStatus,
+                        failureKind = finalState.diagnostic?.kind?.name ?: "PRODUCT_PROVIDER",
+                        failureClass = finalState.diagnostic?.failureClass?.name,
+                        outcome = "error",
+                    ))
                     val recovery = conversationRepository
                         .recoverFailedAdvisorTurn(
                             conversationId = turn.conversationId,
@@ -947,6 +992,10 @@ private fun TowarownikApp() {
         val generation = manualRequestGuard.token()
         manualJob?.cancel()
         manualQuery = submission.nextVisibleQuery
+        TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+            DiagnosticSource.MANUAL, DiagnosticStage.SEARCH_START,
+            providerId = profile.providerId.value, branchId = profile.branchId.value,
+        ))
         manualJob = scope.launch {
             manualSearchController.submit(
                 input = submission.submittedQuery,
@@ -958,6 +1007,21 @@ private fun TowarownikApp() {
                     manualWorkingProfile == profile
                 ) {
                     manualState = state
+                    val diagnostic = when (state) {
+                        is ManualSearchUiState.SearchResults -> DiagnosticStage.SEARCH_RESULT
+                        is ManualSearchUiState.Product -> DiagnosticStage.SEARCH_RESULT
+                        is ManualSearchUiState.Error -> DiagnosticStage.SEARCH_FAILURE
+                        else -> null
+                    }
+                    if (diagnostic != null) TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+                        DiagnosticSource.MANUAL, diagnostic,
+                        providerId = profile.providerId.value, branchId = profile.branchId.value,
+                        outcome = when (state) {
+                            is ManualSearchUiState.SearchResults -> "results"
+                            is ManualSearchUiState.Product -> "product"
+                            else -> "error"
+                        },
+                    ))
                 }
             }
         }
@@ -968,6 +1032,10 @@ private fun TowarownikApp() {
         manualRequestGuard.invalidate()
         val generation = manualRequestGuard.token()
         manualJob?.cancel()
+        TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+            DiagnosticSource.MANUAL, DiagnosticStage.SEARCH_START,
+            providerId = profile.providerId.value, branchId = profile.branchId.value,
+        ))
         manualJob = scope.launch {
             manualSearchController.select(
                 item = item,
@@ -978,6 +1046,14 @@ private fun TowarownikApp() {
                     manualWorkingProfile == profile
                 ) {
                     manualState = state
+                    if (state is ManualSearchUiState.Product || state is ManualSearchUiState.Error) {
+                        TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+                            DiagnosticSource.MANUAL,
+                            if (state is ManualSearchUiState.Error) DiagnosticStage.SEARCH_FAILURE else DiagnosticStage.SEARCH_RESULT,
+                            providerId = profile.providerId.value, branchId = profile.branchId.value,
+                            outcome = if (state is ManualSearchUiState.Error) "error" else "product",
+                        ))
+                    }
                 }
             }
         }
@@ -1309,6 +1385,7 @@ private fun TowarownikApp() {
                         }
                     }
                 },
+
             )
         }
 
@@ -1330,6 +1407,29 @@ private fun TowarownikApp() {
             )
             val body = stringResource(R.string.report_share_body)
             val chooserTitle = stringResource(R.string.report_share_chooser)
+            fun requestFor(submission: ProblemReportFormSubmission): ProblemReportRequest =
+                ProblemReportRequest(
+                    type = reportType,
+                    category = submission.category,
+                    description = submission.description,
+                    includeConversation = submission.includeConversation,
+                    includeObiDiagnostics = submission.includeObiDiagnostics,
+                    conversationId = reportConversationId,
+                    reportedMessageId = reportMessageId,
+                    advisorFailureDiagnostic =
+                        if (reportType == ProblemReportType.ADVISOR_FAILURE) {
+                            failureEvidenceStore.selected
+                                ?.takeIf { it.conversationId == reportConversationId }?.diagnostic
+                        } else {
+                            advisorFailureDiagnosticForReport(
+                                reportType, (advisorState as? AdvisorUiState.Error)?.diagnostic?.reportValue(),
+                            )
+                        },
+                    failedTurnId = if (reportType == ProblemReportType.ADVISOR_FAILURE) {
+                        failureEvidenceStore.selected
+                            ?.takeIf { it.conversationId == reportConversationId }?.turnId
+                    } else null,
+                )
 
             ProblemReportScreen(
                 type = reportType,
@@ -1338,7 +1438,7 @@ private fun TowarownikApp() {
                 canIncludeObiDiagnostics =
                     hasExistingSafeObiDiagnostics(
                         ObiDiagnostics.recorder,
-                    ),
+                    ) || TaksulaDiagnostics.recorder.hasEvents(),
                 onBack = ::closeReport,
                 onCreateAndShare = { submission ->
                     if (
@@ -1353,36 +1453,7 @@ private fun TowarownikApp() {
                         // E.g. process recreation: the in-memory evidence is gone.
                         ProblemReportUiError.TARGET_UNAVAILABLE
                     } else {
-                        val request = ProblemReportRequest(
-                            type = reportType,
-                            category = submission.category,
-                            description = submission.description,
-                            includeConversation =
-                                submission.includeConversation,
-                            includeObiDiagnostics =
-                                submission.includeObiDiagnostics,
-                            conversationId = reportConversationId,
-                            reportedMessageId = reportMessageId,
-                            advisorFailureDiagnostic =
-                                if (reportType == ProblemReportType.ADVISOR_FAILURE) {
-                                    failureEvidenceStore.selected
-                                        ?.takeIf { it.conversationId == reportConversationId }
-                                        ?.diagnostic
-                                } else {
-                                    advisorFailureDiagnosticForReport(
-                                        type = reportType,
-                                        currentFailureDiagnostic =
-                                            (advisorState as? AdvisorUiState.Error)
-                                                ?.diagnostic?.reportValue(),
-                                    )
-                                },
-                            failedTurnId =
-                                if (reportType == ProblemReportType.ADVISOR_FAILURE) {
-                                    failureEvidenceStore.selected
-                                        ?.takeIf { it.conversationId == reportConversationId }
-                                        ?.turnId
-                                } else null,
-                        )
+                        val request = requestFor(submission)
                         val result = createProblemReportSharePayload(
                             context = uiContext,
                             repository = conversationRepository,
@@ -1409,6 +1480,25 @@ private fun TowarownikApp() {
                                     ProblemReportUiError.GENERATION_FAILED
                             }
                         }
+                    }
+                },
+                onCreateForSave = { submission ->
+                    if (reportType == ProblemReportType.GENERAL && submission.description.isBlank()) {
+                        Result.failure(IllegalArgumentException("General report requires description"))
+                    } else if (reportType == ProblemReportType.ADVISOR_FAILURE &&
+                        failureEvidenceStore.selected?.conversationId != reportConversationId
+                    ) {
+                        Result.failure(ProblemReportTargetUnavailableException())
+                    } else {
+                        createProblemReportSharePayload(
+                            context = uiContext,
+                            repository = conversationRepository,
+                            request = requestFor(submission),
+                            subject = subject,
+                            body = body,
+                            recorder = ObiDiagnostics.recorder,
+                            responseEvidence = responseEvidenceStore,
+                        ).map { it.reportFile }
                     }
                 },
             )
