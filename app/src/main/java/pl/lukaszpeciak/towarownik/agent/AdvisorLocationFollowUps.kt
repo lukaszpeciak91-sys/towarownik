@@ -103,8 +103,14 @@ internal fun resolveAdvisorLocationFollowUp(
             ).containsMatchIn(t)
         ) return null
         if (providerId == "obi-pl") {
-            // Use the same canonical OBI market parser for initial inventory and
-            // follow-ups. City-wide scope stays bounded to the actual city.
+            // A short USER location reference may inherit a selected product.
+            // Do NOT reinterpret arbitrary full questions ("gdzie jest...",
+            // "no jak market...") as clarifications: their complete syntax
+            // still belongs to the inventory authorizer and conflict checks.
+            val canonical = t in canonicalLocations ||
+                canonicalLocations.any { t.startsWith("$it ") }
+            val labelled = Regex("""^(?:w|we|na|obi|market|markecie|sklep|sklepie) .+$""").matches(t)
+            if (!canonical && !labelled && !Regex("""[0-9]{3}""").matches(t)) return null
             return BranchResolver.resolveObiMarketScope(
                 t, branches, selectedBranch?.branchId ?: BranchId("unselected"),
             ).takeUnless { it == BranchResolution.NotMentioned }
