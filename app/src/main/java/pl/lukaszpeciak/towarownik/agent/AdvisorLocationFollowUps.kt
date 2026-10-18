@@ -95,7 +95,7 @@ internal fun resolveAdvisorLocationFollowUp(
         ) return null // Preserve the existing precise city/market-conflict boundary.
         if (t == "tam") return null // Requires an uninterrupted USER-selected referent below.
         if (Regex(
-                """\\b(?:cena|ceny|cene|cen|koszt|kosztuje|pokaz|podaj|montaz|zamontowac|podlaczyc|dobierz|kompatybilnosc)\\b""",
+                """\b(?:cena|ceny|cene|cen|koszt|kosztuje|pokaz|podaj|montaz|zamontowac|podlaczyc|dobierz|kompatybilnosc)\b""",
             ).containsMatchIn(t)
         ) return null
         if (providerId == "obi-pl") {
