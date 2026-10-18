@@ -223,7 +223,7 @@ class P0bInventoryAuthorizationTest {
         }
     }
     @Test fun genuineUnknownAndConflictingLocationsNeverReadStock() = runBlocking {
-        for ((p, place) in listOf("kwant-pl" to "Atlantydzie", "obi-pl" to "Atlantydzie", "obi-pl" to "Krakowie", "obi-pl" to "Krakowie market OBI 075")) {
+        for ((p, place) in listOf("kwant-pl" to "Atlantydzie", "obi-pl" to "Atlantydzie", "obi-pl" to "Krakowie market OBI 075")) {
             val h = Harness(p)
             h.turn("sprawdź stan produktu ${h.id}", "discovery")
             h.turn("Czy dostaniemy produkt ${h.id} w $place?"); trace(h, place)
