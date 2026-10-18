@@ -128,6 +128,11 @@ internal object BranchResolver {
             candidates += place.branches
             tail = place.tail
             while (true) {
+                // A bounded second action ("i pokaż aktualny stan magazynowy")
+                // is not another branch. Never ignore a subsequent unknown
+                // locality: only these COMPLETE non-location tails qualify.
+                if (Regex("""^(?:i|oraz) (?:pokaz|podaj|sprawdz)(?: mi)? (?:aktualny )?(?:stan|stany|dostepnosc)(?: magazynowy)?$""")
+                        .matches(tail)) break
                 val connector = Regex("""^(?:i|oraz)\s+""").find(tail) ?: break
                 tail = tail.drop(connector.value.length)
                     .replaceFirst(Regex("""^(?:w|we|na)\s+"""), "")
