@@ -305,9 +305,10 @@ class AdvisorLocationsToolTest {
                 emptyList(), listOf(one),
             )
             if (message == "Sprawdź w Krakowie") {
-                assertEquals(message + hints, "rejected", result.status)
-                assertEquals(message + hints, "ambiguous_location", result.reason)
-                assertEquals(message + hints, 0, fake.calls)
+                assertEquals(message + hints, "verified", result.status)
+                assertEquals(message + hints, setOf("003", "019", "059", "072"), result.checkedIds.toSet())
+                assertEquals(message + hints, 1, fake.calls)
+                assertTrue(message + hints, fake.exactBranches.isEmpty())
             } else {
                 assertEquals(message + hints, "verified", result.status)
                 assertEquals(message + hints, listOf("003"), result.checkedIds)
