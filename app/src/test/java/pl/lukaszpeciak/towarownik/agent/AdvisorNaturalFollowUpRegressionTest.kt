@@ -391,4 +391,34 @@ class AdvisorNaturalFollowUpRegressionTest {
         assertEquals(0,inventoryReads);assertEquals(listOf("203"),lookupBranches)
     }
 
+    @Test fun `OBI plain city checks every canonical Krakow market without selecting one`() = runBlocking {
+        val result = run("a w Krakowie?", "obi-pl", listOf("075"))
+        val expected = setOf("003", "019", "059", "072")
+        assertEquals("verified", result.evidence.status)
+        assertEquals(expected, result.evidence.checkedIds.toSet())
+        assertEquals(expected, result.reads.flatMap { it.second }.toSet())
+        assertEquals(1, result.reads.size)
+        assertTrue(result.evidence.locations.all { it.stock == 7 })
+    }
+
+    @Test fun `OBI unique city and multiple real user street phrasings select exact store`() = runBlocking {
+        assertRead(run("a w Nowym Sączu?", "obi-pl"), "075")
+        for (text in listOf(
+            "003", "a 003?", "a w 003?", "a na Wielickiej?",
+            "na Wielickiej w Krakowie", "a na Wielickiej w Krakowie?",
+            "Sprawdź Kraków Wielicka", "a Kraków Wielicka?",
+            "Sprawdź stan tego produktu w Krakowie na Wielickiej",
+        )) {
+            assertRead(run(text, "obi-pl", listOf("075")), "003")
+        }
+    }
+
+    @Test fun `OBI unknown or conflicting street cannot quietly widen a verified location`() = runBlocking {
+        for (text in listOf("a na Nieistniejącej?", "a na Wielickiej w Warszawie?")) {
+            val result = run(text, "obi-pl")
+            assertTrue(text, result.reads.isEmpty())
+            assertFalse(text, result.evidence.status == "verified")
+        }
+    }
+
 }
