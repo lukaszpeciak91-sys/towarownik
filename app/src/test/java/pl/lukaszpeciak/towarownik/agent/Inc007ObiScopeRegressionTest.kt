@@ -238,9 +238,15 @@ class Inc007ObiScopeRegressionTest {
             assertEquals("075",s.turn(text,"discovery").products.single().effectiveBranchId)
         }
     }
-    @Test fun `single ambiguous Krakow still asks clarification before lookup`()=runBlocking {
-        val s=Scenario("obi-pl");assertTrue(s.turn("6346951 sprawdź stan w Krakowie","discovery").products.isEmpty());assertTrue(s.lookups.isEmpty())
-        assertEquals(AdvisorToolContinuation.RejectedStore::class,s.continuation!!::class)
+    @Test fun `OBI city-only new product uses trusted seed then retains all four market scope`()=runBlocking {
+        val s = Scenario("obi-pl")
+        s.hints = listOf("075") // Model hint cannot narrow the USER's Kraków scope.
+        s.turn("6346951 sprawdź stan w Krakowie", "discovery_then_locations")
+        assertEquals(listOf("6346951" to "003"), s.lookups)
+        assertEquals(setOf("003", "019", "059", "072"), s.evidence?.checkedIds?.toSet())
+        assertEquals(1, s.gets.size)
+        assertTrue(s.gets.single().contains("storeIds="))
+        assertFalse(s.gets.single().contains("075"))
     }
     @Test fun `city street resolves unique market without model hint authority`()=runBlocking {
         val s=Scenario("obi-pl");s.modelBranch="075"
