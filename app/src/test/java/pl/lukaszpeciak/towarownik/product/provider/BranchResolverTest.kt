@@ -288,19 +288,19 @@ class BranchResolverTest {
     @Test
     fun `OBI all canonical store numbers and cities resolve to their exact directory subsets`() {
         for (store in obiBranches) {
-            assertResolved(
-                BranchResolver.resolveObiMarketScope(
-                    "a w OBI ${store.branchId.value}", obiBranches, BranchId("075"),
-                ),
-                store.branchId.value,
+            val actual = BranchResolver.resolveObiMarketScope(
+                "a w OBI ${store.branchId.value}", obiBranches, BranchId("075"),
             )
+            if (store.branchId.value == "075") assertCurrent(actual, "075")
+            else assertResolved(actual, store.branchId.value)
         }
         for ((city, stores) in obiBranches.groupBy { it.name }) {
             val location = BranchResolver.resolveObiMarketScope(
                 "Sprawdź $city", obiBranches, BranchId("075"),
             )
             if (stores.size == 1) {
-                assertResolved(location, stores.single().branchId.value)
+                if (stores.single().branchId.value == "075") assertCurrent(location, "075")
+                else assertResolved(location, stores.single().branchId.value)
             } else {
                 val all = location as BranchResolution.Ambiguous
                 assertTrue(city, all.isCityWideScope)
