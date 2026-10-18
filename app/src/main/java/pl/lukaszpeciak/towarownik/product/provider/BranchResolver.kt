@@ -181,7 +181,11 @@ internal object BranchResolver {
             val street = match.groupValues[1].trim()
             val city = match.groupValues[2].trim()
             val market = resolveHint("na $street", branches)
-            if (market != null && city !in cityAliases(market.name)) {
+            val precedingMarketId = Regex(
+                """\b(?:obi|market|markecie|sklep|sklepie)(?: obi)?(?: nr)? ([0-9]{3})$""",
+            ).find(normalizedText(userText).take(match.range.first).trimEnd())?.groupValues?.get(1)
+            if (market != null && (city !in cityAliases(market.name) ||
+                    precedingMarketId != null && precedingMarketId != market.branchId.value)) {
                 return BranchResolution.UnknownMention
             }
         }
@@ -199,8 +203,12 @@ internal object BranchResolver {
     }
 
     private fun obiStreetBeforeCity(text: String): MatchResult? =
-        Regex("""\bna ([a-z0-9 ]+?) (?:w|we) ([a-z ]+)$""")
-            .find(normalizedText(text))
+        // Bound the city before existing courtesy/stock-action tails. Keep the tail
+        // outside the match so reordering cannot erase later location evidence.
+        Regex(
+            """\bna ([a-z0-9 ]+?) (?:w|we) ([a-z ]+?)(?= (?:prosze|""" +
+                """(?:i|oraz) (?:pokaz|podaj|sprawdz)(?: mi)? (?:aktualny )?(?:stan|stany|dostepnosc)(?: magazynowy)?)$|$)""",
+        ).find(normalizedText(text))
 
     private fun canonicalObiMarketLocationText(userText: String, branches: List<ProviderBranch>): String {
         val original = normalizedText(userText)
