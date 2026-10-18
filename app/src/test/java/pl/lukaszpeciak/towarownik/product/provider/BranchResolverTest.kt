@@ -285,4 +285,43 @@ class BranchResolverTest {
             resolution.branch.branchId,
         )
     }
+    @Test
+    fun `OBI all canonical store numbers and cities resolve to their exact directory subsets`() {
+        for (store in obiBranches) {
+            val actual = BranchResolver.resolveObiMarketScope(
+                "a w OBI ${store.branchId.value}", obiBranches, BranchId("075"),
+            )
+            if (store.branchId.value == "075") assertCurrent(actual, "075")
+            else assertResolved(actual, store.branchId.value)
+        }
+        for ((city, stores) in obiBranches.groupBy { it.name }) {
+            val location = BranchResolver.resolveObiMarketScope(
+                "Sprawdź $city", obiBranches, BranchId("075"),
+            )
+            if (stores.size == 1) {
+                if (stores.single().branchId.value == "075") assertCurrent(location, "075")
+                else assertResolved(location, stores.single().branchId.value)
+            } else {
+                val all = location as BranchResolution.Ambiguous
+                assertTrue(city, all.isCityWideScope)
+                assertEquals(city, stores.map { it.branchId }.toSet(), all.candidates.map { it.branchId }.toSet())
+            }
+        }
+    }
+
+    @Test
+    fun `OBI verified Wielicka selection agrees across city and street word order`() {
+        for (text in listOf(
+            "Sprawdź Kraków Wielicka", "a Kraków Wielicka",
+            "na Wielickiej w Krakowie", "a na Wielickiej w Krakowie",
+            "w Krakowie na Wielickiej", "w OBI 003", "a na Wielickiej",
+        )) {
+            assertResolved(BranchResolver.resolveObiMarketScope(text, obiBranches, BranchId("075")), "003")
+        }
+        val wrongCity = BranchResolver.resolveObiMarketScope(
+            "na Wielickiej w Warszawie", obiBranches, BranchId("075"),
+        )
+        assertTrue(wrongCity !is BranchResolution.Resolved && wrongCity !is BranchResolution.CurrentBranch)
+    }
+
 }

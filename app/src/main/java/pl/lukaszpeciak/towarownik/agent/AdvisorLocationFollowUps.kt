@@ -86,6 +86,10 @@ internal fun resolveAdvisorLocationFollowUp(
         return withoutFiller.replace(locationRequestPrefix, "")
     }
     fun naturalShortLocation(s: String): BranchResolution? {
+        // A complete current product/stock request is NOT a short inherited
+        // location clarification. Its authority is resolved independently by
+        // AdvisorInventoryAuthorizer, never by an older conversation anchor.
+        if (advisorHasCurrentProductEvidence(s) || advisorHasStockEvidence(s)) return null
         val t = locationClause(s)
         if (t == "u nas") return selectedBranch?.let { BranchResolution.CurrentBranch(it) }
         if (quantityFollowUpLocation(normalized(s)) != null) return null
@@ -94,12 +98,32 @@ internal fun resolveAdvisorLocationFollowUp(
             isCanonicalLocationWithOptionalMarketNumber(legacyCityNumber)
         ) return null // Preserve the existing precise city/market-conflict boundary.
         if (t == "tam") return null // Requires an uninterrupted USER-selected referent below.
-        val isPlaceExpression = t in canonicalLocations ||
-            Regex("""^(?:w|we) .+$""").matches(t)
-        if (!isPlaceExpression || Regex(
+        if (Regex(
                 """\b(?:cena|ceny|cene|cen|koszt|kosztuje|pokaz|podaj|montaz|zamontowac|podlaczyc|dobierz|kompatybilnosc)\b""",
             ).containsMatchIn(t)
         ) return null
+        if (providerId == "obi-pl") {
+            // A short USER location reference may inherit a selected product.
+            // Do NOT reinterpret arbitrary full questions ("gdzie jest...",
+            // "no jak market...") as clarifications: their complete syntax
+            // still belongs to the inventory authorizer and conflict checks.
+            // "A ile tego samego produktu mają w OBI 003?" is a bounded
+            // same-product quantity follow-up; its destination still has to
+            // pass the canonical market resolver.
+            val quantityPlace = Regex("""^ile tego samego produktu (?:maja|ma|jest|sa) (?:w|we) (.+)$""")
+                .matchEntire(t)?.groupValues?.get(1)
+            val placeText = quantityPlace?.let { "w $it" } ?: t
+            val canonical = placeText in canonicalLocations ||
+                canonicalLocations.any { placeText.startsWith("$it ") }
+            val labelled = Regex("""^(?:w|we|na|obi|market|markecie|sklep|sklepie) .+$""").matches(placeText)
+            if (!canonical && !labelled && !Regex("""[0-9]{3}""").matches(placeText)) return null
+            return BranchResolver.resolveObiMarketScope(
+                placeText, branches, selectedBranch?.branchId ?: BranchId("unselected"),
+            ).takeUnless { it == BranchResolution.NotMentioned }
+        }
+        val isPlaceExpression = t in canonicalLocations ||
+            Regex("""^(?:w|we) .+$""").matches(t)
+        if (!isPlaceExpression) return null
         val place = if (t in canonicalLocations) "w $t" else t
         return BranchResolver.resolve(
             place, branches, selectedBranch?.branchId ?: BranchId("unselected"),
@@ -199,7 +223,7 @@ internal fun resolveAdvisorLocationFollowUp(
                 branches.any { it.name.isBlank() } -> "directory_unavailable"
             isThere && previousUserLocation == null -> "ambiguous_location"
             current.removePrefix("a ") == "u nas" && selectedBranch == null -> "directory_unavailable"
-            currentLocation is BranchResolution.Ambiguous -> "ambiguous_location"
+            currentLocation is BranchResolution.Ambiguous && !(providerId == "obi-pl" && currentLocation.isCityWideScope) -> "ambiguous_location"
             currentLocation == BranchResolution.UnknownMention -> "unknown_location"
             else -> null
         }

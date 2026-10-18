@@ -90,6 +90,7 @@ internal object BranchResolver {
         branches: List<ProviderBranch>,
         currentBranchId: BranchId,
         allowBareBranchIds: Boolean = true,
+        allowStockActionTail: Boolean = false,
     ): BranchResolution {
         if (branches.isEmpty() || branches.size > 100 ||
             branches.map { it.branchId }.distinct().size != branches.size ||
@@ -128,6 +129,11 @@ internal object BranchResolver {
             candidates += place.branches
             tail = place.tail
             while (true) {
+                // A bounded second action ("i pokaż aktualny stan magazynowy")
+                // is not another branch. Never ignore a subsequent unknown
+                // locality: only these COMPLETE non-location tails qualify.
+                if (allowStockActionTail && Regex("""^(?:i|oraz) (?:pokaz|podaj|sprawdz)(?: mi)? (?:aktualny )?(?:stan|stany|dostepnosc)(?: magazynowy)?$""")
+                        .matches(tail)) break
                 val connector = Regex("""^(?:i|oraz)\s+""").find(tail) ?: break
                 tail = tail.drop(connector.value.length)
                     .replaceFirst(Regex("""^(?:w|we|na)\s+"""), "")
@@ -168,15 +174,41 @@ internal object BranchResolver {
         currentBranchId: BranchId,
         allowBareBranchIds: Boolean = true,
     ): BranchResolution {
+        // A verified street immediately followed by a USER-named city is ONE
+        // combined place. A different city cannot authorize its own markets
+        // after the street-city pair fails to match.
+        obiStreetBeforeCity(userText)?.let { match ->
+            val street = match.groupValues[1].trim()
+            val city = match.groupValues[2].trim()
+            val market = resolveHint("na $street", branches)
+            val precedingMarketId = Regex(
+                """\b(?:obi|market|markecie|sklep|sklepie)(?: obi)?(?: nr)? ([0-9]{3})$""",
+            ).find(normalizedText(userText).take(match.range.first).trimEnd())?.groupValues?.get(1)
+            if (market != null && (city !in cityAliases(market.name) ||
+                    precedingMarketId != null && precedingMarketId != market.branchId.value)) {
+                return BranchResolution.UnknownMention
+            }
+        }
         val resolution = resolve(
             canonicalObiMarketLocationText(userText, branches), branches,
-            currentBranchId, allowBareBranchIds,
+            currentBranchId, allowBareBranchIds, allowStockActionTail = true,
         )
+        // In OBI, a USER-selected city denotes every market in that city.
+        // A street or number is already a unique Resolved branch. Cross-city
+        // ambiguity still needs the complete multi-location scope parser.
         return if (resolution is BranchResolution.Ambiguous &&
-            Regex("""\b(?:marketach|markety|sklepach|sklepy)\b""").containsMatchIn(normalizedText(userText)) &&
+            !resolution.allowsExplicitBranchHint &&
             resolution.candidates.map { normalizedText(it.name) }.distinct().size == 1
         ) resolution.copy(allowsExplicitBranchHint = false, isCityWideScope = true) else resolution
     }
+
+    private fun obiStreetBeforeCity(text: String): MatchResult? =
+        // Bound the city before existing courtesy/stock-action tails. Keep the tail
+        // outside the match so reordering cannot erase later location evidence.
+        Regex(
+            """\bna ([a-z0-9 ]+?) (?:w|we) ([a-z ]+?)(?= (?:prosze|""" +
+                """(?:i|oraz) (?:pokaz|podaj|sprawdz)(?: mi)? (?:aktualny )?(?:stan|stany|dostepnosc)(?: magazynowy)?)$|$)""",
+        ).find(normalizedText(text))
 
     private fun canonicalObiMarketLocationText(userText: String, branches: List<ProviderBranch>): String {
         val original = normalizedText(userText)
@@ -194,6 +226,27 @@ internal object BranchResolver {
         )
         // Courtesy after a recognized market-scope phrase does not become an address.
         if (text != original) text = text.replace(Regex("""\s+sprawdz prosze$"""), "")
+        // Accept an exact canonical "Kraków Wielicka" city+street selection
+        // after a stock command or in a short same-product follow-up. Do not
+        // invent a market from a city-only or incomplete street reference.
+        val bare = text.removePrefix("a ").removePrefix("sprawdz ").removePrefix("sprawdzcie ")
+        val knownCity = branches.any { branch ->
+            cityAliases(branch.name).any { bare == it || bare.startsWith("$it ") }
+        }
+        if (knownCity && (bare in branches.flatMap { cityAliases(it.name) } ||
+                    resolveHint(bare, branches) != null)
+        ) text = "w $bare"
+        // The equivalent street-first form must agree with the canonical
+        // city; reordering is NOT allowed for mismatched city/street pairs.
+        val streetFirst = obiStreetBeforeCity(text)
+        if (streetFirst != null) {
+            val street = streetFirst.groupValues[1].trim()
+            val city = streetFirst.groupValues[2].trim()
+            val market = resolveHint("na $street", branches)
+            if (market != null && city in cityAliases(market.name)) {
+                text = text.replaceRange(streetFirst.range, "w $city na $street")
+            }
+        }
         return text
     }
 

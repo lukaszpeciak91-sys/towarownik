@@ -238,9 +238,15 @@ class Inc007ObiScopeRegressionTest {
             assertEquals("075",s.turn(text,"discovery").products.single().effectiveBranchId)
         }
     }
-    @Test fun `single ambiguous Krakow still asks clarification before lookup`()=runBlocking {
-        val s=Scenario("obi-pl");assertTrue(s.turn("6346951 sprawdź stan w Krakowie","discovery").products.isEmpty());assertTrue(s.lookups.isEmpty())
-        assertEquals(AdvisorToolContinuation.RejectedStore::class,s.continuation!!::class)
+    @Test fun `OBI city-only new product uses trusted seed then retains all four market scope`()=runBlocking {
+        val s = Scenario("obi-pl")
+        s.hints = listOf("075") // Model hint cannot narrow the USER's Kraków scope.
+        s.turn("6346951 sprawdź stan w Krakowie", "discovery_then_locations")
+        assertEquals(listOf("6346951" to "003"), s.lookups)
+        assertEquals(setOf("003", "019", "059", "072"), s.evidence?.checkedIds?.toSet())
+        assertEquals(1, s.gets.size)
+        assertTrue(s.gets.single().contains("storeIds="))
+        assertFalse(s.gets.single().contains("075"))
     }
     @Test fun `city street resolves unique market without model hint authority`()=runBlocking {
         val s=Scenario("obi-pl");s.modelBranch="075"
@@ -342,4 +348,24 @@ class Inc007ObiScopeRegressionTest {
             }
         }
     }
+    @Test fun `OBI real device four turn text keeps exact market and same product`()=runBlocking {
+        val scenario = Scenario("obi-pl")
+        scenario.queryId = "3496072"
+        scenario.query = "3496072"
+        scenario.turn(
+            "Sprawdź produkt o OBIK 3496072 w markecie 075 i pokaż aktualny stan magazynowy.",
+            "discovery_then_locations",
+        )
+        assertEquals("verified", scenario.evidence?.status)
+        assertEquals(listOf("075"), scenario.evidence?.checkedIds)
+        scenario.turn("Znajdź produkt OBIK 3496072 u nas.", "discovery")
+        scenario.turn("A ile tego samego produktu mają w OBI 003?", "locations")
+        assertEquals("verified", scenario.evidence?.status)
+        assertEquals(listOf("003"), scenario.evidence?.checkedIds)
+        scenario.turn("a w markecie Kraków Wielicka?", "locations")
+        assertEquals("verified", scenario.evidence?.status)
+        assertEquals(listOf("003"), scenario.evidence?.checkedIds)
+        assertEquals("3496072", scenario.evidence?.productId)
+    }
+
 }

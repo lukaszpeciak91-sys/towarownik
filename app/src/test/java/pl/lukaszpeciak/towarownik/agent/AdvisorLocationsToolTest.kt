@@ -305,9 +305,10 @@ class AdvisorLocationsToolTest {
                 emptyList(), listOf(one),
             )
             if (message == "Sprawdź w Krakowie") {
-                assertEquals(message + hints, "rejected", result.status)
-                assertEquals(message + hints, "ambiguous_location", result.reason)
-                assertEquals(message + hints, 0, fake.calls)
+                assertEquals(message + hints, "verified", result.status)
+                assertEquals(message + hints, setOf("003", "019", "059", "072"), result.checkedIds.toSet())
+                assertEquals(message + hints, 1, fake.calls)
+                assertTrue(message + hints, fake.exactBranches.isEmpty())
             } else {
                 assertEquals(message + hints, "verified", result.status)
                 assertEquals(message + hints, listOf("003"), result.checkedIds)
@@ -315,6 +316,41 @@ class AdvisorLocationsToolTest {
                 assertEquals(message + hints, 0, fake.calls)
                 assertEquals(message + hints, 1, fake.exactBranches.size)
             }
+        }
+    }
+
+    @Test fun `OBI full product request cannot discard conflicting street and city`() = runBlocking {
+        for (text in listOf(
+            "Sprawdź stan produktu 3496072 na Wielickiej w Warszawie",
+            "Sprawdź stan produktu 3496072 na Wielickiej w Gdańsku",
+            "Sprawdź stan produktu 3496072 na Stawowej w Warszawie",
+        )) {
+            val fake = StockAdapter()
+            val evidence = tool(fake).executeWithUserContext(
+                AdvisorLocationArguments("obi-pl", "3496072", listOf("003")),
+                "obi-pl", "075", text, emptyList(), listOf(one),
+            )
+            assertEquals(text, "rejected", evidence.status)
+            assertEquals(text, "unknown_location", evidence.reason)
+            assertEquals(text, 0, fake.calls)
+            assertTrue(text, fake.exactBranches.isEmpty())
+        }
+    }
+
+    @Test fun `OBI matching full city street stays single market despite model hints`() = runBlocking {
+        for (text in listOf(
+            "Sprawdź stan produktu 3496072 na Wielickiej w Krakowie",
+            "Sprawdź stan produktu 3496072 w Krakowie na Wielickiej",
+        )) {
+            val fake = StockAdapter()
+            val evidence = tool(fake).executeWithUserContext(
+                AdvisorLocationArguments("obi-pl", "3496072", listOf("075")),
+                "obi-pl", "075", text, emptyList(), listOf(one),
+            )
+            assertEquals(text, "verified", evidence.status)
+            assertEquals(text, listOf("003"), evidence.checkedIds)
+            assertEquals(text, listOf(BranchId("003")), fake.exactBranches)
+            assertEquals(text, 0, fake.calls)
         }
     }
 

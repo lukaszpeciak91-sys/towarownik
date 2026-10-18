@@ -264,7 +264,7 @@ class Inc007MultiTurnRecoveryTest {
         }
     }
     @Test fun ambiguousAndUnknownUserScopeNeverStartRecoveryDiscoveryOrInventory() = runBlocking {
-        for ((provider, city) in listOf("obi-pl" to "Krakowie", "kwant-pl" to "Atlantydzie")) {
+        for ((provider, city) in listOf("obi-pl" to "Krakowie na Nieistniejącej", "kwant-pl" to "Atlantydzie")) {
             val h = Harness(provider); h.turn("sprawdź stan produktu " + h.id + " w " + city, "recover")
             assertTrue(h.lookups.isEmpty()); assertTrue(h.gets.isEmpty())
         }

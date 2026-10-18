@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-10-18 — OBI explicit city-wide stock scope (pending PR review)
+
+For OBI availability, a USER-named canonical city without a specific market selects **all** OBI markets in that city; an exact three-digit market number or canonical city+street selects the matching market only. This intentionally supersedes the older singular-Kraków clarification policy. KWANT branch behavior and ambiguity safeguards stay unchanged. Scope comes from the existing canonical directory, not model hints or guessed geocoding.
+
+A new product still needs verified identity: OBI discovery may use one deterministic member of the named city as an identity-only seed; complete city stock is claimed only after a separate locations read for all authorized market IDs. Unknown/contradictory places and wrong product/provider remain fail-closed. No model prompt, Worker wire, tool budgets, persistence or provider HTTP changes. Pending PR #132.
+
 ## 2026-10-17 — Reuse ordinary verification for authorized singleton scope
 
 Choose the existing exact provider lookup after typed authorization when `!fullNetwork && branches.size == 1`; retain inventory for all other scopes. RED checkpoint `ba7af82366ecd28ccd1e4df19c7972575b024ef6` proves the previous singleton used the network adapter. Preserve the original location continuation rather than adding tools/schemas, modifying language admission or duplicating HTTP/parsers. Returned identity/branch mismatches and failed/null stock stay unknown without historical/central fallback. [Repair evidence and boundaries](single-branch-exact-lookup-repair.md). This does not establish the original INC-008 live failure cause.

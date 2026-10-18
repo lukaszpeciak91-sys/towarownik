@@ -181,12 +181,12 @@ class AdvisorDiscoveryRoutingRegressionTest {
         }
         assertEquals("203", search("sprawdź w oddziale 203", "kwant-pl", "205", "205").called)
     }
-    @Test fun `ambiguous city cannot be resolved by model hint`() = runBlocking {
+    @Test fun `OBI city-wide discovery seed is derived from USER city not model hint`() = runBlocking {
         for (hint in listOf("075", "003", "019")) {
             val r = search("sprawdź w Krakowie", "obi-pl", "075", hint)
-            assertEquals("", r.called)
-            assertEquals("rejected", r.outcome)
-            assertEquals(0, r.cards)
+            assertEquals("003", r.called)
+            assertEquals("verified", r.continuation)
+            assertEquals(1, r.cards)
         }
     }
     @Test fun `unknown user locations fail closed even beside known locations`() = runBlocking {

@@ -848,38 +848,41 @@ class AdvisorControllerTest {
         }
 
     @Test
-    fun `ambiguous OBI Krakow cannot be bypassed by model store number`() =
+    fun `OBI city-only discovery ignores model branch and uses canonical identity seed`() =
         runBlocking {
-            var toolCalls = 0
-            var rejected = false
+            val branches = mutableListOf<String>()
             val controller = controller(
                 start = {
                     successTool(
                         responseId = "resp_tool",
                         callId = "call_tool",
                         query = "klej",
-                        storeNumber = "003",
+                        storeNumber = "075", // Model hint outside USER Kraków scope.
                     )
                 },
-                rejectedContinueCall = { _, _, _ ->
-                    rejected = true
-                    successAnswer("resp_final", "Który market?")
+                continueCall = { _, _, output ->
+                    assertEquals("003", output.storeNumber)
+                    successAnswer("resp_final", "Only product identity verified")
                 },
-                obiTool = {
-                    toolCalls += 1
-                    error("ambiguous branch must not execute")
+                obiTool = { args ->
+                    branches += args.storeNumber
+                    AdvisorToolExecutionResult.Success(
+                        AdvisorVerifiedToolResult(
+                            storeNumber = args.storeNumber,
+                            results = emptyList(),
+                            providerId = "obi-pl",
+                        ),
+                        snapshots = emptyList(),
+                    )
                 },
             )
-
             controller.runTurn(
                 input = "sprawdź OBI Kraków",
                 previousResponseId = null,
                 conversationStoreNumber = "075",
                 conversationProviderId = "obi-pl",
             ) { }
-
-            assertEquals(0, toolCalls)
-            assertTrue(rejected)
+            assertEquals(listOf("003"), branches)
         }
 
     @Test
