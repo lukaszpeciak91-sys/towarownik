@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,9 +40,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.nio.charset.StandardCharsets
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 import pl.lukaszpeciak.towarownik.diagnostics.OBI_PROBE_CANONICAL_PRODUCT_URL
 import pl.lukaszpeciak.towarownik.diagnostics.OBI_PROBE_SEARCH_URL
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
@@ -76,22 +74,29 @@ internal fun ObiDiagnosticsScreen(
     fun combinedReport() = TaksulaDiagnostics.recorder.report() +
         "\n--- DETAILED OBI TRANSPORT (OPTIONAL) ---\n" + recorder.report()
     val report = remember(enabled, reportRevision) { combinedReport() }
-    var pendingExportText by remember { mutableStateOf<String?>(null) }
+    // Persist only a validated private-cache basename in saved UI state,
+    // never the potentially large report text itself.
+    var pendingExportName by rememberSaveable { mutableStateOf<String?>(null) }
+    var savingTxt by remember { mutableStateOf(false) }
     var saveResult by remember { mutableStateOf<Boolean?>(null) }
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
     ) { uri ->
-        val snapshot = pendingExportText
-        pendingExportText = null
-        if (uri != null && snapshot != null) {
+        val pending = ProblemReportFileStore(context.cacheDir).pending(pendingExportName)
+        pendingExportName = null
+        if (uri == null) {
+            pending?.delete()
+        } else {
+            savingTxt = true
             scope.launch {
                 saveResult = withContext(Dispatchers.IO) {
                     runCatching {
-                        val output = context.contentResolver.openOutputStream(uri, "wt")
-                            ?: error("Could not open selected destination")
-                        output.use { it.write(snapshot.toByteArray(StandardCharsets.UTF_8)) }
+                        val file = pending ?: throw IllegalStateException("Prepared diagnostics TXT unavailable")
+                        saveProblemReportToUri(context, uri, file)
                     }.isSuccess
                 }
+                pending?.delete()
+                savingTxt = false
             }
         }
     }
@@ -254,13 +259,32 @@ internal fun ObiDiagnosticsScreen(
 
             OutlinedButton(
                 onClick = {
-                    pendingExportText = combinedReport()
+                    val snapshot = combinedReport()
                     saveResult = null
-                    val name = "taksula-diagnostics-" +
-                        LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".txt"
-                    saveLauncher.launch(name)
+                    savingTxt = true
+                    scope.launch {
+                        val prepared = withContext(Dispatchers.IO) {
+                            runCatching {
+                                ProblemReportFileStore(context.cacheDir).write(
+                                    snapshot, System.currentTimeMillis(), prefix = "taksula-diagnostics",
+                                )
+                            }.getOrNull()
+                        }
+                        savingTxt = false
+                        if (prepared == null) {
+                            saveResult = false
+                        } else {
+                            pendingExportName = prepared.name
+                            runCatching { saveLauncher.launch(prepared.name) }.onFailure {
+                                pendingExportName = null
+                                prepared.delete()
+                                saveResult = false
+                            }
+                        }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
+                enabled = !savingTxt && pendingExportName == null,
             ) {
                 Text(stringResource(R.string.diagnostics_save_txt))
             }
