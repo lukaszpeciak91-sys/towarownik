@@ -107,12 +107,18 @@ internal fun resolveAdvisorLocationFollowUp(
             // Do NOT reinterpret arbitrary full questions ("gdzie jest...",
             // "no jak market...") as clarifications: their complete syntax
             // still belongs to the inventory authorizer and conflict checks.
-            val canonical = t in canonicalLocations ||
-                canonicalLocations.any { t.startsWith("$it ") }
-            val labelled = Regex("""^(?:w|we|na|obi|market|markecie|sklep|sklepie) .+$""").matches(t)
-            if (!canonical && !labelled && !Regex("""[0-9]{3}""").matches(t)) return null
+            // "A ile tego samego produktu mają w OBI 003?" is a bounded
+            // same-product quantity follow-up; its destination still has to
+            // pass the canonical market resolver.
+            val quantityPlace = Regex("""^ile tego samego produktu (?:maja|ma|jest|sa) (?:w|we) (.+)$""")
+                .matchEntire(t)?.groupValues?.get(1)
+            val placeText = quantityPlace?.let { "w $it" } ?: t
+            val canonical = placeText in canonicalLocations ||
+                canonicalLocations.any { placeText.startsWith("$it ") }
+            val labelled = Regex("""^(?:w|we|na|obi|market|markecie|sklep|sklepie) .+$""").matches(placeText)
+            if (!canonical && !labelled && !Regex("""[0-9]{3}""").matches(placeText)) return null
             return BranchResolver.resolveObiMarketScope(
-                t, branches, selectedBranch?.branchId ?: BranchId("unselected"),
+                placeText, branches, selectedBranch?.branchId ?: BranchId("unselected"),
             ).takeUnless { it == BranchResolution.NotMentioned }
         }
         val isPlaceExpression = t in canonicalLocations ||
