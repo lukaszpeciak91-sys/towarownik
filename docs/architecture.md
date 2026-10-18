@@ -1,5 +1,9 @@
 # Architecture
 
+## 2026-10-18 — OBI natural market and city-stock interpretation (pending review)
+
+OBI market selection uses canonical directory IDs and streets. Market 003, Wielicka in Kraków, and the same city/street in reversed order select only store 003. Explicit city-only stock scope selects the actual city store set (Kraków: 003/019/059/072), not an arbitrary first store or mandatory clarification. An unverified new SKU still needs a separate discovery/identity verification before complete city-wide inventory; the discovery seed is not a city-wide stock result. Short follow-ups require a still-authorized USER product chain. KWANT stays untouched, and unknown/contradictory locations do not widen a read. Earlier singular-city notes below remain historical.
+
 ## 2026-10-17 — Authorized singleton exact-product lookup
 
 After unchanged P0-B admission, `AdvisorLocationsTool.execute(authority)` uses the existing provider's `lookup(ref, branch)` for a single authorized branch when `fullNetwork` is false. Controller passes its existing registry. Fresh exact identity/branch matching owns positive/zero/null stock; historical cards supply identity only. Multiple/network scope retains the existing inventory adapters. Wire envelopes, cards, rendering, WorkingProfile, discovery and natural-language authorization remain unchanged. [RED, implementation, verification and limits](single-branch-exact-lookup-repair.md).
