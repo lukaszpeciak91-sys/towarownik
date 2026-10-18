@@ -1,5 +1,9 @@
 # Progress
 
+## 2026-10-17 — Single-branch exact lookup repair (independent audit required)
+
+Audited base `dfee248a86049a10d2d70add2bafd7189517c087`. Permanent RED: 13 methods / 10 failures on the former singleton inventory route. The fix reuses exact provider lookup after P0-B admission and shares Controller's provider registry; multi/network inventory remains unchanged. Native regressions: 357 passed / seven socket blocks / zero assertion failures; new focused and compatibility methods 16/16 pass. Actual Android continuations replay 6/6 against unchanged Worker validation; Node 22 Worker checks and Python 174 pass. Local Gradle startup is socket-blocked; final-head Android CI is recorded in the PR. [Evidence, fixture changes, security and limitations](single-branch-exact-lookup-repair.md). No merge, deploy, AAB or release work.
+
 ## 2026-10-16 — INC-008 D1 minimal KWANT report evidence (independent audit pending)
 
 Base main `6ea345a486b9457aa64d146c1687c393e984e68a`, including #127/#128. Inspected reporting, persistence, Controller and production locations flow before editing. Reuse existing location identity/status/reason/coverage; add only HTTP status/content-type class as local metadata. Completed ASSISTANT reports select immutable sanitized session evidence by exact conversation and inserted message ID, not latest lookup. Bounds: 16 responses, three results each, 100 numeric IDs/list; no persistence migration or raw bodies/headers/descriptions. Existing completion transaction returns its already-created ID.

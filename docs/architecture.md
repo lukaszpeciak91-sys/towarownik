@@ -1,5 +1,9 @@
 # Architecture
 
+## 2026-10-17 — Authorized singleton exact-product lookup
+
+After unchanged P0-B admission, `AdvisorLocationsTool.execute(authority)` uses the existing provider's `lookup(ref, branch)` for a single authorized branch when `fullNetwork` is false. Controller passes its existing registry. Fresh exact identity/branch matching owns positive/zero/null stock; historical cards supply identity only. Multiple/network scope retains the existing inventory adapters. Wire envelopes, cards, rendering, WorkingProfile, discovery and natural-language authorization remain unchanged. [RED, implementation, verification and limits](single-branch-exact-lookup-repair.md).
+
 ## INC-008 D1: local inventory evidence in response reports
 
 KWANT location results retain optional local-only HTTP status/content-type classification alongside existing identity, failure and coverage fields. The Controller carries at most three result references in its turn result. After the existing assistant-message completion transaction returns its inserted ID, the reporting evidence store projects sanitized facts into a 16-message session map keyed by conversation/message IDs. The existing report resolver validates the persisted ASSISTANT target before selecting that exact snapshot. No Room schema, Worker protocol, parser, request policy, stock UI or routing changes. Details and limitations: [INC-008 D1](inc008-d1-kwant-report-diagnostics.md).

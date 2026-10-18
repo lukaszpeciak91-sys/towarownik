@@ -15,10 +15,13 @@ import pl.lukaszpeciak.towarownik.product.provider.OBI_PROVIDER_ID
 import pl.lukaszpeciak.towarownik.product.provider.ObiProductProvider
 import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsResult
 import pl.lukaszpeciak.towarownik.product.provider.ProductLocationsService
+import pl.lukaszpeciak.towarownik.product.provider.ProductProviderRegistry
 import pl.lukaszpeciak.towarownik.product.provider.ProductRef
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
 import pl.lukaszpeciak.towarownik.product.provider.ProviderId
+import pl.lukaszpeciak.towarownik.product.provider.ProviderLookupResult
+import pl.lukaszpeciak.towarownik.product.provider.ProductProviderFailure
 import pl.lukaszpeciak.towarownik.product.provider.ProviderProduct
 
 /**
@@ -30,6 +33,8 @@ internal class AdvisorLocationsTool(
     private val obiBranches: () -> ProviderBranchResult = ObiProductProvider()::branches,
     private val kwantBranches: () -> ProviderBranchResult = KwantProductProvider()::branches,
     private val scopeExecutionBudgetMillis: Long = 45_000L,
+    private val providers: ProductProviderRegistry = ProductProviderRegistry.production(),
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     init {
         require(scopeExecutionBudgetMillis in 1L..60_000L)
@@ -67,6 +72,9 @@ internal class AdvisorLocationsTool(
         val exactRef = ProductRef(authority.provider, selected.effectiveProductId)
         fun rejected(reason: String, trustedId: String? = exactRef.productId) =
             empty(providerId, trustedId, "rejected", reason)
+        if (!authority.fullNetwork && authority.branches.size == 1) {
+            return readSingleBranch(exactRef, authority)
+        }
         val trustedContext = ProviderProduct(
             ref = exactRef,
             branchId = BranchId(selected.effectiveBranchId),
@@ -142,6 +150,63 @@ internal class AdvisorLocationsTool(
             ProductLocationsResult.UnsupportedProvider ->
                 rejected("unsupported_provider", exactRef.productId)
         }.copy(authorizedBranchIds = authority.branches.map { it.value })
+    }
+
+    /** Reuse ordinary provider verification; historical facts supply identity only. */
+    private suspend fun readSingleBranch(
+        ref: ProductRef,
+        authority: AdvisorInventoryAuthorization.Inventory,
+    ): AdvisorLocationEvidence {
+        val target = authority.branches.single()
+        val branch = authority.directory.singleOrNull { it.branchId == target }
+            ?: return empty(ref.providerId.value, ref.productId, "unavailable", "directory_unavailable")
+                .copy(authorizedBranchIds = listOf(target.value))
+        val name = if (ref.providerId == OBI_PROVIDER_ID) {
+            listOfNotNull(branch.name, branch.address?.takeIf { it.isNotBlank() })
+                .joinToString(" — ")
+        } else branch.name
+        val unknownScope = LocationCoverage(
+            LocationCoverageKind.UNKNOWN, listOf(target), emptyList(), 1,
+        )
+        fun unknown(reason: String) = empty(
+            ref.providerId.value, ref.productId, "unavailable", reason,
+            unknownScope, authority.directory,
+        ).copy(locations = listOf(AdvisorLocationEntry(target.value, name.take(100), null)))
+        val result = try {
+            withContext(Dispatchers.IO) {
+                providers.resolve(ref.providerId).lookup(ref, target)
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            return unknown("transport")
+        }
+        if (result !is ProviderLookupResult.Found) {
+            return unknown(when (result) {
+                is ProviderLookupResult.InvalidBranch -> "directory_unavailable"
+                is ProviderLookupResult.Unavailable -> when (result.failure) {
+                    ProductProviderFailure.NETWORK -> "transport"
+                    ProductProviderFailure.DATA -> "malformed_response"
+                    ProductProviderFailure.NOT_FOUND -> "no_trusted_rows"
+                }
+                else -> "untrusted_product"
+            })
+        }
+        val product = result.product
+        if (product.ref != ref || product.branchId != target ||
+            product.stock?.let { it < 0 } == true
+        ) return unknown("malformed_response")
+        val stock = product.stock ?: return unknown("no_trusted_rows")
+        return AdvisorLocationEvidence(
+            providerId = ref.providerId.value, productId = ref.productId,
+            status = "verified", reason = null, coverage = "requested_subset",
+            checkedIds = listOf(target.value), returnedIds = listOf(target.value),
+            missingIds = emptyList(),
+            locations = listOf(AdvisorLocationEntry(target.value, name.take(100), stock)),
+            verifiedAtMillis = now(),
+            centralStock = product.centralStock?.takeIf { ref.providerId == KWANT_PROVIDER_ID && it >= 0 },
+            stockUnit = product.stockUnit,
+        )
     }
 
     /** The 20-market budget belongs to EACH service invocation, never a nationwide truncation.
