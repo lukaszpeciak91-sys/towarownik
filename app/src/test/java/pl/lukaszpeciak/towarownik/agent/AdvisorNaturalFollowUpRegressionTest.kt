@@ -167,10 +167,13 @@ class AdvisorNaturalFollowUpRegressionTest {
         assertTrue(r.reads.isEmpty()); assertEquals("unknown_location",r.evidence.reason)
         assertFalse(r.state.text.contains("not authorized"))
     }
-    @Test fun `ambiguous OBI city asks one precise question instead of choosing`() = runBlocking {
-        val r=run("w Krakowie", "obi-pl", listOf("003"))
-        assertTrue(r.reads.isEmpty()); assertEquals("ambiguous_location",r.evidence.reason)
-        assertTrue(r.state.text.contains("ulic")); assertFalse(r.state.text.contains("not authorized"))
+    @Test fun `OBI named city authorizes only its four actual markets`() = runBlocking {
+        val r = run("w Krakowie", "obi-pl", listOf("075"))
+        val markets = setOf("003", "019", "059", "072")
+        assertEquals("verified", r.evidence.status)
+        assertEquals(markets, r.evidence.checkedIds.toSet())
+        assertEquals(markets, r.reads.flatMap { it.second }.toSet())
+        assertEquals(1, r.reads.size)
     }
     @Test fun `tam cannot use ASSISTANT location suggestion after unscoped USER anchor`() = runBlocking {
         val r=run("a tam?", prior=listOf(user("sprawdź stan A9Z01440/SCH"),AdvisorLocationHistoryMessage("ASSISTANT","W Bochni",listOf(card("kwant-pl")))))
