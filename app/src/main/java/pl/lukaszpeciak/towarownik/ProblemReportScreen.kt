@@ -89,19 +89,27 @@ internal fun ProblemReportScreen(
     }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var pendingSaveFile by remember { mutableStateOf<File?>(null) }
+    // The basename survives Activity recreation while the system's SAF
+    // picker is open; the actual report remains in private app cache.
+    var pendingSaveName by rememberSaveable { mutableStateOf<String?>(null) }
     var saveSucceeded by remember { mutableStateOf(false) }
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
     ) { uri ->
-        val reportFile = pendingSaveFile
-        pendingSaveFile = null
-        if (uri != null && reportFile != null) {
+        val reportFile = ProblemReportFileStore(context.cacheDir).pending(pendingSaveName)
+        pendingSaveName = null
+        if (uri == null) {
+            reportFile?.delete()
+        } else {
+            creating = true
             scope.launch {
-                creating = true
                 val success = withContext(Dispatchers.IO) {
-                    runCatching { saveProblemReportToUri(context, uri, reportFile) }.isSuccess
+                    runCatching {
+                        val pending = reportFile ?: error("Prepared TXT report unavailable")
+                        saveProblemReportToUri(context, uri, pending)
+                    }.isSuccess
                 }
+                reportFile?.delete()
                 error = if (success) null else ProblemReportUiError.SAVE_FAILED
                 saveSucceeded = success
                 creating = false
@@ -125,7 +133,8 @@ internal fun ProblemReportScreen(
     val canSubmit =
         selectedCategory != null &&
             !descriptionRequired &&
-            !creating
+            !creating &&
+            pendingSaveName == null
 
     BackHandler(enabled = !creating, onBack = onBack)
 
@@ -408,7 +417,7 @@ internal fun ProblemReportScreen(
                                 ProblemReportUiError.TARGET_UNAVAILABLE
                             } else ProblemReportUiError.GENERATION_FAILED
                         } else {
-                            pendingSaveFile = file
+                            pendingSaveName = file.name
                             saveLauncher.launch(file.name)
                         }
                     }
