@@ -94,12 +94,20 @@ internal fun resolveAdvisorLocationFollowUp(
             isCanonicalLocationWithOptionalMarketNumber(legacyCityNumber)
         ) return null // Preserve the existing precise city/market-conflict boundary.
         if (t == "tam") return null // Requires an uninterrupted USER-selected referent below.
-        val isPlaceExpression = t in canonicalLocations ||
-            Regex("""^(?:w|we) .+$""").matches(t)
-        if (!isPlaceExpression || Regex(
-                """\b(?:cena|ceny|cene|cen|koszt|kosztuje|pokaz|podaj|montaz|zamontowac|podlaczyc|dobierz|kompatybilnosc)\b""",
+        if (Regex(
+                """\\b(?:cena|ceny|cene|cen|koszt|kosztuje|pokaz|podaj|montaz|zamontowac|podlaczyc|dobierz|kompatybilnosc)\\b""",
             ).containsMatchIn(t)
         ) return null
+        if (providerId == "obi-pl") {
+            // Use the same canonical OBI market parser for initial inventory and
+            // follow-ups. City-wide scope stays bounded to the actual city.
+            return BranchResolver.resolveObiMarketScope(
+                t, branches, selectedBranch?.branchId ?: BranchId("unselected"),
+            ).takeUnless { it == BranchResolution.NotMentioned }
+        }
+        val isPlaceExpression = t in canonicalLocations ||
+            Regex("""^(?:w|we) .+$""").matches(t)
+        if (!isPlaceExpression) return null
         val place = if (t in canonicalLocations) "w $t" else t
         return BranchResolver.resolve(
             place, branches, selectedBranch?.branchId ?: BranchId("unselected"),
@@ -199,7 +207,7 @@ internal fun resolveAdvisorLocationFollowUp(
                 branches.any { it.name.isBlank() } -> "directory_unavailable"
             isThere && previousUserLocation == null -> "ambiguous_location"
             current.removePrefix("a ") == "u nas" && selectedBranch == null -> "directory_unavailable"
-            currentLocation is BranchResolution.Ambiguous -> "ambiguous_location"
+            currentLocation is BranchResolution.Ambiguous && !(providerId == "obi-pl" && currentLocation.isCityWideScope) -> "ambiguous_location"
             currentLocation == BranchResolution.UnknownMention -> "unknown_location"
             else -> null
         }
