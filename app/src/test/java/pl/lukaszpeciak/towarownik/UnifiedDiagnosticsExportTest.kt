@@ -94,6 +94,33 @@ class UnifiedDiagnosticsExportTest {
         }
     }
 
+    @Test fun savedSafBasenameRestoresPrivateSnapshotAfterScreenRecreation() {
+        val root = Files.createTempDirectory("taksula-saf-recreated").toFile()
+        try {
+            val originalStore = ProblemReportFileStore(root)
+            val pending = originalStore.write(
+                "OBI and KWANT safe evidence – UTF-8", 1_000L,
+                prefix = "taksula-diagnostics",
+            )
+            val savedUiStateBasename = pending.name // rememberSaveable holds only this.
+            // After Activity recreation we only have the saved basename, not File or text.
+            val recreatedStore = ProblemReportFileStore(root)
+            val restored = recreatedStore.pending(savedUiStateBasename)
+            assertNotNull(restored)
+            val destination = ByteArrayOutputStream()
+            copyProblemReportToStream(requireNotNull(restored), destination)
+            assertArrayEquals(pending.readBytes(), destination.toByteArray())
+            assertTrue(pending.name.startsWith("taksula-diagnostics-"))
+            assertNull(recreatedStore.pending("../${pending.name}"))
+            assertNull(recreatedStore.pending("/tmp/${pending.name}"))
+            assertNull(recreatedStore.pending("taksula-report-untrusted.txt"))
+            restored.delete() // SAF completion/cancellation clears only this snapshot.
+            assertNull(recreatedStore.pending(savedUiStateBasename))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     @Test fun exportedFileUsesIdenticalUtf8BytesAsSharedReport() {
         val root = Files.createTempDirectory("taksula-save-test").toFile()
         try {
