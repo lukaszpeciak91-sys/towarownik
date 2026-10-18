@@ -37,14 +37,17 @@ class LocalizationResourcesTest {
             "Product search",
             english.getValue("manual_search_title"),
         )
+        assertEquals("Diagnostyka", polish.getValue("diagnostics_title"))
+        assertEquals("Diagnostics", english.getValue("diagnostics_title"))
+        assertEquals("Uruchom test OBI", polish.getValue("diagnostics_run_probe"))
         assertEquals("Zgłoś", polish.getValue("report_action"))
         assertEquals("Report", english.getValue("report_action"))
         assertEquals(
-            "Taksula — diagnostyka OBI",
+            "Taksula — diagnostyka",
             polish.getValue("diagnostics_share_subject"),
         )
         assertEquals(
-            "Taksula — OBI diagnostics",
+            "Taksula — diagnostics",
             english.getValue("diagnostics_share_subject"),
         )
         assertEquals(
