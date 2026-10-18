@@ -166,6 +166,10 @@ class ObiDiagnosticRecorder(
     fun snapshots(): List<DiagnosticOperationSnapshot> = history.toList()
 
     @Synchronized
+    fun hasReportEvidence(): Boolean = history.isNotEmpty() ||
+        active.isNotEmpty() || liveProbeReport != null
+
+    @Synchronized
     internal fun setLiveProbeReport(report: ObiLiveProbeReport) {
         liveProbeReport = report
     }

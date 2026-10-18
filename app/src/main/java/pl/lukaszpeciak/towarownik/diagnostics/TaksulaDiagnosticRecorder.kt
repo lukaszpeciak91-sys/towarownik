@@ -25,6 +25,7 @@ internal data class SafeDiagnosticEvent(
     val failureClass: String? = null,
     val tool: String? = null,
     val outcome: String? = null,
+    val reason: String? = null,
     val elapsedMillis: Long? = null,
 )
 
@@ -40,6 +41,13 @@ internal class SafeDiagnosticRecorder(
     private val failureClasses = setOf("DNS", "TLS", "TIMEOUT", "NETWORK_IO", "HTTP_ERROR", "RESPONSE_PARSE", "LOCAL_PROVIDER_FAILURE")
     private val outcomes = setOf("verified", "unavailable", "rejected", "success", "error", "results", "product", "unknown")
     private val tools = setOf("find_obi_products", "find_products", "find_product_locations")
+    private val reasons = setOf(
+        "untrusted_product", "ambiguous_product", "unknown_location", "ambiguous_location",
+        "location_intent_required", "location_not_authorized", "unsupported_provider",
+        "local_tool_limit_reached", "location_service_unavailable", "multi_product_tool_contract",
+        "directory_unavailable", "transport", "malformed_response", "tool_rejected",
+        "not_found", "data_unavailable", "network", "timeout", "invalid_request",
+    )
 
     @Synchronized
     fun record(value: SafeDiagnosticEvent) {
@@ -55,6 +63,7 @@ internal class SafeDiagnosticRecorder(
             failureClass = value.failureClass?.takeIf(failureClasses::contains),
             tool = value.tool?.takeIf(tools::contains),
             outcome = value.outcome?.takeIf(outcomes::contains),
+            reason = value.reason?.let { if (it in reasons) it else "unrecognized" },
             elapsedMillis = value.elapsedMillis?.takeIf { it in 0..600_000 },
         )
         events.addLast(clock() to safe)
@@ -83,6 +92,7 @@ internal class SafeDiagnosticRecorder(
             event.failureClass?.let { append(" failureClass=$it") }
             event.tool?.let { append(" tool=$it") }
             event.outcome?.let { append(" outcome=$it") }
+            event.reason?.let { append(" reason=$it") }
             event.elapsedMillis?.let { append(" durationMs=$it") }
             appendLine()
         }

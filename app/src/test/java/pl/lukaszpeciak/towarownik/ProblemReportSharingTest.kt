@@ -20,6 +20,7 @@ import org.w3c.dom.Element
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticInputType
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticOperationType
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
+import pl.lukaszpeciak.towarownik.diagnostics.ObiLiveProbeReport
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -278,6 +279,16 @@ class ProblemReportSharingTest {
         assertNotNull(report)
         assertTrue(report!!.contains("Taksula OBI diagnostics"))
         assertTrue(recorder.isEnabled())
+    }
+
+    @Test
+    fun `OBI live probe alone is eligible for optional diagnostic report inclusion`() {
+        val recorder = ObiDiagnosticRecorder()
+        recorder.setEnabled(true)
+        recorder.setLiveProbeReport(ObiLiveProbeReport(sections = emptyList()))
+        assertTrue(hasExistingSafeObiDiagnostics(recorder))
+        assertTrue(existingSafeObiDiagnostics(recorder, true)!!.contains("=== OBI LIVE PROBE ==="))
+        assertNull(existingSafeObiDiagnostics(recorder, false))
     }
 
     @Test

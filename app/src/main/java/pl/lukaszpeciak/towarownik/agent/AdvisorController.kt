@@ -564,7 +564,7 @@ internal class AdvisorController(
                         DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
                         providerId = conversationProviderId, branchId = conversationStoreNumber,
                         traceId = turnTraceId, tool = "find_product_locations",
-                        outcome = evidence.status,
+                        outcome = evidence.status, reason = evidence.reason,
                     )) }
                     if (evidence.providerId == "kwant-pl" && locationReportEvidence.size < MAX_LOCAL_TOOL_CALLS_PER_TURN) {
                         locationReportEvidence += evidence
@@ -752,6 +752,7 @@ internal class AdvisorController(
                         DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
                         providerId = conversationProviderId, branchId = conversationStoreNumber,
                         traceId = turnTraceId, tool = diagnosticTool,
+                        reason = lastDiscoveryRejectionReason,
                         outcome = when (continuation) {
                             is AdvisorToolContinuation.Verified -> "verified"
                             is AdvisorToolContinuation.RejectedStore -> "rejected"

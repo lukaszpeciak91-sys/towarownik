@@ -304,7 +304,7 @@ internal fun createProblemReportMetadata(
 internal fun hasExistingSafeObiDiagnostics(
     recorder: ObiDiagnosticRecorder,
 ): Boolean =
-    recorder.isEnabled() && recorder.snapshots().isNotEmpty()
+    recorder.hasReportEvidence()
 
 internal fun existingSafeObiDiagnostics(
     recorder: ObiDiagnosticRecorder,
