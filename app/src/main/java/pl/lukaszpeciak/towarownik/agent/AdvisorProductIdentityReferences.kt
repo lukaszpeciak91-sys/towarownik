@@ -18,7 +18,7 @@ internal class AdvisorProductIdentityReferences private constructor(
             value.matches(Regex("""[0-9]{1,3}""")) -> false
             // Short KWANT product IDs/articles require explicit product context.
             value.matches(Regex("""[0-9]{4,6}""")) -> value in referencedNumericIds
-            // Preserve bounded 7–13 digit OBIK/EAN and non-numeric mentions.
+            // Preserve bounded 7–14 digit OBIK/EAN/GTIN and non-numeric mentions.
             else -> Regex(
                 """(?<![a-z0-9])""" + Regex.escape(value) + """(?![a-z0-9])""",
             ).containsMatchIn(userText)
@@ -40,7 +40,7 @@ internal class AdvisorProductIdentityReferences private constructor(
                 """\b(?:obik|ean|sku|id(?:\s+produktu)?|produkt(?:u|y|ow)?|""" +
                     """kod(?:u|zie)?|art\.?|artykul(?:u)?|indeks(?:u)?|""" +
                     """model(?:u)?|gniazd(?:a|o)|numer(?:\s+katalogowy)?|""" +
-                    """nr(?:\s+katalogowy)?)\s*(?:nr\s*)?[:#-]?\s*([0-9]{4,13})\b""",
+                    """nr(?:\s+katalogowy)?)\s*(?:nr\s*)?[:#-]?\s*([0-9]{4,14})\b""",
             ).findAll(lowercase)
                 .filterNot { it.groupValues[1].length <= 6 &&
                     hasMeasurementUnitAfter(lowercase, it.range.last)
@@ -59,8 +59,8 @@ internal class AdvisorProductIdentityReferences private constructor(
             ).findAll(normalized)
                 .filterNot { hasMeasurementUnitAfter(normalized, it.range.last) }
                 .map { it.groupValues[1] }
-            // Keep the existing long OBIK/EAN fail-closed check unchanged.
-            val longNumbers = Regex("""(?<![0-9])[0-9]{7,13}(?![0-9])""")
+            // Keep all explicit long IDs, including GTIN-14 leading zeroes, for fail-closed matching.
+            val longNumbers = Regex("""(?<![0-9])[0-9]{7,14}(?![0-9])""")
                 .findAll(lowercase).map { it.value }
             return AdvisorProductIdentityReferences(
                 userText = lowercase,
