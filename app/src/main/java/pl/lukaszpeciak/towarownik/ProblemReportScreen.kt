@@ -105,7 +105,7 @@ internal fun ProblemReportScreen(
             scope.launch {
                 val success = withContext(Dispatchers.IO) {
                     runCatching {
-                        val pending = reportFile ?: error("Prepared TXT report unavailable")
+                        val pending = reportFile ?: throw IllegalStateException("Prepared TXT report unavailable")
                         saveProblemReportToUri(context, uri, pending)
                     }.isSuccess
                 }
