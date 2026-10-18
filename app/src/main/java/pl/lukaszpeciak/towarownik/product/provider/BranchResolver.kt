@@ -182,6 +182,7 @@ internal object BranchResolver {
         // A street or number is already a unique Resolved branch. Cross-city
         // ambiguity still needs the complete multi-location scope parser.
         return if (resolution is BranchResolution.Ambiguous &&
+            !resolution.allowsExplicitBranchHint &&
             resolution.candidates.map { normalizedText(it.name) }.distinct().size == 1
         ) resolution.copy(allowsExplicitBranchHint = false, isCityWideScope = true) else resolution
     }
