@@ -86,6 +86,10 @@ internal fun resolveAdvisorLocationFollowUp(
         return withoutFiller.replace(locationRequestPrefix, "")
     }
     fun naturalShortLocation(s: String): BranchResolution? {
+        // A complete current product/stock request is NOT a short inherited
+        // location clarification. Its authority is resolved independently by
+        // AdvisorInventoryAuthorizer, never by an older conversation anchor.
+        if (advisorHasCurrentProductEvidence(s) || advisorHasStockEvidence(s)) return null
         val t = locationClause(s)
         if (t == "u nas") return selectedBranch?.let { BranchResolution.CurrentBranch(it) }
         if (quantityFollowUpLocation(normalized(s)) != null) return null
