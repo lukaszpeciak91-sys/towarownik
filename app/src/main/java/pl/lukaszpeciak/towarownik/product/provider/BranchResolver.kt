@@ -172,8 +172,10 @@ internal object BranchResolver {
             canonicalObiMarketLocationText(userText, branches), branches,
             currentBranchId, allowBareBranchIds,
         )
+        // In OBI, a USER-selected city denotes every market in that city.
+        // A street or number is already a unique Resolved branch. Cross-city
+        // ambiguity still needs the complete multi-location scope parser.
         return if (resolution is BranchResolution.Ambiguous &&
-            Regex("""\b(?:marketach|markety|sklepach|sklepy)\b""").containsMatchIn(normalizedText(userText)) &&
             resolution.candidates.map { normalizedText(it.name) }.distinct().size == 1
         ) resolution.copy(allowsExplicitBranchHint = false, isCityWideScope = true) else resolution
     }
@@ -194,6 +196,27 @@ internal object BranchResolver {
         )
         // Courtesy after a recognized market-scope phrase does not become an address.
         if (text != original) text = text.replace(Regex("""\s+sprawdz prosze$"""), "")
+        // Accept an exact canonical "Kraków Wielicka" city+street selection
+        // after a stock command or in a short same-product follow-up. Do not
+        // invent a market from a city-only or incomplete street reference.
+        val bare = text.removePrefix("a ").removePrefix("sprawdz ").removePrefix("sprawdzcie ")
+        val knownCity = branches.any { branch ->
+            cityAliases(branch.name).any { bare == it || bare.startsWith("$it ") }
+        }
+        if (knownCity && (bare in branches.flatMap { cityAliases(it.name) } ||
+                    resolveHint(bare, branches) != null)
+        ) text = "w $bare"
+        // The equivalent street-first form must agree with the canonical
+        // city; reordering is NOT allowed for mismatched city/street pairs.
+        val streetFirst = Regex("""\bna ([a-z0-9 ]+?) (?:w|we) ([a-z ]+)$""").find(text)
+        if (streetFirst != null) {
+            val street = streetFirst.groupValues[1].trim()
+            val city = streetFirst.groupValues[2].trim()
+            val market = resolveHint("na $street", branches)
+            if (market != null && city in cityAliases(market.name)) {
+                text = text.replaceRange(streetFirst.range, "w $city na $street")
+            }
+        }
         return text
     }
 
