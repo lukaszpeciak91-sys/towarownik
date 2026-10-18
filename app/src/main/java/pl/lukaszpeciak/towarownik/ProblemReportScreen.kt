@@ -418,7 +418,11 @@ internal fun ProblemReportScreen(
                             } else ProblemReportUiError.GENERATION_FAILED
                         } else {
                             pendingSaveName = file.name
-                            saveLauncher.launch(file.name)
+                            runCatching { saveLauncher.launch(file.name) }.onFailure {
+                                pendingSaveName = null
+                                file.delete()
+                                error = ProblemReportUiError.SAVE_FAILED
+                            }
                         }
                     }
                 },
