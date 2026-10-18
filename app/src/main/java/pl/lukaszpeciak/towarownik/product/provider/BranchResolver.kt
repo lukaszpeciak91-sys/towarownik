@@ -90,6 +90,7 @@ internal object BranchResolver {
         branches: List<ProviderBranch>,
         currentBranchId: BranchId,
         allowBareBranchIds: Boolean = true,
+        allowStockActionTail: Boolean = false,
     ): BranchResolution {
         if (branches.isEmpty() || branches.size > 100 ||
             branches.map { it.branchId }.distinct().size != branches.size ||
@@ -131,7 +132,7 @@ internal object BranchResolver {
                 // A bounded second action ("i pokaż aktualny stan magazynowy")
                 // is not another branch. Never ignore a subsequent unknown
                 // locality: only these COMPLETE non-location tails qualify.
-                if (Regex("""^(?:i|oraz) (?:pokaz|podaj|sprawdz)(?: mi)? (?:aktualny )?(?:stan|stany|dostepnosc)(?: magazynowy)?$""")
+                if (allowStockActionTail && Regex("""^(?:i|oraz) (?:pokaz|podaj|sprawdz)(?: mi)? (?:aktualny )?(?:stan|stany|dostepnosc)(?: magazynowy)?$""")
                         .matches(tail)) break
                 val connector = Regex("""^(?:i|oraz)\s+""").find(tail) ?: break
                 tail = tail.drop(connector.value.length)
@@ -175,7 +176,7 @@ internal object BranchResolver {
     ): BranchResolution {
         val resolution = resolve(
             canonicalObiMarketLocationText(userText, branches), branches,
-            currentBranchId, allowBareBranchIds,
+            currentBranchId, allowBareBranchIds, allowStockActionTail = true,
         )
         // In OBI, a USER-selected city denotes every market in that city.
         // A street or number is already a unique Resolved branch. Cross-city
