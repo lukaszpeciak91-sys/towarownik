@@ -348,4 +348,24 @@ class Inc007ObiScopeRegressionTest {
             }
         }
     }
+    @Test fun `OBI real device four turn text keeps exact market and same product`()=runBlocking {
+        val scenario = Scenario("obi-pl")
+        scenario.queryId = "3496072"
+        scenario.query = "3496072"
+        scenario.turn(
+            "Sprawdź produkt o OBIK 3496072 w markecie 075 i pokaż aktualny stan magazynowy.",
+            "discovery_then_locations",
+        )
+        assertEquals("verified", scenario.evidence?.status)
+        assertEquals(listOf("075"), scenario.evidence?.checkedIds)
+        scenario.turn("Znajdź produkt OBIK 3496072 u nas.", "discovery")
+        scenario.turn("A ile tego samego produktu mają w OBI 003?", "locations")
+        assertEquals("verified", scenario.evidence?.status)
+        assertEquals(listOf("003"), scenario.evidence?.checkedIds)
+        scenario.turn("a w markecie Kraków Wielicka?", "locations")
+        assertEquals("verified", scenario.evidence?.status)
+        assertEquals(listOf("003"), scenario.evidence?.checkedIds)
+        assertEquals("3496072", scenario.evidence?.productId)
+    }
+
 }
