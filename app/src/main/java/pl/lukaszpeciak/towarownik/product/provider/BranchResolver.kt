@@ -174,6 +174,17 @@ internal object BranchResolver {
         currentBranchId: BranchId,
         allowBareBranchIds: Boolean = true,
     ): BranchResolution {
+        // A verified street immediately followed by a USER-named city is ONE
+        // combined place. A different city cannot authorize its own markets
+        // after the street-city pair fails to match.
+        obiStreetBeforeCity(userText)?.let { match ->
+            val street = match.groupValues[1].trim()
+            val city = match.groupValues[2].trim()
+            val market = resolveHint("na $street", branches)
+            if (market != null && city !in cityAliases(market.name)) {
+                return BranchResolution.UnknownMention
+            }
+        }
         val resolution = resolve(
             canonicalObiMarketLocationText(userText, branches), branches,
             currentBranchId, allowBareBranchIds, allowStockActionTail = true,
@@ -186,6 +197,10 @@ internal object BranchResolver {
             resolution.candidates.map { normalizedText(it.name) }.distinct().size == 1
         ) resolution.copy(allowsExplicitBranchHint = false, isCityWideScope = true) else resolution
     }
+
+    private fun obiStreetBeforeCity(text: String): MatchResult? =
+        Regex("""\bna ([a-z0-9 ]+?) (?:w|we) ([a-z ]+)$""")
+            .find(normalizedText(text))
 
     private fun canonicalObiMarketLocationText(userText: String, branches: List<ProviderBranch>): String {
         val original = normalizedText(userText)
@@ -215,7 +230,7 @@ internal object BranchResolver {
         ) text = "w $bare"
         // The equivalent street-first form must agree with the canonical
         // city; reordering is NOT allowed for mismatched city/street pairs.
-        val streetFirst = Regex("""\bna ([a-z0-9 ]+?) (?:w|we) ([a-z ]+)$""").find(text)
+        val streetFirst = obiStreetBeforeCity(text)
         if (streetFirst != null) {
             val street = streetFirst.groupValues[1].trim()
             val city = streetFirst.groupValues[2].trim()
