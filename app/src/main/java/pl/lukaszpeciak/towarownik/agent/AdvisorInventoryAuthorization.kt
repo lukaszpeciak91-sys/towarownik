@@ -125,7 +125,8 @@ internal object AdvisorInventoryAuthorizer {
         val explicitlyMultiple = Regex("""\b(?:wszystk[a-z]*|inne|innych|pozostale|pozostalych|markety|marketach|oddzialy|oddzialach)\b""")
             .containsMatchIn(norm(userText))
         if (userPlace is BranchResolution.Ambiguous &&
-            userPlace.candidates.map { norm(it.name) }.distinct().size == 1 && !explicitlyMultiple
+            userPlace.candidates.map { norm(it.name) }.distinct().size == 1 &&
+            !userPlace.isCityWideScope && !explicitlyMultiple
         ) return clarify("ambiguous_location")
         val direct = when (userPlace) {
             is BranchResolution.Resolved -> listOf(userPlace.branch.branchId)
