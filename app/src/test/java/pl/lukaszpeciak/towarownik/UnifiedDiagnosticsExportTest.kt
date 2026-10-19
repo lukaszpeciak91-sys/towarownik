@@ -5,6 +5,7 @@ import java.nio.file.Files
 import org.junit.Assert.*
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.diagnostics.*
+import pl.lukaszpeciak.towarownik.conversation.PersistedMessage
 
 class UnifiedDiagnosticsExportTest {
     @Test fun boundedEventsDoNotLeakCallerStringsOrSecrets() {
@@ -203,5 +204,45 @@ class UnifiedDiagnosticsExportTest {
             assertEquals("ACTIVE",store.pending(pending.name)?.readText())
         } finally {root.toFile().deleteRecursively()}
     }
+
+    @Test fun actualReportSelectionUsesPersistedAssistantOrFailedTurnNeverGlobalByDefault() {
+        val r = SafeDiagnosticRecorder()
+        val first = "11111111-1111-4111-8111-111111111111"
+        val unrelated = "22222222-2222-4222-8222-222222222222"
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR,DiagnosticStage.TURN_SUCCESS,
+            conversationId=10,turnId=first,providerId="obi-pl",branchId="003"))
+        r.linkAssistantMessage(10,first,100)
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR,DiagnosticStage.TURN_FAILURE,
+            conversationId=20,turnId=unrelated,providerId="kwant-pl",branchId="205"))
+        val response=ProblemReportRequest(
+            ProblemReportType.ASSISTANT_RESPONSE,ProblemReportCategory.INCORRECT_FABRICATED,
+            "reported answer",false,true,conversationId=10,reportedMessageId=100,
+        )
+        val evidence=ProblemReportEvidence(10,PersistedMessage(100,"ASSISTANT","answer",1L,emptyList()),emptyList())
+        val scoped=requireNotNull(safeDiagnosticReportForRequest(response,evidence,r))
+        assertTrue(scoped.contains("branch=003"))
+        assertFalse(scoped.contains("branch=205"))
+        assertFalse(scoped.contains(unrelated))
+        val failed=ProblemReportRequest(
+            ProblemReportType.ADVISOR_FAILURE,ProblemReportCategory.ADVISOR_REQUEST_FAILED,
+            "",false,true,conversationId=20,failedTurnId=unrelated,
+        )
+        val failedText=requireNotNull(safeDiagnosticReportForRequest(failed,
+            ProblemReportEvidence(20,null,emptyList()),r))
+        assertTrue(failedText.contains("branch=205"))
+        assertFalse(failedText.contains("branch=003"))
+        val general=ProblemReportRequest(
+            ProblemReportType.GENERAL,ProblemReportCategory.APP_PROBLEM,"issue",false,true,
+        )
+        val session=requireNotNull(safeDiagnosticReportForRequest(general,
+            ProblemReportEvidence(null,null,emptyList()),r))
+        assertTrue(session.contains("session-wide"))
+        assertTrue(session.contains("branch=003"))
+        assertTrue(session.contains("branch=205"))
+        assertNull(safeDiagnosticReportForRequest(response.copy(includeObiDiagnostics=false),evidence,r))
+        r.clearConversation(10)
+        assertTrue(safeDiagnosticReportForRequest(response,evidence,r)!!.contains("unavailable"))
+    }
+
 
 }
