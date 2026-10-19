@@ -122,6 +122,27 @@ class UnifiedDiagnosticsExportTest {
         }
     }
 
+    @Test fun simulatedSafCancelOrWriteFailureDoesNotDeleteSiblingPendingExport() {
+        val root=Files.createTempDirectory("taksula-saf-cleanup").toFile()
+        try {
+            val store=ProblemReportFileStore(root)
+            val cancelled=store.write("CANCEL",1000L)
+            val failed=store.write("FAIL",1000L)
+            val sibling=store.write("STILL PENDING",1000L)
+            assertTrue(cancelled.delete())
+            assertEquals("STILL PENDING",store.pending(sibling.name)?.readText())
+            val broken=object:java.io.OutputStream() {
+                override fun write(b:Int) { throw java.io.IOException("synthetic write failure") }
+            }
+            try {
+                copyProblemReportToStream(failed,broken)
+                org.junit.Assert.fail("Failure must propagate for UI to show SAVE_FAILED")
+            } catch (_:java.io.IOException) {}
+            assertTrue(failed.delete())
+            assertEquals("STILL PENDING",store.pending(sibling.name)?.readText())
+        } finally {root.deleteRecursively()}
+    }
+
     @Test fun exportedFileUsesIdenticalUtf8BytesAsSharedReport() {
         val root = Files.createTempDirectory("taksula-save-test").toFile()
         try {
