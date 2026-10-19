@@ -606,9 +606,19 @@ internal suspend fun createProblemReportSharePayload(
                 recorder = recorder,
                 include = request.includeObiDiagnostics,
             ),
-            safeDiagnosticEvents = if (request.includeObiDiagnostics) {
-                TaksulaDiagnostics.recorder.report()
-            } else null,
+            safeDiagnosticEvents = if (!request.includeObiDiagnostics) null else when (request.type) {
+                ProblemReportType.ASSISTANT_RESPONSE -> {
+                    val id = resolution.evidence.reportedMessage?.id
+                    val conversation = resolution.evidence.conversationId
+                    if (id != null && conversation != null) {
+                        TaksulaDiagnostics.recorder.reportForMessage(conversation, id)
+                    } else "evidence=unavailable (selected assistant response missing)"
+                }
+                ProblemReportType.ADVISOR_FAILURE -> TaksulaDiagnostics.recorder.reportForTurn(
+                    requireNotNull(request.conversationId), requireNotNull(request.failedTurnId),
+                )
+                ProblemReportType.GENERAL -> TaksulaDiagnostics.recorder.report()
+            },
         )
         val file = withContext(Dispatchers.IO) {
             ProblemReportFileStore(context.cacheDir).write(
