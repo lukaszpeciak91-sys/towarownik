@@ -80,7 +80,8 @@ internal class SafeDiagnosticRecorder(
     /** Link only AFTER the assistant response has been saved and its true ID returned. */
     @Synchronized
     fun linkAssistantMessage(conversationId: Long, turnId: String, messageId: Long) {
-        if (conversationId <= 0 || messageId <= 0 || !guid.matches(turnId)) return
+        if (conversationId <= 0 || conversationId in invalidatedConversations ||
+            messageId <= 0 || !guid.matches(turnId)) return
         if (events.none { it.second.conversationId == conversationId && it.second.turnId == turnId }) return
         assistantTurns[conversationId to messageId] = turnId.lowercase()
         while (assistantTurns.size > maxEvents) assistantTurns.remove(assistantTurns.keys.first())
@@ -111,9 +112,6 @@ internal class SafeDiagnosticRecorder(
         // A late callback from an already cancelled/deleted conversation
         // must not repopulate the global session record after deletion.
         invalidatedConversations.add(conversationId)
-        while (invalidatedConversations.size > 128) {
-            invalidatedConversations.remove(invalidatedConversations.first())
-        }
     }
 
     private fun missingScopedEvidence() =
