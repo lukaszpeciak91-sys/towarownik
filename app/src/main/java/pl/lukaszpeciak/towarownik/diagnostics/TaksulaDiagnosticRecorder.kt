@@ -56,7 +56,7 @@ internal class SafeDiagnosticRecorder(
 
     @Synchronized
     fun record(value: SafeDiagnosticEvent) {
-        if (value.conversationId in invalidatedConversations) return
+        if (value.conversationId?.let { it in invalidatedConversations } == true) return
         // Validate every dynamic field at the write boundary; never print arbitrary caller text.
         val safe = value.copy(
             providerId = value.providerId?.takeIf { it in setOf("obi-pl", "kwant-pl") },
