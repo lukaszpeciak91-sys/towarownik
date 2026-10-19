@@ -209,6 +209,8 @@
     <string name="report_privacy_general_with_conversation">The report contains your description, the current persisted conversation, and product data shown in that conversation.</string>
     <string name="report_privacy_obi_diagnostics_included">The report includes safe session diagnostic data; detailed OBI data only if enabled.</string>
     <string name="report_privacy_obi_diagnostics_not_included">Additional diagnostic data will not be included.</string>
+    <string name="report_privacy_diagnostics_general_scope">Diagnostics cover the entire current app session, potentially including other conversations; they are not attributed to one turn.</string>
+    <string name="report_privacy_diagnostics_targeted_scope">Only available events for the selected response or failed turn are included; OBI logs without turn identity are excluded.</string>
     <string name="report_screenshot_hint">After the message opens, you can add screenshots before sending.</string>
     <string name="report_create_and_share">Create and share report</string>
     <string name="report_save_txt">Save report as TXT</string>
