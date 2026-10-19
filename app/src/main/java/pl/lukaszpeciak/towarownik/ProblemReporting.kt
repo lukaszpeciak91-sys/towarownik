@@ -22,6 +22,7 @@ import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.PersistedMessage
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
 import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
+import pl.lukaszpeciak.towarownik.diagnostics.SafeDiagnosticRecorder
 
 internal const val REPORT_RECIPIENT_EMAIL = "napahustudios@gmail.com"
 internal const val REPORT_DESCRIPTION_MAX_CHARS = 2_000
@@ -582,6 +583,27 @@ internal data class ProblemReportSharePayload(
     val reportFile: File,
 )
 
+/** Select diagnostics ONLY after ProblemReportResolver has verified the persisted target. */
+internal fun safeDiagnosticReportForRequest(
+    request: ProblemReportRequest,
+    evidence: ProblemReportEvidence,
+    recorder: SafeDiagnosticRecorder,
+): String? {
+    if (!request.includeObiDiagnostics) return null
+    return when (request.type) {
+        ProblemReportType.ASSISTANT_RESPONSE -> {
+            val id = evidence.reportedMessage?.id
+            val conversation = evidence.conversationId
+            if (id != null && conversation != null) recorder.reportForMessage(conversation, id)
+            else "evidence=unavailable (selected assistant response missing)"
+        }
+        ProblemReportType.ADVISOR_FAILURE -> recorder.reportForTurn(
+            requireNotNull(request.conversationId), requireNotNull(request.failedTurnId),
+        )
+        ProblemReportType.GENERAL -> recorder.report()
+    }
+}
+
 internal suspend fun createProblemReportSharePayload(
     context: Context,
     repository: ConversationRepository,
@@ -621,19 +643,9 @@ internal suspend fun createProblemReportSharePayload(
                 recorder = recorder,
                 include = request.includeObiDiagnostics && request.type == ProblemReportType.GENERAL,
             ),
-            safeDiagnosticEvents = if (!request.includeObiDiagnostics) null else when (request.type) {
-                ProblemReportType.ASSISTANT_RESPONSE -> {
-                    val id = resolution.evidence.reportedMessage?.id
-                    val conversation = resolution.evidence.conversationId
-                    if (id != null && conversation != null) {
-                        TaksulaDiagnostics.recorder.reportForMessage(conversation, id)
-                    } else "evidence=unavailable (selected assistant response missing)"
-                }
-                ProblemReportType.ADVISOR_FAILURE -> TaksulaDiagnostics.recorder.reportForTurn(
-                    requireNotNull(request.conversationId), requireNotNull(request.failedTurnId),
-                )
-                ProblemReportType.GENERAL -> TaksulaDiagnostics.recorder.report()
-            },
+            safeDiagnosticEvents = safeDiagnosticReportForRequest(
+                request, resolution.evidence, TaksulaDiagnostics.recorder,
+            ),
         )
         val file = withContext(Dispatchers.IO) {
             ProblemReportFileStore(context.cacheDir).write(
