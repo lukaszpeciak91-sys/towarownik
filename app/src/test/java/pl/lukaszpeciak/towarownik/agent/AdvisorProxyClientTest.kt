@@ -2,6 +2,7 @@ package pl.lukaszpeciak.towarownik.agent
 
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -16,6 +17,8 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -1528,19 +1531,30 @@ class AdvisorProxyClientTest {
         val old="55555555-5555-4555-8555-555555555555"
         val fresh="66666666-6666-4666-8666-666666666666"
         TaksulaDiagnostics.recorder.clear()
-        MockWebServer().use { server ->
-            // Read and acknowledge the request, then keep the response body
-            // blocked until cancellation. NO_RESPONSE can skip recording it.
-            server.enqueue(MockResponse().setBody("{}").setBodyDelay(30,TimeUnit.SECONDS))
-            val client=client(server,FAKE_TOKEN)
-            val abandoned=async(AdvisorDiagnosticTurnContext(50,old)) {
-                client.start("abandoned")
-            }
-            // Network dispatch races with coroutine cancellation; no fixed
-            // arrival deadline is guaranteed by the HTTP mock runtime.
-            delay(100)
-            abandoned.cancelAndJoin()
+        val requestEntered=CountDownLatch(1)
+        val releaseLateCallback=CountDownLatch(1)
+        val blockedClient=OkHttpClient.Builder().addInterceptor { chain ->
+            requestEntered.countDown()
+            check(releaseLateCallback.await(5,TimeUnit.SECONDS))
+            okhttp3.Response.Builder()
+                .request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200).message("OK")
+                .body("""{"type":"answer","responseId":"resp_late","text":"late","productRefs":[]}"""
+                    .toResponseBody("application/json".toMediaType()))
+                .build()
+        }.build()
+        val oldProxy=AdvisorProxyClient(
+            appToken=FAKE_TOKEN,baseUrl="http://127.0.0.1:1/".toHttpUrl(),
+            client=blockedClient,
+        )
+        val abandoned=async(AdvisorDiagnosticTurnContext(50,old)) {
+            oldProxy.start("abandoned")
         }
+        assertTrue("Old request must reach interceptor before cancellation",
+            requestEntered.await(5,TimeUnit.SECONDS))
+        abandoned.cancelAndJoin()
+        releaseLateCallback.countDown()
+        delay(150) // Let callback finish after the originating continuation is cancelled.
         MockWebServer().use { server ->
             server.enqueue(answerResponse())
             withContext(AdvisorDiagnosticTurnContext(60,fresh)) { client(server,FAKE_TOKEN).start("next") }
