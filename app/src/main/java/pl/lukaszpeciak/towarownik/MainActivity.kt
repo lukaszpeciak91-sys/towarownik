@@ -146,6 +146,7 @@ import pl.lukaszpeciak.towarownik.conversation.PersistedWebSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticDeviceContext
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
+import pl.lukaszpeciak.towarownik.diagnostics.AdvisorDiagnosticTurnContext
 import pl.lukaszpeciak.towarownik.diagnostics.SafeDiagnosticEvent
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticStage
@@ -168,6 +169,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         configureDiagnosticsContext()
+        // A fresh launch cannot have an active restored SAF picker.
+        if (savedInstanceState == null) ProblemReportFileStore(cacheDir).cleanupExpired()
         setContent {
             TowarownikTheme {
                 TowarownikApp()
@@ -635,6 +638,7 @@ private fun TowarownikApp() {
             conversationRepository.deleteConversation(conversationId)
             failureEvidenceStore.clearConversation(conversationId)
             responseEvidenceStore.clearConversation(conversationId)
+            TaksulaDiagnostics.recorder.clearConversation(conversationId)
 
             if (freshCase != null) {
                 clearManualProfileContext()
@@ -761,7 +765,7 @@ private fun TowarownikApp() {
                 stage = DiagnosticStage.TURN_START,
                 providerId = turn.workingProfile.providerId.value,
                 branchId = turn.workingProfile.branchId.value,
-                turnId = failedTurnId,
+                turnId = failedTurnId, conversationId = turn.conversationId,
             ))
             pendingAttachmentOwnership.handoffToPersisted(submittedAttachments)
             pendingAttachments = emptyList()
@@ -780,7 +784,8 @@ private fun TowarownikApp() {
 
             var toolAssistedRecorded = false
 
-            val finalState = runAdvisorForWorkingProfile(
+            val finalState = withContext(AdvisorDiagnosticTurnContext(turn.conversationId, failedTurnId)) {
+                runAdvisorForWorkingProfile(
                 workingProfile = turn.workingProfile,
                 onAdvisorStarted = {
                     runCatching {
@@ -814,7 +819,7 @@ private fun TowarownikApp() {
                         ) }
                         .orEmpty(),
                     onDiagnosticEvent = { event ->
-                        TaksulaDiagnostics.recorder.record(event.copy(turnId = failedTurnId))
+                        TaksulaDiagnostics.recorder.record(event.copy(turnId = failedTurnId, conversationId = turn.conversationId))
                     },
                     onOpenAiResponse = { usage, webSearchCalls ->
                     runCatching {
@@ -850,8 +855,10 @@ private fun TowarownikApp() {
                             source = DiagnosticSource.ADVISOR, stage = stage,
                             providerId = turn.workingProfile.providerId.value,
                             branchId = turn.workingProfile.branchId.value, turnId = failedTurnId,
+                            conversationId = turn.conversationId,
                         ))
                     }
+                }
                 }
             }.also { state ->
                 if (
@@ -907,11 +914,12 @@ private fun TowarownikApp() {
                         providerId = turn.workingProfile.providerId.value,
                         branchId = turn.workingProfile.branchId.value,
                         turnId = failedTurnId, traceId = finalState.traceId,
-                        outcome = "success",
+                        conversationId = turn.conversationId, outcome = "success",
                     ))
                     responseEvidenceStore.record(
                         turn.conversationId, assistantMessageId, finalState.locationReportEvidence,
                     )
+                    TaksulaDiagnostics.recorder.linkAssistantMessage(turn.conversationId, failedTurnId, assistantMessageId)
                     if (
                         advisorRequestGuard.isCurrent(
                             token = generation,
@@ -932,6 +940,7 @@ private fun TowarownikApp() {
                         providerId = turn.workingProfile.providerId.value,
                         branchId = turn.workingProfile.branchId.value,
                         turnId = failedTurnId,
+                        conversationId = turn.conversationId,
                         traceId = finalState.diagnostic?.traceId,
                         endpoint = finalState.diagnostic?.endpoint,
                         httpStatus = finalState.diagnostic?.httpStatus,
