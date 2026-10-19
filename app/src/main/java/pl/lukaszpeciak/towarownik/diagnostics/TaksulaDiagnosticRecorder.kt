@@ -1,6 +1,8 @@
 package pl.lukaszpeciak.towarownik.diagnostics
 
 import java.time.Instant
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 
 /** Safe, session-only operational evidence. Never stores prompts, product IDs,
  * payloads, attachment data, cookies, URLs, headers, or exception messages.
@@ -139,6 +141,16 @@ internal class SafeDiagnosticRecorder(
             appendLine()
         }
     }
+}
+
+/** Immutable local correlation carried by each Advisor coroutine, not a global currentTurnId.
+ *  The HTTP callback captures this value before leaving the originating coroutine.
+ */
+internal class AdvisorDiagnosticTurnContext(
+    val conversationId: Long,
+    val turnId: String,
+) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<AdvisorDiagnosticTurnContext>
 }
 
 internal object TaksulaDiagnostics {
