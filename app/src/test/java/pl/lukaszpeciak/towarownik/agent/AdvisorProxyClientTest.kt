@@ -1451,7 +1451,9 @@ class AdvisorProxyClientTest {
         val first = "11111111-1111-4111-8111-111111111111"
         val second = "22222222-2222-4222-8222-222222222222"
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setResponseCode(502).setBody("{}"))
+            server.enqueue(MockResponse().setResponseCode(502)
+                .setHeader(ADVISOR_TRACE_HEADER,"77777777-7777-4777-8777-777777777777")
+                .setBody("{}"))
             server.enqueue(MockResponse().setResponseCode(400).setBody("{}"))
             server.enqueue(answerResponse())
             val proxy = client(server, FAKE_TOKEN)
@@ -1470,6 +1472,7 @@ class AdvisorProxyClientTest {
         }
         val reportA = recorder.reportForTurn(10, first)
         assertTrue(reportA.contains("endpoint=start http=502"))
+        assertTrue(reportA.contains("trace=77777777-7777-4777-8777-777777777777"))
         assertTrue(reportA.contains("endpoint=continue http=400"))
         assertFalse(reportA.contains(second))
         val reportB = recorder.reportForTurn(20,second)
