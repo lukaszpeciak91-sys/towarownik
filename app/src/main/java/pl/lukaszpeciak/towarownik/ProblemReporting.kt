@@ -481,22 +481,34 @@ internal class ProblemReportFileStore(
             "Could not create report cache directory"
         }
 
-        // The system SAF picker may recreate the Activity. Never delete a
-        // freshly prepared report on another export (or overwrite same-second
-        // reports). Prune only unrelated or expired private-cache files.
-        val now = System.currentTimeMillis()
-        directory.listFiles()?.forEach { file ->
-            if (file.isFile && (!EXPORT_FILE_NAME.matches(file.name) ||
-                    now - file.lastModified() > EXPORT_CACHE_MAX_AGE_MS)) {
-                file.delete()
-            }
-        }
+        // The pending SAF document may outlive the screen. Never prune
+        // during another export; orphan cleanup runs on a fresh app launch.
         val timestamp = Instant.ofEpochMilli(createdAtMillis)
             .atZone(zoneId)
             .format(FILE_NAME_TIMESTAMP)
         val reportFile = File.createTempFile("$prefix-$timestamp-", ".txt", directory)
         reportFile.writeText(text = reportText, charset = StandardCharsets.UTF_8)
         return reportFile
+    }
+
+    /** Only old generated report files are eligible. Other cache entries are untouched.
+     *  Startup invokes this only when no Activity/SAF state is being restored.
+     */
+    fun cleanupExpired(
+        nowMillis: Long = System.currentTimeMillis(),
+        protectedNames: Set<String> = emptySet(),
+    ): Int {
+        val directory = File(cacheDir, REPORT_CACHE_DIRECTORY)
+        var removed = 0
+        directory.listFiles()?.forEach { file ->
+            if (file.isFile && EXPORT_FILE_NAME.matches(file.name) &&
+                file.name !in protectedNames &&
+                nowMillis >= file.lastModified() &&
+                nowMillis - file.lastModified() > EXPORT_CACHE_MAX_AGE_MS &&
+                file.delete()
+            ) removed++
+        }
+        return removed
     }
 
     /** Restore only a generated file within the private reports directory.
