@@ -1540,10 +1540,14 @@ class AdvisorProxyClientTest {
             server.enqueue(answerResponse())
             withContext(AdvisorDiagnosticTurnContext(60,fresh)) { client(server,FAKE_TOKEN).start("next") }
         }
-        val global=TaksulaDiagnostics.recorder.report()
-        assertFalse(global.contains(old))
-        assertTrue(TaksulaDiagnostics.recorder.reportForTurn(60,fresh).contains("endpoint=start"))
-        assertTrue(TaksulaDiagnostics.recorder.reportForTurn(50,old).contains("unavailable"))
+        val freshEvents=TaksulaDiagnostics.recorder.reportForTurn(60,fresh)
+        assertTrue(freshEvents.contains("endpoint=start"))
+        assertTrue(freshEvents.contains("turn=$fresh"))
+        assertFalse("A late old callback cannot be assigned to the new turn", freshEvents.contains(old))
+        // An event actually completed BEFORE cancellation may remain in the
+        // old turn; only assigning it to the new turn is forbidden.
+        val oldEvents=TaksulaDiagnostics.recorder.reportForTurn(50,old)
+        assertFalse(oldEvents.contains(fresh))
         TaksulaDiagnostics.recorder.clear()
     }
 
