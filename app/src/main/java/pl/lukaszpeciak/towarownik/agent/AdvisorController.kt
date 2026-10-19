@@ -3,6 +3,9 @@ package pl.lukaszpeciak.towarownik.agent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticSource
+import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticStage
+import pl.lukaszpeciak.towarownik.diagnostics.SafeDiagnosticEvent
 import pl.lukaszpeciak.towarownik.BuildConfig
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
@@ -121,6 +124,7 @@ internal class AdvisorController(
         attachments: List<AdvisorAttachment> = emptyList(),
         historicalVerifiedProducts: List<VerifiedProductSnapshot> = emptyList(),
         locationHistory: List<AdvisorLocationHistoryMessage> = emptyList(),
+        onDiagnosticEvent: (SafeDiagnosticEvent) -> Unit = {},
         onOpenAiResponse: (AdvisorUsage?, Long) -> Unit = { _, _ -> },
         onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
@@ -459,6 +463,11 @@ internal class AdvisorController(
 
                 is AdvisorProxyResult.LocationToolRequest -> {
                     val locationRequest = proxyResult
+                    runCatching { onDiagnosticEvent(SafeDiagnosticEvent(
+                        DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_START,
+                        providerId = conversationProviderId, branchId = conversationStoreNumber,
+                        traceId = turnTraceId, tool = "find_product_locations",
+                    )) }
                     if (!toolAssistedObserved) {
                         toolAssistedObserved = true
                         observeToolSafely(onToolRequestObserved)
@@ -551,6 +560,12 @@ internal class AdvisorController(
                         deterministicLocationOutcomes[repeatKey] = evidence
                     }
                     lastLocationEvidence = evidence
+                    runCatching { onDiagnosticEvent(SafeDiagnosticEvent(
+                        DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
+                        providerId = conversationProviderId, branchId = conversationStoreNumber,
+                        traceId = turnTraceId, tool = "find_product_locations",
+                        outcome = evidence.status, reason = evidence.reason,
+                    )) }
                     if (evidence.providerId == "kwant-pl" && locationReportEvidence.size < MAX_LOCAL_TOOL_CALLS_PER_TURN) {
                         locationReportEvidence += evidence
                     }
@@ -586,6 +601,12 @@ internal class AdvisorController(
 
                 is AdvisorProxyResult.ToolRequest -> {
                     val toolRequest = proxyResult
+                    val diagnosticTool = if (conversationProviderId == "kwant-pl") "find_products" else "find_obi_products"
+                    runCatching { onDiagnosticEvent(SafeDiagnosticEvent(
+                        DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_START,
+                        providerId = conversationProviderId, branchId = conversationStoreNumber,
+                        traceId = turnTraceId, tool = diagnosticTool,
+                    )) }
                     if (!toolAssistedObserved) {
                         toolAssistedObserved = true
                         observeToolSafely(onToolRequestObserved)
@@ -727,6 +748,17 @@ internal class AdvisorController(
                             }
                         }
 
+                    runCatching { onDiagnosticEvent(SafeDiagnosticEvent(
+                        DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
+                        providerId = conversationProviderId, branchId = conversationStoreNumber,
+                        traceId = turnTraceId, tool = diagnosticTool,
+                        reason = lastDiscoveryRejectionReason,
+                        outcome = when (continuation) {
+                            is AdvisorToolContinuation.Verified -> "verified"
+                            is AdvisorToolContinuation.RejectedStore -> "rejected"
+                            else -> "unavailable"
+                        },
+                    )) }
                     onState(AdvisorUiState.WaitingForFinalAnswer)
                     proxyResult = when (
                         val continued = safeProxyCall {

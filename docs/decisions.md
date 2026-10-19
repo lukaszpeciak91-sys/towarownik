@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-10-19 — PR #133 diagnostic report isolation (pending independent re-audit)
+
+Session diagnostics remain a 64-event metadata-only ring across OBI, KWANT and Advisor. Targeted assistant-response reports select only events for the persisted assistant message's actual USER turn, using a bounded conversation/message-to-turn link made after successful completion; failed-turn reports use their own local turn UUID. Missing/evicted evidence says unavailable. Deleted conversations invalidate their event history; late callbacks cannot repopulate it. The legacy OBI transport recorder has no per-turn identity, so it appears only in explicitly session-wide general reports and the general Diagnostics screen, never in targeted reports. General report UI discloses the wider scope.
+
+Worker START/MESSAGE/CONTINUE HTTP events capture immutable request-local coroutine identity, including failures without a Worker trace; cancellation does not assign old callbacks to a new turn. No Worker payload, header, provider API or search behavior is changed. Private TXT snapshots retain unique basenames across SAF recreation; orphan cache cleanup runs on fresh app launch, leaves unrelated files and active restored SAF flows alone. System SAF recreation still requires on-device verification.
+
 ## 2026-10-18 — OBI explicit city-wide stock scope (pending PR review)
 
 For OBI availability, a USER-named canonical city without a specific market selects **all** OBI markets in that city; an exact three-digit market number or canonical city+street selects the matching market only. This intentionally supersedes the older singular-Kraków clarification policy. KWANT branch behavior and ambiguity safeguards stay unchanged. Scope comes from the existing canonical directory, not model hints or guessed geocoding.

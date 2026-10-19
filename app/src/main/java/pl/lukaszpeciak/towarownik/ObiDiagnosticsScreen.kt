@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,10 +38,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import pl.lukaszpeciak.towarownik.diagnostics.OBI_PROBE_CANONICAL_PRODUCT_URL
 import pl.lukaszpeciak.towarownik.diagnostics.OBI_PROBE_SEARCH_URL
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnostics
 import pl.lukaszpeciak.towarownik.diagnostics.ObiLiveProbeRunner
+import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
 
 private sealed interface ProbeUiStatus {
     data object Success : ProbeUiStatus
@@ -65,7 +71,35 @@ internal fun ObiDiagnosticsScreen(
     var probeRunning by remember { mutableStateOf(false) }
     var probeStatus by remember { mutableStateOf<ProbeUiStatus?>(null) }
     var reportRevision by remember { mutableIntStateOf(0) }
-    val report = remember(enabled, reportRevision) { recorder.report() }
+    fun combinedReport() = TaksulaDiagnostics.recorder.report() +
+        "\n--- DETAILED OBI TRANSPORT (OPTIONAL) ---\n" + recorder.report()
+    val report = remember(enabled, reportRevision) { combinedReport() }
+    // Persist only a validated private-cache basename in saved UI state,
+    // never the potentially large report text itself.
+    var pendingExportName by rememberSaveable { mutableStateOf<String?>(null) }
+    var savingTxt by remember { mutableStateOf(false) }
+    var saveResult by remember { mutableStateOf<Boolean?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        val pending = ProblemReportFileStore(context.cacheDir).pending(pendingExportName)
+        pendingExportName = null
+        if (uri == null) {
+            pending?.delete()
+        } else {
+            savingTxt = true
+            scope.launch {
+                saveResult = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val file = pending ?: throw IllegalStateException("Prepared diagnostics TXT unavailable")
+                        saveProblemReportToUri(context, uri, file)
+                    }.isSuccess
+                }
+                pending?.delete()
+                savingTxt = false
+            }
+        }
+    }
     val clipboardLabel = stringResource(R.string.diagnostics_clipboard_label)
     val shareSubject = stringResource(R.string.diagnostics_share_subject)
     val shareChooserTitle = stringResource(R.string.diagnostics_share_chooser)
@@ -114,6 +148,10 @@ internal fun ObiDiagnosticsScreen(
 
             Text(
                 text = stringResource(R.string.diagnostics_retention_notice),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                text = stringResource(R.string.diagnostics_core_notice),
                 style = MaterialTheme.typography.bodySmall,
             )
 
@@ -193,7 +231,7 @@ internal fun ObiDiagnosticsScreen(
                     onClick = {
                         val clipboard = context.getSystemService(ClipboardManager::class.java)
                         clipboard?.setPrimaryClip(
-                            ClipData.newPlainText(clipboardLabel, recorder.report()),
+                            ClipData.newPlainText(clipboardLabel, combinedReport()),
                         )
                         reportRevision += 1
                     },
@@ -207,7 +245,7 @@ internal fun ObiDiagnosticsScreen(
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_SUBJECT, shareSubject)
-                            putExtra(Intent.EXTRA_TEXT, recorder.report())
+                            putExtra(Intent.EXTRA_TEXT, combinedReport())
                         }
                         context.startActivity(
                             Intent.createChooser(shareIntent, shareChooserTitle),
@@ -221,7 +259,46 @@ internal fun ObiDiagnosticsScreen(
 
             OutlinedButton(
                 onClick = {
+                    val snapshot = combinedReport()
+                    saveResult = null
+                    savingTxt = true
+                    scope.launch {
+                        val prepared = withContext(Dispatchers.IO) {
+                            runCatching {
+                                ProblemReportFileStore(context.cacheDir).write(
+                                    snapshot, System.currentTimeMillis(), prefix = "taksula-diagnostics",
+                                )
+                            }.getOrNull()
+                        }
+                        savingTxt = false
+                        if (prepared == null) {
+                            saveResult = false
+                        } else {
+                            pendingExportName = prepared.name
+                            runCatching { saveLauncher.launch(prepared.name) }.onFailure {
+                                pendingExportName = null
+                                prepared.delete()
+                                saveResult = false
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !savingTxt && pendingExportName == null,
+            ) {
+                Text(stringResource(R.string.diagnostics_save_txt))
+            }
+            saveResult?.let { saved ->
+                Text(
+                    text = stringResource(if (saved) R.string.diagnostics_save_success else R.string.diagnostics_save_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            OutlinedButton(
+                onClick = {
                     recorder.clear()
+                    TaksulaDiagnostics.recorder.clear()
                     reportRevision += 1
                 },
                 modifier = Modifier.fillMaxWidth(),

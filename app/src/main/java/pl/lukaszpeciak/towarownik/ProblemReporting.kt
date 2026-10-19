@@ -8,6 +8,8 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.IOException
+import java.io.OutputStream
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -19,6 +21,8 @@ import pl.lukaszpeciak.towarownik.conversation.ConversationRepository
 import pl.lukaszpeciak.towarownik.conversation.MESSAGE_ROLE_ASSISTANT
 import pl.lukaszpeciak.towarownik.conversation.PersistedMessage
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
+import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
+import pl.lukaszpeciak.towarownik.diagnostics.SafeDiagnosticRecorder
 
 internal const val REPORT_RECIPIENT_EMAIL = "napahustudios@gmail.com"
 internal const val REPORT_DESCRIPTION_MAX_CHARS = 2_000
@@ -26,7 +30,7 @@ internal const val REPORT_ADVISOR_FAILURE_DIAGNOSTIC_MAX_CHARS = 256
 internal const val REPORT_CACHE_DIRECTORY = "reports"
 internal const val REPORT_FILE_PROVIDER_AUTHORITY_SUFFIX = ".fileprovider"
 internal const val REPORT_INCLUDE_CONVERSATION_DEFAULT = false
-internal const val REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT = false
+internal const val REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT = true
 
 internal enum class ProblemReportType {
     ASSISTANT_RESPONSE,
@@ -157,6 +161,7 @@ internal enum class ProblemReportUiError {
     DESCRIPTION_REQUIRED,
     GENERATION_FAILED,
     SHARE_UNAVAILABLE,
+    SAVE_FAILED,
 }
 
 internal sealed interface ProblemReportResolution {
@@ -300,7 +305,7 @@ internal fun createProblemReportMetadata(
 internal fun hasExistingSafeObiDiagnostics(
     recorder: ObiDiagnosticRecorder,
 ): Boolean =
-    recorder.isEnabled() && recorder.snapshots().isNotEmpty()
+    recorder.hasReportEvidence()
 
 internal fun existingSafeObiDiagnostics(
     recorder: ObiDiagnosticRecorder,
@@ -318,6 +323,7 @@ internal object ProblemReportFormatter {
         evidence: ProblemReportEvidence,
         metadata: ProblemReportTechnicalMetadata,
         safeObiDiagnostics: String?,
+        safeDiagnosticEvents: String? = null,
     ): String = buildString {
         appendLine("TAKSULA PROBLEM REPORT")
         appendLine()
@@ -401,6 +407,14 @@ internal object ProblemReportFormatter {
             }
         }
 
+        appendSection("APPLICATION DIAGNOSTICS") {
+            appendLine(
+                if (request.includeObiDiagnostics) {
+                    safeDiagnosticEvents ?: "No captured safe application events in this session."
+                } else "Diagnostics: not included"
+            )
+        }
+
         appendSection("OBI DIAGNOSTICS") {
             if (
                 !request.includeObiDiagnostics ||
@@ -460,36 +474,77 @@ internal class ProblemReportFileStore(
         reportText: String,
         createdAtMillis: Long,
         zoneId: ZoneId = ZoneId.systemDefault(),
+        prefix: String = "taksula-report",
     ): File {
+        require(prefix in setOf("taksula-report", "taksula-diagnostics"))
         val directory = File(cacheDir, REPORT_CACHE_DIRECTORY)
         check(directory.exists() || directory.mkdirs()) {
             "Could not create report cache directory"
         }
 
-        directory.listFiles()?.forEach { file ->
-            if (file.isFile) {
-                file.delete()
-            }
-        }
-
+        // The pending SAF document may outlive the screen. Never prune
+        // during another export; orphan cleanup runs on a fresh app launch.
         val timestamp = Instant.ofEpochMilli(createdAtMillis)
             .atZone(zoneId)
             .format(FILE_NAME_TIMESTAMP)
-        val reportFile = File(
-            directory,
-            "taksula-report-$timestamp.txt",
-        )
-        reportFile.writeText(
-            text = reportText,
-            charset = StandardCharsets.UTF_8,
-        )
+        val reportFile = File.createTempFile("$prefix-$timestamp-", ".txt", directory)
+        reportFile.writeText(text = reportText, charset = StandardCharsets.UTF_8)
         return reportFile
     }
 
+    /** Only old generated report files are eligible. Other cache entries are untouched.
+     *  Startup invokes this only when no Activity/SAF state is being restored.
+     */
+    fun cleanupExpired(
+        nowMillis: Long = System.currentTimeMillis(),
+        protectedNames: Set<String> = emptySet(),
+    ): Int {
+        val directory = File(cacheDir, REPORT_CACHE_DIRECTORY)
+        var removed = 0
+        directory.listFiles()?.forEach { file ->
+            if (file.isFile && EXPORT_FILE_NAME.matches(file.name) &&
+                file.name !in protectedNames &&
+                nowMillis >= file.lastModified() &&
+                nowMillis - file.lastModified() > EXPORT_CACHE_MAX_AGE_MS &&
+                file.delete()
+            ) removed++
+        }
+        return removed
+    }
+
+    /** Restore only a generated file within the private reports directory.
+     *  Persist the basename via rememberSaveable, never report contents or paths.
+     */
+    fun pending(name: String?): File? {
+        if (name == null || !EXPORT_FILE_NAME.matches(name)) return null
+        return File(File(cacheDir, REPORT_CACHE_DIRECTORY), name).takeIf { it.isFile }
+    }
+
     private companion object {
+        const val EXPORT_CACHE_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1_000
+        val EXPORT_FILE_NAME = Regex(
+            """^taksula-(?:report|diagnostics)-[0-9]{8}-[0-9]{6}-[A-Za-z0-9]+\.txt$""",
+        )
         val FILE_NAME_TIMESTAMP: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
     }
+}
+
+/** Android Storage Access Framework destination; no storage permission and no share chooser. */
+internal fun saveProblemReportToUri(
+    context: Context,
+    destination: Uri,
+    reportFile: File,
+) {
+    check(reportFile.isFile) { "Report file unavailable" }
+    val output = context.contentResolver.openOutputStream(destination, "wt")
+        ?: throw IOException("Cannot open selected destination")
+    output.use { stream -> copyProblemReportToStream(reportFile, stream) }
+}
+
+/** Shared UTF-8 bytes for file export; independent of Android's chooser implementation. */
+internal fun copyProblemReportToStream(file: File, output: OutputStream) {
+    file.inputStream().use { it.copyTo(output) }
 }
 
 internal fun problemReportUri(
@@ -528,6 +583,27 @@ internal data class ProblemReportSharePayload(
     val reportFile: File,
 )
 
+/** Select diagnostics ONLY after ProblemReportResolver has verified the persisted target. */
+internal fun safeDiagnosticReportForRequest(
+    request: ProblemReportRequest,
+    evidence: ProblemReportEvidence,
+    recorder: SafeDiagnosticRecorder,
+): String? {
+    if (!request.includeObiDiagnostics) return null
+    return when (request.type) {
+        ProblemReportType.ASSISTANT_RESPONSE -> {
+            val id = evidence.reportedMessage?.id
+            val conversation = evidence.conversationId
+            if (id != null && conversation != null) recorder.reportForMessage(conversation, id)
+            else "evidence=unavailable (selected assistant response missing)"
+        }
+        ProblemReportType.ADVISOR_FAILURE -> recorder.reportForTurn(
+            requireNotNull(request.conversationId), requireNotNull(request.failedTurnId),
+        )
+        ProblemReportType.GENERAL -> recorder.report()
+    }
+}
+
 internal suspend fun createProblemReportSharePayload(
     context: Context,
     repository: ConversationRepository,
@@ -560,9 +636,15 @@ internal suspend fun createProblemReportSharePayload(
             request = request,
             evidence = resolution.evidence,
             metadata = metadata,
+            // The legacy OBI recorder is application-session wide and has no
+            // reliable conversation/turn association. Never attach it to an
+            // individual response or failed turn.
             safeObiDiagnostics = existingSafeObiDiagnostics(
                 recorder = recorder,
-                include = request.includeObiDiagnostics,
+                include = request.includeObiDiagnostics && request.type == ProblemReportType.GENERAL,
+            ),
+            safeDiagnosticEvents = safeDiagnosticReportForRequest(
+                request, resolution.evidence, TaksulaDiagnostics.recorder,
             ),
         )
         val file = withContext(Dispatchers.IO) {

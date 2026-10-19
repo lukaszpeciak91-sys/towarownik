@@ -3,6 +3,7 @@ package pl.lukaszpeciak.towarownik.agent
 import java.io.IOException
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
@@ -32,6 +33,11 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import pl.lukaszpeciak.towarownik.BuildConfig
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
+import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
+import pl.lukaszpeciak.towarownik.diagnostics.AdvisorDiagnosticTurnContext
+import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticSource
+import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticStage
+import pl.lukaszpeciak.towarownik.diagnostics.SafeDiagnosticEvent
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.AttachmentType
 import pl.lukaszpeciak.towarownik.attachment.allowedTextAttachment
@@ -393,7 +399,9 @@ internal class AdvisorProxyClient(
         }
         val request = requestBuilder.build()
 
+        val diagnosticTurn = coroutineContext[AdvisorDiagnosticTurnContext]
         return suspendCancellableCoroutine { continuation ->
+            val startedAtNanos = System.nanoTime()
             val call = client.newCall(request)
             continuation.invokeOnCancellation {
                 call.cancel()
@@ -402,17 +410,18 @@ internal class AdvisorProxyClient(
                 object : Callback {
                     override fun onFailure(call: Call, exception: java.io.IOException) {
                         if (continuation.isActive) {
-                            continuation.resume(
-                                AdvisorProxyCallResult.Failure(
-                                    AdvisorProxyFailureKind.NETWORK,
-                                    endpoint = endpoint.substringAfterLast('/'),
-                                    failureClass = advisorFailureClass(exception),
-                                ),
+                            val failed = AdvisorProxyCallResult.Failure(
+                                AdvisorProxyFailureKind.NETWORK,
+                                endpoint = endpoint.substringAfterLast('/'),
+                                failureClass = advisorFailureClass(exception),
                             )
+                            recordProxyDiagnostic(endpoint, startedAtNanos, failed, diagnosticTurn = diagnosticTurn)
+                            continuation.resume(failed)
                         }
                     }
 
                     override fun onResponse(call: Call, response: Response) {
+                        val status = response.code
                         val result = response.use {
                             mapResponse(
                                 response = it,
@@ -420,6 +429,7 @@ internal class AdvisorProxyClient(
                             )
                         }
                         if (continuation.isActive) {
+                            recordProxyDiagnostic(endpoint, startedAtNanos, result, status, diagnosticTurn)
                             continuation.resume(result)
                         }
                     }
@@ -536,34 +546,61 @@ internal class AdvisorProxyClient(
         return executeRequest(requestBuilder.build(), endpoint)
     }
 
-    private suspend fun executeRequest(request: Request, endpoint: String): AdvisorProxyCallResult =
-        suspendCancellableCoroutine { continuation ->
+    private suspend fun executeRequest(request: Request, endpoint: String): AdvisorProxyCallResult {
+        val diagnosticTurn = coroutineContext[AdvisorDiagnosticTurnContext]
+        return suspendCancellableCoroutine { continuation ->
+            val startedAtNanos = System.nanoTime()
             val call = client.newCall(request)
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, exception: IOException) {
                     if (continuation.isActive) {
-                        continuation.resume(
-                            AdvisorProxyCallResult.Failure(
-                                if (exception is AttachmentByteCountMismatchException) {
-                                    AdvisorProxyFailureKind.PROTOCOL
-                                } else {
-                                    AdvisorProxyFailureKind.NETWORK
-                                },
-                                endpoint = endpoint.substringAfterLast('/'),
-                                failureClass = if (exception is AttachmentByteCountMismatchException) {
-                                    null
-                                } else advisorFailureClass(exception),
-                            ),
+                        val failed = AdvisorProxyCallResult.Failure(
+                            if (exception is AttachmentByteCountMismatchException) AdvisorProxyFailureKind.PROTOCOL
+                            else AdvisorProxyFailureKind.NETWORK,
+                            endpoint = endpoint.substringAfterLast('/'),
+                            failureClass = if (exception is AttachmentByteCountMismatchException) null
+                            else advisorFailureClass(exception),
                         )
+                        recordProxyDiagnostic(endpoint, startedAtNanos, failed, diagnosticTurn = diagnosticTurn)
+                        continuation.resume(failed)
                     }
                 }
                 override fun onResponse(call: Call, response: Response) {
+                    val status = response.code
                     val result = response.use { mapResponse(it, endpoint.substringAfterLast('/')) }
-                    if (continuation.isActive) continuation.resume(result)
+                    if (continuation.isActive) {
+                        recordProxyDiagnostic(endpoint, startedAtNanos, result, status, diagnosticTurn)
+                        continuation.resume(result)
+                    }
                 }
             })
         }
+    }
+
+    private fun recordProxyDiagnostic(
+        endpoint: String,
+        startedAtNanos: Long,
+        result: AdvisorProxyCallResult,
+        statusCode: Int? = null,
+        diagnosticTurn: AdvisorDiagnosticTurnContext? = null,
+    ) {
+        val failed = result as? AdvisorProxyCallResult.Failure
+        val succeeded = result as? AdvisorProxyCallResult.Success
+        TaksulaDiagnostics.recorder.record(SafeDiagnosticEvent(
+            source = DiagnosticSource.PROXY,
+            stage = if (failed == null) DiagnosticStage.PROXY_RESPONSE else DiagnosticStage.PROXY_FAILURE,
+            endpoint = endpoint.substringAfterLast('/'),
+            traceId = failed?.traceId ?: succeeded?.traceId,
+            httpStatus = statusCode ?: failed?.httpStatus,
+            failureKind = failed?.kind?.name,
+            failureClass = failed?.failureClass?.name,
+            elapsedMillis = ((System.nanoTime() - startedAtNanos) / 1_000_000L).coerceAtLeast(0L),
+            outcome = if (failed == null) "success" else "error",
+            conversationId = diagnosticTurn?.conversationId,
+            turnId = diagnosticTurn?.turnId,
+        ))
+    }
 
     private fun mapResponse(
         response: Response,

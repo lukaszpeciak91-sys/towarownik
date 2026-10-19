@@ -1,6 +1,8 @@
 package pl.lukaszpeciak.towarownik
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,15 +35,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
 internal data class ProblemReportFormSubmission(
@@ -59,6 +67,7 @@ internal fun ProblemReportScreen(
     onCreateAndShare: suspend (
         ProblemReportFormSubmission,
     ) -> ProblemReportUiError?,
+    onCreateForSave: suspend (ProblemReportFormSubmission) -> Result<File>,
 ) {
     var selectedCategoryName by rememberSaveable {
         mutableStateOf<String?>(null)
@@ -79,6 +88,40 @@ internal fun ProblemReportScreen(
         mutableStateOf(false)
     }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    // The basename survives Activity recreation while the system's SAF
+    // picker is open; the actual report remains in private app cache.
+    var pendingSaveName by rememberSaveable { mutableStateOf<String?>(null) }
+    var saveSucceeded by remember { mutableStateOf(false) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        val reportFile = ProblemReportFileStore(context.cacheDir).pending(pendingSaveName)
+        pendingSaveName = null
+        if (uri == null) {
+            reportFile?.delete()
+        } else {
+            creating = true
+            scope.launch {
+                val success = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val pending = reportFile ?: throw IllegalStateException("Prepared TXT report unavailable")
+                        saveProblemReportToUri(context, uri, pending)
+                    }.isSuccess
+                }
+                reportFile?.delete()
+                error = if (success) null else ProblemReportUiError.SAVE_FAILED
+                saveSucceeded = success
+                creating = false
+            }
+        }
+    }
+    fun submittedForm(category: ProblemReportCategory) = ProblemReportFormSubmission(
+        category = category,
+        description = description.trim(),
+        includeConversation = canIncludeConversation && includeConversation,
+        includeObiDiagnostics = canIncludeObiDiagnostics && includeObiDiagnostics,
+    )
     val warmColors = MaterialTheme.towarownikColors
     val selectedCategory = selectedCategoryName?.let { raw ->
         ProblemReportCategory.entries.firstOrNull {
@@ -90,7 +133,8 @@ internal fun ProblemReportScreen(
     val canSubmit =
         selectedCategory != null &&
             !descriptionRequired &&
-            !creating
+            !creating &&
+            pendingSaveName == null
 
     BackHandler(enabled = !creating, onBack = onBack)
 
@@ -301,6 +345,13 @@ internal fun ProblemReportScreen(
                 )
             }
 
+            if (saveSucceeded) {
+                Text(
+                    text = stringResource(R.string.report_saved_txt),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             error?.let {
                 Text(
                     text = reportErrorText(it),
@@ -321,18 +372,8 @@ internal fun ProblemReportScreen(
                     scope.launch {
                         creating = true
                         error = null
-                        error = onCreateAndShare(
-                            ProblemReportFormSubmission(
-                                category = category,
-                                description = description.trim(),
-                                includeConversation =
-                                    canIncludeConversation &&
-                                        includeConversation,
-                                includeObiDiagnostics =
-                                    canIncludeObiDiagnostics &&
-                                        includeObiDiagnostics,
-                            ),
-                        )
+                        saveSucceeded = false
+                        error = onCreateAndShare(submittedForm(category))
                         creating = false
                     }
                 },
@@ -359,6 +400,37 @@ internal fun ProblemReportScreen(
                         },
                     ),
                 )
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val category = selectedCategory ?: return@OutlinedButton
+                    scope.launch {
+                        creating = true
+                        error = null
+                        saveSucceeded = false
+                        val result = onCreateForSave(submittedForm(category))
+                        creating = false
+                        val file = result.getOrNull()
+                        if (file == null) {
+                            error = if (result.exceptionOrNull() is ProblemReportTargetUnavailableException) {
+                                ProblemReportUiError.TARGET_UNAVAILABLE
+                            } else ProblemReportUiError.GENERATION_FAILED
+                        } else {
+                            pendingSaveName = file.name
+                            runCatching { saveLauncher.launch(file.name) }.onFailure {
+                                pendingSaveName = null
+                                file.delete()
+                                error = ProblemReportUiError.SAVE_FAILED
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = canSubmit,
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text(stringResource(R.string.report_save_txt))
             }
         }
     }
@@ -428,10 +500,10 @@ private fun reportPrivacyDisclosure(
         },
     )
     val diagnostics = stringResource(
-        if (includeObiDiagnostics) {
-            R.string.report_privacy_obi_diagnostics_included
-        } else {
-            R.string.report_privacy_obi_diagnostics_not_included
+        when {
+            !includeObiDiagnostics -> R.string.report_privacy_obi_diagnostics_not_included
+            type == ProblemReportType.GENERAL -> R.string.report_privacy_diagnostics_general_scope
+            else -> R.string.report_privacy_diagnostics_targeted_scope
         },
     )
     return "$base\n\n$diagnostics"
@@ -451,5 +523,7 @@ private fun reportErrorText(
                 R.string.report_error_generation_failed
             ProblemReportUiError.SHARE_UNAVAILABLE ->
                 R.string.report_error_share_unavailable
+            ProblemReportUiError.SAVE_FAILED ->
+                R.string.report_error_save_failed
         },
     )

@@ -20,14 +20,15 @@ import org.w3c.dom.Element
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticInputType
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticOperationType
 import pl.lukaszpeciak.towarownik.diagnostics.ObiDiagnosticRecorder
+import pl.lukaszpeciak.towarownik.diagnostics.ObiLiveProbeReport
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class ProblemReportSharingTest {
     @Test
-    fun `conversation and diagnostics inclusion default to off`() {
+    fun `conversation remains opt-in and safe diagnostics are visibly preselected`() {
         assertFalse(REPORT_INCLUDE_CONVERSATION_DEFAULT)
-        assertFalse(REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT)
+        assertTrue(REPORT_INCLUDE_OBI_DIAGNOSTICS_DEFAULT)
     }
 
     @Test
@@ -81,7 +82,7 @@ class ProblemReportSharingTest {
             assertTrue(file.name.startsWith("taksula-report-"))
             assertTrue(file.name.endsWith(".txt"))
             assertEquals("UTF-8: zażółć", file.readText())
-            assertFalse(File(cache, "reports/old.txt").exists())
+            assertTrue("Unrelated cache files are not deleted", File(cache, "reports/old.txt").exists())
         } finally {
             cache.deleteRecursively()
         }
@@ -278,6 +279,16 @@ class ProblemReportSharingTest {
         assertNotNull(report)
         assertTrue(report!!.contains("Taksula OBI diagnostics"))
         assertTrue(recorder.isEnabled())
+    }
+
+    @Test
+    fun `OBI live probe alone is eligible for optional diagnostic report inclusion`() {
+        val recorder = ObiDiagnosticRecorder()
+        recorder.setEnabled(true)
+        recorder.setLiveProbeReport(ObiLiveProbeReport(sections = emptyList()))
+        assertTrue(hasExistingSafeObiDiagnostics(recorder))
+        assertTrue(existingSafeObiDiagnostics(recorder, true)!!.contains("=== OBI LIVE PROBE ==="))
+        assertNull(existingSafeObiDiagnostics(recorder, false))
     }
 
     @Test
