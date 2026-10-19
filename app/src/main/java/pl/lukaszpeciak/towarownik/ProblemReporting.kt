@@ -614,9 +614,12 @@ internal suspend fun createProblemReportSharePayload(
             request = request,
             evidence = resolution.evidence,
             metadata = metadata,
+            // The legacy OBI recorder is application-session wide and has no
+            // reliable conversation/turn association. Never attach it to an
+            // individual response or failed turn.
             safeObiDiagnostics = existingSafeObiDiagnostics(
                 recorder = recorder,
-                include = request.includeObiDiagnostics,
+                include = request.includeObiDiagnostics && request.type == ProblemReportType.GENERAL,
             ),
             safeDiagnosticEvents = if (!request.includeObiDiagnostics) null else when (request.type) {
                 ProblemReportType.ASSISTANT_RESPONSE -> {
