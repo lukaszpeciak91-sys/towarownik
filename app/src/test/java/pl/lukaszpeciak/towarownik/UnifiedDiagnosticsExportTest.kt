@@ -132,4 +132,76 @@ class UnifiedDiagnosticsExportTest {
             root.deleteRecursively()
         }
     }
+    @Test fun targetedReportsNeverMixOtherConversationLaterResponseOrFailedRetry() {
+        val r = SafeDiagnosticRecorder()
+        val a = "11111111-1111-4111-8111-111111111111"
+        val b = "22222222-2222-4222-8222-222222222222"
+        val c = "33333333-3333-4333-8333-333333333333"
+        val d = "44444444-4444-4444-8444-444444444444"
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR, DiagnosticStage.TURN_START,
+            providerId="obi-pl",branchId="003",turnId=a,conversationId=10))
+        r.record(SafeDiagnosticEvent(DiagnosticSource.PROXY, DiagnosticStage.PROXY_RESPONSE,
+            endpoint="start",traceId=a,turnId=a,conversationId=10,httpStatus=200))
+        r.linkAssistantMessage(10,a,100)
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR, DiagnosticStage.TURN_START,
+            providerId="kwant-pl",branchId="205",turnId=b,conversationId=20))
+        r.record(SafeDiagnosticEvent(DiagnosticSource.PROXY, DiagnosticStage.PROXY_FAILURE,
+            traceId=b,turnId=b,conversationId=20,endpoint="message",httpStatus=502))
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR, DiagnosticStage.TURN_SUCCESS,
+            providerId="obi-pl",branchId="075",turnId=c,conversationId=10))
+        r.linkAssistantMessage(10,c,101)
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR, DiagnosticStage.TURN_FAILURE,
+            providerId="kwant-pl",branchId="204",turnId=d,conversationId=20))
+        val older = r.reportForMessage(10,100)
+        assertTrue(older.contains("branch=003"))
+        for (secret in listOf(b,c,d)) assertFalse(older.contains(secret))
+        assertFalse(older.contains("branch=205"))
+        assertFalse(older.contains("http=502"))
+        val failed = r.reportForTurn(20,b)
+        assertTrue(failed.contains("http=502"))
+        assertFalse(failed.contains(a))
+        assertFalse(failed.contains(d))
+        val later = r.reportForMessage(10,101)
+        assertTrue(later.contains("branch=075"))
+        assertFalse(later.contains("branch=003"))
+        r.clearConversation(10)
+        assertTrue(r.reportForMessage(10,100).contains("unavailable"))
+        assertTrue(r.reportForTurn(20,b).contains("http=502"))
+        assertTrue(r.report().contains("branch=205"))
+    }
+
+    @Test fun missingAndEvictedScopedEvidenceNeverBorrowCurrentGlobalHistory() {
+        val r = SafeDiagnosticRecorder(maxEvents=2)
+        val a="11111111-1111-4111-8111-111111111111"
+        val b="22222222-2222-4222-8222-222222222222"
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR,DiagnosticStage.TURN_SUCCESS,turnId=a,conversationId=10))
+        r.linkAssistantMessage(10,a,100)
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR,DiagnosticStage.TURN_FAILURE,turnId=b,conversationId=20))
+        r.record(SafeDiagnosticEvent(DiagnosticSource.ADVISOR,DiagnosticStage.TURN_FAILURE,turnId=b,conversationId=20))
+        assertTrue(r.reportForMessage(10,100).contains("unavailable"))
+        assertFalse(r.reportForMessage(10,100).contains(b))
+        assertTrue(r.reportForTurn(20,b).contains(b))
+        assertTrue(r.reportForTurn(20,a).contains("unavailable"))
+    }
+
+    @Test fun startupCleanupOnlyExpiresOrphansAndPreservesActivePendingReports() {
+        val root=Files.createTempDirectory("taksula-cleanup")
+        try {
+            val store=ProblemReportFileStore(root.toFile())
+            val pending=store.write("ACTIVE",1000L)
+            val sibling=store.write("OTHER ACTIVE",1000L)
+            val unrelated=root.resolve("reports/unrelated.txt").toFile().apply { writeText("DO NOT DELETE") }
+            val old=store.write("ORPHAN",1000L)
+            val now=System.currentTimeMillis()
+            assertTrue(old.setLastModified(now-10L*24*60*60*1000))
+            val count=store.cleanupExpired(now, setOf(pending.name))
+            assertEquals(1,count)
+            assertFalse(old.exists())
+            assertTrue(pending.exists())
+            assertTrue(sibling.exists())
+            assertTrue(unrelated.exists())
+            assertEquals("ACTIVE",store.pending(pending.name)?.readText())
+        } finally {root.toFile().deleteRecursively()}
+    }
+
 }
