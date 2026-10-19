@@ -40,6 +40,7 @@ internal class SafeDiagnosticRecorder(
 
     private val events = ArrayDeque<Pair<Long, SafeDiagnosticEvent>>()
     private val assistantTurns = LinkedHashMap<Pair<Long, Long>, String>()
+    private val invalidatedConversations = LinkedHashSet<Long>()
     private val guid = Regex("^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
     private val failureKinds = setOf("NOT_CONFIGURED", "AUTHENTICATION", "NETWORK", "SERVICE", "PROTOCOL", "PRODUCT_PROVIDER")
     private val failureClasses = setOf("DNS", "TLS", "TIMEOUT", "NETWORK_IO", "HTTP_ERROR", "RESPONSE_PARSE", "LOCAL_PROVIDER_FAILURE")
@@ -55,6 +56,7 @@ internal class SafeDiagnosticRecorder(
 
     @Synchronized
     fun record(value: SafeDiagnosticEvent) {
+        if (value.conversationId in invalidatedConversations) return
         // Validate every dynamic field at the write boundary; never print arbitrary caller text.
         val safe = value.copy(
             providerId = value.providerId?.takeIf { it in setOf("obi-pl", "kwant-pl") },
@@ -103,8 +105,15 @@ internal class SafeDiagnosticRecorder(
 
     @Synchronized
     fun clearConversation(conversationId: Long) {
+        if (conversationId <= 0) return
         events.removeAll { it.second.conversationId == conversationId }
         assistantTurns.keys.removeAll { it.first == conversationId }
+        // A late callback from an already cancelled/deleted conversation
+        // must not repopulate the global session record after deletion.
+        invalidatedConversations.add(conversationId)
+        while (invalidatedConversations.size > 128) {
+            invalidatedConversations.remove(invalidatedConversations.first())
+        }
     }
 
     private fun missingScopedEvidence() =
