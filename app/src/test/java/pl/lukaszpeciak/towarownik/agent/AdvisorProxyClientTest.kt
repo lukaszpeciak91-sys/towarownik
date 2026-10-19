@@ -1526,7 +1526,9 @@ class AdvisorProxyClientTest {
         val fresh="66666666-6666-4666-8666-666666666666"
         TaksulaDiagnostics.recorder.clear()
         MockWebServer().use { server ->
-            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            // Read and acknowledge the request, then keep the response body
+            // blocked until cancellation. NO_RESPONSE can skip recording it.
+            server.enqueue(MockResponse().setBody("{}").setBodyDelay(30,TimeUnit.SECONDS))
             val client=client(server,FAKE_TOKEN)
             val abandoned=async(AdvisorDiagnosticTurnContext(50,old)) {
                 client.start("abandoned")
