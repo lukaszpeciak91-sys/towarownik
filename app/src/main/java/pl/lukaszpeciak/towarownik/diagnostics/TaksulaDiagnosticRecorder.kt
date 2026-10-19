@@ -27,6 +27,7 @@ internal data class SafeDiagnosticEvent(
     val outcome: String? = null,
     val reason: String? = null,
     val elapsedMillis: Long? = null,
+    val conversationId: Long? = null,
 )
 
 internal class SafeDiagnosticRecorder(
@@ -36,6 +37,7 @@ internal class SafeDiagnosticRecorder(
     init { require(maxEvents in 1..256) }
 
     private val events = ArrayDeque<Pair<Long, SafeDiagnosticEvent>>()
+    private val assistantTurns = LinkedHashMap<Pair<Long, Long>, String>()
     private val guid = Regex("^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
     private val failureKinds = setOf("NOT_CONFIGURED", "AUTHENTICATION", "NETWORK", "SERVICE", "PROTOCOL", "PRODUCT_PROVIDER")
     private val failureClasses = setOf("DNS", "TLS", "TIMEOUT", "NETWORK_IO", "HTTP_ERROR", "RESPONSE_PARSE", "LOCAL_PROVIDER_FAILURE")
@@ -65,22 +67,62 @@ internal class SafeDiagnosticRecorder(
             outcome = value.outcome?.takeIf(outcomes::contains),
             reason = value.reason?.let { if (it in reasons) it else "unrecognized" },
             elapsedMillis = value.elapsedMillis?.takeIf { it in 0..600_000 },
+            conversationId = value.conversationId?.takeIf { it > 0L },
         )
         events.addLast(clock() to safe)
         while (events.size > maxEvents) events.removeFirst()
     }
 
-    @Synchronized fun hasEvents(): Boolean = events.isNotEmpty()
-    @Synchronized fun clear() = events.clear()
+    /** Link only AFTER the assistant response has been saved and its true ID returned. */
+    @Synchronized
+    fun linkAssistantMessage(conversationId: Long, turnId: String, messageId: Long) {
+        if (conversationId <= 0 || messageId <= 0 || !guid.matches(turnId)) return
+        if (events.none { it.second.conversationId == conversationId && it.second.turnId == turnId }) return
+        assistantTurns[conversationId to messageId] = turnId.lowercase()
+        while (assistantTurns.size > maxEvents) assistantTurns.remove(assistantTurns.keys.first())
+    }
 
     @Synchronized
-    fun report(): String = buildString {
+    fun reportForMessage(conversationId: Long, messageId: Long): String {
+        val turn = assistantTurns[conversationId to messageId]
+            ?: return missingScopedEvidence()
+        return reportForTurn(conversationId, turn)
+    }
+
+    @Synchronized
+    fun reportForTurn(conversationId: Long, turnId: String): String {
+        if (conversationId <= 0 || !guid.matches(turnId)) return missingScopedEvidence()
+        val selected = events.filter { (_, e) ->
+            e.conversationId == conversationId && e.turnId == turnId.lowercase()
+        }
+        return if (selected.isEmpty()) missingScopedEvidence()
+        else render(selected, "scope=targeted turn; other conversations and turns excluded")
+    }
+
+    @Synchronized
+    fun clearConversation(conversationId: Long) {
+        events.removeAll { it.second.conversationId == conversationId }
+        assistantTurns.keys.removeAll { it.first == conversationId }
+    }
+
+    private fun missingScopedEvidence() =
+        "Taksula diagnostics - targeted turn\nscope=targeted turn\nevidence=unavailable (not captured, expired or evicted); unrelated session events excluded.\n"
+
+    @Synchronized fun hasEvents(): Boolean = events.isNotEmpty()
+    @Synchronized fun clear() { events.clear(); assistantTurns.clear() }
+
+    @Synchronized
+    fun report(): String = render(events.toList(),
+        "scope=session-wide across all conversations; not attributable to a specific report turn")
+
+    private fun render(selected: List<Pair<Long, SafeDiagnosticEvent>>, scope: String): String = buildString {
         appendLine("Taksula diagnostics - safe session events")
         appendLine("capture=automatic metadata-only")
-        appendLine("scope=session (all providers); retention=last ${events.size}/$maxEvents events")
+        appendLine(scope)
+        appendLine("retention=last ${selected.size}/$maxEvents events")
         appendLine("not_captured=prompts, product identifiers, attachments, raw HTTP, cookies, secrets, Worker internals")
-        if (events.isEmpty()) appendLine("No captured events; unavailable is not evidence of success.")
-        events.forEachIndexed { index, (time, event) ->
+        if (selected.isEmpty()) appendLine("No captured events; unavailable is not evidence of success.")
+        selected.forEachIndexed { index, (time, event) ->
             append("event=${index + 1} at=${Instant.ofEpochMilli(time)} source=${event.source} stage=${event.stage}")
             event.providerId?.let { append(" provider=$it") }
             event.branchId?.let { append(" branch=$it") }
