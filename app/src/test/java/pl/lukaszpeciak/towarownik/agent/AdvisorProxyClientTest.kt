@@ -4,6 +4,7 @@ import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -1547,7 +1548,7 @@ class AdvisorProxyClientTest {
             appToken=FAKE_TOKEN,baseUrl="http://127.0.0.1:1/".toHttpUrl(),
             client=blockedClient,
         )
-        val abandoned=async(AdvisorDiagnosticTurnContext(50,old)) {
+        val abandoned=async(Dispatchers.IO + AdvisorDiagnosticTurnContext(50,old)) {
             oldProxy.start("abandoned")
         }
         assertTrue("Old request must reach interceptor before cancellation",
