@@ -500,10 +500,10 @@ private fun reportPrivacyDisclosure(
         },
     )
     val diagnostics = stringResource(
-        if (includeObiDiagnostics) {
-            R.string.report_privacy_obi_diagnostics_included
-        } else {
-            R.string.report_privacy_obi_diagnostics_not_included
+        when {
+            !includeObiDiagnostics -> R.string.report_privacy_obi_diagnostics_not_included
+            type == ProblemReportType.GENERAL -> R.string.report_privacy_diagnostics_general_scope
+            else -> R.string.report_privacy_diagnostics_targeted_scope
         },
     )
     return "$base\n\n$diagnostics"
