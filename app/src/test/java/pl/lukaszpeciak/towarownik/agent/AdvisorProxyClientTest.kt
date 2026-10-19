@@ -1,7 +1,11 @@
 package pl.lukaszpeciak.towarownik.agent
 
 import java.math.BigDecimal
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
 import pl.lukaszpeciak.towarownik.diagnostics.AdvisorDiagnosticTurnContext
@@ -11,6 +15,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.SocketPolicy
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
@@ -1484,6 +1490,58 @@ class AdvisorProxyClientTest {
         assertTrue(evidence.contains("endpoint=message"))
         assertTrue(evidence.contains("failure=NETWORK"))
         assertFalse(evidence.contains(" trace="))
+        TaksulaDiagnostics.recorder.clear()
+    }
+
+
+    @Test
+    fun `MESSAGE timeout without Worker trace is still scoped to originating turn`() = runBlocking {
+        val turn="44444444-4444-4444-8444-444444444444"
+        TaksulaDiagnostics.recorder.clear()
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val slow = AdvisorProxyClient(
+                appToken=FAKE_TOKEN,baseUrl=server.url("/"),
+                client=OkHttpClient.Builder()
+                    .retryOnConnectionFailure(false)
+                    .readTimeout(250,TimeUnit.MILLISECONDS)
+                    .callTimeout(750,TimeUnit.MILLISECONDS).build(),
+            )
+            val result=withContext(AdvisorDiagnosticTurnContext(40,turn)) {
+                slow.message("resp_previous","synthetic timeout")
+            }
+            assertTrue(result is AdvisorProxyCallResult.Failure)
+        }
+        val diagnostics=TaksulaDiagnostics.recorder.reportForTurn(40,turn)
+        assertTrue(diagnostics.contains("endpoint=message"))
+        assertTrue(diagnostics.contains("failure=NETWORK"))
+        assertTrue(diagnostics.contains("durationMs="))
+        assertFalse(diagnostics.contains(" trace="))
+        TaksulaDiagnostics.recorder.clear()
+    }
+
+    @Test
+    fun `cancelled request callback never contaminates subsequent conversation`() = runBlocking {
+        val old="55555555-5555-4555-8555-555555555555"
+        val fresh="66666666-6666-4666-8666-666666666666"
+        TaksulaDiagnostics.recorder.clear()
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val client=client(server,FAKE_TOKEN)
+            val abandoned=async(AdvisorDiagnosticTurnContext(50,old)) {
+                client.start("abandoned")
+            }
+            assertTrue(server.takeRequest(5,TimeUnit.SECONDS)!=null)
+            abandoned.cancelAndJoin()
+        }
+        MockWebServer().use { server ->
+            server.enqueue(answerResponse())
+            withContext(AdvisorDiagnosticTurnContext(60,fresh)) { client(server,FAKE_TOKEN).start("next") }
+        }
+        val global=TaksulaDiagnostics.recorder.report()
+        assertFalse(global.contains(old))
+        assertTrue(TaksulaDiagnostics.recorder.reportForTurn(60,fresh).contains("endpoint=start"))
+        assertTrue(TaksulaDiagnostics.recorder.reportForTurn(50,old).contains("unavailable"))
         TaksulaDiagnostics.recorder.clear()
     }
 
