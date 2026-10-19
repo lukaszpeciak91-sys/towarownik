@@ -2,6 +2,8 @@ package pl.lukaszpeciak.towarownik.agent
 
 import java.math.BigDecimal
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import pl.lukaszpeciak.towarownik.diagnostics.TaksulaDiagnostics
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -1433,6 +1435,55 @@ class AdvisorProxyClientTest {
             as AdvisorProxyCallResult.Failure
         assertEquals(AdvisorProxyFailureKind.NETWORK, network.kind)
         assertEquals(null, network.traceId)
+    }
+
+    @Test
+    fun `HTTP start message and continue events follow their originating coroutine turn`() = runBlocking {
+        val recorder = TaksulaDiagnostics.recorder
+        recorder.clear()
+        val first = "11111111-1111-4111-8111-111111111111"
+        val second = "22222222-2222-4222-8222-222222222222"
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(502).setBody("{}"))
+            server.enqueue(MockResponse().setResponseCode(400).setBody("{}"))
+            server.enqueue(answerResponse())
+            val proxy = client(server, FAKE_TOKEN)
+            withContext(AdvisorDiagnosticTurnContext(10, first)) {
+                proxy.start("fail")
+                proxy.continueTurn(
+                    responseId="resp_previous",callId="call_previous",storeNumber="075",
+                    continuation=AdvisorToolContinuation.LocalToolLimitReached(
+                        queries=listOf(AdvisorToolQuery("test",1)),storeNumber="075",
+                    ),
+                )
+            }
+            withContext(AdvisorDiagnosticTurnContext(20, second)) {
+                proxy.message(previousResponseId="resp_1",message="new conversation")
+            }
+        }
+        val reportA = recorder.reportForTurn(10, first)
+        assertTrue(reportA.contains("endpoint=start http=502"))
+        assertTrue(reportA.contains("endpoint=continue http=400"))
+        assertFalse(reportA.contains(second))
+        val reportB = recorder.reportForTurn(20,second)
+        assertTrue(reportB.contains("endpoint=message"))
+        assertFalse(reportB.contains("http=502"))
+        recorder.clear()
+    }
+
+    @Test
+    fun `network error without Worker trace retains per request local identity`() = runBlocking {
+        TaksulaDiagnostics.recorder.clear()
+        val turn = "33333333-3333-4333-8333-333333333333"
+        val unreachable = AdvisorProxyClient(
+            appToken=FAKE_TOKEN,baseUrl="http://127.0.0.1:1/".toHttpUrl(),
+        )
+        withContext(AdvisorDiagnosticTurnContext(30,turn)) { unreachable.message("resp_prev","timeout or DNS") }
+        val evidence=TaksulaDiagnostics.recorder.reportForTurn(30,turn)
+        assertTrue(evidence.contains("endpoint=message"))
+        assertTrue(evidence.contains("failure=NETWORK"))
+        assertFalse(evidence.contains(" trace="))
+        TaksulaDiagnostics.recorder.clear()
     }
 
     private fun client(
