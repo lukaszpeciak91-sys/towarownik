@@ -82,7 +82,7 @@ class ProblemReportSharingTest {
             assertTrue(file.name.startsWith("taksula-report-"))
             assertTrue(file.name.endsWith(".txt"))
             assertEquals("UTF-8: zażółć", file.readText())
-            assertFalse(File(cache, "reports/old.txt").exists())
+            assertTrue("Unrelated cache files are not deleted", File(cache, "reports/old.txt").exists())
         } finally {
             cache.deleteRecursively()
         }
