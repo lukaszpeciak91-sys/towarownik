@@ -209,6 +209,8 @@
     <string name="report_privacy_general_with_conversation">Raport zawiera opis problemu, bieżącą zapisaną rozmowę oraz dane produktów pokazane w tej rozmowie.</string>
     <string name="report_privacy_obi_diagnostics_included">Raport zawiera bezpieczne dane diagnostyczne z tej sesji; szczegóły OBI tylko, jeśli były włączone.</string>
     <string name="report_privacy_obi_diagnostics_not_included">Dodatkowa diagnostyka nie zostanie dołączona.</string>
+    <string name="report_privacy_diagnostics_general_scope">Diagnostyka obejmuje całą bieżącą sesję aplikacji, również inne rozmowy; nie przypisuje się jej do jednego pytania.</string>
+    <string name="report_privacy_diagnostics_targeted_scope">Diagnostyka zawiera wyłącznie dostępne zdarzenia wskazanej odpowiedzi lub nieudanej tury; zapis OBI bez identyfikatora tury nie jest dołączany.</string>
     <string name="report_screenshot_hint">Po otwarciu wiadomości możesz dodać zrzuty ekranu przed wysłaniem.</string>
     <string name="report_create_and_share">Utwórz i udostępnij raport</string>
     <string name="report_save_txt">Zapisz raport jako TXT</string>
