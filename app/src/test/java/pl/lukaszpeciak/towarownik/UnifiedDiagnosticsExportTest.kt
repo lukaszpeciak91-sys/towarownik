@@ -168,6 +168,9 @@ class UnifiedDiagnosticsExportTest {
         r.clearConversation(10)
         assertTrue(r.reportForMessage(10,100).contains("unavailable"))
         assertTrue(r.reportForTurn(20,b).contains("http=502"))
+        r.record(SafeDiagnosticEvent(DiagnosticSource.PROXY, DiagnosticStage.PROXY_FAILURE,
+            conversationId=10,turnId=a,traceId=a,httpStatus=502))
+        assertFalse("Late deleted-conversation HTTP events must be dropped", r.report().contains(a))
         assertTrue(r.report().contains("branch=205"))
     }
 
