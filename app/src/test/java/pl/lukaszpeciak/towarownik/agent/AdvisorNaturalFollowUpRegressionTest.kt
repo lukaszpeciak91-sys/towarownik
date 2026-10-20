@@ -424,4 +424,51 @@ class AdvisorNaturalFollowUpRegressionTest {
         }
     }
 
+
+    @Test fun realDeviceF1InheritsOnlyVerifiedUserProductAndResolvesWielicka() = runBlocking {
+        val selected = card("obi-pl", "3496072")
+        val anchor = listOf(
+            user("Sprawdź stan produktu OBIK 3496072 w OBI 003"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Verified synthetic card", listOf(selected)),
+        )
+        assertRead(run(
+            "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
+            "obi-pl", listOf("075"), prior = anchor, cards = listOf(selected), modelId = "3496072",
+        ), "003")
+    }
+
+    @Test fun userCanSwitchFrom003To019AndBackWithoutBorrowingAssistantMarketHints() = runBlocking {
+        val selected = card("obi-pl", "3496072")
+        val anchor = listOf(
+            user("Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Verified synthetic card", listOf(selected)),
+        )
+        val elsewhere = "A ile tego samego produktu jest w Krakowie na Bora-Komorowskiego?"
+        assertRead(run(elsewhere, "obi-pl", prior = anchor, cards = listOf(selected),
+            modelId = "3496072"), "019")
+        val afterSwitch = anchor + user(elsewhere) +
+            AdvisorLocationHistoryMessage("ASSISTANT", "Verified synthetic 019 stock", listOf(selected))
+        assertRead(run(
+            "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
+            "obi-pl", prior = afterSwitch, cards = listOf(selected), modelId = "3496072",
+        ), "003")
+    }
+
+    @Test fun explicitNewObikSupersedesHistoricalProductAndWrongModelIdCannotBorrowIt() = runBlocking {
+        val previous = card("obi-pl", "3496072")
+        val current = card("obi-pl", "7000001")
+        val prior = listOf(
+            user("Sprawdź stan produktu OBIK 3496072 w OBI 019"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Verified synthetic 019 stock", listOf(previous)),
+        )
+        val input = "Sprawdź stan produktu OBIK 7000001 w markecie OBI nr 003"
+        val permitted = run(input, "obi-pl", prior = prior, cards = listOf(previous, current),
+            modelId = "7000001")
+        assertRead(permitted, "003")
+        val refused = run(input, "obi-pl", prior = prior, cards = listOf(previous, current),
+            modelId = "3496072")
+        assertTrue(refused.reads.isEmpty())
+        assertFalse(refused.evidence.status == "verified")
+    }
+
 }
