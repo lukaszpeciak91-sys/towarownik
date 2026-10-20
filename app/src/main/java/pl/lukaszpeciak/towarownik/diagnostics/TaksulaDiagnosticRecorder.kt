@@ -51,6 +51,7 @@ internal class SafeDiagnosticRecorder(
         "location_intent_required", "location_not_authorized", "unsupported_provider",
         "local_tool_limit_reached", "location_service_unavailable", "multi_product_tool_contract",
         "directory_unavailable", "transport", "malformed_response", "tool_rejected",
+        "wrong_provider", "no_trusted_rows", "incomplete_inventory",
         "not_found", "data_unavailable", "network", "timeout", "invalid_request",
     )
 

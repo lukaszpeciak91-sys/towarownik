@@ -269,4 +269,32 @@ class UnifiedDiagnosticsExportTest {
     }
 
 
+
+    @Test fun localAuthorizationEnumsSurviveButArbitraryRejectionPayloadsNeverLeak() {
+        val recorder = SafeDiagnosticRecorder(clock = { 1_000L })
+        for (reason in listOf(
+            "wrong_provider", "unknown_location", "ambiguous_location",
+            "untrusted_product", "directory_unavailable", "tool_rejected",
+            "no_trusted_rows", "incomplete_inventory",
+        )) recorder.record(SafeDiagnosticEvent(
+            DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
+            providerId = "obi-pl", tool = "find_product_locations",
+            outcome = "rejected", reason = reason,
+        ))
+        recorder.record(SafeDiagnosticEvent(
+            DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
+            reason = "user typed PRIVATE_PRODUCT_3496072 SECRET_PROMPT",
+        ))
+        val report = recorder.report()
+        for (reason in listOf(
+            "wrong_provider", "unknown_location", "ambiguous_location",
+            "untrusted_product", "directory_unavailable", "tool_rejected",
+            "no_trusted_rows", "incomplete_inventory",
+        )) assertTrue("missing $reason", report.contains("reason=$reason"))
+        assertTrue(report.contains("reason=unrecognized"))
+        assertFalse(report.contains("PRIVATE_PRODUCT"))
+        assertFalse(report.contains("SECRET_PROMPT"))
+        assertFalse(report.contains("3496072"))
+    }
+
 }

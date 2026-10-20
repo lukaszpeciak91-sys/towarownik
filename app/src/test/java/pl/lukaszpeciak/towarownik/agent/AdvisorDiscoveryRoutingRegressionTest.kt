@@ -250,4 +250,30 @@ class AdvisorDiscoveryRoutingRegressionTest {
         assertEquals("203",search("porównaj oddziały 203 i 128","kwant-pl","205","203").called)
         assertEquals("",search("porównaj oddziały 203 i 128","kwant-pl","205","205").called)
     }
+
+    @Test fun realDeviceNumberAndStreetMustAuthorizeDiscoveryWithoutModelHints() = runBlocking {
+        for (input in listOf(
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003 (Kraków, ul. Wielicka).",
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003",
+            "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
+        )) {
+            val result = search(input, "obi-pl", "075", "075")
+            assertEquals(input, "003", result.called)
+            assertEquals(input, "verified", result.continuation)
+        }
+    }
+
+
+    @Test fun unlabeledMeasurementsAndProductIdsMustNotGrantObi003() = runBlocking {
+        for (input in listOf(
+            "Sprawdź stan produktu OBIK 3496072, 003 sztuki.",
+            "Sprawdź produkt z EAN 5905440091067.",
+            "Sprawdź listwę 003 cm.",
+        )) assertEquals(input, "075", search(input, "obi-pl", "075", "003").called)
+        for (input in listOf(
+            "Sprawdź stan produktu OBIK 3496072 w OBI 075 na Wielickiej.",
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 999",
+        )) assertEquals(input, "", search(input, "obi-pl", "075", "003").called)
+    }
+
 }

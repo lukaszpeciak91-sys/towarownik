@@ -124,4 +124,49 @@ class ObiLocationScopeR1Test {
     @Test fun canonicalCityStreetKeepsExactLookup() = runBlocking {
         Fixture().read("Kraków Wielicka", setOf("003"), historical = true)
     }
+
+    @Test fun realDeviceF2ExplicitMarketAddressMustVerifyExact003() = runBlocking {
+        Fixture().read(
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003 (Kraków, ul. Wielicka).",
+            setOf("003"),
+        )
+    }
+
+    @Test fun realDeviceF3ExplicitMarketNumberMustVerifyExact003() = runBlocking {
+        Fixture().read(
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003",
+            setOf("003"),
+        )
+    }
+
+    @Test fun numericF4WordingCanBeAuthorizedIfModelActuallyCallsTheTool() = runBlocking {
+        // Android authorization only: does not establish that Luna will select a tool.
+        Fixture().read("Sprawdź stan OBIK 3496072 w OBI 003.", setOf("003"))
+    }
+
+    @Test fun realDeviceContextualSameProductFollowUpMustVerify003() = runBlocking {
+        // Real-device F1. Identity belongs to the prior verified USER conversation.
+        Fixture().read(
+            "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
+            setOf("003"), historical = true,
+        )
+    }
+
+
+    @Test fun realDeviceLocationNegativeControlsStayFailClosed() = runBlocking {
+        for (input in listOf(
+            "Sprawdź stan produktu OBIK 3496072 w OBI 075 na Wielickiej.",
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 075 (Kraków, ul. Wielicka).",
+            "Sprawdź stan produktu OBIK 3496072 w nieznanym mieście.",
+            "Sprawdź stan produktu OBIK 3496072 w Krakowie przy ulicy Nieznanej.",
+        )) Fixture().refuse(input)
+        // An unqualified city names every canonical Kraków market, not just 003.
+        Fixture().read("Sprawdź stan produktu OBIK 3496072 w Krakowie",
+            setOf("003", "019", "059", "072"))
+        Fixture().read("Sprawdź stan produktu OBIK 3496072 w Krakowie na Bora-Komorowskiego?",
+            setOf("019"))
+        Fixture().read("Sprawdź stan produktu OBIK 3496072 w Krakowie na Wielickiej.",
+            setOf("003"))
+    }
+
 }

@@ -212,7 +212,15 @@ internal object BranchResolver {
 
     private fun canonicalObiMarketLocationText(userText: String, branches: List<ProviderBranch>): String {
         val original = normalizedText(userText)
-        var text = original
+        // OBI-only syntax normalization: a bare three-digit product value is never
+        // a market selector. Canonical directory checks still decide the branch.
+        var text = original.replace(
+            Regex("""\b(obi|market|markecie|sklep|sklepie) nr (?=[0-9]{3}\b)"""),
+            "$1 ",
+        ).replace(
+            Regex("""\bprzy ulicy\b"""),
+            "przy ul",
+        )
         // Reviewed name-only adjective, eligible only when that city exists in the directory.
         if (branches.any { normalizedText(it.name) == "krakow" }) {
             text = text.replace(
