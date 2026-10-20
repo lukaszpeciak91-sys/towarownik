@@ -141,4 +141,21 @@ class ObiLocationScopeR1Test {
         )
     }
 
+
+    @Test fun realDeviceLocationNegativeControlsStayFailClosed() = runBlocking {
+        for (input in listOf(
+            "Sprawdź stan produktu OBIK 3496072 w OBI 075 na Wielickiej.",
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 075 (Kraków, ul. Wielicka).",
+            "Sprawdź stan produktu OBIK 3496072 w nieznanym mieście.",
+            "Sprawdź stan produktu OBIK 3496072 w Krakowie przy ulicy Nieznanej.",
+        )) Fixture().refuse(input)
+        // An unqualified city names every canonical Kraków market, not just 003.
+        Fixture().read("Sprawdź stan produktu OBIK 3496072 w Krakowie",
+            setOf("003", "019", "059", "072"))
+        Fixture().read("Sprawdź stan produktu OBIK 3496072 w Krakowie na Bora-Komorowskiego?",
+            setOf("019"))
+        Fixture().read("Sprawdź stan produktu OBIK 3496072 w Krakowie na Wielickiej.",
+            setOf("003"))
+    }
+
 }
