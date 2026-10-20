@@ -263,4 +263,17 @@ class AdvisorDiscoveryRoutingRegressionTest {
         }
     }
 
+
+    @Test fun unlabeledMeasurementsAndProductIdsMustNotGrantObi003() = runBlocking {
+        for (input in listOf(
+            "Sprawdź stan produktu OBIK 3496072, 003 sztuki.",
+            "Sprawdź produkt z EAN 5905440091067.",
+            "Sprawdź listwę 003 cm.",
+        )) assertEquals(input, "075", search(input, "obi-pl", "075", "003").called)
+        for (input in listOf(
+            "Sprawdź stan produktu OBIK 3496072 w OBI 075 na Wielickiej.",
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 999",
+        )) assertEquals(input, "", search(input, "obi-pl", "075", "003").called)
+    }
+
 }
