@@ -125,12 +125,23 @@ class ObiLocationScopeR1Test {
         Fixture().read("Kraków Wielicka", setOf("003"), historical = true)
     }
 
-    @Test fun realDeviceExplicitMarketNumberAndAddressMustVerifyExact003() = runBlocking {
-        // Real-device F2 / F3; never replace these USER strings with easier synonyms.
-        for (input in listOf(
+    @Test fun realDeviceF2ExplicitMarketAddressMustVerifyExact003() = runBlocking {
+        Fixture().read(
             "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003 (Kraków, ul. Wielicka).",
+            setOf("003"),
+        )
+    }
+
+    @Test fun realDeviceF3ExplicitMarketNumberMustVerifyExact003() = runBlocking {
+        Fixture().read(
             "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003",
-        )) Fixture().read(input, setOf("003"))
+            setOf("003"),
+        )
+    }
+
+    @Test fun numericF4WordingCanBeAuthorizedIfModelActuallyCallsTheTool() = runBlocking {
+        // Android authorization only: does not establish that Luna will select a tool.
+        Fixture().read("Sprawdź stan OBIK 3496072 w OBI 003.", setOf("003"))
     }
 
     @Test fun realDeviceContextualSameProductFollowUpMustVerify003() = runBlocking {
