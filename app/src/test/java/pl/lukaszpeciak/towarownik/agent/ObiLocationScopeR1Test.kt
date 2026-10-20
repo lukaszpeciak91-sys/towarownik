@@ -124,4 +124,21 @@ class ObiLocationScopeR1Test {
     @Test fun canonicalCityStreetKeepsExactLookup() = runBlocking {
         Fixture().read("Kraków Wielicka", setOf("003"), historical = true)
     }
+
+    @Test fun realDeviceExplicitMarketNumberAndAddressMustVerifyExact003() = runBlocking {
+        // Real-device F2 / F3; never replace these USER strings with easier synonyms.
+        for (input in listOf(
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003 (Kraków, ul. Wielicka).",
+            "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003",
+        )) Fixture().read(input, setOf("003"))
+    }
+
+    @Test fun realDeviceContextualSameProductFollowUpMustVerify003() = runBlocking {
+        // Real-device F1. Identity belongs to the prior verified USER conversation.
+        Fixture().read(
+            "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
+            setOf("003"), historical = true,
+        )
+    }
+
 }
