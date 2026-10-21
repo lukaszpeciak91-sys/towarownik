@@ -340,6 +340,12 @@ test("RED: OBI single-market follow-ups use discovery; multi-market stock uses l
   assert.match(instructions, /same-product follow-up/i);
   const tool = f.captures[0].tools.find(t => t.name === LOCATIONS_LOCAL_TOOL_NAME);
   assert.match(tool.description, /multiple OBI markets/i);
+  // v3+ exposes find_products, not the v2-only find_obi_products tool.
+  assert.deepEqual(f.captures[0].tools.filter(t => t.type === "function").map(t => t.name),
+    ["find_products", LOCATIONS_LOCAL_TOOL_NAME]);
+  assert.match(instructions, /single-market.*find_products/i);
+  assert.match(tool.description, /For one OBI market, use find_products/i);
+  assert.doesNotMatch(instructions, /find_obi_products/i);
   const kwant = fake(answer);
   assert.equal((await createWorker(kwant.fetch).fetch(
     request("/v1/agent/message", {
