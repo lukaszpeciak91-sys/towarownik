@@ -444,10 +444,16 @@ export const LOCATIONS_TOOL = {
   },
 } as const;
 
+/** The discovery tool is find_obi_products in v2, but find_products in v3+. */
+export function locationsInstructionsForProtocol(protocolVersion: number): string {
+  return LOCATIONS_INSTRUCTIONS.replaceAll("find_obi_products", localToolForProtocol(protocolVersion).name);
+}
+
 /** Bind the location tool provider to the validated conversation profile. Android still authorizes every call. */
-export function locationsToolForProvider(providerId: string) {
+export function locationsToolForProvider(providerId: string, protocolVersion: number) {
   return {
     ...LOCATIONS_TOOL,
+    description: LOCATIONS_TOOL.description.replace("find_obi_products", localToolForProtocol(protocolVersion).name),
     parameters: {
       ...LOCATIONS_TOOL.parameters,
       properties: {
