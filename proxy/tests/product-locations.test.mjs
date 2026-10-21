@@ -335,7 +335,7 @@ test("RED: OBI single-market follow-ups use discovery; multi-market stock uses l
   );
   assert.equal(response.status, 200);
   const instructions = f.captures[0].instructions;
-  assert.match(instructions, /single-market.*find_obi_products/i);
+  assert.match(instructions, /single-market.*find_products/i);
   assert.match(instructions, /multi-market.*find_product_locations/i);
   assert.match(instructions, /same-product follow-up/i);
   const tool = f.captures[0].tools.find(t => t.name === LOCATIONS_LOCAL_TOOL_NAME);
