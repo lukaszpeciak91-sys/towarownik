@@ -5,7 +5,7 @@ import {
   LOCAL_TOOL_NAME,
   PROVIDER_LOCAL_TOOL_NAME,
   LOCATIONS_LOCAL_TOOL_NAME,
-  LOCATIONS_TOOL,
+  locationsToolForProvider,
   LOCATIONS_INSTRUCTIONS,
   MAX_ANSWER_CHARS,
   MAX_MODEL_NAME_CHARS,
@@ -94,7 +94,7 @@ export async function startAgent(
         format: finalAnswerFormatForProtocol(protocolVersion),
       },
       tools: locationsEnabled
-        ? [localToolForProtocol(protocolVersion), LOCATIONS_TOOL, WEB_SEARCH_TOOL]
+        ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId), WEB_SEARCH_TOOL]
         : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
@@ -140,7 +140,7 @@ export async function messageAgent(
         format: finalAnswerFormatForProtocol(protocolVersion),
       },
       tools: locationsEnabled
-        ? [localToolForProtocol(protocolVersion), LOCATIONS_TOOL, WEB_SEARCH_TOOL]
+        ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId), WEB_SEARCH_TOOL]
         : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
@@ -236,7 +236,7 @@ export async function continueAgent(
       },
       tools: localToolAvailable
         ? (locationsEnabled
-          ? [localToolForProtocol(protocolVersion), LOCATIONS_TOOL, WEB_SEARCH_TOOL]
+          ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId), WEB_SEARCH_TOOL]
           : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL])
         : [WEB_SEARCH_TOOL],
     },
