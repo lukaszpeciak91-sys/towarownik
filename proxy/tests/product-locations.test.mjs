@@ -296,8 +296,8 @@ test("RED: location tool providerId is pinned to selected provider on START, MES
   for (const [protocolVersion, providerId, branchId] of [
     [2, "obi-pl", "075"],
     [3, "obi-pl", "075"],
-    [5, "obi-pl", "075"],
-    [5, "kwant-pl", "205"],
+    [4, "obi-pl", "075"],
+    [4, "kwant-pl", "205"],
   ]) {
     for (const endpoint of ["start", "message", "continue"]) {
       const context = protocolVersion === 2
@@ -328,7 +328,7 @@ test("RED: OBI single-market follow-ups use discovery; multi-market stock uses l
   const f = fake(answer);
   const response = await createWorker(f.fetch).fetch(
     request("/v1/agent/message", {
-      protocolVersion: 5, providerId: "obi-pl", branchId: "075",
+      protocolVersion: 4, providerId: "obi-pl", branchId: "075",
       previousResponseId: "resp_prior",
       message: "a ile mają na Wielickiej w Krakowie?",
     }, true), env,
@@ -343,7 +343,7 @@ test("RED: OBI single-market follow-ups use discovery; multi-market stock uses l
   const kwant = fake(answer);
   assert.equal((await createWorker(kwant.fetch).fetch(
     request("/v1/agent/message", {
-      protocolVersion: 5, providerId: "kwant-pl", branchId: "205",
+      protocolVersion: 4, providerId: "kwant-pl", branchId: "205",
       previousResponseId: "resp_prior", message: "A w Tarnowie?",
     }, true), env,
   )).status, 200);
