@@ -6,7 +6,7 @@ import {
   PROVIDER_LOCAL_TOOL_NAME,
   LOCATIONS_LOCAL_TOOL_NAME,
   locationsToolForProvider,
-  LOCATIONS_INSTRUCTIONS,
+  locationsInstructionsForProtocol,
   MAX_ANSWER_CHARS,
   MAX_MODEL_NAME_CHARS,
   MAX_SELECTED_PRODUCT_REFS,
@@ -80,7 +80,7 @@ export async function startAgent(
         providerId,
         branchId,
         protocolVersion,
-      ) + (locationsEnabled ? " " + LOCATIONS_INSTRUCTIONS : ""),
+      ) + (locationsEnabled ? " " + locationsInstructionsForProtocol(protocolVersion) : ""),
       input: modelInput(message, attachment),
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
@@ -94,7 +94,7 @@ export async function startAgent(
         format: finalAnswerFormatForProtocol(protocolVersion),
       },
       tools: locationsEnabled
-        ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId), WEB_SEARCH_TOOL]
+        ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId, protocolVersion), WEB_SEARCH_TOOL]
         : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
@@ -125,7 +125,7 @@ export async function messageAgent(
         providerId,
         branchId,
         protocolVersion,
-      ) + (locationsEnabled ? " " + LOCATIONS_INSTRUCTIONS : ""),
+      ) + (locationsEnabled ? " " + locationsInstructionsForProtocol(protocolVersion) : ""),
       previous_response_id: previousResponseId,
       input: modelInput(message, attachment),
       reasoning: {
@@ -140,7 +140,7 @@ export async function messageAgent(
         format: finalAnswerFormatForProtocol(protocolVersion),
       },
       tools: locationsEnabled
-        ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId), WEB_SEARCH_TOOL]
+        ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId, protocolVersion), WEB_SEARCH_TOOL]
         : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL],
     },
     apiKey,
@@ -214,7 +214,7 @@ export async function continueAgent(
         providerId,
         branchId,
         protocolVersion,
-      ) + (locationsEnabled ? " " + LOCATIONS_INSTRUCTIONS : ""),
+      ) + (locationsEnabled ? " " + locationsInstructionsForProtocol(protocolVersion) : ""),
       previous_response_id: responseId,
       input: [
         {
@@ -236,7 +236,7 @@ export async function continueAgent(
       },
       tools: localToolAvailable
         ? (locationsEnabled
-          ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId), WEB_SEARCH_TOOL]
+          ? [localToolForProtocol(protocolVersion), locationsToolForProvider(providerId, protocolVersion), WEB_SEARCH_TOOL]
           : [localToolForProtocol(protocolVersion), WEB_SEARCH_TOOL])
         : [WEB_SEARCH_TOOL],
     },
