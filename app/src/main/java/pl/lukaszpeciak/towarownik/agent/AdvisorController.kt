@@ -227,17 +227,22 @@ internal class AdvisorController(
                 ).containsMatchIn(advisorAuthorityText(normalizedInput))
                 val boundedExplicitFollowUp = explicitlySameProduct &&
                     advisorIsBoundedHistoricalScopeReference(normalizedInput, branches)
-                if (followUp.isShortLocationFollowUp || boundedExplicitFollowUp) {
+                val anaphoricUserQuestion = normalizedInput.trimStart().lowercase().startsWith("a ") ||
+                    Regex("""^(?:ile|a ile) (?:maja|ma|jest|sa)\\b""")
+                        .containsMatchIn(advisorAuthorityText(normalizedInput))
+                val inheritedShortFollowUp = followUp.isShortLocationFollowUp &&
+                    (anaphoricUserQuestion || followUp.hasPendingInventoryRequest || followUp.hasBoundedProductReferent)
+                if (inheritedShortFollowUp || boundedExplicitFollowUp) {
                     val trusted = followUp.historicalProducts.filter {
                         it.providerId == conversationProviderId && it.verifiedAt > 0 &&
                             it.effectiveProductId.matches(Regex("""[0-9]{7}"""))
                     }.distinctBy { it.effectiveProductId }
                     val reason = when {
                         followUp.failureReason != null -> followUp.failureReason
-                        followUp.isShortLocationFollowUp &&
+                        inheritedShortFollowUp &&
                             (!followUp.inheritsInventoryContext || !followUp.hasPendingInventoryRequest) ->
                             "untrusted_product"
-                        boundedExplicitFollowUp && !followUp.isShortLocationFollowUp &&
+                        boundedExplicitFollowUp && !inheritedShortFollowUp &&
                             !followUp.hasBoundedProductReferent -> "untrusted_product"
                         trusted.size > 1 -> "ambiguous_product"
                         trusted.size != 1 -> "untrusted_product"
