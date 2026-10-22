@@ -184,6 +184,9 @@ internal class AdvisorController(
         }
 
         var obiCityWideMarketIds: Set<String> = emptySet()
+        // A wrong model-selected OBIK in a historical same-product follow-up
+        // blocks further lookups in this USER turn, not just the first request.
+        var blockedObiFollowUpReason: String? = null
 
         suspend fun authorizeToolArguments(
             arguments: AdvisorToolArguments,
@@ -191,6 +194,7 @@ internal class AdvisorController(
             if (arguments.providerId != conversationProviderId) {
                 return ToolBranchAuthorization.Rejected("wrong_provider")
             }
+            blockedObiFollowUpReason?.let { return ToolBranchAuthorization.Rejected(it) }
             val branches = when (val result = loadTurnBranches()) {
                 is ProviderBranchResult.Available -> result.branches
                 is ProviderBranchResult.Unavailable ->
@@ -204,6 +208,54 @@ internal class AdvisorController(
             }
             if (branches.none { it.branchId == currentBranchId }) {
                 return ToolBranchAuthorization.Rejected("directory_unavailable")
+            }
+
+            // Discovery is the preferred SINGLE-OBI-market path. Unlike a new
+            // explicit USER product search, a short location-only follow-up
+            // inherits an EXACT product identity from verified conversation
+            // history. The model's proposed OBIK never selects that identity.
+            if (conversationProvider == OBI_PROVIDER_ID &&
+                !advisorHasCurrentProductEvidence(normalizedInput)
+            ) {
+                val followUp = resolveAdvisorLocationFollowUp(
+                    normalizedInput, locationHistory,
+                    historicalVerifiedProducts.filter { it.providerId == conversationProviderId },
+                    branches, conversationProviderId, conversationStoreNumber,
+                )
+                val explicitlySameProduct = Regex(
+                    """\b(?:ten(?: sam)? produkt|tego(?: samego)? produktu)\b""",
+                ).containsMatchIn(advisorAuthorityText(normalizedInput))
+                val boundedExplicitFollowUp = explicitlySameProduct &&
+                    advisorIsBoundedHistoricalScopeReference(normalizedInput, branches)
+                val anaphoricUserQuestion = normalizedInput.trimStart().lowercase().startsWith("a ") ||
+                    Regex("""^(?:ile|a ile) (?:maja|ma|jest|sa)\b""")
+                        .containsMatchIn(advisorAuthorityText(normalizedInput))
+                val inheritedShortFollowUp = followUp.isShortLocationFollowUp &&
+                    (anaphoricUserQuestion || followUp.hasPendingInventoryRequest || followUp.hasBoundedProductReferent)
+                if (inheritedShortFollowUp || boundedExplicitFollowUp) {
+                    val trusted = followUp.historicalProducts.filter {
+                        it.providerId == conversationProviderId && it.verifiedAt > 0 &&
+                            it.effectiveProductId.matches(Regex("""[0-9]{7}"""))
+                    }.distinctBy { it.effectiveProductId }
+                    val reason = when {
+                        followUp.failureReason != null -> followUp.failureReason
+                        inheritedShortFollowUp &&
+                            (!followUp.inheritsInventoryContext || !followUp.hasPendingInventoryRequest) ->
+                            "untrusted_product"
+                        boundedExplicitFollowUp && !inheritedShortFollowUp &&
+                            !followUp.hasBoundedProductReferent -> "untrusted_product"
+                        trusted.size > 1 -> "ambiguous_product"
+                        trusted.size != 1 -> "untrusted_product"
+                        arguments.queries.size != 1 ||
+                            arguments.queries.single().query.trim() != trusted.single().effectiveProductId ->
+                            "untrusted_product"
+                        else -> null
+                    }
+                    if (reason != null) {
+                        blockedObiFollowUpReason = reason
+                        return ToolBranchAuthorization.Rejected(reason)
+                    }
+                }
             }
 
             return when (
@@ -425,6 +477,16 @@ internal class AdvisorController(
         while (true) {
             when (proxyResult) {
                 is AdvisorProxyResult.Answer -> {
+                    // A later LLM answer/retry must not turn a rejected OBIK
+                    // substitution into a claimed stock of the selected product.
+                    blockedObiFollowUpReason?.let { reason ->
+                        return AdvisorUiState.Success(
+                            text = renderAdvisorLocalFailure(reason),
+                            responseId = proxyResult.responseId,
+                            products = emptyList(), sources = emptyList(),
+                            traceId = turnTraceId,
+                        ).also(onState)
+                    }
                     val selectedProducts = proxyResult.productRefs
                         .distinctBy { it.key }
                         .mapNotNull { reference ->
@@ -505,6 +567,11 @@ internal class AdvisorController(
                             locations = emptyList(),
                             verifiedAtMillis = null,
                             centralStock = null,
+                        )
+                    } else if (blockedObiFollowUpReason != null) {
+                        toolCalls += 1
+                        inventoryAuthorizationFailure(
+                            requireNotNull(blockedObiFollowUpReason), "rejected", conversationProviderId,
                         )
                     } else if (priorDecision != null) {
                         // Cached denials avoid duplicate provider work but still

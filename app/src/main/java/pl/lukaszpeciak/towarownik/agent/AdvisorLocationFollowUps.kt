@@ -24,6 +24,7 @@ internal data class AdvisorLocationFollowUp(
     val hasPendingInventoryRequest: Boolean = false,
     val hasBoundedProductReferent: Boolean = false,
     val isContextualQuantityRequest: Boolean = false,
+    val isShortLocationFollowUp: Boolean = false,
     val failureReason: String? = null,
     val inheritsInventoryContext: Boolean = false,
 )
@@ -112,7 +113,11 @@ internal fun resolveAdvisorLocationFollowUp(
             // pass the canonical market resolver.
             val quantityPlace = Regex("""^ile tego samego produktu (?:maja|ma|jest|sa) (?:w|we) (.+)$""")
                 .matchEntire(t)?.groupValues?.get(1)
-            val placeText = quantityPlace?.let { "w $it" } ?: t
+            // A natural question such as "a ile mają na Wielickiej w Krakowie?"
+            // is a bounded location-only follow-up, not a NEW product search.
+            val naturalQuantityPlace = Regex("""^ile (?:maja|ma|jest|sa) ((?:w|we|na) .+)$""")
+                .matchEntire(t)?.groupValues?.get(1)
+            val placeText = quantityPlace?.let { "w $it" } ?: naturalQuantityPlace ?: t
             val canonical = placeText in canonicalLocations ||
                 canonicalLocations.any { placeText.startsWith("$it ") }
             val labelled = Regex("""^(?:w|we|na|obi|market|markecie|sklep|sklepie) .+$""").matches(placeText)
@@ -295,6 +300,10 @@ internal fun resolveAdvisorLocationFollowUp(
         hasPendingInventoryRequest = continuation,
         hasBoundedProductReferent = boundedReferent && !unknownAnchorIdentity,
         isContextualQuantityRequest = quantityFollowUpLocation(current) != null,
+        // Only location-bearing clarifications: "obu" and other product-only
+        // short turns must not be mistaken for one-market identity inheritance.
+        isShortLocationFollowUp = currentIsShortFollowUp &&
+            (currentLocation != null || quantityFollowUpLocation(current) != null || isThere),
         failureReason = followUpFailure ?: if (unknownLatestIdentity && !currentSelectsProduct) "untrusted_product" else if (pending && !currentSelectsProduct &&
             both.isEmpty() && selectedHistory.size > 1
         ) "ambiguous_product" else null,

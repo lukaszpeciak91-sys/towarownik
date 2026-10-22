@@ -50,10 +50,12 @@ export const LOCATIONS_LOCAL_TOOL_NAME = "find_product_locations";
 export const LOCATIONS_CAPABILITY_HEADER = "X-Taksula-Locations-Capability";
 export const LOCATIONS_CAPABILITY_VALUE = "1";
 export const LOCATIONS_INSTRUCTIONS =
-  "Use find_product_locations ONLY for explicit other-location stock requests about one exact trusted product. " +
+  "Use find_product_locations ONLY for explicit other-location stock requests about one exact trusted product; for OBI it is reserved for multiple markets, never one named market. " +
   "Model productId and location names are hints, not authorization. Android accepts exact verified current-turn products or verified assistant cards in THIS conversation only. " +
   "If user supplies a NEW product identifier not yet verified, first use the regular discovery tool, then locations within the shared tool budget. " +
   "When several verified products remain plausible, ask ONE concise product clarification. " +
+  "For an OBI single-market stock question, including a natural same-product follow-up such as 'a ile mają na Wielickiej w Krakowie?', use find_obi_products, NOT find_product_locations: reuse the verified exact OBIK from this conversation and request fresh selected-market verification. Never guess an OBIK or silently reuse stale stock; if product identity is unclear, clarify. Android independently authorizes the USER-named market, while the conversation WorkingProfile remains unchanged. " +
+  "For an OBI multi-market stock request (two or more distinct stores, every store in a named city, or all other stores), use find_product_locations after exact-product verification. " +
   "For OBI a broad other-location request ('Gdzie jeszcze jest ten produkt?', 'Sprawdź inne markety') authorizes ALL OTHER canonical OBI markets: send locations=[]; Android derives the full scope and excludes the selected store automatically. Do NOT enumerate market IDs. " +
   "When the current user explicitly restricts the request to a city or exact market, send that requested city/market in locations[]. Android expands a named city to ALL canonical markets in that city, never picks one arbitrarily. " +
   "For a broad check, up to 61 other markets are checked through at most four bounded Android service calls (20 markets per read, 10 per HTTP request), still ONE logical local tool invocation. " +
@@ -424,7 +426,7 @@ export const PROVIDER_TOOL = {
 export const LOCATIONS_TOOL = {
   type: "function",
   name: LOCATIONS_LOCAL_TOOL_NAME,
-  description: "Check other-location stock of an exact verified product, only on explicit user request; Android authorizes identities and scope.",
+  description: "Check one verified product across multiple OBI markets, or one/many KWANT branches, on explicit request. For one OBI market, use find_obi_products instead. Android authorizes identities and scope.",
   strict: true,
   parameters: {
     type: "object",
@@ -441,6 +443,26 @@ export const LOCATIONS_TOOL = {
     additionalProperties: false,
   },
 } as const;
+
+/** The discovery tool is find_obi_products in v2, but find_products in v3+. */
+export function locationsInstructionsForProtocol(protocolVersion: number): string {
+  return LOCATIONS_INSTRUCTIONS.replaceAll("find_obi_products", localToolForProtocol(protocolVersion).name);
+}
+
+/** Bind the location tool provider to the validated conversation profile. Android still authorizes every call. */
+export function locationsToolForProvider(providerId: string, protocolVersion: number) {
+  return {
+    ...LOCATIONS_TOOL,
+    description: LOCATIONS_TOOL.description.replace("find_obi_products", localToolForProtocol(protocolVersion).name),
+    parameters: {
+      ...LOCATIONS_TOOL.parameters,
+      properties: {
+        ...LOCATIONS_TOOL.parameters.properties,
+        providerId: { ...LOCATIONS_TOOL.parameters.properties.providerId, enum: [providerId] },
+      },
+    },
+  } as const;
+}
 
 export function localToolForProtocol(protocolVersion: number) {
   if (protocolVersion === LEGACY_ADVISOR_PROTOCOL_VERSION) {
