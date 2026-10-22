@@ -228,7 +228,7 @@ internal class AdvisorController(
                 val boundedExplicitFollowUp = explicitlySameProduct &&
                     advisorIsBoundedHistoricalScopeReference(normalizedInput, branches)
                 val anaphoricUserQuestion = normalizedInput.trimStart().lowercase().startsWith("a ") ||
-                    Regex("""^(?:ile|a ile) (?:maja|ma|jest|sa)\\b""")
+                    Regex("""^(?:ile|a ile) (?:maja|ma|jest|sa)\b""")
                         .containsMatchIn(advisorAuthorityText(normalizedInput))
                 val inheritedShortFollowUp = followUp.isShortLocationFollowUp &&
                     (anaphoricUserQuestion || followUp.hasPendingInventoryRequest || followUp.hasBoundedProductReferent)
