@@ -222,15 +222,21 @@ internal class AdvisorController(
                     historicalVerifiedProducts.filter { it.providerId == conversationProviderId },
                     branches, conversationProviderId, conversationStoreNumber,
                 )
-                if (followUp.isShortLocationFollowUp) {
+                val boundedExplicitFollowUp = advisorIsBoundedHistoricalScopeReference(
+                    normalizedInput, branches,
+                )
+                if (followUp.isShortLocationFollowUp || boundedExplicitFollowUp) {
                     val trusted = followUp.historicalProducts.filter {
                         it.providerId == conversationProviderId && it.verifiedAt > 0 &&
                             it.effectiveProductId.matches(Regex("""[0-9]{7}"""))
                     }.distinctBy { it.effectiveProductId }
                     val reason = when {
                         followUp.failureReason != null -> followUp.failureReason
-                        !followUp.inheritsInventoryContext || !followUp.hasPendingInventoryRequest ->
+                        followUp.isShortLocationFollowUp &&
+                            (!followUp.inheritsInventoryContext || !followUp.hasPendingInventoryRequest) ->
                             "untrusted_product"
+                        boundedExplicitFollowUp && !followUp.isShortLocationFollowUp &&
+                            !followUp.hasBoundedProductReferent -> "untrusted_product"
                         trusted.size > 1 -> "ambiguous_product"
                         trusted.size != 1 -> "untrusted_product"
                         arguments.queries.size != 1 ||
