@@ -222,9 +222,11 @@ internal class AdvisorController(
                     historicalVerifiedProducts.filter { it.providerId == conversationProviderId },
                     branches, conversationProviderId, conversationStoreNumber,
                 )
-                val boundedExplicitFollowUp = advisorIsBoundedHistoricalScopeReference(
-                    normalizedInput, branches,
-                )
+                val explicitlySameProduct = Regex(
+                    """\\b(?:ten(?: sam)? produkt|tego(?: samego)? produktu)\\b""",
+                ).containsMatchIn(advisorAuthorityText(normalizedInput))
+                val boundedExplicitFollowUp = explicitlySameProduct &&
+                    advisorIsBoundedHistoricalScopeReference(normalizedInput, branches)
                 if (followUp.isShortLocationFollowUp || boundedExplicitFollowUp) {
                     val trusted = followUp.historicalProducts.filter {
                         it.providerId == conversationProviderId && it.verifiedAt > 0 &&
