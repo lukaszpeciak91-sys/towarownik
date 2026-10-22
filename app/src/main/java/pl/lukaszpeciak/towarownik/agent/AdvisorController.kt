@@ -223,7 +223,7 @@ internal class AdvisorController(
                     branches, conversationProviderId, conversationStoreNumber,
                 )
                 val explicitlySameProduct = Regex(
-                    """\\b(?:ten(?: sam)? produkt|tego(?: samego)? produktu)\\b""",
+                    """\b(?:ten(?: sam)? produkt|tego(?: samego)? produktu)\b""",
                 ).containsMatchIn(advisorAuthorityText(normalizedInput))
                 val boundedExplicitFollowUp = explicitlySameProduct &&
                     advisorIsBoundedHistoricalScopeReference(normalizedInput, branches)
