@@ -123,6 +123,19 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
         assertFalse(r.state.text.contains("18 sztuk"))
     }
 
+    @Test fun `bounded historical same-product and bare market followups reject wrong model OBIK`() = runBlocking {
+        for (question in listOf(
+            "a na Wielickiej?",
+            "Sprawdź stan tego samego produktu w OBI 003",
+            "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
+        )) {
+            val r = execute(user = question)
+            assertTrue(question, r.calls.isEmpty())
+            assertTrue(question, r.state.products.isEmpty())
+            assertFalse(question, r.state.text.contains("18 sztuk"))
+        }
+    }
+
     @Test fun `new explicit user OBIK overrides old selection and wrong provider is still denied`() = runBlocking {
         val fresh = execute(user = "Mamy 3496072 na stanie?", proposed = "3496072")
         assertEquals(listOf("provider:3496072@075"), fresh.calls)
