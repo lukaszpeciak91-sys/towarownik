@@ -108,7 +108,7 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
 
     @Test fun `RED correct inherited OBIK is freshly checked in requested market`() = runBlocking {
         val r = execute(proposed = "6117543")
-        assertEquals(listOf("provider:6117543@003"), r.calls)
+        assertEquals(listOf("obi:6117543@003"), r.calls)
         assertEquals("6117543", r.state.products.single().effectiveProductId)
         assertEquals("003", r.state.products.single().effectiveBranchId)
     }
@@ -138,7 +138,7 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
 
     @Test fun `new explicit user OBIK overrides old selection and wrong provider is still denied`() = runBlocking {
         val fresh = execute(user = "Mamy 3496072 na stanie?", proposed = "3496072")
-        assertEquals(listOf("provider:3496072@075"), fresh.calls)
+        assertEquals(listOf("obi:3496072@075"), fresh.calls)
         val crossProvider = execute(proposed = "6117543", provider = "kwant-pl")
         assertTrue(crossProvider.calls.isEmpty())
         assertTrue(crossProvider.state.products.isEmpty())
