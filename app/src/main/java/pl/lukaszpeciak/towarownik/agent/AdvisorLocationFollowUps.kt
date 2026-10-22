@@ -300,7 +300,10 @@ internal fun resolveAdvisorLocationFollowUp(
         hasPendingInventoryRequest = continuation,
         hasBoundedProductReferent = boundedReferent && !unknownAnchorIdentity,
         isContextualQuantityRequest = quantityFollowUpLocation(current) != null,
-        isShortLocationFollowUp = currentIsShortFollowUp,
+        // Only location-bearing clarifications: "obu" and other product-only
+        // short turns must not be mistaken for one-market identity inheritance.
+        isShortLocationFollowUp = currentIsShortFollowUp &&
+            (currentLocation != null || quantityFollowUpLocation(current) != null || isThere),
         failureReason = followUpFailure ?: if (unknownLatestIdentity && !currentSelectsProduct) "untrusted_product" else if (pending && !currentSelectsProduct &&
             both.isEmpty() && selectedHistory.size > 1
         ) "ambiguous_product" else null,
