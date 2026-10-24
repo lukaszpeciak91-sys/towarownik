@@ -187,6 +187,9 @@ internal class AdvisorController(
         // A wrong model-selected OBIK in a historical same-product follow-up
         // blocks further lookups in this USER turn, not just the first request.
         var blockedObiFollowUpReason: String? = null
+        var trustedObiFollowUpId: String? = null
+        var trustedObiFollowUpBranch: String? = null
+        var trustedObiFollowUpResult: AdvisorToolContinuation.Verified? = null
 
         suspend fun authorizeToolArguments(
             arguments: AdvisorToolArguments,
@@ -210,10 +213,10 @@ internal class AdvisorController(
                 return ToolBranchAuthorization.Rejected("directory_unavailable")
             }
 
-            // Discovery is the preferred SINGLE-OBI-market path. Unlike a new
-            // explicit USER product search, a short location-only follow-up
-            // inherits an EXACT product identity from verified conversation
-            // history. The model's proposed OBIK never selects that identity.
+            // Resolve a bounded USER-owned referent before trusting model search hints.
+            // An explicit current USER product always stays an independent search.
+            var trustedBranch: ProviderBranch? = null
+            var effectiveArguments = arguments
             if (conversationProvider == OBI_PROVIDER_ID &&
                 !advisorHasCurrentProductEvidence(normalizedInput)
             ) {
@@ -231,7 +234,7 @@ internal class AdvisorController(
                     Regex("""^(?:ile|a ile) (?:maja|ma|jest|sa)\b""")
                         .containsMatchIn(advisorAuthorityText(normalizedInput))
                 val inheritedShortFollowUp = followUp.isShortLocationFollowUp &&
-                    (anaphoricUserQuestion || followUp.hasPendingInventoryRequest || followUp.hasBoundedProductReferent)
+                    (anaphoricUserQuestion || followUp.hasBoundedProductReferent)
                 if (inheritedShortFollowUp || boundedExplicitFollowUp) {
                     val trusted = followUp.historicalProducts.filter {
                         it.providerId == conversationProviderId && it.verifiedAt > 0 &&
@@ -246,36 +249,44 @@ internal class AdvisorController(
                             !followUp.hasBoundedProductReferent -> "untrusted_product"
                         trusted.size > 1 -> "ambiguous_product"
                         trusted.size != 1 -> "untrusted_product"
-                        arguments.queries.size != 1 ||
-                            arguments.queries.single().query.trim() != trusted.single().effectiveProductId ->
-                            "untrusted_product"
+                        // The model may request the WRONG OBIK. The USER-owned,
+                        // uniquely selected product, not the model, is authority.
                         else -> null
                     }
                     if (reason != null) {
                         blockedObiFollowUpReason = reason
                         return ToolBranchAuthorization.Rejected(reason)
                     }
+                    val exactId = trusted.single().effectiveProductId
+                    trustedObiFollowUpId = exactId
+                    trustedBranch = followUp.resolvedBranch
+                    effectiveArguments = arguments.copy(
+                        queries = listOf(AdvisorToolQuery(exactId, 1)),
+                    )
                 }
             }
 
-            return when (
-                val resolution = BranchResolver.resolveDiscovery(
+            // Both source and target come from bounded USER evidence. A known
+            // one-off market can be reused from the canonical follow-up resolver;
+            // model branch hints remain incapable of changing it.
+            val resolution = trustedBranch?.let { BranchResolution.Resolved(it) }
+                ?: BranchResolver.resolveDiscovery(
                     userText = normalizedInput,
                     branches = branches,
                     currentBranchId = currentBranchId,
                     obiMarketScope = conversationProvider == OBI_PROVIDER_ID,
                 )
-            ) {
+            return when (resolution) {
                 is BranchResolution.CurrentBranch ->
                     ToolBranchAuthorization.Authorized(
-                        arguments.forResolvedBranch(
+                        effectiveArguments.forResolvedBranch(
                             resolution.branch.branchId,
                         ),
                     )
 
                 is BranchResolution.Resolved ->
                     ToolBranchAuthorization.Authorized(
-                        arguments.forResolvedBranch(
+                        effectiveArguments.forResolvedBranch(
                             resolution.branch.branchId,
                         ),
                     )
@@ -285,7 +296,7 @@ internal class AdvisorController(
                         obiCityWideMarketIds = resolution.candidates.map { it.branchId.value }.toSet()
                         // Identity verification uses one USER-authorized member, deterministically.
                         // The original full scope remains pending for the separate inventory tool.
-                        ToolBranchAuthorization.Authorized(arguments.forResolvedBranch(
+                        ToolBranchAuthorization.Authorized(effectiveArguments.forResolvedBranch(
                             resolution.candidates.minBy { it.branchId.value }.branchId,
                         ))
                     } else if (!resolution.allowsExplicitBranchHint) {
@@ -299,7 +310,7 @@ internal class AdvisorController(
                             }
                         ) {
                             ToolBranchAuthorization.Authorized(
-                                arguments.forResolvedBranch(
+                                effectiveArguments.forResolvedBranch(
                                     hinted.branchId,
                                 ),
                             )
@@ -316,7 +327,7 @@ internal class AdvisorController(
                 // location selection, normalize execution to the saved profile.
                 BranchResolution.NotMentioned ->
                     ToolBranchAuthorization.Authorized(
-                        arguments.forResolvedBranch(currentBranchId),
+                        effectiveArguments.forResolvedBranch(currentBranchId),
                     )
             }
         }
@@ -485,6 +496,23 @@ internal class AdvisorController(
                             responseId = proxyResult.responseId,
                             products = emptyList(), sources = emptyList(),
                             traceId = turnTraceId,
+                        ).also(onState)
+                    }
+                    trustedObiFollowUpId?.let { id ->
+                        val evidence = lastLocationEvidence
+                        val verified = verifiedByKey.values.singleOrNull {
+                            it.providerId == conversationProviderId &&
+                                it.effectiveProductId == id &&
+                                it.effectiveBranchId == trustedObiFollowUpBranch
+                        }
+                        // Ignore potentially inconsistent model prose and refs.
+                        return AdvisorUiState.Success(
+                            text = "OBIK $id. " + (evidence?.let(::renderAdvisorLocationDetails)
+                                ?: renderAdvisorLocalFailure("untrusted_product")),
+                            responseId = proxyResult.responseId,
+                            products = listOfNotNull(verified), sources = emptyList(),
+                            traceId = turnTraceId,
+                            locationReportEvidence = locationReportEvidence.toList(),
                         ).also(onState)
                     }
                     val selectedProducts = proxyResult.productRefs
@@ -750,7 +778,14 @@ internal class AdvisorController(
                                 val resolvedArguments =
                                     authorization.arguments
                                 onState(AdvisorUiState.RunningLocalTool)
-                                when (
+                                val previousVerified = trustedObiFollowUpResult?.takeIf {
+                                    trustedObiFollowUpId != null &&
+                                        trustedObiFollowUpBranch == resolvedArguments.branchId &&
+                                        resolvedArguments.queries.singleOrNull()?.query == trustedObiFollowUpId
+                                }
+                                if (previousVerified != null) {
+                                    previousVerified // Same verified read, new logical tool-call budget still applies.
+                                } else when (
                                     val localResult = safeExecuteTool(
                                         conversationProviderId =
                                             conversationProviderId,
@@ -762,10 +797,14 @@ internal class AdvisorController(
                                         resolvedArguments.queries.singleOrNull()?.query?.trim()
                                             ?.equals(independentQuery, ignoreCase = true) == true
                                     if (finishesIndependentRecovery) {
-                                        // Latest exact USER-query verification replaces a prior
-                                        // recovery refusal without executing another local call.
                                         lastLocationEvidence = independentQueryEvidence(
                                             requireNotNull(independentQuery), resolvedArguments.branchId, localResult,
+                                        )
+                                    } else if (trustedObiFollowUpId != null) {
+                                        val id = requireNotNull(trustedObiFollowUpId)
+                                        trustedObiFollowUpBranch = resolvedArguments.branchId
+                                        lastLocationEvidence = independentQueryEvidence(
+                                            id, resolvedArguments.branchId, localResult,
                                         )
                                     } else localResult.snapshots.forEach {
                                         verifiedByKey[it.key] = it
@@ -785,9 +824,9 @@ internal class AdvisorController(
                                             action,
                                         )
                                     }
-                                    AdvisorToolContinuation.Verified(
-                                        localResult.result,
-                                    )
+                                    AdvisorToolContinuation.Verified(localResult.result).also {
+                                        if (trustedObiFollowUpId != null) trustedObiFollowUpResult = it
+                                    }
                                 }
 
                                     AdvisorToolExecutionResult.UnsupportedStore -> {
