@@ -185,7 +185,8 @@ internal fun resolveAdvisorLocationFollowUp(
     val intervening = userHistory.drop(anchor + 1)
     val explicitRetry = locationRequestPrefix.containsMatchIn(
         normalized(input).replace(Regex("""^(?:dobrze|ok|no|prosze) (?:a )?"""), "").removePrefix("a "),
-    ) || quantityFollowUpLocation(current) != null || advisorHasStockEvidence(input)
+    ) || quantityFollowUpLocation(current) != null || advisorHasStockEvidence(input) ||
+        (providerId == "obi-pl" && shortLocationCandidate(input))
     fun retainsProductReference(text: String): Boolean = advisorNeutralPriceReference(text) ||
         advisorNonInventoryRequest(text) && advisorIsBoundedHistoricalScopeReference(text, branches)
     val boundedReferent = anchor >= 0 && intervening.all { isClarification(it.text) || retainsProductReference(it.text) }
