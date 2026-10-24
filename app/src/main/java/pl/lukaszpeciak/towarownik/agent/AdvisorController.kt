@@ -506,10 +506,16 @@ internal class AdvisorController(
                                 it.effectiveBranchId == trustedObiFollowUpBranch
                         }
                         // Ignore potentially inconsistent model prose and refs.
+                        // A city-wide USER request is not satisfied by the single
+                        // discovery lookup used to seed a multi-market verification.
+                        val partialCity = obiCityWideMarketIds.isNotEmpty() &&
+                            evidence?.checkedIds?.toSet() != obiCityWideMarketIds
+                        val observed = evidence?.let(::renderAdvisorLocationDetails)
+                            ?: renderAdvisorLocalFailure("untrusted_product")
                         return AdvisorUiState.Success(
                             text = lastDiscoveryRejectionReason?.let(::renderAdvisorLocalFailure)
-                                ?: ("OBIK $id. " + (evidence?.let(::renderAdvisorLocationDetails)
-                                    ?: renderAdvisorLocalFailure("untrusted_product"))),
+                                ?: ("OBIK $id. " + observed +
+                                    if (partialCity) "\nNie sprawdziłam jeszcze wszystkich marketów wskazanego miasta." else ""),
                             responseId = proxyResult.responseId,
                             products = if (lastDiscoveryRejectionReason != null || evidence == null)
                                 emptyList() else listOfNotNull(verified),
