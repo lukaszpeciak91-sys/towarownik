@@ -219,7 +219,7 @@ internal class ConversationRepository(
         // Keep non-whitespace control characters sanitized as before.
         val persistedText = text.map { character ->
             if (character.isISOControl() && character != '\n' && character != '\r' && character != '\t') ' ' else character
-        }.joinToString("")
+        }.joinToString("").trim()
         require(persistedText.isNotBlank() || attachments.isNotEmpty())
         require(attachments.size <= 3)
         require(attachments.map { it.localId }.distinct().size == attachments.size)
