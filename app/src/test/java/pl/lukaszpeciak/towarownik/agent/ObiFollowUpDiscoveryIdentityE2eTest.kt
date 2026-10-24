@@ -90,20 +90,25 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
         )
     }
 
-    @Test fun `RED wrong OBIK proposed for inherited Wielicka never reaches provider or final state`() = runBlocking {
+    @Test fun `R2-F1 wrong model OBIK recovers trusted identity and performs one fresh OBI 003 lookup`() = runBlocking {
         val r = execute()
-        assertTrue(r.calls.isEmpty())
-        assertTrue(r.responses.first() is AdvisorToolContinuation.RejectedStore)
-        assertTrue(r.state.products.isEmpty())
-        assertFalse(r.state.text.contains("18 sztuk"))
-        assertTrue(r.state.text.contains("produktu") || r.state.text.contains("produkt"))
+        assertEquals(listOf("obi:6117543@003"), r.calls)
+        val output = r.responses.single() as AdvisorToolContinuation.Verified
+        assertEquals("003", output.result.storeNumber)
+        assertEquals("6117543", output.result.results.single().products.single().obik)
+        assertEquals("6117543", r.state.products.single().effectiveProductId)
+        assertEquals("003", r.state.products.single().effectiveBranchId)
+        assertTrue(r.state.text.contains("6117543"))
+        assertFalse(r.state.text.contains("3496072"))
     }
 
-    @Test fun `RED later correct model retry in same turn cannot hide earlier product swap`() = runBlocking {
+    @Test fun `R2-F5 model retry after safe recovery reuses trusted lookup without another provider read`() = runBlocking {
         val r = execute(secondAttempt = "6117543")
-        assertTrue(r.calls.isEmpty())
-        assertTrue(r.state.products.isEmpty())
-        assertFalse(r.state.text.contains("18 sztuk"))
+        assertEquals(listOf("obi:6117543@003"), r.calls)
+        assertEquals(2, r.responses.size)
+        assertTrue(r.responses.all { it is AdvisorToolContinuation.Verified })
+        assertEquals("6117543", r.state.products.single().effectiveProductId)
+        assertFalse(r.state.text.contains("3496072"))
     }
 
     @Test fun `RED correct inherited OBIK is freshly checked in requested market`() = runBlocking {
@@ -123,16 +128,66 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
         assertFalse(r.state.text.contains("18 sztuk"))
     }
 
-    @Test fun `bounded historical same-product and bare market followups reject wrong model OBIK`() = runBlocking {
+    @Test fun `R2-F2 natural single-market followup variants recover the correct historical OBIK`() = runBlocking {
         for (question in listOf(
+            "Ile tego jest na Wielickiej w Krakowie?",
             "a na Wielickiej?",
+            "a w OBI 003?",
             "Sprawdź stan tego samego produktu w OBI 003",
             "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
         )) {
             val r = execute(user = question)
-            assertTrue(question, r.calls.isEmpty())
-            assertTrue(question, r.state.products.isEmpty())
-            assertFalse(question, r.state.text.contains("18 sztuk"))
+            assertEquals(question, listOf("obi:6117543@003"), r.calls)
+            assertEquals(question, "6117543", r.state.products.single().effectiveProductId)
+            assertEquals(question, "003", r.state.products.single().effectiveBranchId)
+            assertFalse(question, r.state.text.contains("3496072"))
+        }
+    }
+
+    @Test fun `R2-F3 intervening bounded price question retains product identity but not old stock`() = runBlocking {
+        val withPrice = history() + listOf(
+            AdvisorLocationHistoryMessage("USER", "Cena tego samego produktu?"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "Cena wymaga osobnej aktualnej weryfikacji."),
+        )
+        val r = execute(history = withPrice)
+        assertEquals(listOf("obi:6117543@003"), r.calls)
+        assertEquals("6117543", r.state.products.single().effectiveProductId)
+        assertEquals(18, r.state.products.single().stock)
+    }
+
+    @Test fun `R2-F5 ambiguous history missing provider trust or broken referent never reads model OBIK`() = runBlocking {
+        val cases = listOf(
+            Pair(listOf(
+                AdvisorLocationHistoryMessage("USER", "sprawdź oba OBIK 3496072 i 6117543"),
+                AdvisorLocationHistoryMessage("ASSISTANT", "Oba zweryfikowane", listOf(card("3496072"), card("6117543"))),
+            ), listOf(card("3496072"), card("6117543"))),
+            Pair(listOf(
+                AdvisorLocationHistoryMessage("USER", "mamy 6117543 na stanie?"),
+                AdvisorLocationHistoryMessage("ASSISTANT", "Nie udało się sprawdzić"),
+            ), emptyList()),
+            Pair(listOf(
+                AdvisorLocationHistoryMessage("USER", "mamy 6117543 na stanie?"),
+                AdvisorLocationHistoryMessage("ASSISTANT", "inny provider",
+                    listOf(card("6117543").copy(providerId = "kwant-pl"))),
+            ), listOf(card("6117543").copy(providerId = "kwant-pl"))),
+            Pair(history() + listOf(
+                AdvisorLocationHistoryMessage("USER", "jaki mamy dziś plan urlopów?"),
+                AdvisorLocationHistoryMessage("ASSISTANT", "Nie sprawdzono żadnego produktu"),
+            ), listOf(card("3496072"), card("6117543"))),
+        )
+        for ((previous, products) in cases) {
+            val r = execute(history = previous, cards = products)
+            assertTrue(previous.toString(), r.calls.isEmpty())
+            assertTrue(r.state.products.isEmpty())
+            assertFalse(r.state.text.contains("18 sztuk"))
+        }
+    }
+
+    @Test fun `R2-F5 conflicting or unknown market never falls back to active profile`() = runBlocking {
+        for (q in listOf("a ile mają w OBI 075 na Wielickiej?", "a ile mają w OBI 999?")) {
+            val r = execute(user = q)
+            assertTrue(q, r.calls.isEmpty())
+            assertTrue(q, r.state.products.isEmpty())
         }
     }
 
