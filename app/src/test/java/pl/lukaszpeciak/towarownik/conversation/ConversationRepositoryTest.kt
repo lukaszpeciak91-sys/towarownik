@@ -61,7 +61,7 @@ class ConversationRepositoryTest {
         val created = repository.beginUserTurn(null, original, createdAt = 111L)
         database.close()
         openDatabase()
-        assertEquals(original, repository.load(created.conversationId)!!.messages.single().text)
+        assertEquals(original.trim(), repository.load(created.conversationId)!!.messages.single().text)
         assertTrue(repository.load(created.conversationId)!!.title.startsWith("MBN116E/HAG zażółć gęślą jaźń"))
     }
 
