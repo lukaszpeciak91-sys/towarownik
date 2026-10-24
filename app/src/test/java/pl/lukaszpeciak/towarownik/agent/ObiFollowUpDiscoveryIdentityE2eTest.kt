@@ -222,6 +222,20 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
         }
     }
 
+    @Test fun `R2-F4 inventory location tool cannot turn explicit new USER OBIK into old model OBIK`() {
+        val userText = "Sprawdź stan OBIK 3496072 w OBI 003"
+        val proposed = AdvisorLocationArguments("obi-pl", "6117543", listOf("003"))
+        val authorized = AdvisorInventoryAuthorizer.resolve(
+            proposed, "obi-pl", "075", userText,
+            currentVerified = listOf(card("3496072")),
+            historicalVerified = listOf(card("6117543")),
+            directory = directory,
+            history = history(),
+        )
+        assertFalse(authorized is AdvisorInventoryAuthorization.Inventory)
+        assertEquals("untrusted_product", (authorized as AdvisorInventoryAuthorization.Denied).reason)
+    }
+
     @Test fun `new explicit user OBIK overrides old selection and wrong provider is still denied`() = runBlocking {
         val fresh = execute(user = "Mamy 3496072 na stanie?", proposed = "3496072")
         assertEquals(listOf("obi:3496072@075"), fresh.calls)
