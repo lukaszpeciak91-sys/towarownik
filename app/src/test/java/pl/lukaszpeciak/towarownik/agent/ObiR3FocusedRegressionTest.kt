@@ -142,6 +142,8 @@ class ObiR3FocusedRegressionTest {
         grouped: Boolean,
         misleadingFinal: Boolean = false,
         secondIndependentNumeric: Boolean = false,
+        thirdOriginalRetry: Boolean = false,
+        userInput: String = "Sprawdź stan OBIK 6117543 i znajdź czarne opaski zaciskowe.",
     ): Triple<AdvisorUiState.Success, List<List<String>>, List<AdvisorToolContinuation>> {
         val name = "czarne opaski zaciskowe"
         val modelCalls = if (grouped) listOf(
@@ -149,7 +151,7 @@ class ObiR3FocusedRegressionTest {
         ) else listOf(
             listOf(AdvisorToolQuery("6117543", 1)),
             listOf(AdvisorToolQuery(if (secondIndependentNumeric) "7001001" else name, 2)),
-        )
+        ) + if (thirdOriginalRetry) listOf(listOf(AdvisorToolQuery("6117543", 1))) else emptyList()
         val reads = mutableListOf<List<String>>()
         val continuations = mutableListOf<AdvisorToolContinuation>()
         var next = 0
@@ -194,7 +196,7 @@ class ObiR3FocusedRegressionTest {
             branchDirectory = { ProviderBranchResult.Available(branches) },
         )
         val result = controller.runTurn(
-            "Sprawdź stan OBIK 6117543 i znajdź czarne opaski zaciskowe.",
+            userInput,
             "previous", "075", "obi-pl",
         ) {} as AdvisorUiState.Success
         return Triple(result, reads, continuations)
@@ -235,6 +237,31 @@ class ObiR3FocusedRegressionTest {
         assertEquals(setOf("6117543", "7001001"),
             outcome.products.map { it.effectiveProductId }.toSet())
         assertTrue(outcome.text.contains("opaski"))
+    }
+
+    @Test fun `R4_1 other numeric lookup does not corrupt the cached original OBIK`() = runBlocking {
+        val (outcome, reads, continuations) = r4TwoQueryScenario(
+            grouped = false, secondIndependentNumeric = true, thirdOriginalRetry = true,
+        )
+        assertEquals(listOf(listOf("6117543"), listOf("7001001")), reads)
+        assertEquals(3, continuations.size)
+        assertTrue(continuations.all { it is AdvisorToolContinuation.Verified })
+        assertEquals(
+            listOf("6117543", "7001001", "6117543"),
+            continuations.map { (it as AdvisorToolContinuation.Verified).result.results.single().query },
+        )
+        assertEquals(setOf("6117543", "7001001"), outcome.products.map { it.effectiveProductId }.toSet())
+    }
+
+    @Test fun `R4_1 single-product USER turn must not authorize an unrelated later numeric lookup`() = runBlocking {
+        val (outcome, reads, continuations) = r4TwoQueryScenario(
+            grouped = false, secondIndependentNumeric = true,
+            userInput = "Sprawdź stan OBIK 6117543",
+        )
+        assertEquals(listOf(listOf("6117543")), reads)
+        assertEquals(2, continuations.size)
+        assertEquals(setOf("6117543"), outcome.products.map { it.effectiveProductId }.toSet())
+        assertFalse(outcome.text.contains("7001001"))
     }
 
     @Test fun `R4-P2 grouped wrong OBIK is corrected in unique numeric slot without erasing independent name search`() = runBlocking {
