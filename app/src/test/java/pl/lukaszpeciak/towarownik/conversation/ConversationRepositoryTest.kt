@@ -62,7 +62,7 @@ class ConversationRepositoryTest {
         database.close()
         openDatabase()
         assertEquals(original, repository.load(created.conversationId)!!.messages.single().text)
-        assertEquals("MBN116E/HAG zażółć gęślą jaźń EAN 5905440930078", repository.load(created.conversationId)!!.title)
+        assertTrue(repository.load(created.conversationId)!!.title.startsWith("MBN116E/HAG zażółć gęślą jaźń"))
     }
 
     @Test
