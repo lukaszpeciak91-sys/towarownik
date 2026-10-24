@@ -190,6 +190,7 @@ internal class AdvisorController(
         var trustedObiFollowUpId: String? = null
         var trustedObiFollowUpBranch: String? = null
         var trustedObiFollowUpResult: AdvisorToolContinuation.Verified? = null
+        var independentObiDiscoveryObserved = false
 
         suspend fun authorizeToolArguments(
             arguments: AdvisorToolArguments,
@@ -225,16 +226,27 @@ internal class AdvisorController(
             val explicitStockIntent = advisorHasStockEvidence(normalizedInput) ||
                 Regex("""\b(?:mamy|jest|sa)\b.*\bna stanie\b""")
                     .containsMatchIn(advisorAuthorityText(normalizedInput))
-            if (explicitObiProduct != null && explicitStockIntent &&
-                arguments.queries.size == 1
-            ) {
-                // Correct a single model-proposed OBIK. A grouped plan can
-                // contain OTHER independent USER searches; never erase those
-                // queries or replace their result with one product card.
-                trustedObiFollowUpId = explicitObiProduct
-                effectiveArguments = arguments.copy(
-                    queries = listOf(AdvisorToolQuery(explicitObiProduct, 1)),
-                )
+            if (explicitObiProduct != null && explicitStockIntent) {
+                // Correct only one unambiguous exact-OBIK query slot. Other
+                // grouped queries (e.g. a separate product-name search) are
+                // never rewritten or dropped, and later tool calls remain
+                // independent of this single-query correction.
+                val numericSlots = arguments.queries.withIndex().filter {
+                    it.value.query.trim().matches(Regex("""[0-9]{7}"""))
+                }
+                if (numericSlots.size > 1) {
+                    return ToolBranchAuthorization.Rejected("ambiguous_product")
+                }
+                if (numericSlots.size == 1) {
+                    val targetIndex = numericSlots.single().index
+                    effectiveArguments = arguments.copy(
+                        queries = arguments.queries.mapIndexed { index, query ->
+                            if (index == targetIndex) AdvisorToolQuery(explicitObiProduct, 1)
+                            else query
+                        },
+                    )
+                    if (arguments.queries.size == 1) trustedObiFollowUpId = explicitObiProduct
+                }
             }
             if (conversationProvider == OBI_PROVIDER_ID &&
                 !advisorHasCurrentProductEvidence(normalizedInput)
@@ -517,7 +529,7 @@ internal class AdvisorController(
                             traceId = turnTraceId,
                         ).also(onState)
                     }
-                    trustedObiFollowUpId?.let { id ->
+                    trustedObiFollowUpId?.takeUnless { independentObiDiscoveryObserved }?.let { id ->
                         val evidence = lastLocationEvidence
                         val verified = verifiedByKey.values.singleOrNull {
                             it.providerId == conversationProviderId &&
@@ -837,14 +849,21 @@ internal class AdvisorController(
                                         lastLocationEvidence = independentQueryEvidence(
                                             requireNotNull(independentQuery), resolvedArguments.branchId, localResult,
                                         )
-                                    } else if (trustedObiFollowUpId != null) {
+                                    } else if (trustedObiFollowUpId != null &&
+                                        resolvedArguments.queries.singleOrNull()?.query == trustedObiFollowUpId
+                                    ) {
                                         val id = requireNotNull(trustedObiFollowUpId)
                                         trustedObiFollowUpBranch = resolvedArguments.branchId
                                         lastLocationEvidence = independentQueryEvidence(
                                             id, resolvedArguments.branchId, localResult,
                                         )
-                                    } else localResult.snapshots.forEach {
-                                        verifiedByKey[it.key] = it
+                                    } else {
+                                        // A separate tool call or a grouped
+                                        // search must keep its own fresh cards.
+                                        if (conversationProvider == OBI_PROVIDER_ID) {
+                                            independentObiDiscoveryObserved = true
+                                        }
+                                        localResult.snapshots.forEach { verifiedByKey[it.key] = it }
                                     }
                                     localResult.searchActions.forEach { action ->
                                         val key = buildString {
