@@ -217,6 +217,23 @@ internal class AdvisorController(
             // An explicit current USER product always stays an independent search.
             var trustedBranch: ProviderBranch? = null
             var effectiveArguments = arguments
+            val explicitObiProduct = if (conversationProvider == OBI_PROVIDER_ID) {
+                advisorUserProductEvidence(normalizedInput)
+                    .filter { it.matches(Regex("""[0-9]{7,14}""")) }
+                    .singleOrNull()
+            } else null
+            val explicitStockIntent = advisorHasStockEvidence(normalizedInput) ||
+                advisorBareProductQuery(normalizedInput, conversationProviderId) == explicitObiProduct ||
+                Regex("""\b(?:mamy|jest|sa)\b.*\bna stanie\b""")
+                    .containsMatchIn(advisorAuthorityText(normalizedInput))
+            if (explicitObiProduct != null && explicitStockIntent) {
+                // A new current USER OBIK/EAN supersedes all history, even when
+                // the model erroneously proposes a previous product identifier.
+                trustedObiFollowUpId = explicitObiProduct
+                effectiveArguments = arguments.copy(
+                    queries = listOf(AdvisorToolQuery(explicitObiProduct, 1)),
+                )
+            }
             if (conversationProvider == OBI_PROVIDER_ID &&
                 !advisorHasCurrentProductEvidence(normalizedInput)
             ) {
