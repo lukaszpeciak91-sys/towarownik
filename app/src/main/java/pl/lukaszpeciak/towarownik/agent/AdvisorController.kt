@@ -191,6 +191,7 @@ internal class AdvisorController(
         var trustedObiFollowUpBranch: String? = null
         var trustedObiFollowUpResult: AdvisorToolContinuation.Verified? = null
         var independentObiDiscoveryObserved = false
+        val correctedGroupedModelObiks = mutableSetOf<String>()
 
         suspend fun authorizeToolArguments(
             arguments: AdvisorToolArguments,
@@ -245,7 +246,11 @@ internal class AdvisorController(
                             else query
                         },
                     )
-                    if (arguments.queries.size == 1) trustedObiFollowUpId = explicitObiProduct
+                    if (arguments.queries.size == 1) {
+                        trustedObiFollowUpId = explicitObiProduct
+                    } else if (numericSlots.single().value.query.trim() != explicitObiProduct) {
+                        correctedGroupedModelObiks += numericSlots.single().value.query.trim()
+                    }
                 }
             }
             if (conversationProvider == OBI_PROVIDER_ID &&
@@ -555,12 +560,33 @@ internal class AdvisorController(
                             locationReportEvidence = locationReportEvidence.toList(),
                         ).also(onState)
                     }
-                    val selectedProducts = proxyResult.productRefs
+                    val selectedProducts = if (correctedGroupedModelObiks.isNotEmpty()) {
+                        // A corrected grouped model plan may carry stale product
+                        // refs. Only current-turn provider-verified cards can be
+                        // displayed; keep OTHER independent grouped products.
+                        verifiedByKey.values.filter { it.providerId == conversationProviderId }
+                            .take(MAX_TOOL_PRODUCTS)
+                    } else proxyResult.productRefs
                         .distinctBy { it.key }
                         .mapNotNull { reference ->
                             verifiedByKey[reference.key]
                         }
                         .take(MAX_TOOL_PRODUCTS)
+                    val misleadingGroupedModelText = correctedGroupedModelObiks.any { badId ->
+                        Regex("""(?<![0-9])${Regex.escape(badId)}(?![0-9])""")
+                            .containsMatchIn(proxyResult.text)
+                    }
+                    val safeAnswerText = if (misleadingGroupedModelText) {
+                        // A corrected model OBIK must not reappear in prose as
+                        // another product's stock. Report only fresh local facts.
+                        selectedProducts.joinToString(
+                            separator = "\n",
+                            prefix = "Bieżące zweryfikowane wyniki:\n",
+                        ) { product ->
+                            "${product.name} (OBIK ${product.effectiveProductId}, OBI ${product.effectiveBranchId}): " +
+                                (product.stock?.let { "${it} szt." } ?: "stan niepotwierdzony")
+                        }.ifBlank { renderAdvisorLocalFailure("untrusted_product") }
+                    } else proxyResult.text
                     val identityOnlyCityWide = obiCityWideMarketIds.isNotEmpty() &&
                         lastLocationEvidence == null && lastDiscoveryRejectionReason == null
                     val requestedIds = AdvisorProductIdentityReferences.fromUserText(normalizedInput).referencedNumericIds
@@ -579,12 +605,12 @@ internal class AdvisorController(
                     } == true || lastDiscoveryRejectionReason != null && lastLocationEvidence == null ||
                         obiCityWideMarketIds.isNotEmpty() || recoveredIndependentQuery
                     return AdvisorUiState.Success(
-                        text = if (authoritativeLocalText) completeLocationList else if (completeLocationList.isBlank()) proxyResult.text else {
-                            proxyResult.text + "\n\n" + completeLocationList
+                        text = if (authoritativeLocalText) completeLocationList else if (completeLocationList.isBlank()) safeAnswerText else {
+                            safeAnswerText + "\n\n" + completeLocationList
                         },
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
-                        sources = if (authoritativeLocalText) emptyList() else proxyResult.sources,
+                        sources = if (authoritativeLocalText || misleadingGroupedModelText) emptyList() else proxyResult.sources,
                         searchActions = searchActionsByKey.values.toList(),
                         traceId = turnTraceId,
                         locationReportEvidence = locationReportEvidence.toList(),
