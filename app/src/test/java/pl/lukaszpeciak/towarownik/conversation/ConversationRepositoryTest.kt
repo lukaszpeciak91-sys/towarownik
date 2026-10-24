@@ -54,6 +54,33 @@ class ConversationRepositoryTest {
         context.filesDir.resolve("advisor_attachments").deleteRecursively()
     }
 
+
+    @Test
+    fun userMultilineUnicodeAndProductCodeSurviveReopening() = runBlocking {
+        val original = "  MBN116E/HAG  \n  zażółć gęślą jaźń\tEAN 5905440930078  \n"
+        val created = repository.beginUserTurn(null, original, createdAt = 111L)
+        database.close()
+        openDatabase()
+        assertEquals(original, repository.load(created.conversationId)!!.messages.single().text)
+        assertEquals("MBN116E/HAG zażółć gęślą jaźń EAN 5905440930078", repository.load(created.conversationId)!!.title)
+    }
+
+    @Test
+    fun historySummaryKeepsPersistedBranchWhenOtherProfileIsUsed() = runBlocking {
+        val obi = WorkingProfile(OBI_PROVIDER_ID, BranchId("059"))
+        val kwant = WorkingProfile(KWANT_PROVIDER_ID, BranchId("205"))
+        val first = repository.beginUserTurn(null, "OBI product", createdAt = 200L, workingProfile = obi)
+        val second = repository.beginUserTurn(null, "KWANT product", createdAt = 300L, workingProfile = kwant)
+        val list = repository.observeConversations("").first().associateBy { it.id }
+        assertEquals(obi, list[first.conversationId]!!.workingProfile)
+        assertEquals(kwant, list[second.conversationId]!!.workingProfile)
+        database.close()
+        openDatabase()
+        val reopened = repository.observeConversations("").first().associateBy { it.id }
+        assertEquals(obi, reopened[first.conversationId]!!.workingProfile)
+        assertEquals(kwant, reopened[second.conversationId]!!.workingProfile)
+    }
+
     @Test
     fun mixedTextPdfImagePersistsInOrderAfterRestartAndBadTextFailsSoft() = runBlocking {
         val image = attachmentStorage.importValidated(
