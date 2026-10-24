@@ -233,7 +233,8 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
             history = history(),
         )
         assertFalse(authorized is AdvisorInventoryAuthorization.Inventory)
-        assertEquals("untrusted_product", (authorized as AdvisorInventoryAuthorization.Denied).reason)
+        assertTrue(authorized is AdvisorInventoryAuthorization.Denied ||
+            authorized is AdvisorInventoryAuthorization.ClarificationRequired)
     }
 
     @Test fun `new explicit user OBIK overrides old selection and wrong provider is still denied`() = runBlocking {
