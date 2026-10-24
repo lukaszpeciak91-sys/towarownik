@@ -137,4 +137,87 @@ class ObiR3FocusedRegressionTest {
         assertFalse(outcome.text.contains("019 —"))
         assertFalse(outcome.text.contains("Nie mogę sprawdzić produktu."))
     }
+
+    private suspend fun r4TwoQueryScenario(grouped: Boolean): Triple<AdvisorUiState.Success, List<List<String>>, List<AdvisorToolContinuation>> {
+        val name = "czarne opaski zaciskowe"
+        val modelCalls = if (grouped) listOf(
+            listOf(AdvisorToolQuery("3496072", 1), AdvisorToolQuery(name, 2)),
+        ) else listOf(
+            listOf(AdvisorToolQuery("6117543", 1)),
+            listOf(AdvisorToolQuery(name, 2)),
+        )
+        val reads = mutableListOf<List<String>>()
+        val continuations = mutableListOf<AdvisorToolContinuation>()
+        var next = 0
+        fun tool(queries: List<AdvisorToolQuery>) = AdvisorProxyCallResult.Success(
+            AdvisorProxyResult.ToolRequest(
+                "resp_${next}", "call_${next}",
+                AdvisorToolArguments("075", queries, "obi-pl"),
+            ),
+        )
+        val controller = AdvisorController(
+            isConfigured = { true },
+            startAgent = { _, _, _ -> error("expected MESSAGE") },
+            messageAgent = { _, _, _, _ -> tool(modelCalls[next++]) },
+            continueAgent = { _, _, _, _, _, result ->
+                continuations += result
+                if (next < modelCalls.size) tool(modelCalls[next++])
+                else AdvisorProxyCallResult.Success(AdvisorProxyResult.Answer(
+                    "final",
+                    "Zweryfikowałam stan 6117543 i znalazłam czarne opaski zaciskowe.",
+                    listOf(
+                        AdvisorProductRef("075", "6117543", "obi-pl"),
+                        AdvisorProductRef("075", "7001001", "obi-pl"),
+                    ),
+                ))
+            },
+            executeObiTool = { args ->
+                reads += args.queries.map { it.query }
+                val results = args.queries.map { query ->
+                    val id = if (query.query == name) "7001001" else query.query
+                    AdvisorVerifiedQueryResult(
+                        query.query, AdvisorQueryResultStatus.VERIFIED,
+                        listOf(AdvisorVerifiedProduct(id, "Synthetic ${id}", 18, price = BigDecimal.ONE)),
+                    )
+                }
+                AdvisorToolExecutionResult.Success(
+                    AdvisorVerifiedToolResult(args.branchId, results),
+                    results.flatMap { it.products }.map { snapshot(it.obik, args.branchId) },
+                )
+            },
+            executeProviderTool = { error("OBI provider isolation") },
+            branchDirectory = { ProviderBranchResult.Available(branches) },
+        )
+        val result = controller.runTurn(
+            "Sprawdź stan OBIK 6117543 i znajdź czarne opaski zaciskowe.",
+            "previous", "075", "obi-pl",
+        ) {} as AdvisorUiState.Success
+        return Triple(result, reads, continuations)
+    }
+
+    @Test fun `R4-P1 two successive independent OBI tool calls retain both identities and UI cards`() = runBlocking {
+        val (outcome, reads, continuations) = r4TwoQueryScenario(grouped = false)
+        assertEquals(listOf(listOf("6117543"), listOf("czarne opaski zaciskowe")), reads)
+        assertEquals(2, continuations.size)
+        assertTrue(continuations.all { it is AdvisorToolContinuation.Verified })
+        assertEquals(
+            listOf("6117543", "czarne opaski zaciskowe"),
+            continuations.map { (it as AdvisorToolContinuation.Verified).result.results.single().query },
+        )
+        assertEquals(setOf("6117543", "7001001"), outcome.products.map { it.effectiveProductId }.toSet())
+        assertTrue(outcome.text.contains("opaski"))
+        assertTrue(outcome.text.contains("6117543"))
+    }
+
+    @Test fun `R4-P2 grouped wrong OBIK is corrected in unique numeric slot without erasing independent name search`() = runBlocking {
+        val (outcome, reads, continuations) = r4TwoQueryScenario(grouped = true)
+        assertEquals(listOf(listOf("6117543", "czarne opaski zaciskowe")), reads)
+        val verified = continuations.single() as AdvisorToolContinuation.Verified
+        assertEquals(listOf("6117543", "czarne opaski zaciskowe"),
+            verified.result.results.map { it.query })
+        assertEquals(setOf("6117543", "7001001"), outcome.products.map { it.effectiveProductId }.toSet())
+        assertTrue(outcome.text.contains("opaski"))
+        assertTrue(outcome.text.contains("6117543"))
+        assertFalse(outcome.text.contains("3496072"))
+    }
 }
