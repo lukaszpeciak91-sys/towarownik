@@ -225,6 +225,13 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
     @Test fun `new explicit user OBIK overrides old selection and wrong provider is still denied`() = runBlocking {
         val fresh = execute(user = "Mamy 3496072 na stanie?", proposed = "3496072")
         assertEquals(listOf("obi:3496072@075"), fresh.calls)
+        val wrongModelForNewUserId = execute(
+            user = "Sprawdź stan OBIK 3496072 w OBI 003", proposed = "6117543",
+        )
+        assertEquals(listOf("obi:3496072@003"), wrongModelForNewUserId.calls)
+        assertEquals("3496072", wrongModelForNewUserId.state.products.single().effectiveProductId)
+        assertEquals("003", wrongModelForNewUserId.state.products.single().effectiveBranchId)
+        assertFalse(wrongModelForNewUserId.state.text.contains("6117543"))
         val crossProvider = execute(proposed = "6117543", provider = "kwant-pl")
         assertTrue(crossProvider.calls.isEmpty())
         assertTrue(crossProvider.state.products.isEmpty())
