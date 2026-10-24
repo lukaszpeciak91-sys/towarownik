@@ -183,6 +183,37 @@ class ObiFollowUpDiscoveryIdentityE2eTest {
         }
     }
 
+    @Test fun `R2-F2 deictic market needs explicit bounded USER market selection`() = runBlocking {
+        val withoutSelectedMarket = execute(user = "ile tego mają w tym markecie?")
+        assertTrue(withoutSelectedMarket.calls.isEmpty())
+        assertTrue(withoutSelectedMarket.state.products.isEmpty())
+
+        val selectedMarketHistory = history() + listOf(
+            AdvisorLocationHistoryMessage("USER", "a w OBI 003?"),
+            AdvisorLocationHistoryMessage("ASSISTANT", "6117543: świeżo zweryfikowane w OBI 003",
+                listOf(card("6117543", "003"))),
+        )
+        val withSelection = execute(
+            user = "ile tego mają w tym markecie?",
+            history = selectedMarketHistory,
+            cards = listOf(card("3496072"), card("6117543"), card("6117543", "003")),
+        )
+        assertEquals(listOf("obi:6117543@003"), withSelection.calls)
+        assertEquals("6117543", withSelection.state.products.single().effectiveProductId)
+    }
+
+    @Test fun `R2-F6 one-off market switching 003 to 019 to 003 stays USER-authorized`() = runBlocking {
+        for ((q, branch) in listOf(
+            "a w OBI 003?" to "003",
+            "a w OBI 019?" to "019",
+            "a na Wielickiej?" to "003",
+        )) {
+            val r = execute(user = q, proposed = "3496072")
+            assertEquals(q, listOf("obi:6117543@$branch"), r.calls)
+            assertEquals(q, branch, r.state.products.single().effectiveBranchId)
+        }
+    }
+
     @Test fun `R2-F5 conflicting or unknown market never falls back to active profile`() = runBlocking {
         for (q in listOf("a ile mają w OBI 075 na Wielickiej?", "a ile mają w OBI 999?")) {
             val r = execute(user = q)
