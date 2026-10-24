@@ -138,7 +138,10 @@ class ObiR3FocusedRegressionTest {
         assertFalse(outcome.text.contains("Nie mogę sprawdzić produktu."))
     }
 
-    private suspend fun r4TwoQueryScenario(grouped: Boolean): Triple<AdvisorUiState.Success, List<List<String>>, List<AdvisorToolContinuation>> {
+    private suspend fun r4TwoQueryScenario(
+        grouped: Boolean,
+        misleadingFinal: Boolean = false,
+    ): Triple<AdvisorUiState.Success, List<List<String>>, List<AdvisorToolContinuation>> {
         val name = "czarne opaski zaciskowe"
         val modelCalls = if (grouped) listOf(
             listOf(AdvisorToolQuery("3496072", 1), AdvisorToolQuery(name, 2)),
@@ -164,9 +167,10 @@ class ObiR3FocusedRegressionTest {
                 if (next < modelCalls.size) tool(modelCalls[next++])
                 else AdvisorProxyCallResult.Success(AdvisorProxyResult.Answer(
                     "final",
-                    "Zweryfikowałam stan 6117543 i znalazłam czarne opaski zaciskowe.",
+                    if (misleadingFinal) "Produkt 3496072 ma 18 sztuk; znaleziono też opaski."
+                    else "Zweryfikowałam stan 6117543 i znalazłam czarne opaski zaciskowe.",
                     listOf(
-                        AdvisorProductRef("075", "6117543", "obi-pl"),
+                        AdvisorProductRef("075", if (misleadingFinal) "3496072" else "6117543", "obi-pl"),
                         AdvisorProductRef("075", "7001001", "obi-pl"),
                     ),
                 ))
@@ -207,6 +211,15 @@ class ObiR3FocusedRegressionTest {
         assertEquals(setOf("6117543", "7001001"), outcome.products.map { it.effectiveProductId }.toSet())
         assertTrue(outcome.text.contains("opaski"))
         assertTrue(outcome.text.contains("6117543"))
+    }
+
+    @Test fun `R4-P2 model final must not reintroduce wrong OBIK after safe grouped correction`() = runBlocking {
+        val (outcome, reads, _) = r4TwoQueryScenario(grouped = true, misleadingFinal = true)
+        assertEquals(listOf(listOf("6117543", "czarne opaski zaciskowe")), reads)
+        assertEquals(setOf("6117543", "7001001"), outcome.products.map { it.effectiveProductId }.toSet())
+        assertFalse(outcome.text.contains("3496072"))
+        assertTrue(outcome.text.contains("6117543"))
+        assertTrue(outcome.text.contains("7001001") || outcome.text.contains("opaski"))
     }
 
     @Test fun `R4-P2 grouped wrong OBIK is corrected in unique numeric slot without erasing independent name search`() = runBlocking {
