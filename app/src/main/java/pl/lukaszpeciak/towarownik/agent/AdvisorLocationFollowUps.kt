@@ -187,8 +187,16 @@ internal fun resolveAdvisorLocationFollowUp(
         normalized(input).replace(Regex("""^(?:dobrze|ok|no|prosze) (?:a )?"""), "").removePrefix("a "),
     ) || quantityFollowUpLocation(current) != null || advisorHasStockEvidence(input) ||
         (providerId == "obi-pl" && shortLocationCandidate(input))
-    fun retainsProductReference(text: String): Boolean = advisorNeutralPriceReference(text) ||
-        advisorNonInventoryRequest(text) && advisorIsBoundedHistoricalScopeReference(text, branches)
+    fun retainsProductReference(text: String): Boolean {
+        // OBI: "Cena tego samego produktu?" retains a USER-owned referent.
+        // Generic "pokaż ceny" does not establish which product it means and
+        // must not revive an earlier stock request. KWANT behavior is unchanged.
+        val neutralPrice = advisorNeutralPriceReference(text) &&
+            (providerId != "obi-pl" || Regex("""\btego(?: samego)? produktu\b""")
+                .containsMatchIn(normalized(text)))
+        return neutralPrice || advisorNonInventoryRequest(text) &&
+            advisorIsBoundedHistoricalScopeReference(text, branches)
+    }
     val boundedReferent = anchor >= 0 && intervening.all { isClarification(it.text) || retainsProductReference(it.text) }
     val continuation = anchor >= 0 && (intervening.all { isClarification(it.text) } ||
         explicitRetry && intervening.all { isClarification(it.text) || retainsProductReference(it.text) })
