@@ -690,7 +690,7 @@ internal class AdvisorController(
                         trustedObiFollowUpId != null && evidence.status == "rejected" &&
                         lastLocationEvidence?.status == "verified" &&
                         lastLocationEvidence?.productId == trustedObiFollowUpId &&
-                        lastLocationEvidence?.checkedIds?.contains(trustedObiFollowUpBranch) == true
+                        lastLocationEvidence?.checkedIds?.any { it == trustedObiFollowUpBranch } == true
                     if (!preserveVerifiedObi) lastLocationEvidence = evidence
                     runCatching { onDiagnosticEvent(SafeDiagnosticEvent(
                         DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
