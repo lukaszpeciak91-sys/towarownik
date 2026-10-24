@@ -507,10 +507,13 @@ internal class AdvisorController(
                         }
                         // Ignore potentially inconsistent model prose and refs.
                         return AdvisorUiState.Success(
-                            text = "OBIK $id. " + (evidence?.let(::renderAdvisorLocationDetails)
-                                ?: renderAdvisorLocalFailure("untrusted_product")),
+                            text = lastDiscoveryRejectionReason?.let(::renderAdvisorLocalFailure)
+                                ?: ("OBIK $id. " + (evidence?.let(::renderAdvisorLocationDetails)
+                                    ?: renderAdvisorLocalFailure("untrusted_product"))),
                             responseId = proxyResult.responseId,
-                            products = listOfNotNull(verified), sources = emptyList(),
+                            products = if (lastDiscoveryRejectionReason != null || evidence == null)
+                                emptyList() else listOfNotNull(verified),
+                            sources = emptyList(),
                             traceId = turnTraceId,
                             locationReportEvidence = locationReportEvidence.toList(),
                         ).also(onState)
