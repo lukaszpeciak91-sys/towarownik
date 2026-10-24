@@ -219,15 +219,14 @@ internal class AdvisorController(
             var effectiveArguments = arguments
             val explicitObiProduct = if (conversationProvider == OBI_PROVIDER_ID) {
                 advisorUserProductEvidence(normalizedInput)
-                    .filter { it.matches(Regex("""[0-9]{7,14}""")) }
+                    .filter { it.matches(Regex("""[0-9]{7}""")) }
                     .singleOrNull()
             } else null
             val explicitStockIntent = advisorHasStockEvidence(normalizedInput) ||
-                advisorBareProductQuery(normalizedInput, conversationProviderId) == explicitObiProduct ||
                 Regex("""\b(?:mamy|jest|sa)\b.*\bna stanie\b""")
                     .containsMatchIn(advisorAuthorityText(normalizedInput))
             if (explicitObiProduct != null && explicitStockIntent) {
-                // A new current USER OBIK/EAN supersedes all history, even when
+                // A new current USER exact OBIK supersedes all history, even when
                 // the model erroneously proposes a previous product identifier.
                 trustedObiFollowUpId = explicitObiProduct
                 effectiveArguments = arguments.copy(
