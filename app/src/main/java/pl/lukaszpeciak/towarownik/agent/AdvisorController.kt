@@ -225,9 +225,12 @@ internal class AdvisorController(
             val explicitStockIntent = advisorHasStockEvidence(normalizedInput) ||
                 Regex("""\b(?:mamy|jest|sa)\b.*\bna stanie\b""")
                     .containsMatchIn(advisorAuthorityText(normalizedInput))
-            if (explicitObiProduct != null && explicitStockIntent) {
-                // A new current USER exact OBIK supersedes all history, even when
-                // the model erroneously proposes a previous product identifier.
+            if (explicitObiProduct != null && explicitStockIntent &&
+                arguments.queries.size == 1
+            ) {
+                // Correct a single model-proposed OBIK. A grouped plan can
+                // contain OTHER independent USER searches; never erase those
+                // queries or replace their result with one product card.
                 trustedObiFollowUpId = explicitObiProduct
                 effectiveArguments = arguments.copy(
                     queries = listOf(AdvisorToolQuery(explicitObiProduct, 1)),
@@ -679,7 +682,16 @@ internal class AdvisorController(
                     ) {
                         deterministicLocationOutcomes[repeatKey] = evidence
                     }
-                    lastLocationEvidence = evidence
+                    // An invalid later location-tool request must not erase
+                    // already VERIFIED stock from ordinary OBI discovery.
+                    // Keep its denied continuation/diagnostics; any USER-requested
+                    // wider city scope remains explicitly incomplete at rendering.
+                    val preserveVerifiedObi = conversationProvider == OBI_PROVIDER_ID &&
+                        trustedObiFollowUpId != null && evidence.status == "rejected" &&
+                        lastLocationEvidence?.status == "verified" &&
+                        lastLocationEvidence?.productId == trustedObiFollowUpId &&
+                        lastLocationEvidence?.checkedIds?.contains(trustedObiFollowUpBranch) == true
+                    if (!preserveVerifiedObi) lastLocationEvidence = evidence
                     runCatching { onDiagnosticEvent(SafeDiagnosticEvent(
                         DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
                         providerId = conversationProviderId, branchId = conversationStoreNumber,
