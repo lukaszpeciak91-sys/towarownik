@@ -184,6 +184,17 @@ internal class AdvisorController(
         }
 
         var obiCityWideMarketIds: Set<String> = emptySet()
+        // A wrong model-selected OBIK in a historical same-product follow-up
+        // blocks further lookups in this USER turn, not just the first request.
+        var blockedObiFollowUpReason: String? = null
+        var trustedObiFollowUpId: String? = null
+        var trustedObiFollowUpBranch: String? = null
+        var trustedObiFollowUpResult: AdvisorToolContinuation.Verified? = null
+        var independentObiDiscoveryObserved = false
+        // A USER-owned exact OBIK needs correction once; later distinct
+        // searches are independent only when the USER requested another search.
+        var explicitObiExactLookupExecuted = false
+        val correctedGroupedModelObiks = mutableSetOf<String>()
 
         suspend fun authorizeToolArguments(
             arguments: AdvisorToolArguments,
@@ -191,6 +202,7 @@ internal class AdvisorController(
             if (arguments.providerId != conversationProviderId) {
                 return ToolBranchAuthorization.Rejected("wrong_provider")
             }
+            blockedObiFollowUpReason?.let { return ToolBranchAuthorization.Rejected(it) }
             val branches = when (val result = loadTurnBranches()) {
                 is ProviderBranchResult.Available -> result.branches
                 is ProviderBranchResult.Unavailable ->
@@ -206,24 +218,123 @@ internal class AdvisorController(
                 return ToolBranchAuthorization.Rejected("directory_unavailable")
             }
 
-            return when (
-                val resolution = BranchResolver.resolveDiscovery(
+            // Resolve a bounded USER-owned referent before trusting model search hints.
+            // An explicit current USER product always stays an independent search.
+            var trustedBranch: ProviderBranch? = null
+            var effectiveArguments = arguments
+            val explicitObiProduct = if (conversationProvider == OBI_PROVIDER_ID) {
+                advisorUserProductEvidence(normalizedInput)
+                    .filter { it.matches(Regex("""[0-9]{7}""")) }
+                    .singleOrNull()
+            } else null
+            val explicitStockIntent = advisorHasStockEvidence(normalizedInput) ||
+                Regex("""\b(?:mamy|jest|sa)\b.*\bna stanie\b""")
+                    .containsMatchIn(advisorAuthorityText(normalizedInput))
+            if (explicitObiProduct != null && explicitStockIntent) {
+                // Correct only one unambiguous exact-OBIK query slot. Other
+                // grouped queries (e.g. a separate product-name search) are
+                // never rewritten or dropped, and later tool calls remain
+                // independent of this single-query correction.
+                val numericSlots = arguments.queries.withIndex().filter {
+                    it.value.query.trim().matches(Regex("""[0-9]{7}"""))
+                }
+                if (numericSlots.size > 1) {
+                    return ToolBranchAuthorization.Rejected("ambiguous_product")
+                }
+                if (numericSlots.size == 1) {
+                    val proposedObik = numericSlots.single().value.query.trim()
+                    val userRequestedAnotherSearch = Regex(
+                        """\b(?:i|oraz) (?:znajdz|wyszukaj|poszukaj|szukaj)\b""",
+                    ).containsMatchIn(advisorAuthorityText(normalizedInput))
+                    val independentSecondNumeric = arguments.queries.size == 1 &&
+                        explicitObiExactLookupExecuted &&
+                        userRequestedAnotherSearch && proposedObik != explicitObiProduct
+                    if (!independentSecondNumeric) {
+                        val targetIndex = numericSlots.single().index
+                        effectiveArguments = arguments.copy(
+                            queries = arguments.queries.mapIndexed { index, query ->
+                                if (index == targetIndex) AdvisorToolQuery(explicitObiProduct, 1)
+                                else query
+                            },
+                        )
+                        if (arguments.queries.size == 1) {
+                            trustedObiFollowUpId = explicitObiProduct
+                        } else if (proposedObik != explicitObiProduct) {
+                            correctedGroupedModelObiks += proposedObik
+                        }
+                    }
+                }
+            }
+            if (conversationProvider == OBI_PROVIDER_ID &&
+                !advisorHasCurrentProductEvidence(normalizedInput)
+            ) {
+                val followUp = resolveAdvisorLocationFollowUp(
+                    normalizedInput, locationHistory,
+                    historicalVerifiedProducts.filter { it.providerId == conversationProviderId },
+                    branches, conversationProviderId, conversationStoreNumber,
+                )
+                val explicitlySameProduct = Regex(
+                    """\b(?:ten(?: sam)? produkt|tego(?: samego)? produktu)\b""",
+                ).containsMatchIn(advisorAuthorityText(normalizedInput))
+                val boundedExplicitFollowUp = explicitlySameProduct &&
+                    advisorIsBoundedHistoricalScopeReference(normalizedInput, branches)
+                val anaphoricUserQuestion = normalizedInput.trimStart().lowercase().startsWith("a ") ||
+                    Regex("""^(?:ile|a ile) (?:maja|ma|jest|sa)\b""")
+                        .containsMatchIn(advisorAuthorityText(normalizedInput))
+                val inheritedShortFollowUp = followUp.isShortLocationFollowUp &&
+                    (anaphoricUserQuestion || followUp.hasBoundedProductReferent)
+                if (inheritedShortFollowUp || boundedExplicitFollowUp) {
+                    val trusted = followUp.historicalProducts.filter {
+                        it.providerId == conversationProviderId && it.verifiedAt > 0 &&
+                            it.effectiveProductId.matches(Regex("""[0-9]{7}"""))
+                    }.distinctBy { it.effectiveProductId }
+                    val reason = when {
+                        followUp.failureReason != null -> followUp.failureReason
+                        inheritedShortFollowUp &&
+                            (!followUp.inheritsInventoryContext || !followUp.hasPendingInventoryRequest) ->
+                            "untrusted_product"
+                        boundedExplicitFollowUp && !inheritedShortFollowUp &&
+                            !followUp.hasBoundedProductReferent -> "untrusted_product"
+                        trusted.size > 1 -> "ambiguous_product"
+                        trusted.size != 1 -> "untrusted_product"
+                        // The model may request the WRONG OBIK. The USER-owned,
+                        // uniquely selected product, not the model, is authority.
+                        else -> null
+                    }
+                    if (reason != null) {
+                        blockedObiFollowUpReason = reason
+                        return ToolBranchAuthorization.Rejected(reason)
+                    }
+                    val exactId = trusted.single().effectiveProductId
+                    trustedObiFollowUpId = exactId
+                    trustedBranch = followUp.resolvedBranch
+                    effectiveArguments = arguments.copy(
+                        queries = listOf(AdvisorToolQuery(exactId, 1)),
+                    )
+                }
+            }
+
+            // Both source and target come from bounded USER evidence. A known
+            // one-off market can be reused from the canonical follow-up resolver;
+            // model branch hints remain incapable of changing it.
+            val resolution = trustedBranch?.let { BranchResolution.Resolved(it) }
+                ?: BranchResolver.resolveDiscovery(
                     userText = normalizedInput,
                     branches = branches,
                     currentBranchId = currentBranchId,
                     obiMarketScope = conversationProvider == OBI_PROVIDER_ID,
                 )
-            ) {
+            return when (resolution) {
                 is BranchResolution.CurrentBranch ->
                     ToolBranchAuthorization.Authorized(
-                        arguments.forResolvedBranch(
+                        effectiveArguments.forResolvedBranch(
                             resolution.branch.branchId,
                         ),
                     )
 
                 is BranchResolution.Resolved ->
                     ToolBranchAuthorization.Authorized(
-                        arguments.forResolvedBranch(
+                        effectiveArguments.forResolvedBranch(
                             resolution.branch.branchId,
                         ),
                     )
@@ -233,7 +344,7 @@ internal class AdvisorController(
                         obiCityWideMarketIds = resolution.candidates.map { it.branchId.value }.toSet()
                         // Identity verification uses one USER-authorized member, deterministically.
                         // The original full scope remains pending for the separate inventory tool.
-                        ToolBranchAuthorization.Authorized(arguments.forResolvedBranch(
+                        ToolBranchAuthorization.Authorized(effectiveArguments.forResolvedBranch(
                             resolution.candidates.minBy { it.branchId.value }.branchId,
                         ))
                     } else if (!resolution.allowsExplicitBranchHint) {
@@ -247,7 +358,7 @@ internal class AdvisorController(
                             }
                         ) {
                             ToolBranchAuthorization.Authorized(
-                                arguments.forResolvedBranch(
+                                effectiveArguments.forResolvedBranch(
                                     hinted.branchId,
                                 ),
                             )
@@ -264,7 +375,7 @@ internal class AdvisorController(
                 // location selection, normalize execution to the saved profile.
                 BranchResolution.NotMentioned ->
                     ToolBranchAuthorization.Authorized(
-                        arguments.forResolvedBranch(currentBranchId),
+                        effectiveArguments.forResolvedBranch(currentBranchId),
                     )
             }
         }
@@ -425,12 +536,69 @@ internal class AdvisorController(
         while (true) {
             when (proxyResult) {
                 is AdvisorProxyResult.Answer -> {
-                    val selectedProducts = proxyResult.productRefs
+                    // A later LLM answer/retry must not turn a rejected OBIK
+                    // substitution into a claimed stock of the selected product.
+                    blockedObiFollowUpReason?.let { reason ->
+                        return AdvisorUiState.Success(
+                            text = renderAdvisorLocalFailure(reason),
+                            responseId = proxyResult.responseId,
+                            products = emptyList(), sources = emptyList(),
+                            traceId = turnTraceId,
+                        ).also(onState)
+                    }
+                    trustedObiFollowUpId?.takeUnless { independentObiDiscoveryObserved }?.let { id ->
+                        val evidence = lastLocationEvidence
+                        val verified = verifiedByKey.values.singleOrNull {
+                            it.providerId == conversationProviderId &&
+                                it.effectiveProductId == id &&
+                                it.effectiveBranchId == trustedObiFollowUpBranch
+                        }
+                        // Ignore potentially inconsistent model prose and refs.
+                        // A city-wide USER request is not satisfied by the single
+                        // discovery lookup used to seed a multi-market verification.
+                        val partialCity = obiCityWideMarketIds.isNotEmpty() &&
+                            evidence?.checkedIds?.toSet() != obiCityWideMarketIds
+                        val observed = evidence?.let(::renderAdvisorLocationDetails)
+                            ?: renderAdvisorLocalFailure("untrusted_product")
+                        return AdvisorUiState.Success(
+                            text = lastDiscoveryRejectionReason?.let(::renderAdvisorLocalFailure)
+                                ?: ("OBIK $id. " + observed +
+                                    if (partialCity) "\nNie sprawdziłam jeszcze wszystkich marketów wskazanego miasta." else ""),
+                            responseId = proxyResult.responseId,
+                            products = if (lastDiscoveryRejectionReason != null || evidence == null)
+                                emptyList() else listOfNotNull(verified),
+                            sources = emptyList(),
+                            traceId = turnTraceId,
+                            locationReportEvidence = locationReportEvidence.toList(),
+                        ).also(onState)
+                    }
+                    val selectedProducts = if (correctedGroupedModelObiks.isNotEmpty()) {
+                        // A corrected grouped model plan may carry stale product
+                        // refs. Only current-turn provider-verified cards can be
+                        // displayed; keep OTHER independent grouped products.
+                        verifiedByKey.values.filter { it.providerId == conversationProviderId }
+                            .take(MAX_TOOL_PRODUCTS)
+                    } else proxyResult.productRefs
                         .distinctBy { it.key }
                         .mapNotNull { reference ->
                             verifiedByKey[reference.key]
                         }
                         .take(MAX_TOOL_PRODUCTS)
+                    val misleadingGroupedModelText = correctedGroupedModelObiks.any { badId ->
+                        Regex("""(?<![0-9])${Regex.escape(badId)}(?![0-9])""")
+                            .containsMatchIn(proxyResult.text)
+                    }
+                    val safeAnswerText = if (misleadingGroupedModelText) {
+                        // A corrected model OBIK must not reappear in prose as
+                        // another product's stock. Report only fresh local facts.
+                        selectedProducts.joinToString(
+                            separator = "\n",
+                            prefix = "Bieżące zweryfikowane wyniki:\n",
+                        ) { product ->
+                            "${product.name} (OBIK ${product.effectiveProductId}, OBI ${product.effectiveBranchId}): " +
+                                (product.stock?.let { "${it} szt." } ?: "stan niepotwierdzony")
+                        }.ifBlank { renderAdvisorLocalFailure("untrusted_product") }
+                    } else proxyResult.text
                     val identityOnlyCityWide = obiCityWideMarketIds.isNotEmpty() &&
                         lastLocationEvidence == null && lastDiscoveryRejectionReason == null
                     val requestedIds = AdvisorProductIdentityReferences.fromUserText(normalizedInput).referencedNumericIds
@@ -449,12 +617,12 @@ internal class AdvisorController(
                     } == true || lastDiscoveryRejectionReason != null && lastLocationEvidence == null ||
                         obiCityWideMarketIds.isNotEmpty() || recoveredIndependentQuery
                     return AdvisorUiState.Success(
-                        text = if (authoritativeLocalText) completeLocationList else if (completeLocationList.isBlank()) proxyResult.text else {
-                            proxyResult.text + "\n\n" + completeLocationList
+                        text = if (authoritativeLocalText) completeLocationList else if (completeLocationList.isBlank()) safeAnswerText else {
+                            safeAnswerText + "\n\n" + completeLocationList
                         },
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
-                        sources = if (authoritativeLocalText) emptyList() else proxyResult.sources,
+                        sources = if (authoritativeLocalText || misleadingGroupedModelText) emptyList() else proxyResult.sources,
                         searchActions = searchActionsByKey.values.toList(),
                         traceId = turnTraceId,
                         locationReportEvidence = locationReportEvidence.toList(),
@@ -505,6 +673,11 @@ internal class AdvisorController(
                             locations = emptyList(),
                             verifiedAtMillis = null,
                             centralStock = null,
+                        )
+                    } else if (blockedObiFollowUpReason != null) {
+                        toolCalls += 1
+                        inventoryAuthorizationFailure(
+                            requireNotNull(blockedObiFollowUpReason), "rejected", conversationProviderId,
                         )
                     } else if (priorDecision != null) {
                         // Cached denials avoid duplicate provider work but still
@@ -559,7 +732,16 @@ internal class AdvisorController(
                     ) {
                         deterministicLocationOutcomes[repeatKey] = evidence
                     }
-                    lastLocationEvidence = evidence
+                    // An invalid later location-tool request must not erase
+                    // already VERIFIED stock from ordinary OBI discovery.
+                    // Keep its denied continuation/diagnostics; any USER-requested
+                    // wider city scope remains explicitly incomplete at rendering.
+                    val preserveVerifiedObi = conversationProvider == OBI_PROVIDER_ID &&
+                        trustedObiFollowUpId != null && evidence.status == "rejected" &&
+                        lastLocationEvidence?.status == "verified" &&
+                        lastLocationEvidence?.productId == trustedObiFollowUpId &&
+                        lastLocationEvidence?.checkedIds?.any { it == trustedObiFollowUpBranch } == true
+                    if (!preserveVerifiedObi) lastLocationEvidence = evidence
                     runCatching { onDiagnosticEvent(SafeDiagnosticEvent(
                         DiagnosticSource.ADVISOR, DiagnosticStage.TOOL_RESULT,
                         providerId = conversationProviderId, branchId = conversationStoreNumber,
@@ -683,7 +865,14 @@ internal class AdvisorController(
                                 val resolvedArguments =
                                     authorization.arguments
                                 onState(AdvisorUiState.RunningLocalTool)
-                                when (
+                                val previousVerified = trustedObiFollowUpResult?.takeIf {
+                                    trustedObiFollowUpId != null &&
+                                        trustedObiFollowUpBranch == resolvedArguments.branchId &&
+                                        resolvedArguments.queries.singleOrNull()?.query == trustedObiFollowUpId
+                                }
+                                if (previousVerified != null) {
+                                    previousVerified // Same verified read, new logical tool-call budget still applies.
+                                } else when (
                                     val localResult = safeExecuteTool(
                                         conversationProviderId =
                                             conversationProviderId,
@@ -695,13 +884,27 @@ internal class AdvisorController(
                                         resolvedArguments.queries.singleOrNull()?.query?.trim()
                                             ?.equals(independentQuery, ignoreCase = true) == true
                                     if (finishesIndependentRecovery) {
-                                        // Latest exact USER-query verification replaces a prior
-                                        // recovery refusal without executing another local call.
                                         lastLocationEvidence = independentQueryEvidence(
                                             requireNotNull(independentQuery), resolvedArguments.branchId, localResult,
                                         )
-                                    } else localResult.snapshots.forEach {
-                                        verifiedByKey[it.key] = it
+                                    } else if (trustedObiFollowUpId != null &&
+                                        resolvedArguments.queries.singleOrNull()?.query == trustedObiFollowUpId
+                                    ) {
+                                        val id = requireNotNull(trustedObiFollowUpId)
+                                        trustedObiFollowUpBranch = resolvedArguments.branchId
+                                        lastLocationEvidence = independentQueryEvidence(
+                                            id, resolvedArguments.branchId, localResult,
+                                        )
+                                        if (advisorUserProductEvidence(normalizedInput).contains(id)) {
+                                            explicitObiExactLookupExecuted = true
+                                        }
+                                    } else {
+                                        // A separate tool call or a grouped
+                                        // search must keep its own fresh cards.
+                                        if (conversationProvider == OBI_PROVIDER_ID) {
+                                            independentObiDiscoveryObserved = true
+                                        }
+                                        localResult.snapshots.forEach { verifiedByKey[it.key] = it }
                                     }
                                     localResult.searchActions.forEach { action ->
                                         val key = buildString {
@@ -718,9 +921,14 @@ internal class AdvisorController(
                                             action,
                                         )
                                     }
-                                    AdvisorToolContinuation.Verified(
-                                        localResult.result,
-                                    )
+                                    AdvisorToolContinuation.Verified(localResult.result).also {
+                                        // A different numeric query must not overwrite the
+                                        // cached verified continuation for the USER's OBIK.
+                                        if (trustedObiFollowUpId != null &&
+                                            resolvedArguments.queries.singleOrNull()?.query == trustedObiFollowUpId &&
+                                            trustedObiFollowUpBranch == resolvedArguments.branchId
+                                        ) trustedObiFollowUpResult = it
+                                    }
                                 }
 
                                     AdvisorToolExecutionResult.UnsupportedStore -> {

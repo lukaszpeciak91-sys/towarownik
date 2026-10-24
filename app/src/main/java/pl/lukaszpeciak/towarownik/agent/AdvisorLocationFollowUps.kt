@@ -24,6 +24,7 @@ internal data class AdvisorLocationFollowUp(
     val hasPendingInventoryRequest: Boolean = false,
     val hasBoundedProductReferent: Boolean = false,
     val isContextualQuantityRequest: Boolean = false,
+    val isShortLocationFollowUp: Boolean = false,
     val failureReason: String? = null,
     val inheritsInventoryContext: Boolean = false,
 )
@@ -97,7 +98,9 @@ internal fun resolveAdvisorLocationFollowUp(
         if (Regex(""" [0-9]{3}(?: bodajze)?$""").containsMatchIn(legacyCityNumber) &&
             isCanonicalLocationWithOptionalMarketNumber(legacyCityNumber)
         ) return null // Preserve the existing precise city/market-conflict boundary.
-        if (t == "tam") return null // Requires an uninterrupted USER-selected referent below.
+        if (t == "tam" || t in setOf("ile tego maja w tym markecie", "ile tego jest w tym markecie")) {
+            return null // Requires an uninterrupted USER-selected referent below.
+        }
         if (Regex(
                 """\b(?:cena|ceny|cene|cen|koszt|kosztuje|pokaz|podaj|montaz|zamontowac|podlaczyc|dobierz|kompatybilnosc)\b""",
             ).containsMatchIn(t)
@@ -112,7 +115,13 @@ internal fun resolveAdvisorLocationFollowUp(
             // pass the canonical market resolver.
             val quantityPlace = Regex("""^ile tego samego produktu (?:maja|ma|jest|sa) (?:w|we) (.+)$""")
                 .matchEntire(t)?.groupValues?.get(1)
-            val placeText = quantityPlace?.let { "w $it" } ?: t
+            // A natural question such as "a ile mają na Wielickiej w Krakowie?"
+            // is a bounded location-only follow-up, not a NEW product search.
+            val naturalQuantityPlace = Regex("""^ile (?:maja|ma|jest|sa) ((?:w|we|na) .+)$""")
+                .matchEntire(t)?.groupValues?.get(1)
+            val contextualQuantityPlace = Regex("""^ile tego (?:jest|maja|ma) ((?:w|we|na) .+)$""")
+                .matchEntire(t)?.groupValues?.get(1)
+            val placeText = quantityPlace?.let { "w $it" } ?: naturalQuantityPlace ?: contextualQuantityPlace ?: t
             val canonical = placeText in canonicalLocations ||
                 canonicalLocations.any { placeText.startsWith("$it ") }
             val labelled = Regex("""^(?:w|we|na|obi|market|markecie|sklep|sklepie) .+$""").matches(placeText)
@@ -132,12 +141,13 @@ internal fun resolveAdvisorLocationFollowUp(
     }
     fun shortLocationCandidate(s: String): Boolean {
         val t = locationClause(s)
-        return t in setOf("u nas", "tam") || naturalShortLocation(s) != null
+        return t in setOf("u nas", "tam", "ile tego maja w tym markecie", "ile tego jest w tym markecie") ||
+            naturalShortLocation(s) != null
     }
     fun isClarification(s: String): Boolean {
         val t = normalized(s)
         if (t in setOf("obu", "oba")) return true
-        if (t.removePrefix("a ") == "tam") return true
+        if (t.removePrefix("a ") in setOf("tam", "ile tego maja w tym markecie", "ile tego jest w tym markecie")) return true
         if (naturalShortLocation(s).let {
                 it is BranchResolution.Resolved || it is BranchResolution.CurrentBranch ||
                     it is BranchResolution.Ambiguous
@@ -175,7 +185,9 @@ internal fun resolveAdvisorLocationFollowUp(
     val intervening = userHistory.drop(anchor + 1)
     val explicitRetry = locationRequestPrefix.containsMatchIn(
         normalized(input).replace(Regex("""^(?:dobrze|ok|no|prosze) (?:a )?"""), "").removePrefix("a "),
-    ) || quantityFollowUpLocation(current) != null || advisorHasStockEvidence(input)
+    ) || quantityFollowUpLocation(current) != null || advisorHasStockEvidence(input) ||
+        (providerId == "obi-pl" && Regex("""^(?:a )?ile (?:tego )?(?:maja|ma|jest|sa) (?:w|we|na) .+$""")
+            .matches(current))
     fun retainsProductReference(text: String): Boolean = advisorNeutralPriceReference(text) ||
         advisorNonInventoryRequest(text) && advisorIsBoundedHistoricalScopeReference(text, branches)
     val boundedReferent = anchor >= 0 && intervening.all { isClarification(it.text) || retainsProductReference(it.text) }
@@ -185,7 +197,9 @@ internal fun resolveAdvisorLocationFollowUp(
     val pending = continuation && currentIsShortFollowUp && candidates.isNotEmpty()
     // Only current/preceding USER place expressions bind "tam". Neither a
     // model hint, an ASSISTANT suggestion nor a historical card's branch does.
-    val isThere = current.removePrefix("a ") == "tam"
+    val isThere = current.removePrefix("a ") in setOf(
+        "tam", "ile tego maja w tym markecie", "ile tego jest w tym markecie",
+    )
     val previousUserLocation = if (isThere && continuation) {
         val lastSelection = userHistory.drop(anchor).asReversed().filterNot { normalized(it.text).removePrefix("a ") == "tam" }.map { item ->
             BranchResolver.resolve(
@@ -295,6 +309,10 @@ internal fun resolveAdvisorLocationFollowUp(
         hasPendingInventoryRequest = continuation,
         hasBoundedProductReferent = boundedReferent && !unknownAnchorIdentity,
         isContextualQuantityRequest = quantityFollowUpLocation(current) != null,
+        // Only location-bearing clarifications: "obu" and other product-only
+        // short turns must not be mistaken for one-market identity inheritance.
+        isShortLocationFollowUp = currentIsShortFollowUp &&
+            (currentLocation != null || quantityFollowUpLocation(current) != null || isThere),
         failureReason = followUpFailure ?: if (unknownLatestIdentity && !currentSelectsProduct) "untrusted_product" else if (pending && !currentSelectsProduct &&
             both.isEmpty() && selectedHistory.size > 1
         ) "ambiguous_product" else null,

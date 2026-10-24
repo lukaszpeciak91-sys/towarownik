@@ -290,3 +290,68 @@ test("all 61 other markets can be fully confirmed with complete-coverage label",
   assert.equal(JSON.parse(f.captures[0].input[0].output).locations.length, 61);
 });
 
+
+
+test("RED: location tool providerId is pinned to selected provider on START, MESSAGE and CONTINUE", async () => {
+  for (const [protocolVersion, providerId, branchId] of [
+    [2, "obi-pl", "075"],
+    [3, "obi-pl", "075"],
+    [4, "obi-pl", "075"],
+    [4, "kwant-pl", "205"],
+  ]) {
+    for (const endpoint of ["start", "message", "continue"]) {
+      const context = protocolVersion === 2
+        ? { storeNumber: branchId }
+        : { providerId, branchId };
+      const payload = endpoint === "continue"
+        ? { protocolVersion, ...context, responseId: "resp_prior", callId: "call_prior",
+            tool: "find_product_locations",
+            result: { ...result, providerId, locations: [], checkedIds: [], returnedIds: [],
+              missingIds: [], status: "unavailable", coverage: "unknown", verifiedAtMillis: null } }
+        : { protocolVersion, ...context, message: "Sprawdź dostępność",
+            ...(endpoint === "message" ? { previousResponseId: "resp_prior" } : {}) };
+      const f = fake(answer);
+      const reply = await createWorker(f.fetch).fetch(
+        request("/v1/agent/" + endpoint, payload, true), env,
+      );
+      assert.equal(reply.status, 200, endpoint + "/" + protocolVersion + "/" + providerId);
+      const offered = f.captures[0].tools.find(t => t.name === "find_product_locations");
+      assert.ok(offered, endpoint + "/" + protocolVersion + "/" + providerId);
+      assert.deepEqual(offered.parameters.properties.providerId.enum, [providerId],
+        endpoint + "/" + protocolVersion + "/" + providerId);
+      assert.equal(offered.parameters.additionalProperties, false);
+    }
+  }
+});
+
+test("RED: OBI single-market follow-ups use discovery; multi-market stock uses locations", async () => {
+  const f = fake(answer);
+  const response = await createWorker(f.fetch).fetch(
+    request("/v1/agent/message", {
+      protocolVersion: 4, providerId: "obi-pl", branchId: "075",
+      previousResponseId: "resp_prior",
+      message: "a ile mają na Wielickiej w Krakowie?",
+    }, true), env,
+  );
+  assert.equal(response.status, 200);
+  const instructions = f.captures[0].instructions;
+  assert.match(instructions, /single-market.*find_products/i);
+  assert.match(instructions, /multi-market.*find_product_locations/i);
+  assert.match(instructions, /same-product follow-up/i);
+  const tool = f.captures[0].tools.find(t => t.name === LOCATIONS_LOCAL_TOOL_NAME);
+  assert.match(tool.description, /multiple OBI markets/i);
+  // v3+ exposes find_products, not the v2-only find_obi_products tool.
+  assert.deepEqual(f.captures[0].tools.filter(t => t.type === "function").map(t => t.name),
+    ["find_products", LOCATIONS_LOCAL_TOOL_NAME]);
+  assert.match(instructions, /single-market.*find_products/i);
+  assert.match(tool.description, /For one OBI market, use find_products/i);
+  assert.doesNotMatch(instructions, /find_obi_products/i);
+  const kwant = fake(answer);
+  assert.equal((await createWorker(kwant.fetch).fetch(
+    request("/v1/agent/message", {
+      protocolVersion: 4, providerId: "kwant-pl", branchId: "205",
+      previousResponseId: "resp_prior", message: "A w Tarnowie?",
+    }, true), env,
+  )).status, 200);
+  assert.match(kwant.captures[0].instructions, /KWANT.*single/i);
+});

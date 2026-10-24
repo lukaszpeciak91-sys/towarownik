@@ -255,7 +255,6 @@ class AdvisorDiscoveryRoutingRegressionTest {
         for (input in listOf(
             "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003 (Kraków, ul. Wielicka).",
             "Sprawdź stan produktu OBIK 3496072 w markecie OBI nr 003",
-            "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
         )) {
             val result = search(input, "obi-pl", "075", "075")
             assertEquals(input, "003", result.called)
@@ -263,6 +262,16 @@ class AdvisorDiscoveryRoutingRegressionTest {
         }
     }
 
+
+    @Test fun historicalSameProductWithoutTrustedHistoryCannotBecomeIndependentObiLookup() = runBlocking {
+        val result = search(
+            "A ile tego samego produktu jest w OBI Kraków przy ulicy Wielickiej?",
+            "obi-pl", "075", "075",
+        )
+        assertEquals("", result.called)
+        assertEquals("rejected", result.outcome)
+        assertEquals(0, result.cards)
+    }
 
     @Test fun unlabeledMeasurementsAndProductIdsMustNotGrantObi003() = runBlocking {
         for (input in listOf(
