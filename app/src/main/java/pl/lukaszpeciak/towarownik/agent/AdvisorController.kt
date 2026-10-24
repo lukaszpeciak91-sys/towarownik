@@ -191,6 +191,9 @@ internal class AdvisorController(
         var trustedObiFollowUpBranch: String? = null
         var trustedObiFollowUpResult: AdvisorToolContinuation.Verified? = null
         var independentObiDiscoveryObserved = false
+        // A USER-owned exact OBIK needs correction once; later distinct
+        // searches are independent only when the USER requested another search.
+        var explicitObiExactLookupExecuted = false
         val correctedGroupedModelObiks = mutableSetOf<String>()
 
         suspend fun authorizeToolArguments(
@@ -239,17 +242,26 @@ internal class AdvisorController(
                     return ToolBranchAuthorization.Rejected("ambiguous_product")
                 }
                 if (numericSlots.size == 1) {
-                    val targetIndex = numericSlots.single().index
-                    effectiveArguments = arguments.copy(
-                        queries = arguments.queries.mapIndexed { index, query ->
-                            if (index == targetIndex) AdvisorToolQuery(explicitObiProduct, 1)
-                            else query
-                        },
-                    )
-                    if (arguments.queries.size == 1) {
-                        trustedObiFollowUpId = explicitObiProduct
-                    } else if (numericSlots.single().value.query.trim() != explicitObiProduct) {
-                        correctedGroupedModelObiks += numericSlots.single().value.query.trim()
+                    val proposedObik = numericSlots.single().value.query.trim()
+                    val userRequestedAnotherSearch = Regex(
+                        """\b(?:i|oraz) (?:znajdz|wyszukaj|poszukaj|szukaj)\b""",
+                    ).containsMatchIn(advisorAuthorityText(normalizedInput))
+                    val independentSecondNumeric = arguments.queries.size == 1 &&
+                        explicitObiExactLookupExecuted &&
+                        userRequestedAnotherSearch && proposedObik != explicitObiProduct
+                    if (!independentSecondNumeric) {
+                        val targetIndex = numericSlots.single().index
+                        effectiveArguments = arguments.copy(
+                            queries = arguments.queries.mapIndexed { index, query ->
+                                if (index == targetIndex) AdvisorToolQuery(explicitObiProduct, 1)
+                                else query
+                            },
+                        )
+                        if (arguments.queries.size == 1) {
+                            trustedObiFollowUpId = explicitObiProduct
+                        } else if (proposedObik != explicitObiProduct) {
+                            correctedGroupedModelObiks += proposedObik
+                        }
                     }
                 }
             }
@@ -883,6 +895,9 @@ internal class AdvisorController(
                                         lastLocationEvidence = independentQueryEvidence(
                                             id, resolvedArguments.branchId, localResult,
                                         )
+                                        if (advisorUserProductEvidence(normalizedInput).contains(id)) {
+                                            explicitObiExactLookupExecuted = true
+                                        }
                                     } else {
                                         // A separate tool call or a grouped
                                         // search must keep its own fresh cards.
@@ -907,7 +922,12 @@ internal class AdvisorController(
                                         )
                                     }
                                     AdvisorToolContinuation.Verified(localResult.result).also {
-                                        if (trustedObiFollowUpId != null) trustedObiFollowUpResult = it
+                                        // A different numeric query must not overwrite the
+                                        // cached verified continuation for the USER's OBIK.
+                                        if (trustedObiFollowUpId != null &&
+                                            resolvedArguments.queries.singleOrNull()?.query == trustedObiFollowUpId &&
+                                            trustedObiFollowUpBranch == resolvedArguments.branchId
+                                        ) trustedObiFollowUpResult = it
                                     }
                                 }
 
