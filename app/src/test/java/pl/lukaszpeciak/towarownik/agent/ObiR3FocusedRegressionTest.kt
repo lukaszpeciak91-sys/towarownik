@@ -141,13 +141,14 @@ class ObiR3FocusedRegressionTest {
     private suspend fun r4TwoQueryScenario(
         grouped: Boolean,
         misleadingFinal: Boolean = false,
+        secondIndependentNumeric: Boolean = false,
     ): Triple<AdvisorUiState.Success, List<List<String>>, List<AdvisorToolContinuation>> {
         val name = "czarne opaski zaciskowe"
         val modelCalls = if (grouped) listOf(
             listOf(AdvisorToolQuery("3496072", 1), AdvisorToolQuery(name, 2)),
         ) else listOf(
             listOf(AdvisorToolQuery("6117543", 1)),
-            listOf(AdvisorToolQuery(name, 2)),
+            listOf(AdvisorToolQuery(if (secondIndependentNumeric) "7001001" else name, 2)),
         )
         val reads = mutableListOf<List<String>>()
         val continuations = mutableListOf<AdvisorToolContinuation>()
@@ -220,6 +221,20 @@ class ObiR3FocusedRegressionTest {
         assertFalse(outcome.text.contains("3496072"))
         assertTrue(outcome.text.contains("6117543"))
         assertTrue(outcome.text.contains("7001001") || outcome.text.contains("opaski"))
+    }
+
+    @Test fun `R4_1 second independent numeric OBI lookup is not rewritten to previous USER OBIK`() = runBlocking {
+        val (outcome, reads, continuations) = r4TwoQueryScenario(
+            grouped = false, secondIndependentNumeric = true,
+        )
+        assertEquals(listOf(listOf("6117543"), listOf("7001001")), reads)
+        assertEquals(2, continuations.size)
+        assertTrue(continuations.all { it is AdvisorToolContinuation.Verified })
+        assertEquals(listOf("6117543", "7001001"),
+            continuations.map { (it as AdvisorToolContinuation.Verified).result.results.single().query })
+        assertEquals(setOf("6117543", "7001001"),
+            outcome.products.map { it.effectiveProductId }.toSet())
+        assertTrue(outcome.text.contains("opaski"))
     }
 
     @Test fun `R4-P2 grouped wrong OBIK is corrected in unique numeric slot without erasing independent name search`() = runBlocking {
