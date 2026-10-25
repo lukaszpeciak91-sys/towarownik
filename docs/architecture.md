@@ -30,6 +30,14 @@ Raw direct tool callers delegate to the same authorizer and can supply bounded h
 
 Fresh adapter results still own stock, zero/null/unknown/partial coverage and timestamps; current-turn snapshots alone own cards. OBI scope batching and KWANT's single exact-product public departments request are unchanged. KWANT's endpoint physically returns the product's public branch list; the adapter exposes only authorized branch IDs. A fixture proves logical scope and fresh parsing, not a live stock assertion. G13 multi-product execution, final-answer rendering/prose, provider adapters, prompts, UI and persistence remain out of scope.
 
+## 2026-10-25 — field pilot: product context is not a selected branch (INC-008)
+
+Real-device 0.1.31 (32) reports established a shared Android `unknown_location` rejection **before provider reads** for KWANT 205 “we wnęce ... 30×70 cm” and OBI 075 “na 5 bolców” / “na 3 gniazda”. In the same pilot, exact product lookups and neutral queries retrieved verified provider-owned inventory, so this is not evidence of a general provider outage.
+
+Only `BranchResolver.resolveDiscovery` projects these bounded installation and count-led product descriptions away from location syntax before existing canonical resolution. The finite application grammar adds a recessed-space installation frame; the counted-attribute grammar admits a short numeric count plus lower-case noun, excluding store/location nouns and canonical directory city names. Real city/street/branch mentions elsewhere in the question, unknown stores, contradictory named places, uppercase name-like heads and unresolved deictics remain authoritative/fail closed. Numeric store IDs do not arise from a removed product clause. Ordinary profile fallback still applies when no other branch was requested.
+
+The model still decides when to search. No Worker instructions, tool format or budgets, provider transport, inventory authorizer, WorkingProfile, UI or persistence behavior was changed. Native fixtures prove scope, logical provider execution and verified-card branch IDs using synthetic data; real model/provider behavior requires a fresh signed-device pilot after merge and AAB.
+
 ## 2026-10-15 — P0-A discovery application clauses
 
 Only discovery authorization in `AdvisorController` uses `BranchResolver.resolveDiscovery`. It first distinguishes bounded spatial/purpose application clauses from a geographical selection, then delegates to the existing canonical resolver and OBI plural-market expansion. It does not decide whether a product search is appropriate: the model still initiates the unchanged discovery tool with its original query.

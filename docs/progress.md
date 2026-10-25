@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-10-25 — PILOT INC-008 shared OBI/KWANT product-context routing repair
+
+Android 0.1.31 (32) real-device evidence: KWANT 205 `we wnęce 30×70 cm` and OBI 075 `na 5 bolców` / `na 3 gniazda` returned `find_products` / `find_obi_products` typed `unknown_location` before any provider inventory read. Follow-up requests often asked for an already saved branch; these are core pilot blockers. The same device successfully verified KWANT MBN116E/MBN316E and OBI OBIK 6117543, proving search is not categorically unavailable. A later pilot deliberately used KWANT branch 216; branch changes are not blamed.
+
+New PR #139 branches from main `326bc4200a6790a1889ecb67f56a3d356d50b47c`. Test-only RED SHA `79093dacdad8b7b904a5a2c39a7ce11e92b7d615`: GitHub Android run [#40221472291](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/40221472291), **1152 tests, exactly two new INC008 test failures**. Synthetic native Controller fixtures exercise the exact reported input, trusted profile (205/075), deliberate 216 selection, branch-authorized provider execution, card scope, known alternative cities/markets and fail-closed unknown/conflicting places.
+
+The bounded fix is discovery-only: classify recessed mounting space and short count-led product properties as non-geographical clauses before canonical branch authorization, without promoting model-provided branches. Directory cities/streets and unknown or conflicting explicit locations must still win. No Worker, KWANT/OBI provider HTTP/parser, tool budgets, UX, migrations, version bump or AAB; PR stays draft until full final-head Android GREEN and independent review. Real-device retest after an approved AAB remains mandatory. No stock values in regression fixtures establish live stock.
+
 ## 2026-10-18 — FIX 01 current USER GTIN-14 identity safety (independent review required)
 
 Base main `fb8d5576698d436381e336a6ba2f07f96c452348` includes PR #130. Permanent test-only RED `cd19dcbf4b2a7bd1f26651dd8d43e990542c5110`: **13 tests / 5 PASS / 8 expected FAIL** against current production sources. `Sprawdź stan EAN 05901234123457 w OBI 003` lost all identity evidence and admitted/read unrelated OBIK `3496072/003`. Both numeric evidence patterns stopped at 13 digits. Extend only their upper bounds to 14; retain full strings/leading zeroes and the existing unknown-identity refusal. No EAN alias is inferred from canonical product IDs, names or model claims; snapshots still carry no EAN alias proof.

@@ -48,9 +48,19 @@ internal object BranchResolver {
         val originalCase = normalizedText(userText, preserveCase = true)
         if (originalCase.length != text.length) return userText
         val markers = LOCATION_MARKER.findAll(text).toList()
-        val clauses = APPLICATION_CLAUSE.findAll(text).toList()
+        val clauses = (APPLICATION_CLAUSE.findAll(text) + COUNTED_PRODUCT_CLAUSE.findAll(text))
+            .sortedBy { it.range.first }.toList()
         val applications = clauses.mapIndexedNotNull { index, application ->
             val source = text.substring(application.range.first).substringAfter(' ')
+            // A count of contacts/sockets/etc. is product grammar, not a
+            // department number. Never erase known cities or store nouns
+            // even if they follow a number.
+            if (application.value.startsWith("na ")) {
+                val noun = application.value.substringAfterLast(' ')
+                if (noun in LOCATION_NOUNS || noun in QUANTIFIED_LOCATION_NOUNS ||
+                    branches.any { branch -> noun in cityAliases(branch.name) }
+                ) return@mapIndexedNotNull null
+            }
             // A real directory city/street wins even if its name resembles an
             // application target. Explicit geography cannot be masked either.
             if (branches.any { branch -> cityAliases(branch.name).any { startsWithPhrase(source, it) } } ||
@@ -68,6 +78,17 @@ internal object BranchResolver {
             // Never erase a supplied geographical label within a purpose tail.
             if (GEOGRAPHICAL_LABEL.containsMatchIn(text.substring(application.range.last + 1, end))) {
                 return@mapIndexedNotNull null
+            }
+            if (COUNTED_PRODUCT_CLAUSE.matches(application.value)) {
+                // A number of poles/sockets is a complete product attribute.
+                // Never consume an unknown trailing place such as
+                // "na 5 bolcow do zakopanego" or "na 5 bolcow zakopane":
+                // keep the original text for fail-closed canonical resolution.
+                val tail = text.substring(application.range.last + 1, end).trim()
+                if (tail.isNotEmpty() && tail !in setOf("co mamy", "czy mamy", "czy jest")) {
+                    return@mapIndexedNotNull null
+                }
+                return@mapIndexedNotNull application.range
             }
             application.range.first until end
         }
@@ -408,9 +429,16 @@ internal object BranchResolver {
     // Descriptors (DIN/TH35, etc.) need no exceptions; subsequent place clauses
     // remain intact. Other unknown phrases retain the existing fail-closed path.
     private val APPLICATION_CLAUSE = Regex(
-        """\b(?:(?:w|we) (?:[a-z]+(?:ym|im|ej) ){0,2}(?:mieszkaniu|lazience|rozdzielnicy)|""" +
+        """\b(?:(?:w|we) (?:[a-z]+(?:ym|im|ej) ){0,2}(?:mieszkaniu|lazience|rozdzielnicy|wnece)|""" +
             """na (?:[a-z]+(?:a|e|y|ej|ym) ){0,2}(?:szyne|szynie|sciane|scianie|sufit|suficie)|""" +
             """do (?:rozdzielnicy|montazu))\b""",
+    )
+    // A small number followed by a countable product feature is not
+    // an address (e.g. "na 5 bolców", "na 3 gniazda"). Keep three-digit
+    // market/department identifiers and bare numbers outside this grammar.
+    private val COUNTED_PRODUCT_CLAUSE = Regex("""\bna [1-9][0-9]? [a-z]{3,}\b""")
+    private val QUANTIFIED_LOCATION_NOUNS = setOf(
+        "marketow", "oddzialow", "sklepow", "hurtowni", "magazynow", "miast", "miejscowosci",
     )
     private val EXPLICIT_PLACE_PREFIX = Regex(
         """\b(?:obi|kwant|${LOCATION_NOUNS.joinToString("|")}|miasto|miescie|miejscowosc|miejscowosci|ulica|ulicy)(?: (?:w|we|na))?\s*$""",

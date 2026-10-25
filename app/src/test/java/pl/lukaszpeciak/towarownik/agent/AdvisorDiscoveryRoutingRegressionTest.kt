@@ -285,4 +285,101 @@ class AdvisorDiscoveryRoutingRegressionTest {
         )) assertEquals(input, "", search(input, "obi-pl", "075", "003").called)
     }
 
+
+    @Test fun `INC008 actual counter queries preserve saved branch for product context`() = runBlocking {
+        val ordinary = listOf(
+            Triple(
+                "klient ma bezpieczniki we wnęce w ścianie która ma wymiary 30x70 czy warto wziąć rozdzielnie podtynkową i wyciąć tył. jeśli tak to czy mamy coś takiego na stanie",
+                "kwant-pl", "205",
+            ),
+            Triple(
+                "Klient ma bezpieczniki we wnęce 30x70 cm. Czy montaż rozdzielnicy podtynkowej ma sens i czy mamy coś odpowiedniego na stanie?",
+                "kwant-pl", "205",
+            ),
+            Triple(
+                "A czy mamy u nas podobne gniazdo siłowe, ale 16A 400V na 5 bolców?",
+                "obi-pl", "075",
+            ),
+            Triple(
+                "Klient potrzebuje przedłużacza na 3 gniazda. Co mamy na stanie?",
+                "obi-pl", "075",
+            ),
+        )
+        ordinary.forEach { (input, provider, branch) ->
+            val result = search(input, provider, branch, if (provider == "obi-pl") "003" else "128")
+            assertEquals(input, branch, result.called)
+            assertEquals(input, "verified", result.continuation)
+            assertEquals(input, listOf(branch), result.cardBranches)
+            assertEquals(input, 1, result.cards)
+        }
+        val bialystok = search(
+            "Klient szuka przewodu YDYp 3x2,5 do mieszkania. Co mamy na stanie?",
+            "kwant-pl", "216", "205",
+            suppliedDirectory = kwant + ProviderBranch(BranchId("216"), "Białystok"),
+        )
+        assertEquals("216", bialystok.called)
+        assertEquals(listOf("216"), bialystok.cardBranches)
+    }
+
+    @Test fun `INC008 R2 counted product clause must not swallow adjacent location`() = runBlocking {
+        val denied = listOf(
+            // Lower-case geography bypassed the old capitalized-name guard.
+            "Szukam gniazda na 5 bolców do zakopanego",
+            "Szukam gniazda na 5 bolców zakopane",
+            "Szukam gniazda na 5 bolców do Zakopanego",
+            "Szukam gniazda na 5 bolców Zakopane",
+            "Szukam przedłużacza na 3 gniazda do zakopanego",
+        )
+        denied.forEach { input ->
+            val result = search(input, "obi-pl", "075", "003")
+            assertEquals(input, "", result.called)
+            assertEquals(input, "rejected", result.outcome)
+            assertEquals(input, 0, result.cards)
+        }
+        val valid = listOf(
+            "Szukam gniazda na 5 bolców w OBI 003",
+            "Szukam gniazda na 5 bolców w Krakowie na Wielickiej",
+        )
+        valid.forEach { input ->
+            val result = search(input, "obi-pl", "075", "075")
+            assertEquals(input, "003", result.called)
+            assertEquals(input, "verified", result.continuation)
+        }
+        val ordinary = listOf(
+            "A czy mamy u nas podobne gniazdo siłowe, ale 16A 400V na 5 bolców?",
+            "Klient potrzebuje przedłużacza na 3 gniazda. Co mamy na stanie?",
+        )
+        ordinary.forEach { input ->
+            val result = search(input, "obi-pl", "075", "003")
+            assertEquals(input, "075", result.called)
+            assertEquals(input, "verified", result.continuation)
+        }
+    }
+
+    @Test fun `INC008 product applications cannot hide real or unknown locations`() = runBlocking {
+        val explicitValid = listOf(
+            Triple("Klient ma rozdzielnię we wnęce w ścianie, sprawdź w Bochni", "kwant-pl", "203"),
+            Triple("Szukam gniazda na 5 bolców w OBI 003", "obi-pl", "003"),
+            Triple("Szukam przedłużacza na 3 gniazda w Krakowie na Wielickiej", "obi-pl", "003"),
+        )
+        explicitValid.forEach { (input, provider, branch) ->
+            val selected = if (provider == "obi-pl") "075" else "205"
+            val result = search(input, provider, selected, selected)
+            assertEquals(input, branch, result.called)
+            assertEquals(input, "verified", result.continuation)
+        }
+        val denied = listOf(
+            "Klient ma rozdzielnię we wnęce w ścianie. Sprawdź w KWANT Zakopane" to "kwant-pl",
+            "Szukam gniazda na 5 bolców w OBI Zakopane" to "obi-pl",
+            "Szukam przedłużacza na 3 gniazda w markecie 999" to "obi-pl",
+            "Szukam przedłużacza na 3 gniazda w OBI 075 na Wielickiej" to "obi-pl",
+        )
+        denied.forEach { (input, provider) ->
+            val selected = if (provider == "obi-pl") "075" else "205"
+            val result = search(input, provider, selected, selected)
+            assertEquals(input, "", result.called)
+            assertEquals(input, "rejected", result.outcome)
+            assertEquals(input, 0, result.cards)
+        }
+    }
 }
