@@ -62,15 +62,10 @@ internal fun renderAdvisorLocationDetails(
     if (checked.size != evidence.checkedIds.size ||
         evidence.locations.size != checked.size ||
         evidence.locations.map { it.branchId }.toSet() != checked) return ""
-    val positives = evidence.locations.count { (it.stock ?: 0) > 0 }
-    val zeros = evidence.locations.count { it.stock == 0 }
     val unknown = evidence.locations.count { it.stock == null }
-    // Coverage "partial" describes evidence quality, not the originally
-    // authorized scope. Recover the nationwide scope from canonical IDs;
-    // never describe 61 attempted other markets as a chosen subset.
+    // Coverage quality is distinct from the originally authorized scope.
     val isObi = evidence.providerId == "obi-pl"
-    val canonical = if (isObi) OBI_STORES.map { it.storeNumber }.toSet()
-        else emptySet()
+    val canonical = if (isObi) OBI_STORES.map { it.storeNumber }.toSet() else emptySet()
     val allMarkets = isObi && checked == canonical
     val allOtherMarkets = isObi && checked.size == canonical.size - 1 &&
         canonical.containsAll(checked)
@@ -78,8 +73,7 @@ internal fun renderAdvisorLocationDetails(
         evidence.coverage == "unknown" || unknown > 0
     val heading = if (isObi) {
         when {
-            evidence.coverage == "all_public_locations" || allMarkets ->
-                "Wszystkie markety OBI"
+            evidence.coverage == "all_public_locations" || allMarkets -> "Wszystkie markety OBI"
             evidence.coverage == "all_other_locations" || allOtherMarkets ->
                 "Wszystkie pozostałe markety OBI"
             else -> "Wskazane markety OBI"
@@ -89,31 +83,31 @@ internal fun renderAdvisorLocationDetails(
         else "Wskazane oddziały KWANT"
     } + if (incomplete) " — wyniki niepełne" else ""
     val timestamp = evidence.verifiedAtMillis?.let {
-        val formatted = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
-            .withZone(ZoneId.systemDefault())
-            .format(Instant.ofEpochMilli(it))
-        " (stan zweryfikowany nie wcześniej niż $formatted)"
-    }.orEmpty()
+        DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+            .withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))
+    }
+    val verifiedUnit = evidence.stockUnit?.takeIf {
+        it in setOf("szt.", "m", "m²", "m³", "kg", "l", "opak.")
+    }
+    val unit = if (isObi) "szt." else verifiedUnit
+    val single = evidence.locations.size == 1 && !allMarkets && !allOtherMarkets &&
+        evidence.coverage != "all_public_locations" &&
+        evidence.coverage != "all_other_locations"
     return buildString {
-        append("$heading: sprawdzono ${checked.size}, dodatni stan: $positives, zero: $zeros, niepotwierdzone: $unknown")
-        append(timestamp)
-        append("\n")
-        val verifiedUnit = evidence.stockUnit?.takeIf { label ->
-            label in setOf("szt.", "m", "m²", "m³", "kg", "l", "opak.")
-        }
-        evidence.locations.forEach { item ->
-            append(item.branchId)
-            append(" — ")
+        if (!single) append("$heading:\n")
+        evidence.locations.forEachIndexed { index, item ->
+            if (index > 0) append("\n")
             append(item.name)
-            append(" — ")
-            append(if (item.stock == null) "brak potwierdzenia (stan nieznany)"
-                else "${item.stock}" + (
-                    if (isObi) " szt." else verifiedUnit?.let { " $it" }.orEmpty()
-                ))
-            append("\n")
+            append(" (" + item.branchId + ") — ")
+            when (item.stock) {
+                null -> append("Nie udało się potwierdzić stanu.")
+                0 -> append("Brak na stanie (0" + (unit?.let { " $it" } ?: "") + ").")
+                else -> append(item.stock.toString() + (unit?.let { " $it" } ?: ""))
+            }
         }
-        if (unknown > 0) append("Brak potwierdzenia nie oznacza stanu 0.")
-    }.trimEnd()
+        if (incomplete) append("\nNie udało się potwierdzić wszystkich stanów.")
+        if (timestamp != null) append("\nStan sprawdzony: $timestamp")
+    }
 }
 
 
