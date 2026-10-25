@@ -55,9 +55,9 @@ class SingleBranchLookupCompatibilityTest {
             assertEquals(JsonPrimitive(stock), wire["locations"]!!.jsonArray.single().jsonObject["stock"])
             assertEquals(listOf("204"), evidence.checkedIds)
             val text = renderAdvisorLocationDetails(evidence)
-            assertTrue(text.contains("204 — Tarnów")); assertFalse(text.contains("999")); assertFalse(text.contains("888"))
-            if (stock == null) assertTrue(text.contains("brak potwierdzenia (stan nieznany)"))
-            else assertTrue(text.contains("204 — Tarnów — $stock"))
+            assertTrue(text.contains("Tarnów (204) —")); assertFalse(text.contains("999")); assertFalse(text.contains("888"))
+            if (stock == null) assertTrue(text.contains("Nie udało się potwierdzić stanu."))
+            else assertTrue(text.contains("Tarnów (204) — " + (if (stock == 0) "Brak na stanie (0" else "$stock")))
             println("SINGLETON_WIRE $body") // Controlled fixture body for unchanged Worker-validator replay.
         }
     }
@@ -74,7 +74,7 @@ class SingleBranchLookupCompatibilityTest {
             }, executeObiTool = { error("no discovery") }, executeProviderTool = { error("no discovery") },
             executeLocationsTool = tool::execute, branchDirectory = { ProviderBranchResult.Available(branches) })
         val result = controller.runTurn("Sprawdź stan MBN116E w Tarnowie", "resp_prior", "205", "kwant-pl", historicalVerifiedProducts = listOf(old)) {} as AdvisorUiState.Success
-        assertEquals(1, exactCalls); assertTrue(result.products.isEmpty()); assertFalse(result.text.contains("999")); assertTrue(result.text.contains("204 — Tarnów — 31"))
+        assertEquals(1, exactCalls); assertTrue(result.products.isEmpty()); assertFalse(result.text.contains("999")); assertTrue(result.text.contains("Tarnów (204) — 31"))
     }
 
     @Test fun fourthLogicalCallDoesNotExecuteAnotherExactLookup() = runBlocking {
