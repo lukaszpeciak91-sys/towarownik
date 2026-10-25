@@ -79,6 +79,17 @@ internal object BranchResolver {
             if (GEOGRAPHICAL_LABEL.containsMatchIn(text.substring(application.range.last + 1, end))) {
                 return@mapIndexedNotNull null
             }
+            if (COUNTED_PRODUCT_CLAUSE.matches(application.value)) {
+                // A number of poles/sockets is a complete product attribute.
+                // Never consume an unknown trailing place such as
+                // "na 5 bolcow do zakopanego" or "na 5 bolcow zakopane":
+                // keep the original text for fail-closed canonical resolution.
+                val tail = text.substring(application.range.last + 1, end).trim()
+                if (tail.isNotEmpty() && tail !in setOf("co mamy", "czy mamy", "czy jest")) {
+                    return@mapIndexedNotNull null
+                }
+                return@mapIndexedNotNull application.range
+            }
             application.range.first until end
         }
         // Leave existing parsing unchanged when no application was removed.
