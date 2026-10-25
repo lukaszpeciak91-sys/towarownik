@@ -321,6 +321,41 @@ class AdvisorDiscoveryRoutingRegressionTest {
         assertEquals(listOf("216"), bialystok.cardBranches)
     }
 
+    @Test fun `INC008 R2 counted product clause must not swallow adjacent location`() = runBlocking {
+        val denied = listOf(
+            // Lower-case geography bypassed the old capitalized-name guard.
+            "Szukam gniazda na 5 bolców do zakopanego",
+            "Szukam gniazda na 5 bolców zakopane",
+            "Szukam gniazda na 5 bolców do Zakopanego",
+            "Szukam gniazda na 5 bolców Zakopane",
+            "Szukam przedłużacza na 3 gniazda do zakopanego",
+        )
+        denied.forEach { input ->
+            val result = search(input, "obi-pl", "075", "003")
+            assertEquals(input, "", result.called)
+            assertEquals(input, "rejected", result.outcome)
+            assertEquals(input, 0, result.cards)
+        }
+        val valid = listOf(
+            "Szukam gniazda na 5 bolców w OBI 003",
+            "Szukam gniazda na 5 bolców w Krakowie na Wielickiej",
+        )
+        valid.forEach { input ->
+            val result = search(input, "obi-pl", "075", "075")
+            assertEquals(input, "003", result.called)
+            assertEquals(input, "verified", result.continuation)
+        }
+        val ordinary = listOf(
+            "A czy mamy u nas podobne gniazdo siłowe, ale 16A 400V na 5 bolców?",
+            "Klient potrzebuje przedłużacza na 3 gniazda. Co mamy na stanie?",
+        )
+        ordinary.forEach { input ->
+            val result = search(input, "obi-pl", "075", "003")
+            assertEquals(input, "075", result.called)
+            assertEquals(input, "verified", result.continuation)
+        }
+    }
+
     @Test fun `INC008 product applications cannot hide real or unknown locations`() = runBlocking {
         val explicitValid = listOf(
             Triple("Klient ma rozdzielnię we wnęce w ścianie, sprawdź w Bochni", "kwant-pl", "203"),
