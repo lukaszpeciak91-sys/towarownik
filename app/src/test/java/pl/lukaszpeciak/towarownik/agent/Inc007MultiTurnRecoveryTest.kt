@@ -291,7 +291,7 @@ class Inc007MultiTurnRecoveryTest {
         val result = h.turn(h.article)
         assertNull(result.products.single().stock); assertEquals("unavailable", h.evidence().status)
         assertEquals(listOf("205"), h.evidence().missingIds); assertTrue(h.evidence().returnedIds.isEmpty())
-        assertTrue(result.text.contains("nie jest potwierdzone zero")); assertTrue(h.gets.isEmpty())
+        assertTrue(result.text, result.text.contains("nieznany") || result.text.contains("Nie udało się potwierdzić stanu.")); assertFalse(result.text.contains("Brak na stanie (0")); assertTrue(h.gets.isEmpty())
     }
     @Test fun ambiguousExactCatalogMatchesDoNotSelectFirstProduct() = runBlocking {
         val h = Harness(); h.duplicateCandidates = true
