@@ -1277,16 +1277,8 @@ private fun TowarownikApp() {
                 }
             }
 
-            !freshCaseSelected &&
-                advisorCase.draft.isBlank() &&
-                advisorCase.messages.isEmpty() -> {
-                conversationRepository
-                    .loadMostRecentRecoveringInterrupted()
-                    ?.let {
-                        freshCaseSelected = false
-                        applyConversation(it)
-                    }
-            }
+            // A new process starts at the empty home screen. A saved Activity
+            // state still restores recoverable draft and conversation work above.
         }
     }
 
