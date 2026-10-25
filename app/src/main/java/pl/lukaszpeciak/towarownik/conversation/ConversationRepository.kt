@@ -30,6 +30,7 @@ internal data class ConversationSummary(
     val id: Long,
     val title: String,
     val updatedAt: Long,
+    val workingProfile: WorkingProfile,
 )
 
 internal data class PersistedConversation(
@@ -214,8 +215,12 @@ internal class ConversationRepository(
         attachment: AdvisorAttachment? = null,
         attachments: List<AdvisorAttachment> = listOfNotNull(attachment),
     ): UserTurnStart {
-        val normalized = normalizeConversationText(text)
-        require(normalized.isNotBlank() || attachments.isNotEmpty())
+        // Preserve human-readable formatting in newly stored USER messages.
+        // Keep non-whitespace control characters sanitized as before.
+        val persistedText = text.map { character ->
+            if (character.isISOControl() && character != '\n' && character != '\r' && character != '\t') ' ' else character
+        }.joinToString("").trim()
+        require(persistedText.isNotBlank() || attachments.isNotEmpty())
         require(attachments.size <= 3)
         require(attachments.map { it.localId }.distinct().size == attachments.size)
         require(attachments.sumOf { it.byteSize } <= 24L * 1024 * 1024)
@@ -225,9 +230,9 @@ internal class ConversationRepository(
             val (newId, previousResponseId) =
                 dao.createWithFirstUserMessage(
                     title = deriveConversationTitle(
-                        normalized.ifBlank { attachments.firstOrNull()?.displayName.orEmpty() },
+                        persistedText.ifBlank { attachments.firstOrNull()?.displayName.orEmpty() },
                     ),
-                    text = normalized,
+                    text = persistedText,
                     createdAt = createdAt,
                     providerId = workingProfile.providerId.value,
                     branchId = workingProfile.branchId.value,
@@ -243,7 +248,7 @@ internal class ConversationRepository(
                 conversationId = conversationId,
                 previousResponseId = dao.appendUserMessage(
                     conversationId = conversationId,
-                    text = normalized,
+                    text = persistedText,
                     createdAt = createdAt,
                     expectedProviderId = workingProfile.providerId.value,
                     expectedBranchId = workingProfile.branchId.value,
@@ -391,6 +396,7 @@ private fun ConversationEntity.toSummary(): ConversationSummary =
         id = id,
         title = title,
         updatedAt = updatedAt,
+        workingProfile = WorkingProfile(ProviderId(providerId), BranchId(branchId)),
     )
 
 private fun ConversationWithMessages.toPersisted(

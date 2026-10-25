@@ -115,6 +115,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -793,7 +794,8 @@ private fun TowarownikApp() {
     fun submitAdvisorTurn() {
         if (!canSubmitAdvisorTurn(advisorJob, attachmentImporting)) return
 
-        val submitted = advisorCase.draft.trim()
+        val originalUserText = advisorCase.draft
+        val submitted = originalUserText.trim()
         val submittedAttachments = pendingAttachments.toList()
         if (submitted.isBlank() && submittedAttachments.isEmpty()) return
         if (submittedAttachments.size > MAX_ADVISOR_ATTACHMENTS ||
@@ -817,7 +819,7 @@ private fun TowarownikApp() {
 
             val turn = conversationRepository.beginUserTurn(
                 conversationId = activeConversationId,
-                text = submitted,
+                text = originalUserText,
                 workingProfile = turnProfile,
                 attachments = submittedAttachments,
             )
@@ -1632,6 +1634,16 @@ private fun ConversationDrawer(
     val drawerWidth = conversationDrawerWidthDp(
         LocalConfiguration.current.screenWidthDp,
     ).dp
+    val providerRegistry = remember { ProductProviderRegistry.production() }
+    var branchDirectories by remember { mutableStateOf<Map<ProviderId, List<ProviderBranch>>>(emptyMap()) }
+    LaunchedEffect(Unit) {
+        branchDirectories = withContext(Dispatchers.IO) {
+            listOf(OBI_PROVIDER_ID, KWANT_PROVIDER_ID).associateWith { providerId ->
+                (runCatching { providerRegistry.resolve(providerId).branches() }.getOrNull()
+                    as? ProviderBranchResult.Available)?.branches.orEmpty()
+            }
+        }
+    }
 
     ModalDrawerSheet(
         modifier = Modifier.width(drawerWidth),
@@ -1758,9 +1770,10 @@ private fun ConversationDrawer(
                                             style = MaterialTheme.typography.bodyLarge,
                                         )
                                         Text(
-                                            text = formatHistoryTimestamp(
-                                                conversation.updatedAt,
-                                            ),
+                                            text = formatHistoryTimestamp(conversation.updatedAt) + " · " +
+                                                historyConversationLocation(conversation, branchDirectories),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -2713,11 +2726,13 @@ private fun UserMessageContent(
             UserAttachmentContent(part, attachmentStorage)
         }
         if (message.text.isNotBlank()) {
-            Text(
-                text = message.text,
-                modifier = Modifier.padding(horizontal = 4.dp),
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            SelectionContainer {
+                Text(
+                    text = message.text,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+            }
         }
     }
 }
@@ -3706,6 +3721,22 @@ private fun ErrorText(message: String) {
             style = MaterialTheme.typography.bodyMedium,
         )
     }
+}
+
+internal fun historyConversationLocation(
+    conversation: ConversationSummary,
+    directories: Map<ProviderId, List<ProviderBranch>>,
+): String {
+    val provider = conversation.workingProfile.providerId
+    val branch = conversation.workingProfile.branchId
+    val providerLabel = when (provider) {
+        OBI_PROVIDER_ID -> "OBI"
+        KWANT_PROVIDER_ID -> "KWANT"
+        else -> provider.value
+    }
+    val knownName = directories[provider]?.firstOrNull { it.branchId == branch }?.name
+    return if (knownName == null) "$providerLabel · ${branch.value}"
+        else "$providerLabel · $knownName (${branch.value})"
 }
 
 private fun formatHistoryTimestamp(updatedAt: Long): String =
