@@ -125,7 +125,7 @@ class SingleBranchExactLookupTest {
             assertTrue(e.returnedIds.isEmpty()); assertNull(e.locations.single().stock)
             assertNull(e.verifiedAtMillis); assertNull(e.centralStock)
             assertFalse(renderAdvisorLocationDetails(e).contains("999"))
-            assertTrue(renderAdvisorLocationDetails(e).contains("stan nieznany"))
+            assertTrue(renderAdvisorLocationDetails(e).contains("Nie udało się potwierdzić stanu."))
         }
         assertTrue(f.inventory.isEmpty())
     }
