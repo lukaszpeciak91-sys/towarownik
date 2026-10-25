@@ -405,6 +405,8 @@ private fun TowarownikApp() {
     // Invalidated when switching cases, before an in-flight picker can return.
     var pickerEpoch by remember { mutableStateOf(0L) }
     var pickerLaunchedAt by remember { mutableStateOf(0L) }
+    // Consumed by the first foreground return after launching an external picker.
+    var pickerReturnPending by remember { mutableStateOf(false) }
     var replacementTarget by remember { mutableStateOf<String?>(null) }
 
     fun importAttachments(
@@ -646,7 +648,9 @@ private fun TowarownikApp() {
     LaunchedEffect(activity.smartResumeReturn) {
         val backgroundDuration = activity.smartResumeReturn ?: return@LaunchedEffect
         activity.consumeSmartResumeReturn()
-        if (
+        val returningFromPicker = pickerReturnPending
+        pickerReturnPending = false
+        if (!returningFromPicker &&
             shouldSmartResume(
                 stoppedAtMillis = 0L,
                 resumedAtMillis = backgroundDuration,
@@ -1316,6 +1320,7 @@ private fun TowarownikApp() {
                     onReplaceAttachment = { localId ->
                         replacementTarget = localId
                         pickerLaunchedAt = pickerEpoch
+                        pickerReturnPending = true
                         replacePicker.launch(ADVISOR_FILE_PICKER_MIME_TYPES)
                     },
                     onOpenCamera = {
@@ -1323,6 +1328,7 @@ private fun TowarownikApp() {
                             attachmentError = AttachmentImportError.TOO_MANY
                         } else {
                             pickerLaunchedAt = pickerEpoch
+                        pickerReturnPending = true
                             runCatching { cameraCapture.createUri() }
                             .onSuccess(cameraLauncher::launch)
                             .onFailure { attachmentError = AttachmentImportError.CAMERA_FAILED }
@@ -1333,6 +1339,7 @@ private fun TowarownikApp() {
                             attachmentError = AttachmentImportError.TOO_MANY
                         } else {
                             pickerLaunchedAt = pickerEpoch
+                        pickerReturnPending = true
                             photoPicker.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                             )
@@ -1343,6 +1350,7 @@ private fun TowarownikApp() {
                             attachmentError = AttachmentImportError.TOO_MANY
                         } else {
                             pickerLaunchedAt = pickerEpoch
+                        pickerReturnPending = true
                             filePicker.launch(ADVISOR_FILE_PICKER_MIME_TYPES)
                         }
                     },
