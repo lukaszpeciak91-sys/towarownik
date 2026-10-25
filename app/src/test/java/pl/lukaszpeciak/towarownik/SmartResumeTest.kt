@@ -19,6 +19,20 @@ class SmartResumeTest {
         assertFalse(shouldSmartResume(100L, 99L, false, false, false))
     }
 
+    @Test fun photoFileAndCameraPickerReturnOrCancellationPreventTimeoutNavigation() {
+        val afterTimeout = SMART_RESUME_TIMEOUT_MILLIS + 10
+        // Both result delivery and cancellation return through the same Activity lifecycle.
+        for (picker in listOf("photo", "file", "camera", "replace")) {
+            assertFalse(picker, shouldSmartResume(
+                0L, afterTimeout, false, false, false, returningFromPicker = true,
+            ))
+        }
+        // Guard is consumed once, so an unrelated later timeout remains eligible.
+        assertTrue(shouldSmartResume(
+            0L, afterTimeout, false, false, false, returningFromPicker = false,
+        ))
+    }
+
     @Test fun unfinishedWorkAlwaysPreventsNavigation() {
         val elapsed = SMART_RESUME_TIMEOUT_MILLIS + 100
         assertFalse(shouldSmartResume(0L, elapsed, true, false, false))
