@@ -2,6 +2,7 @@ package pl.lukaszpeciak.towarownik
 
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.net.Uri
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
@@ -164,7 +165,42 @@ import pl.lukaszpeciak.towarownik.product.provider.WorkingProfileRepository
 import pl.lukaszpeciak.towarownik.ui.theme.TowarownikTheme
 import pl.lukaszpeciak.towarownik.ui.theme.towarownikColors
 
+internal const val SMART_RESUME_TIMEOUT_MILLIS = 60L * 60L * 1000L
+
+internal fun shouldSmartResume(
+    stoppedAtMillis: Long?,
+    resumedAtMillis: Long,
+    hasDraft: Boolean,
+    hasAttachments: Boolean,
+    hasActiveOperation: Boolean,
+): Boolean = stoppedAtMillis != null &&
+    resumedAtMillis >= stoppedAtMillis &&
+    resumedAtMillis - stoppedAtMillis >= SMART_RESUME_TIMEOUT_MILLIS &&
+    !hasDraft && !hasAttachments && !hasActiveOperation
+
 class MainActivity : AppCompatActivity() {
+    private var stoppedAtMillis: Long? = null
+    internal var smartResumeReturn by mutableStateOf<Long?>(null)
+        private set
+
+    override fun onStop() {
+        super.onStop()
+        stoppedAtMillis = SystemClock.elapsedRealtime()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val stopped = stoppedAtMillis
+        stoppedAtMillis = null
+        if (stopped != null) {
+            smartResumeReturn = SystemClock.elapsedRealtime() - stopped
+        }
+    }
+
+    internal fun consumeSmartResumeReturn() {
+        smartResumeReturn = null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -244,6 +280,7 @@ internal fun freshAdvisorCaseAfterDelete(
 @Composable
 private fun TowarownikApp() {
     val uiContext = LocalContext.current
+    val activity = uiContext as MainActivity
     val context = uiContext.applicationContext
     val advisorController = remember { AdvisorController.production(context) }
     val providerRegistry = remember { ProductProviderRegistry.production() }
@@ -603,6 +640,24 @@ private fun TowarownikApp() {
             selectedWorkingProfile = globalWorkingProfile
             advisorState = AdvisorUiState.Idle
             advisorCase = AdvisorCaseUiState()
+        }
+    }
+
+    LaunchedEffect(activity.smartResumeReturn) {
+        val backgroundDuration = activity.smartResumeReturn ?: return@LaunchedEffect
+        activity.consumeSmartResumeReturn()
+        if (
+            shouldSmartResume(
+                stoppedAtMillis = 0L,
+                resumedAtMillis = backgroundDuration,
+                hasDraft = advisorCase.draft.isNotBlank(),
+                hasAttachments = pendingAttachments.isNotEmpty() || attachmentImporting,
+                hasActiveOperation = advisorJob?.isActive == true || draftPersistJob?.isActive == true,
+            )
+        ) {
+            newAdvisorCase()
+            surfaceName = AppSurface.ADVISOR.name
+            scope.launch { drawerState.close() }
         }
     }
 
