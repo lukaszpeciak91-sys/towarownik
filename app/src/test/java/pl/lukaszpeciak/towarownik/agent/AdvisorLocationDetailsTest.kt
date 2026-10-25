@@ -25,12 +25,12 @@ class AdvisorLocationDetailsTest {
         )
         val summary = renderAdvisorLocationDetails(evidence)
         val lines = summary.lines()
-        assertEquals(63, lines.size) // heading, 61 locations, unknown/zero warning
-        assertTrue(lines[0].contains("sprawdzono 61"))
-        assertTrue(lines[0].contains("niepotwierdzone: 1"))
-        assertTrue(lines.any { it.startsWith("061 —") && it.contains("stan nieznany") })
-        assertTrue(lines.any { it.startsWith("001 —") && it.contains("0 szt.") })
-        assertFalse(lines.any { it.startsWith("061 —") && it.contains("0 szt.") })
+        assertEquals(64, lines.size) // heading, 61 locations, incompleteness note, timestamp
+        assertTrue(lines[0].contains("wyniki niepełne"))
+        assertFalse(lines[0].contains("sprawdzono"))
+        assertTrue(lines.any { it.startsWith("Synthetic city 061") && it.contains("Nie udało się potwierdzić stanu") })
+        assertTrue(lines.any { it.startsWith("Synthetic city 001") && it.contains("Brak na stanie (0 szt.)") })
+        assertFalse(lines.any { it.startsWith("Synthetic city 061") && it.contains("0 szt.") })
     }
 
     @Test fun `all confirmed other markets have every canonical ID in plain chat list`() {
@@ -45,8 +45,8 @@ class AdvisorLocationDetailsTest {
         )
         val rendered = renderAdvisorLocationDetails(evidence)
         assertTrue(rendered.contains("Wszystkie pozostałe markety OBI"))
-        for (id in ids) assertTrue(rendered.lines().any { it.startsWith("$id —") })
-        assertFalse(rendered.contains("stan nieznany"))
+        for (id in ids) assertTrue(rendered.lines().any { it.contains("($id) —") })
+        assertFalse(rendered.contains("Nie udało się potwierdzić stanu"))
     }
 
     @Test fun `untrusted or mismatched market identities are never rendered`() {
@@ -77,11 +77,37 @@ class AdvisorLocationDetailsTest {
         )
         val rendered = renderAdvisorLocationDetails(evidence)
         assertTrue(rendered.startsWith("Wszystkie pozostałe markety OBI — wyniki niepełne"))
-        assertTrue(rendered.contains("niepotwierdzone: 10"))
-        assertEquals(63, rendered.lines().size)
-        assertTrue(rendered.lines().any { it.startsWith(missing[0] + " —") && it.contains("stan nieznany") })
+        assertTrue(rendered.contains("Nie udało się potwierdzić wszystkich stanów"))
+        assertEquals(64, rendered.lines().size)
+        assertTrue(rendered.lines().any { it.contains("(" + missing[0] + ") —") && it.contains("Nie udało się potwierdzić stanu") })
     }
 
+
+
+    @Test fun naturalSingleAndMultiKwantPreserveVerifiedUnitAndUnknown() {
+        val entries = listOf(
+            AdvisorLocationEntry("201", "Dąbrowa Tarnowska", 15),
+            AdvisorLocationEntry("205", "Nowy Sącz", 0),
+            AdvisorLocationEntry("204", "Tarnów", null),
+        )
+        fun evidence(items: List<AdvisorLocationEntry>) = AdvisorLocationEvidence(
+            providerId = "kwant-pl", productId = "580", status = "verified",
+            reason = null, coverage = "requested_subset",
+            checkedIds = items.map { it.branchId },
+            returnedIds = items.filter { it.stock != null }.map { it.branchId },
+            missingIds = items.filter { it.stock == null }.map { it.branchId },
+            locations = items, verifiedAtMillis = null, centralStock = null,
+            stockUnit = "szt.",
+        )
+        assertEquals("Dąbrowa Tarnowska (201) — 15 szt.",
+            renderAdvisorLocationDetails(evidence(entries.take(1))))
+        val multi = renderAdvisorLocationDetails(evidence(entries))
+        assertTrue(multi.contains("Dąbrowa Tarnowska (201) — 15 szt."))
+        assertTrue(multi.contains("Nowy Sącz (205) — Brak na stanie (0 szt.)."))
+        assertTrue(multi.contains("Tarnów (204) — Nie udało się potwierdzić stanu."))
+        assertTrue(multi.contains("wyniki niepełne"))
+        assertFalse(multi.contains("dodatni stan:"))
+    }
 
     @Test fun rejectedMiejscePiastowe054RendersPreciseNoHttpClarification() {
         val evidence = AdvisorLocationEvidence(

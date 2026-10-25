@@ -21,11 +21,11 @@ class KwantLocationRenderingTest {
             stockUnit = "kg",
         ))
         assertTrue(rendered.contains("oddziały KWANT"))
-        assertTrue(rendered.contains("Zamość — 8 kg"))
-        assertTrue(rendered.contains("Nowy Sącz — 0 kg"))
-        assertTrue(rendered.contains("Tarnów — brak potwierdzenia"))
+        assertTrue(rendered.contains("Zamość (128) — 8 kg"))
+        assertTrue(rendered.contains("Nowy Sącz (205) — Brak na stanie (0 kg)."))
+        assertTrue(rendered.contains("Tarnów (204) — Nie udało się potwierdzić stanu."))
         assertTrue(rendered.contains("wyniki niepełne"))
-        assertTrue(rendered.contains("stan zweryfikowany"))
+        assertTrue(rendered.contains("Stan sprawdzony:"))
         assertFalse(rendered.contains("markety OBI"))
         assertFalse(rendered.contains("987654"))
     }
@@ -39,8 +39,8 @@ class KwantLocationRenderingTest {
             locations = listOf(AdvisorLocationEntry("205", "Nowy Sącz", 10)),
             verifiedAtMillis = null, centralStock = null, stockUnit = null,
         ))
-        assertTrue(text.contains("Nowy Sącz — 10"))
-        assertFalse(text.contains("Nowy Sącz — 10 szt."))
+        assertTrue(text.contains("Nowy Sącz (205) — 10"))
+        assertFalse(text.contains("Nowy Sącz (205) — 10 szt."))
     }
 
     @Test fun twoProductProtocolLimitStatesNoInventoryWasChecked() {

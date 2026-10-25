@@ -214,7 +214,7 @@ class Inc007MultiTurnRecoveryTest {
         assertEquals(2, h.lookups.size); assertEquals(2, h.outputs.size)
         assertTrue(h.outputs.last() is AdvisorToolContinuation.Verified)
         assertEquals("77556", result.products.single().effectiveProductId)
-        assertTrue(result.text, result.text.contains("205 — Nowy Sącz — 0"))
+        assertTrue(result.text, result.text.contains("Nowy Sącz (205) — Brak na stanie (0"))
         assertFalse(result.text.contains("99")); assertTrue(h.gets.isEmpty())
     }
     @Test fun naturalRetryAndFillerKeepFreshExactProductAndUserScope() = runBlocking {
@@ -291,7 +291,7 @@ class Inc007MultiTurnRecoveryTest {
         val result = h.turn(h.article)
         assertNull(result.products.single().stock); assertEquals("unavailable", h.evidence().status)
         assertEquals(listOf("205"), h.evidence().missingIds); assertTrue(h.evidence().returnedIds.isEmpty())
-        assertTrue(result.text.contains("nie oznacza stanu 0")); assertTrue(h.gets.isEmpty())
+        assertTrue(result.text, result.text.contains("nieznany") || result.text.contains("Nie udało się potwierdzić stanu.")); assertFalse(result.text.contains("Brak na stanie (0")); assertTrue(h.gets.isEmpty())
     }
     @Test fun ambiguousExactCatalogMatchesDoNotSelectFirstProduct() = runBlocking {
         val h = Harness(); h.duplicateCandidates = true
@@ -309,7 +309,7 @@ class Inc007MultiTurnRecoveryTest {
         val result = h.turn("nie sprawdzisz mi w Mielcu?")
         assertEquals("transport", h.evidence().reason); assertEquals(listOf("206"), h.evidence().checkedIds)
         assertNull(h.evidence().locations.single().stock); assertEquals(1, h.gets.size)
-        assertFalse(result.text.contains("99")); assertTrue(result.text.contains("nie oznacza stanu 0"))
+        assertFalse(result.text.contains("99")); assertTrue(result.text.contains("Nie udało się potwierdzić stanu."))
     }
     @Test fun actualWireRecoveryKeepsOriginalOpaqueIdsAndStrictLocationShape() = runBlocking {
         for (provider in listOf("obi-pl", "kwant-pl")) for (unknown in listOf(false, true)) {

@@ -225,7 +225,7 @@ class Inc007E2eTest {
         for(place in listOf("Mielcu","Tarnowie")) {
             val state=s.turn("sprawdź stan A9Z01440/SCH w $place","locations")
             assertEquals(reason,s.evidence?.reason);assertNull(s.evidence?.locations?.single()?.stock)
-            assertTrue(state.text.contains("niepotwierdzone: 1"));assertTrue(state.text.contains("nie oznacza stanu 0"))
+            assertTrue(state.text.contains("Nie udało się potwierdzić stanu."));assertFalse(state.text.contains("Brak na stanie (0"))
         }
         assertEquals(2,s.gets.size)
     }
