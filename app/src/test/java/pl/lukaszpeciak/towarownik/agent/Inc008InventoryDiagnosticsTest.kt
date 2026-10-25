@@ -76,7 +76,7 @@ class Inc008InventoryDiagnosticsTest {
             assertTrue(report(evidence).contains("returned_ids=[] missing_ids=[205]"))
             assertEquals(200, evidence.httpDiagnostic!!.status)
             assertNull(evidence.verifiedAtMillis)
-            assertTrue(renderAdvisorLocationDetails(evidence).contains("brak potwierdzenia (stan nieznany)"))
+            assertTrue(renderAdvisorLocationDetails(evidence).contains("Nie udało się potwierdzić stanu."))
         }
     }
 
