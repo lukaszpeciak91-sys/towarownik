@@ -477,4 +477,20 @@ proszę znajdź mi kody na te artykuły seria Karlik mini, ramki okrągłe kolor
         assertEquals("rejected", wrongProvider.outcome)
         assertEquals(emptyList<String>(), wrongProvider.inventoryReads)
     }
+
+    // Security audit of R1: an unmarked unknown place immediately following
+    // a document reference must NOT be erased together with the reference.
+    @Test fun `R1 review document nouns cannot swallow bare unknown geographic tails`() = runBlocking {
+        for (input in listOf(
+            "znajdź kody na screenach zakopane",
+            "proszę znajdź mi kody na te artykuły do zakopanego",
+            "porównaj w ofercie zakopane",
+        )) {
+            val result = search(input, "kwant-pl", "205", "204", "Tarnów")
+            assertEquals(input, "", result.called)
+            assertEquals(input, "rejected", result.outcome)
+            assertEquals(input, emptyList<String>(), result.inventoryReads)
+            assertEquals(input, 0, result.cards)
+        }
+    }
 }
