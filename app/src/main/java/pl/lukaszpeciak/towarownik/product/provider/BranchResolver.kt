@@ -48,7 +48,8 @@ internal object BranchResolver {
         val originalCase = normalizedText(userText, preserveCase = true)
         if (originalCase.length != text.length) return userText
         val markers = LOCATION_MARKER.findAll(text).toList()
-        val clauses = (APPLICATION_CLAUSE.findAll(text) + COUNTED_PRODUCT_CLAUSE.findAll(text))
+        val clauses = (APPLICATION_CLAUSE.findAll(text) + COUNTED_PRODUCT_CLAUSE.findAll(text) +
+            DOCUMENT_REFERENCE_CLAUSE.findAll(text))
             .sortedBy { it.range.first }.toList()
         val applications = clauses.mapIndexedNotNull { index, application ->
             val source = text.substring(application.range.first).substringAfter(' ')
@@ -78,6 +79,12 @@ internal object BranchResolver {
             // Never erase a supplied geographical label within a purpose tail.
             if (GEOGRAPHICAL_LABEL.containsMatchIn(text.substring(application.range.last + 1, end))) {
                 return@mapIndexedNotNull null
+            }
+            if (DOCUMENT_REFERENCE_CLAUSE.matches(application.value)) {
+                // These bounded noun phrases refer to documents or line items,
+                // not branches. Remove ONLY the phrase; any following city,
+                // store marker or unknown place remains subject to canonical checks.
+                return@mapIndexedNotNull application.range
             }
             if (COUNTED_PRODUCT_CLAUSE.matches(application.value)) {
                 // A number of poles/sockets is a complete product attribute.
@@ -432,6 +439,12 @@ internal object BranchResolver {
         """\b(?:(?:w|we) (?:[a-z]+(?:ym|im|ej) ){0,2}(?:mieszkaniu|lazience|rozdzielnicy|wnece)|""" +
             """na (?:[a-z]+(?:a|e|y|ej|ym) ){0,2}(?:szyne|szynie|sciane|scianie|sufit|suficie)|""" +
             """do (?:rozdzielnicy|montazu))\b""",
+    )
+    // Only these complete document/line-item phrases are non-geographical.
+    // Do not consume the rest of the sentence; later explicit, unknown and
+    // contradictory places must still reach the canonical resolver.
+    private val DOCUMENT_REFERENCE_CLAUSE = Regex(
+        """\b(?:na (?:te )?artykuly|na screenach|w ofercie)\b""",
     )
     // A small number followed by a countable product feature is not
     // an address (e.g. "na 5 bolców", "na 3 gniazda"). Keep three-digit
