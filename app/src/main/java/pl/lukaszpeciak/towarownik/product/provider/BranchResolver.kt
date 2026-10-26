@@ -81,9 +81,20 @@ internal object BranchResolver {
                 return@mapIndexedNotNull null
             }
             if (DOCUMENT_REFERENCE_CLAUSE.matches(application.value)) {
-                // These bounded noun phrases refer to documents or line items,
-                // not branches. Remove ONLY the phrase; any following city,
-                // store marker or unknown place remains subject to canonical checks.
+                // Only a complete document noun phrase with a recognized
+                // continuation is non-geographical. A bare unknown place
+                // following it (e.g. "na screenach zakopane") must preserve
+                // the original text for fail-closed canonical resolution.
+                val tail = text.substring(application.range.last + 1, end).trim()
+                val describedDocument = when (application.value) {
+                    "w ofercie" -> tail.startsWith("wpisalem ")
+                    else -> tail.startsWith("seria ")
+                }
+                if (tail.isNotEmpty() && !describedDocument) {
+                    return@mapIndexedNotNull null
+                }
+                // Erase only the bounded reference, never any following
+                // explicit city/market marker or a product's source text.
                 return@mapIndexedNotNull application.range
             }
             if (COUNTED_PRODUCT_CLAUSE.matches(application.value)) {
