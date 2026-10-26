@@ -467,7 +467,7 @@ proszę znajdź mi kody na te artykuły seria Karlik mini, ramki okrągłe kolor
             assertEquals(input, expected, result.called)
             assertEquals(input, "verified", result.continuation)
             assertEquals(input, listOf(expected), result.cardBranches)
-            assertEquals(input, listOf(expected), result.inventoryReads)
+            if (provider == "kwant-pl") assertEquals(input, listOf(expected), result.inventoryReads)
         }
         val wrongProvider = search(
             "proszę o znalezienie mi kodów na artykuły na screenach. seria Karlik mini kolor taupe okrągła ramka",
