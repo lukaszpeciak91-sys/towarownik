@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-10-26 — Advisor-first R0/R1 document and quotation discovery-location projection
+
+R0 on unchanged production Android from main `7476c32624f0357807e3e9745e4694ce19b98cf9`: test-only SHA `2757bccd41779bd557c8f99cd1a4fcb55a593cdc`, [Android checks #40319354448](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/40319354448) — **1159 unit tests, exactly four new RED failures** in `AdvisorDiscoveryRoutingRegressionTest`: both exact Karlik MINI taupe screenshot questions, ten-line quotation, and document-context-plus-explicit-branch positive case. The independent correction, original negative geography, wrong-provider, and other checks passed. Production Kotlin was unchanged during this RED checkpoint.
+
+Root cause: shared `BranchResolver.resolveDiscovery` sees ordinary `na te artykuły`, `na artykuły`, `na screenach`, `w ofercie` as potential branch selectors via its common `w/we/na` location marker; canonical `consumePlace` cannot resolve their heads and returns `UnknownMention`, so Controller rejects a model-initiated discovery as `unknown_location` before provider HTTP. It is a deterministic Android authorization bug, not proof that the model chose the correct tool or that any manufacturer-source research occurred.
+
+R1: project only complete bounded document/line-item phrases out of **discovery** location text, deleting the phrase itself rather than any following sentence tail. The existing directory, known/unknown place and street precedence, real additional `w/we/na` place markers, contradictory identity checks, user scope and WorkingProfile remain authoritative. Explicit `w Tarnowie` / `w Bochni` after document context must authorize normally; `w Zakopanem`, `w oddziale 999`, conflicting OBI 075 + Wielicka, mixed known/unknown cities and wrong-provider model calls still fail closed. PR #139 R2's `na 5 bolców`/location-tail protections remain under tests.
+
+This R1 scope intentionally leaves model selection of web versus local provider, Worker/prompt/tool schemas, HTTP 502, input newline flattening, inventory authorization, card truth, persistence and UI untouched. Tests use scripted model plans and synthetic verified provider facts: they do not establish live-model behavior, internet research, attachment image interpretation or real-device success. Follow-up independent audit and real-device AAB validation are separate release gates.
+
 ## 2026-10-25 — PILOT INC-008 shared OBI/KWANT product-context routing repair
 
 Android 0.1.31 (32) real-device evidence: KWANT 205 `we wnęce 30×70 cm` and OBI 075 `na 5 bolców` / `na 3 gniazda` returned `find_products` / `find_obi_products` typed `unknown_location` before any provider inventory read. Follow-up requests often asked for an already saved branch; these are core pilot blockers. The same device successfully verified KWANT MBN116E/MBN316E and OBI OBIK 6117543, proving search is not categorically unavailable. A later pilot deliberately used KWANT branch 216; branch changes are not blamed.
