@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.lukaszpeciak.towarownik.product.VerifiedProductSnapshot
 import pl.lukaszpeciak.towarownik.product.provider.BranchId
-import pl.lukaszpeciak.towarownik.product.provider.OBI_STORES
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranch
 import pl.lukaszpeciak.towarownik.product.provider.ProviderBranchResult
 
@@ -25,9 +24,10 @@ class AdvisorNonInventoryAnswerRecoveryTest {
         ProviderBranch(BranchId("204"), "Tarnów"),
         ProviderBranch(BranchId("203"), "Bochnia"),
     )
-    private val obiBranches = OBI_STORES.map {
-        ProviderBranch(BranchId(it.storeNumber), it.city, it.address)
-    }
+    private val obiBranches = listOf(
+        ProviderBranch(BranchId("075"), "Nowy Sącz", "ul. Tarnowska 125"),
+        ProviderBranch(BranchId("003"), "Kraków", "ul. Wielicka 259"),
+    )
 
     private data class Observation(
         val state: AdvisorUiState.Success,
