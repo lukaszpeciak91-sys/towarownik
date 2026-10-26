@@ -382,4 +382,99 @@ class AdvisorDiscoveryRoutingRegressionTest {
             assertEquals(input, 0, result.cards)
         }
     }
+
+    // Advisor-first R0: exact pilot wording. A scripted local lookup is intentional
+    // here; this suite tests Android authorization, NOT live model tool selection.
+    @Test fun `R0 Karlik screenshot request one never selects a fictitious location`() = runBlocking {
+        val input = """dwa screeny bo lista była długa.
+proszę znajdź mi kody na te artykuły seria Karlik mini, ramki okrągłe kolor taupe"""
+        val result = search(input, "kwant-pl", "205", "128", "Zamość")
+        assertEquals("205", result.called)
+        assertEquals("verified", result.continuation)
+        assertEquals(listOf("205"), result.inventoryReads)
+        assertEquals(listOf("205"), result.cardBranches)
+    }
+
+    @Test fun `R0 Karlik screenshot request two keeps the conversation branch`() = runBlocking {
+        val input = "proszę o znalezienie mi kodów na artykuły na screenach. seria Karlik mini kolor taupe okrągła ramka"
+        val result = search(input, "kwant-pl", "205", "204", "Tarnów")
+        assertEquals("205", result.called)
+        assertEquals("verified", result.continuation)
+        assertEquals(listOf("205"), result.inventoryReads)
+        assertEquals(listOf("205"), result.cardBranches)
+    }
+
+    @Test fun `R0 exact ten-line quotation verification is not geography`() = runBlocking {
+        val input = """w ofercie wpisałem poniższe czy się zgadza?
+60MGP-1zp — 50 szt.
+60MGPB-1zp — 8 szt.
+60MWP-1 — 6 szt.
+60MWP-2 — 2 szt.
+60MWP-3 — 6 szt.
+60MWP-6 — 1 szt.
+60MWP-4 — 1 szt.
+60MRTO-3 — 11 szt.
+60MRTO-2 — 18 szt.
+60MRTO-1 — 13 szt."""
+        // Input retains the original ten item lines; multiline wire preservation
+        // belongs to a separate PR, not to this discovery-location fix.
+        assertEquals(11, input.lines().size)
+        val result = search(input, "kwant-pl", "205", "203", "Bochnia")
+        assertEquals("205", result.called)
+        assertEquals("verified", result.continuation)
+        assertEquals(listOf("205"), result.inventoryReads)
+        assertEquals(listOf("205"), result.cardBranches)
+    }
+
+    @Test fun `R0 correction about codes is an independent ordinary user turn`() = runBlocking {
+        val input = "ale ja nie pytam o lokalizację marketu ani stany, proszę o kody"
+        val result = search(input, "kwant-pl", "205", "128", "Zamość")
+        assertEquals("205", result.called)
+        assertEquals("verified", result.continuation)
+        assertEquals(listOf("205"), result.inventoryReads)
+        assertEquals(listOf("205"), result.cardBranches)
+    }
+
+    @Test fun `R0 document context cannot mask explicit unknown or conflicting geography`() = runBlocking {
+        for ((input, provider, selected) in listOf(
+            Triple("sprawdź stan w Zakopanem", "kwant-pl", "205"),
+            Triple("sprawdź w oddziale 999", "kwant-pl", "205"),
+            Triple("sprawdź produkt w OBI 075 na Wielickiej", "obi-pl", "075"),
+            Triple("porównaj w ofercie i sprawdź stan w Zakopanem", "kwant-pl", "205"),
+            Triple("znajdź kody na screenach i sprawdź stan w Zakopanem", "kwant-pl", "205"),
+            Triple("porównaj w ofercie i sprawdź stan w Bochni i Zakopanem", "kwant-pl", "205"),
+            Triple("znajdź na artykuły na screenach w oddziale 999", "kwant-pl", "205"),
+            Triple("Szukam gniazda na 5 bolców do zakopanego", "obi-pl", "075"),
+            Triple("Szukam przedłużacza na 3 gniazda do zakopanego", "obi-pl", "075"),
+        )) {
+            val result = search(input, provider, selected, "203")
+            assertEquals(input, "", result.called)
+            assertEquals(input, "rejected", result.outcome)
+            assertEquals(input, 0, result.cards)
+            assertEquals(input, emptyList<String>(), result.inventoryReads)
+        }
+    }
+
+    @Test fun `R0 document context keeps authorized explicit scope and model isolation`() = runBlocking {
+        for ((input, provider, selected, expected) in listOf(
+            listOf("znajdź kody na screenach i sprawdź w KWANT 205", "kwant-pl", "205", "205"),
+            listOf("porównaj w ofercie i sprawdź w Tarnowie", "kwant-pl", "205", "204"),
+            listOf("znajdź kody na artykuły i sprawdź w Bochni", "kwant-pl", "205", "203"),
+            listOf("sprawdź produkt w OBI 003", "obi-pl", "075", "003"),
+            listOf("sprawdź produkt na 3 gniazda w OBI 003", "obi-pl", "075", "003"),
+        )) {
+            val result = search(input, provider, selected, "999", "Atlantyda")
+            assertEquals(input, expected, result.called)
+            assertEquals(input, "verified", result.continuation)
+            assertEquals(input, listOf(expected), result.cardBranches)
+            assertEquals(input, listOf(expected), result.inventoryReads)
+        }
+        val wrongProvider = search(
+            "proszę o znalezienie mi kodów na artykuły na screenach. seria Karlik mini kolor taupe okrągła ramka",
+            "kwant-pl", "205", "205", hintProvider = "obi-pl",
+        )
+        assertEquals("", wrongProvider.called)
+        assertEquals("rejected", wrongProvider.outcome)
+        assertEquals(emptyList<String>(), wrongProvider.inventoryReads)
+    }
 }
