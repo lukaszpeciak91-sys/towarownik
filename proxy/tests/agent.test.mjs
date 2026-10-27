@@ -341,7 +341,7 @@ test("valid start sends only server-controlled OpenAI configuration", async () =
   assert.equal(capture.body.model, OPENAI_MODEL);
   assert.equal(capture.body.model, "gpt-6-luna");
   assert.equal(capture.body.instructions, agentInstructionsForStore("075"));
-  assert.equal(capture.body.input, "find a product please");
+  assert.equal(capture.body.input, "  find   a product\nplease  ");
   assert.deepEqual(capture.body.reasoning, { effort: OPENAI_REASONING_EFFORT });
   assert.equal(capture.body.reasoning.effort, "low");
   assert.equal(capture.body.max_output_tokens, OPENAI_MAX_OUTPUT_TOKENS);

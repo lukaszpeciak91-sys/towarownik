@@ -991,9 +991,10 @@ function sanitizeAttachmentFilename(value: string): string {
 
 function validatedAttachmentMessage(value: unknown): string {
   if (typeof value !== "string") throw new InvalidRequestError();
-  const normalized = value.trim();
-  if (normalized.length > START_MESSAGE_MAX_CHARS) throw new InvalidRequestError();
-  return normalized;
+  const message = canonicalUserMessage(value);
+  if (message.length > START_MESSAGE_MAX_CHARS) throw new InvalidRequestError();
+  // Multipart always carries at least one validated attachment; empty text is valid.
+  return message;
 }
 
 function validateAttachmentSignature(mime: string, bytes: Uint8Array, protocol: AdvisorProtocolVersion): void {
@@ -1063,8 +1064,8 @@ function validatedMessage(value: unknown): string {
   if (typeof value !== "string") {
     throw new InvalidRequestError();
   }
-  const message = normalizeWhitespace(value);
-  if (!message) {
+  const message = canonicalUserMessage(value);
+  if (!message.trim()) {
     throw new InvalidRequestError();
   }
   if (message.length > START_MESSAGE_MAX_CHARS) {
@@ -1345,6 +1346,15 @@ function boundedString(value: unknown, maxChars: number): string {
   }
   return value;
 }
+
+// USER input only: keep line/list structure distinct from normalized tool
+// queries, provider IDs, product facts and other authority-bearing fields.
+// String.length retains the pre-existing 2,000 UTF-16-unit limit.
+const canonicalUserMessage = (value: string): string => {
+  const message = value.replace(/\r\n?/g, "\n")
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, " ");
+  return message.trim() ? message : "";
+};
 
 const normalizeWhitespace = (value: string): string =>
   value.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim();

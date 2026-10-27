@@ -61,8 +61,19 @@ class ConversationRepositoryTest {
         val created = repository.beginUserTurn(null, original, createdAt = 111L)
         database.close()
         openDatabase()
-        assertEquals(original.trim(), repository.load(created.conversationId)!!.messages.single().text)
+        assertEquals(original, repository.load(created.conversationId)!!.messages.single().text)
         assertTrue(repository.load(created.conversationId)!!.title.startsWith("MBN116E/HAG zażółć gęślą jaźń"))
+    }
+
+    @Test
+    fun newlyPersistedUserTextMatchesCanonicalModelWireAndHistoryRoundTrip() = runBlocking {
+        val raw = "  • EAN 0001234567890\t— 2 szt.\r\n\r\n\t30×70 cm\u0001\rZażółć gęślą jaźń\n"
+        val expected = "  • EAN 0001234567890\t— 2 szt.\n\n\t30×70 cm \nZażółć gęślą jaźń\n"
+        val created = repository.beginUserTurn(null, raw, createdAt = 222L)
+        database.close()
+        openDatabase()
+        assertEquals(expected, repository.load(created.conversationId)!!.messages.single().text)
+        assertTrue(repository.load(created.conversationId)!!.title.startsWith("• EAN 0001234567890"))
     }
 
     @Test
@@ -437,7 +448,7 @@ class ConversationRepositoryTest {
         val current = requireNotNull(repository.load(started.conversationId))
 
         assertEquals("Plain question", current.title)
-        assertEquals("Plain question", current.messages.single().text)
+        assertEquals("  Plain question  ", current.messages.single().text)
         assertNull(current.messages.single().attachment)
     }
 

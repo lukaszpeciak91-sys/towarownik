@@ -7,6 +7,7 @@ import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticSource
 import pl.lukaszpeciak.towarownik.diagnostics.DiagnosticStage
 import pl.lukaszpeciak.towarownik.diagnostics.SafeDiagnosticEvent
 import pl.lukaszpeciak.towarownik.BuildConfig
+import pl.lukaszpeciak.towarownik.canonicalAdvisorUserMessage
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
 import pl.lukaszpeciak.towarownik.attachment.AttachmentStorage
 import pl.lukaszpeciak.towarownik.product.DEFAULT_OBI_STORE_NUMBER
@@ -129,6 +130,8 @@ internal class AdvisorController(
         onToolRequestObserved: () -> Unit = {},
         onState: (AdvisorUiState) -> Unit,
     ): AdvisorUiState {
+        val messageForModel = canonicalAdvisorUserMessage(input)
+        // Retain the identical single-line projection for trusted provider authorization.
         val normalizedInput = input.normalizeWhitespace()
         val requested = if (attachments.isEmpty()) listOfNotNull(attachment) else attachments
         if (normalizedInput.isBlank() && requested.isEmpty() ||
@@ -391,36 +394,36 @@ internal class AdvisorController(
         val initialCall = safeProxyCall {
             if (previousResponseId == null) {
                 if (attachments.isNotEmpty()) requireNotNull(startAgentWithAttachments)(
-                    normalizedInput,
+                    messageForModel,
                     conversationProviderId,
                     conversationStoreNumber,
                     attachments,
                 ) else if (attachment != null) requireNotNull(startAgentWithAttachment)(
-                    normalizedInput,
+                    messageForModel,
                     conversationProviderId,
                     conversationStoreNumber,
                     attachment,
                 ) else startAgent(
-                    normalizedInput,
+                    messageForModel,
                     conversationProviderId,
                     conversationStoreNumber,
                 )
             } else {
                 if (attachments.isNotEmpty()) requireNotNull(messageAgentWithAttachments)(
                     previousResponseId,
-                    normalizedInput,
+                    messageForModel,
                     conversationProviderId,
                     conversationStoreNumber,
                     attachments,
                 ) else if (attachment != null) requireNotNull(messageAgentWithAttachment)(
                     previousResponseId,
-                    normalizedInput,
+                    messageForModel,
                     conversationProviderId,
                     conversationStoreNumber,
                     attachment,
                 ) else messageAgent(
                     previousResponseId,
-                    normalizedInput,
+                    messageForModel,
                     conversationProviderId,
                     conversationStoreNumber,
                 )

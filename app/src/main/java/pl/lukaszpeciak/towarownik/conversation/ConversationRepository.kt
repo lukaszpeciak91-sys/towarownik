@@ -2,6 +2,7 @@ package pl.lukaszpeciak.towarownik.conversation
 
 import java.math.BigDecimal
 import java.net.URI
+import pl.lukaszpeciak.towarownik.canonicalAdvisorUserMessage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import pl.lukaszpeciak.towarownik.attachment.AdvisorAttachment
@@ -215,11 +216,8 @@ internal class ConversationRepository(
         attachment: AdvisorAttachment? = null,
         attachments: List<AdvisorAttachment> = listOfNotNull(attachment),
     ): UserTurnStart {
-        // Preserve human-readable formatting in newly stored USER messages.
-        // Keep non-whitespace control characters sanitized as before.
-        val persistedText = text.map { character ->
-            if (character.isISOControl() && character != '\n' && character != '\r' && character != '\t') ' ' else character
-        }.joinToString("").trim()
+        // Store the exact canonical model-facing USER text; title formatting is separate.
+        val persistedText = canonicalAdvisorUserMessage(text)
         require(persistedText.isNotBlank() || attachments.isNotEmpty())
         require(attachments.size <= 3)
         require(attachments.map { it.localId }.distinct().size == attachments.size)
