@@ -795,7 +795,7 @@ private fun TowarownikApp() {
         if (!canSubmitAdvisorTurn(advisorJob, attachmentImporting)) return
 
         val originalUserText = advisorCase.draft
-        val submitted = originalUserText.trim()
+        val submitted = canonicalAdvisorUserMessage(originalUserText)
         val submittedAttachments = pendingAttachments.toList()
         if (submitted.isBlank() && submittedAttachments.isEmpty()) return
         if (submittedAttachments.size > MAX_ADVISOR_ATTACHMENTS ||
@@ -819,7 +819,7 @@ private fun TowarownikApp() {
 
             val turn = conversationRepository.beginUserTurn(
                 conversationId = activeConversationId,
-                text = originalUserText,
+                text = submitted,
                 workingProfile = turnProfile,
                 attachments = submittedAttachments,
             )
