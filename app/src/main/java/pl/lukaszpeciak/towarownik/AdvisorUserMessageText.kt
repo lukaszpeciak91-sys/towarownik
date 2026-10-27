@@ -10,4 +10,4 @@ package pl.lukaszpeciak.towarownik
 internal fun canonicalAdvisorUserMessage(value: String): String =
     value.replace("\r\n", "\n").replace('\r', '\n').map { character ->
         if (character.isISOControl() && character != '\n' && character != '\t') ' ' else character
-    }.joinToString("")
+    }.joinToString("").let { if (it.isBlank()) "" else it }
