@@ -250,7 +250,7 @@ test("R3 JSON blankness, 2000 UTF-16 units and 4 KiB BODY bound still fail close
   }), env)).status, 200);
   assert.equal(max.received[0].length, 2000);
 
-  for (const value of ["A".repeat(2001), "ą".repeat(2000)]) {
+  for (const value of ["A".repeat(2001), "€".repeat(1500)]) {
     const { worker, received } = modelCapture();
     const response = await worker.fetch(jsonRequest("/v1/agent/start", {
       protocolVersion: 3, providerId: "kwant-pl", branchId: "205", message: value,
