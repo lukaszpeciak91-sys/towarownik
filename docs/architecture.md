@@ -1,5 +1,16 @@
 # Architecture
 
+## 2026-10-27 — Advisor-first R3: one canonical USER message, separate authorization projection
+
+On newly submitted USER turns, the Android composer passes `canonicalAdvisorUserMessage(draft)` unchanged to both `ConversationRepository.beginUserTurn` and `AdvisorController.runTurn`. This helper converts CRLF/CR to LF, retains line breaks, tabs, meaningful leading/trailing spaces, blank lines, Unicode and manufacturer identifiers, and replaces non-layout ISO controls with spaces. Whitespace-only messages are represented by an empty string; no-attachment empty turns remain invalid, while attachment-only turns remain allowed. Titles still use their own compact projection. No historical Room rewrite/schema change.
+
+The Controller retains its pre-existing `normalizedInput = input.normalizeWhitespace()` for ALL local tool authorization, product/user evidence, branch discovery, location/inventory history, follow-up and snapshot decisions. Only the six START/MESSAGE model-facing callbacks (text-only and attachment-backed) receive `messageForModel`. The model text cannot grant provider access: the current USER's normalized scope still controls Android reads; unknown/mixed/contradictory locations and wrong-provider hints still fail closed.
+
+The Worker's USER-message-only validators use a separate `canonicalUserMessage`: JSON START/MESSAGE v1–v3 (including OBI v2 and KWANT v3) no longer collapse line breaks; multipart v4/v5 START/MESSAGE no longer `.trim()` meaningful formatting. Responses receives the normalized-LF string unchanged, as plain `input` for JSON or first `input_text` for multipart. All other `normalizeWhitespace` consumers (tool queries, product facts, IDs) remain untouched; v2/v3/v4/v5 envelopes, field limits, JSON 4 KiB body cap, 2,000 JS UTF-16 code-unit message cap, attachment budgets, tool outputs and `/continue` are unchanged. Canonicalizing line endings before length checking can affect exact accepted size; there is no truncation. UTF-8 body bytes and JS UTF-16 units are distinct bounds.
+
+Synthetic test fixtures prove the exact mocked Responses input and Controller routing, not physical-device paste quality or real model's interpretation of the eleven-line Karlik quote. An independent read-only review and subsequent explicit device testing remain separate release gates.
+
+
 ## 2026-10-18 — OBI natural market and city-stock interpretation (pending review)
 
 OBI market selection uses canonical directory IDs and streets. Market 003, Wielicka in Kraków, and the same city/street in reversed order select only store 003. Explicit city-only stock scope selects the actual city store set (Kraków: 003/019/059/072), not an arbitrary first store or mandatory clarification. An unverified new SKU still needs a separate discovery/identity verification before complete city-wide inventory; the discovery seed is not a city-wide stock result. Short follow-ups require a still-authorized USER product chain. KWANT stays untouched, and unknown/contradictory locations do not widen a read. Earlier singular-city notes below remain historical.
