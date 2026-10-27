@@ -1,5 +1,16 @@
 # Progress
 
+## 2026-10-27 — Advisor-first R3 cross-layer USER text fidelity (PR #143; awaiting final-head audit)
+
+Base `main` `4a7e4aa9159012720bedb024e2acaa548887710a`; PR #140 merged, PRs #141/#142 closed unmerged. Copied ONLY the two diagnostic test files from #142 to fresh PR #143. **Actual RED on unchanged production HEAD `27d9effbea31f7d556071c4c0f566f0378756f8a`:** [Android run #40463906323](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/40463906323): 1166 unit tests, exactly 5 new failures; [Proxy run #40463906243](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/40463906243): 643 tests, exactly 4 new failures. Both suites compiled, failed specifically on missing semantic line/indentation preservation.
+
+Root causes confirmed on current main: Compose `MainActivity.kt` sent `draft.trim()` rather than original USER text; `ConversationRepository.kt` independently sanitized/truncated edge whitespace via `.trim()`; `AdvisorController.kt` sent `input.normalizeWhitespace()` to all model START/MESSAGE callbacks; Worker `validatedMessage` flattened every JSON message, while multipart `validatedAttachmentMessage` trimmed leading indentation/trailing LF. The Worker's `modelInput` itself forwarded already-validated input unchanged.
+
+Minimal implementation: one shared Kotlin `canonicalAdvisorUserMessage` used at submit/save/Controller boundaries; model-facing input separate from unchanged normalized `normalizedInput` authorization. One Worker `canonicalUserMessage` applies only to JSON/multipart USER text validators; existing branch/provider, tool, product/stock, budgets, protocol schemas, Worker prompts, model selection and `/continue` are not changed. Whitespace-only attachment messages normalize to empty to preserve prior attachment-only semantics.
+
+Regression coverage: exact 11-line Karlik quote, LF/CRLF/CR, tabs/Unicode/leading zeros/blanks/indent/trailing newline; real Controller START/MESSAGE/v5 callbacks; persistent USER Room round-trip, provider/location fail-closed inputs; mocked actual Responses input for v2/v3 JSON and v4/v5 multipart, 1–3 attachments, validation boundaries and continuation. Scope remains strictly no merge/deploy/AAB/version bump. Final SHA-specific GREEN is required before audit; independent phone/model behavior is not claimed.
+
+
 ## 2026-10-26 — Advisor-first R0/R1 document and quotation discovery-location projection
 
 R0 on unchanged production Android from main `7476c32624f0357807e3e9745e4694ce19b98cf9`: test-only SHA `2757bccd41779bd557c8f99cd1a4fcb55a593cdc`, [Android checks #40319354448](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/40319354448) — **1159 unit tests, exactly four new RED failures** in `AdvisorDiscoveryRoutingRegressionTest`: both exact Karlik MINI taupe screenshot questions, ten-line quotation, and document-context-plus-explicit-branch positive case. The independent correction, original negative geography, wrong-provider, and other checks passed. Production Kotlin was unchanged during this RED checkpoint.
