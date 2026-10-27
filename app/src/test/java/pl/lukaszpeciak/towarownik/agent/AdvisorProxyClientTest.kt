@@ -1571,6 +1571,33 @@ class AdvisorProxyClientTest {
         TaksulaDiagnostics.recorder.clear()
     }
 
+    @Test
+    fun r3RealAndroidProxyJsonV2AndV3StartMessagePreservesStructuredUserText() = runBlocking {
+        val quote = "w ofercie wpisałem poniższe czy się zgadza?\n" +
+            "60MGP-1zp — 50 szt.\n60MGPB-1zp — 8 szt.\n" +
+            "60MWP-1 — 6 szt.\n\n\tEAN 0001234567890 × 2\n"
+        MockWebServer().use { server ->
+            repeat(4) { server.enqueue(answerResponse()) }
+            val proxy = client(server, FAKE_TOKEN)
+            assertTrue(proxy.start(quote) is AdvisorProxyCallResult.Success)
+            assertTrue(proxy.message("resp_previous", quote) is AdvisorProxyCallResult.Success)
+            assertTrue(proxy.start(message = quote, providerId = "kwant-pl", branchId = "205")
+                is AdvisorProxyCallResult.Success)
+            assertTrue(proxy.message("resp_previous", quote, "kwant-pl", "205")
+                is AdvisorProxyCallResult.Success)
+            for ((index, expectedVersion) in listOf(2, 2, 3, 3).withIndex()) {
+                val request = server.takeRequest()
+                val payload = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+                assertEquals(quote, payload["message"]?.jsonPrimitive?.content)
+                assertEquals(expectedVersion, payload["protocolVersion"]?.jsonPrimitive?.intOrNull)
+                assertEquals(if (index % 2 == 0) "/v1/agent/start" else "/v1/agent/message", request.path)
+                if (index % 2 == 1) {
+                    assertEquals("resp_previous", payload["previousResponseId"]?.jsonPrimitive?.content)
+                }
+            }
+        }
+    }
+
     private fun client(
         server: MockWebServer,
         token: String,
