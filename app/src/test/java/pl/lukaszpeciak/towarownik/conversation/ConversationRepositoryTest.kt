@@ -66,6 +66,17 @@ class ConversationRepositoryTest {
     }
 
     @Test
+    fun newlyPersistedUserTextMatchesCanonicalModelWireAndHistoryRoundTrip() = runBlocking {
+        val raw = "  • EAN 0001234567890\t— 2 szt.\r\n\r\n\t30×70 cm\u0001\rZażółć gęślą jaźń\n"
+        val expected = "  • EAN 0001234567890\t— 2 szt.\n\n\t30×70 cm \nZażółć gęślą jaźń\n"
+        val created = repository.beginUserTurn(null, raw, createdAt = 222L)
+        database.close()
+        openDatabase()
+        assertEquals(expected, repository.load(created.conversationId)!!.messages.single().text)
+        assertTrue(repository.load(created.conversationId)!!.title.startsWith("• EAN 0001234567890"))
+    }
+
+    @Test
     fun historySummaryKeepsPersistedBranchWhenOtherProfileIsUsed() = runBlocking {
         val obi = WorkingProfile(OBI_PROVIDER_ID, BranchId("059"))
         val kwant = WorkingProfile(KWANT_PROVIDER_ID, BranchId("205"))
