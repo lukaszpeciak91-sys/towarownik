@@ -493,4 +493,50 @@ proszę znajdź mi kody na te artykuły seria Karlik mini, ramki okrągłe kolor
             assertEquals(input, 0, result.cards)
         }
     }
+
+    // R3: Controller still resolves places from its pre-existing flattened
+    // authority projection; newlines are only preserved for model USER content.
+    @Test fun r3MultilineProviderBranchAuthorityIsIdenticalToSingleLineScope() = runBlocking {
+        val accepted = listOf(
+            Triple("sprawdź\nprodukt A9Z01440/SCH", "kwant-pl", "205"),
+            Triple("sprawdź stan A9Z01440/SCH\nw oddziale 205", "kwant-pl", "205"),
+            Triple("sprawdź stan A9Z01440/SCH\nw Tarnowie", "kwant-pl", "204"),
+            Triple("sprawdź stan A9Z01440/SCH\nw Bochni", "kwant-pl", "203"),
+            Triple("sprawdź produkt\nw OBI 003", "obi-pl", "003"),
+            Triple("w ofercie wpisałem poniższe czy się zgadza?\n60MGP-1zp — 50 szt.", "kwant-pl", "205"),
+            Triple("znajdź kody na te artykuły\nseria Karlik mini", "kwant-pl", "205"),
+            Triple("znajdź kody na screenach\nseria Karlik mini", "kwant-pl", "205"),
+            Triple("klient ma bezpieczniki we wnęce\n30×70 cm, co mamy na stanie?", "kwant-pl", "205"),
+            Triple("Szukam gniazda na 5 bolców\nco mamy?", "obi-pl", "075"),
+        )
+        for ((input, provider, expected) in accepted) {
+            val selected = if (provider == "obi-pl") "075" else "205"
+            val result = search(input, provider, selected, "999", "Bogus")
+            assertEquals(input, expected, result.called)
+            assertEquals(input, "verified", result.continuation)
+            assertEquals(input, listOf(expected), result.cardBranches)
+        }
+        val denied = listOf(
+            Triple("sprawdź stan A9Z01440/SCH\nw Zakopanem", "kwant-pl", "205"),
+            Triple("sprawdź w oddziale 999\nprodukt", "kwant-pl", "205"),
+            Triple("sprawdź stan w Bochni\ni w Zakopanem", "kwant-pl", "205"),
+            Triple("sprawdź produkt\nw OBI 075 na Wielickiej", "obi-pl", "075"),
+            Triple("znajdź kody na screenach\nzakopane", "kwant-pl", "205"),
+            Triple("Szukam gniazda na 5 bolców\ndo zakopanego", "obi-pl", "075"),
+        )
+        for ((input, provider, selected) in denied) {
+            val result = search(input, provider, selected, "999", "Bogus")
+            assertEquals(input, "", result.called)
+            assertEquals(input, "rejected", result.outcome)
+            assertEquals(input, emptyList<String>(), result.inventoryReads)
+            assertEquals(input, 0, result.cards)
+        }
+        val wrong = search("Sprawdź stan A9Z01440/SCH\nw Bochni", "kwant-pl", "205", "203",
+            hintProvider = "obi-pl")
+        assertEquals("", wrong.called)
+        assertEquals("rejected", wrong.outcome)
+        assertEquals(emptyList<String>(), wrong.inventoryReads)
+        assertEquals(0, wrong.cards)
+    }
+
 }
