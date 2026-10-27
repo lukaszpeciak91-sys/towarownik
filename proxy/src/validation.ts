@@ -1350,9 +1350,11 @@ function boundedString(value: unknown, maxChars: number): string {
 // USER input only: keep line/list structure distinct from normalized tool
 // queries, provider IDs, product facts and other authority-bearing fields.
 // String.length retains the pre-existing 2,000 UTF-16-unit limit.
-const canonicalUserMessage = (value: string): string =>
-  value.replace(/\r\n?/g, "\n")
+const canonicalUserMessage = (value: string): string => {
+  const message = value.replace(/\r\n?/g, "\n")
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, " ");
+  return message.trim() ? message : "";
+};
 
 const normalizeWhitespace = (value: string): string =>
   value.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim();
