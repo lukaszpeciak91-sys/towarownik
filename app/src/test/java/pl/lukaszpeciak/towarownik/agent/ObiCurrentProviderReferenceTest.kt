@@ -158,6 +158,27 @@ class ObiCurrentProviderReferenceTest {
         }
     }
 
+    @Test fun `RE02 unresolved references cannot become saved market authority`() = runBlocking {
+        for (tail in listOf("tam", "w innym markecie")) {
+            val input = "Znajdź mi w naszym OBI Cersanit Kier II $tail"
+            assertDenied(input, observe(input))
+        }
+    }
+
+    @Test fun `RE02 foreign provider selectors stay rejected even when numbers overlap`() = runBlocking {
+        for (id in listOf("075", "205")) {
+            val input = "Znajdź mi w naszym OBI Cersanit Kier II w KWANT Nowy Sącz $id"
+            assertDenied(input, observe(input))
+        }
+    }
+
+    @Test fun `RE02 joined place immediately after self reference remains validated`() = runBlocking {
+        for (tail in listOf("i 003", "oraz Zakopane")) {
+            val input = "Znajdź mi w naszym OBI $tail"
+            assertDenied(input, observe(input))
+        }
+    }
+
     @Test fun `RE02 explicit standalone other market remains authorized without profile mutation`() = runBlocking {
         assertVerified(observe("Znajdź mi Cersanit Kier II. Sprawdź cenę i stan w OBI 003."), "003")
         assertVerified(observe("Znajdź mi Cersanit Kier II. Sprawdź cenę i stan w OBI Nowy Sącz 075."))

@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-11-01 — OBI RE-02 current-provider reference repair (PR #144, independent audit pending)
+
+Base main `6ef1b5e3aa4345dc891831893fc034b4a6943af7`, app 0.1.33 (34). Exact reported USER: `Znajdź mi w naszym OBI kompakt WC Cersanit Kier II z odpływem poziomym. Sprawdź aktualną cenę i stan w naszym markecie.` Controller replay on unchanged production rejects before product execution: the nested `OBI` marker treats `kompakt WC...` as a place and returns `unknown_location` before the valid current-market alias is considered. The OBI v2 client generalizes that rejection to `store_not_authorized`.
+
+Permanent test-only RED checkpoint `8766c5c1b4a4b14aa6c456f5333673c94ce406d7`: 11 actual production-source JVM tests, 6 expected failures / 5 passes (five admission scenarios and one adjacent-place conflict control). [Android RED run 41334574615](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/41334574615): 1184 tests completed, exactly those six failures, `BUILD FAILED` at unit tests. A supplemental challenge of the first local candidate exposed three failures (14 tests / 11 passes): unresolved deictics, foreign-provider selectors with overlapping branch numbers, and an immediately joined place. These remain permanent negative tests and were addressed before publishing production changes.
+
+Production scope is one file, `BranchResolver.kt`: OBI discovery recognizes the complete current-provider phrase without rescanning its nested marker; other markers and numeric/canonical qualifiers remain validated. The saved market participates in scope conflict checks, model branch hints cannot replace it, and execution never mutates the conversation profile. Other resolver entry points and KWANT remain on their previous behavior.
+
+Final native regression: 296 tests PASS / 0 FAIL (242 existing core/provider tests, 40 ProxyClient tests, 14 permanent RE-02 tests). Exact-head Android CI is recorded in PR #144. Tests use byte-identical production Kotlin classes with platform-only stubs, scripted model decisions, synthetic provider data and MockWebServer; they are not real-model or device results. No provider HTTP/parser, Worker/prompt/schema, final-answer override, Room/UI, timeout/retry/output budget, version or AAB change. No live provider/OpenAI calls, merge or deployment. `w sieci`, manufacturer research selection, R2 recovery and unrelated HTTP 502 are outside this repair.
+
 ## 2026-10-27 — Advisor-first R3 cross-layer USER text fidelity (PR #143; awaiting final-head audit)
 
 Base `main` `4a7e4aa9159012720bedb024e2acaa548887710a`; PR #140 merged, PRs #141/#142 closed unmerged. Copied ONLY the two diagnostic test files from #142 to fresh PR #143. **Actual RED on unchanged production HEAD `27d9effbea31f7d556071c4c0f566f0378756f8a`:** [Android run #40463906323](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/40463906323): 1166 unit tests, exactly 5 new failures; [Proxy run #40463906243](https://github.com/lukaszpeciak91-sys/towarownik/actions/runs/40463906243): 643 tests, exactly 4 new failures. Both suites compiled, failed specifically on missing semantic line/indentation preservation.

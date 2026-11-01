@@ -38,6 +38,7 @@ internal object BranchResolver {
         val text = discoveryLocationText(userText, branches)
         return if (obiMarketScope) resolveObiMarketScope(
             text, branches, currentBranchId, allowBareBranchIds = text == userText,
+            allowCurrentObiReference = true,
         )
         else resolve(text, branches, currentBranchId, allowBareBranchIds = false)
     }
@@ -130,6 +131,7 @@ internal object BranchResolver {
         currentBranchId: BranchId,
         allowBareBranchIds: Boolean = true,
         allowStockActionTail: Boolean = false,
+        allowCurrentObiReference: Boolean = false,
     ): BranchResolution {
         if (branches.isEmpty() || branches.size > 100 ||
             branches.map { it.branchId }.distinct().size != branches.size ||
@@ -138,9 +140,33 @@ internal object BranchResolver {
 
         val current = branches.singleOrNull { it.branchId == currentBranchId }
         val text = normalizedText(userText)
+        val currentObiReferences = if (allowCurrentObiReference) {
+            CURRENT_OBI_REFERENCE.findAll(text).toList()
+        } else emptyList()
+        if (currentObiReferences.isNotEmpty() &&
+            (UNRESOLVED_LOCATION.containsMatchIn(text) ||
+                LOCATION_MARKER.findAll(text).any { it.value.trim() == "kwant" })
+        ) return BranchResolution.UnknownMention
         val scopes = mutableListOf<String>()
         // Scope begins at a place phrase, not every city/number in a product query.
         for (match in LOCATION_MARKER.findAll(text)) {
+            val currentReference = currentObiReferences.firstOrNull {
+                match.range.first in it.range
+            }
+            if (currentReference != null) {
+                // This complete USER-owned selector means the saved OBI market.
+                // Do not reparse its nested OBI token as a place before product
+                // text. An adjacent ID/canonical place still needs validation;
+                // all location markers outside this exact phrase remain active.
+                val tail = text.substring(currentReference.range.last + 1).trimStart()
+                val first = tail.substringBefore(' ')
+                val hasPlaceQualifier = first.firstOrNull()?.isDigit() == true ||
+                    first in LOCATION_NOUNS || first in setOf("obi", "kwant", "nr", "i", "oraz") ||
+                    GEOGRAPHICAL_LABEL.containsMatchIn(first) ||
+                    branches.any { branch -> cityAliases(branch.name).any { startsWithPhrase(tail, it) } } ||
+                    matchStreet(tail, branches) != null
+                if (!hasPlaceQualifier) continue
+            }
             // A watt unit in "203 W w Bochni" is not a second place marker.
             if (match.value.trim() == "w" &&
                 text.substring(0, match.range.first).trimEnd().lastOrNull()?.isDigit() == true &&
@@ -182,9 +208,9 @@ internal object BranchResolver {
                 tail = place.tail
             }
         }
-        if (current != null && CURRENT_BRANCH_PHRASES.any {
+        if (current != null && (currentObiReferences.isNotEmpty() || CURRENT_BRANCH_PHRASES.any {
                 containsNormalizedPhrase(text, it)
-            }
+            })
         ) candidates += current
         if (candidates.isEmpty()) return if (UNRESOLVED_LOCATION.containsMatchIn(text)) {
             BranchResolution.UnknownMention
@@ -212,6 +238,7 @@ internal object BranchResolver {
         branches: List<ProviderBranch>,
         currentBranchId: BranchId,
         allowBareBranchIds: Boolean = true,
+        allowCurrentObiReference: Boolean = false,
     ): BranchResolution {
         // A verified street immediately followed by a USER-named city is ONE
         // combined place. A different city cannot authorize its own markets
@@ -231,6 +258,7 @@ internal object BranchResolver {
         val resolution = resolve(
             canonicalObiMarketLocationText(userText, branches), branches,
             currentBranchId, allowBareBranchIds, allowStockActionTail = true,
+            allowCurrentObiReference = allowCurrentObiReference,
         )
         // In OBI, a USER-selected city denotes every market in that city.
         // A street or number is already a unique Resolved branch. Cross-city
@@ -483,6 +511,7 @@ internal object BranchResolver {
     private val CURRENT_BRANCH_PHRASES = setOf(
         "u nas", "na naszym magazynie", "w naszym magazynie", "na naszym oddziale", "w naszym oddziale", "w naszym sklepie", "w naszym markecie",
     )
+    private val CURRENT_OBI_REFERENCE = Regex("""\bw naszym obi\b""")
     private val CITY_LOCATIVES = mapOf(
         "bialystok" to "bialymstoku", "bochnia" to "bochni", "brzesko" to "brzesku", "bydgoszcz" to "bydgoszczy", "chelm" to "chelmie",
         "dabrowa tarnowska" to "dabrowie tarnowskiej", "kielce" to "kielcach", "krakow" to "krakowie", "krosno" to "krosnie", "lublin" to "lublinie",
