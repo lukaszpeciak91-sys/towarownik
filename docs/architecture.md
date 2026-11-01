@@ -1,5 +1,11 @@
 # Architecture
 
+## 2026-11-01 — R6: internet research is not a selected place
+
+Only discovery's existing authorization projection recognizes `w sieci` / `w internecie` immediately before bounded code, instruction, datasheet or catalogue nouns. It removes only that medium phrase from the location projection, retaining the research object and every later marker. The model-facing canonical USER text, multiline formatting, queries and WorkingProfile remain unchanged. It neither selects a tool nor forces web search.
+
+Directory cities/streets, explicit place prefixes/labels, unresolved deictics and qualified foreign-provider markers prevent unsafe projection. Retail-network wording (`w sieci OBI`, `w sieci sklepów/hurtowni`, `we wszystkich oddziałach`, `w całej sieci`) does not match this rule and keeps existing discovery/inventory contracts. Model hints still cannot grant scope. Raw `resolve`, inventory/history and provider adapters remain unchanged. This finite noun grammar is not general Polish intent recognition; an existing joined-action-after-place rejection remains unchanged even with `przez internet`.
+
 ## 2026-11-01 — Worker R5: uniform bounded output headroom
 
 All Responses START/MESSAGE/CONTINUE paths now use the existing 1024-token ceiling, replacing 384 on the previously excluded paths and removing count-based continuation selection. Local-result group/product count cannot predict reasoning, final-text or tool-plan demand; START has no local result at all. Model/low reasoning, prompts, schemas, tool and provider authorization, previous-response/call identity and all local lookup limits are unchanged. There is one upstream attempt, no recovery replay and no Worker provider execution.
