@@ -1,5 +1,13 @@
 # Architecture
 
+## 2026-11-01 — OBI RE-02: atomic current-provider discovery reference
+
+Only OBI discovery opts into recognizing the complete USER phrase `w naszym OBI` as a current-market selector. The resolver does not rescan the phrase's nested `OBI` token as the beginning of a place name before product text. It adds the canonical saved market to the resolved scope, rather than trusting a model store hint or changing WorkingProfile. Normal USER/model text, discovery queries and product verification are unchanged.
+
+The exact phrase span is the boundary: later location markers remain active. Adjacent numeric/canonical city/street qualifiers and joined places still require normal validation; conflicts with the current market are rejected. Unresolved deictics and explicit KWANT selectors remain rejected on this OBI path. Like the existing `u nas` selector, ordinary following product text is not a new location selection. Inventory/history resolver entry points and KWANT discovery do not opt into this behavior.
+
+The fix is verified with the exact RE-02 Controller request and synthetic provider facts, including unchanged OBI v2 continuation/profile, fresh card scope and positive/zero/null stock. It does not establish current product availability, actual model tool choice, deployed Worker identity or physical-device acceptance. Manufacturer web routing, `w sieci`, R2 answer recovery and HTTP 502 remain separate investigations.
+
 ## 2026-10-27 — Advisor-first R3: one canonical USER message, separate authorization projection
 
 On newly submitted USER turns, the Android composer passes `canonicalAdvisorUserMessage(draft)` unchanged to both `ConversationRepository.beginUserTurn` and `AdvisorController.runTurn`. This helper converts CRLF/CR to LF, retains line breaks, tabs, meaningful leading/trailing spaces, blank lines, Unicode and manufacturer identifiers, and replaces non-layout ISO controls with spaces. Whitespace-only messages are represented by an empty string; no-attachment empty turns remain invalid, while attachment-only turns remain allowed. Titles still use their own compact projection. No historical Room rewrite/schema change.
