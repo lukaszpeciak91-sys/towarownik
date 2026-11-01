@@ -1,9 +1,9 @@
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 export const OPENAI_MODEL = "gpt-6-luna";
 export const OPENAI_REASONING_EFFORT = "low";
-export const OPENAI_MAX_OUTPUT_TOKENS = 384;
-// Only validated multi-query/multi-product CONTINUE results use this ceiling.
-export const OPENAI_COMPLEX_CONTINUE_MAX_OUTPUT_TOKENS = 1024;
+// Shared ceiling for reasoning, formatting, tool arguments and final text.
+// START/MESSAGE and small/rejected CONTINUE can need the same headroom as batches.
+export const OPENAI_MAX_OUTPUT_TOKENS = 1024;
 
 export const CURRENT_MODEL_PRICING = {
   model: OPENAI_MODEL,

@@ -1,5 +1,11 @@
 # Architecture
 
+## 2026-11-01 — Worker R5: uniform bounded output headroom
+
+All Responses START/MESSAGE/CONTINUE paths now use the existing 1024-token ceiling, replacing 384 on the previously excluded paths and removing count-based continuation selection. Local-result group/product count cannot predict reasoning, final-text or tool-plan demand; START has no local result at all. Model/low reasoning, prompts, schemas, tool and provider authorization, previous-response/call identity and all local lookup limits are unchanged. There is one upstream attempt, no recovery replay and no Worker provider execution.
+
+Incomplete responses still fail closed before text/tool parsing. Their bounded token metadata remains log-only, cost unknown when web billing is incomplete; error categories and public 502 contract remain unchanged. The new ceiling gives headroom, not proof that every legitimate response will complete. R5 supersedes only the budget-selection policy in the historical F4 entry below. Physical-device/model/deployment checks remain separate.
+
 ## 2026-11-01 — OBI RE-02: atomic current-provider discovery reference
 
 Only OBI discovery opts into recognizing the complete USER phrase `w naszym OBI` as a current-market selector. The resolver does not rescan the phrase's nested `OBI` token as the beginning of a place name before product text. It adds the canonical saved market to the resolved scope, rather than trusting a model store hint or changing WorkingProfile. Normal USER/model text, discovery queries and product verification are unchanged.
