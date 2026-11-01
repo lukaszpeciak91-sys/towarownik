@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-11-01 — R6 `w sieci` authorization repair (independent review pending)
+
+Base main `2c91ccff5cbd7bdfcf8ac150c50c84264d65043a`, #144/#145 independently confirmed merged, no existing open R6 PR. Test-only RED local `85e3fb666277d3824d7aef377c262f3b787d0013`, published `ac0bb8567ee23268af5c643cad57bf73e24c8b73`, identical tree `c4b12619c7dca84682851043b689c0d05544cef9`: **154 tests / 82 PASS / 72 expected FAIL** on unchanged production, including original full Karlik Controller denial with zero product execution. First candidate: **154 PASS**. Adversarial extension: **170 tests / 166 PASS / 4 FAIL**, detecting foreign-provider/overlapping-number scope. Final scoped guard: **170 PASS**. These are Kotlin authorization results under scripted model requests, not actual tool-selection results.
+
+Final local regression: **788 tests PASS / 0 FAIL** across 28 actual test classes (170 R6 + 618 existing), including BranchResolver/discovery/Controller, #139/#140 geography bounds, #143 multiline, #144 OBI reference, OBI manual text/OBIK/EAN/parser/identity, KWANT current/cross-branch and multi-location contracts, model hints, wrong provider, zero/null stock, product-card grounding and ProxyClient wire tests. Compilation uses 41 byte-identical complete production sources with platform-only stubs. Raw resolver and place-consumption methods are byte-identical to base. Tooling: **174 PASS**.
+
+Executed from the conversation workspace with JDK 17 / Kotlin 2.3.21 / JUnit 4.13.2:
+
+```bash
+python3 r6/prepare.py
+bash r6/compile-production.sh
+bash r6/compile-tests.sh
+java -cp 'r6/test-classes:r6/classes:native/deps/*:towarownik/app/src/test/resources' org.junit.runner.JUnitCore pl.lukaszpeciak.towarownik.agent.WebResearchLocationPhraseTest
+bash r6/compile-regression.sh
+bash r6/run-regression.sh
+# Repository root:
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tools python3 -m unittest discover -s tools -p 'test_*.py'
+./gradlew check assembleDebug --offline
+```
+
+Local Gradle stopped before tests: wrapper distribution unavailable, `java.net.SocketException: Network is unreachable`; not a test pass. Final-head CI must run the complete `./gradlew check assembleDebug`; exact committed HEAD, Draft PR and CI evidence are recorded in the PR and downloadable `TAKSULA_R6_W_SIECI_LOCATION_REPAIR_AUDIT.md`. Worker code was unchanged, so its suite was not rerun for this Android-only repair. No live OpenAI/OBI/KWANT/production Worker calls, merge, deploy, AAB or version change. No negative test removed; the old RE-02 test's now-obsolete web-phrase expectation alone changes to discovery `NotMentioned`, with raw RE-02 behavior retained.
+
 ## 2026-11-01 — Worker R5 output-budget repair (independent review pending)
 
 Verified base main `32711ef4cba7fb84bb95e910cab8a35f17dd806d`; PR #144 merged at that SHA, no existing open R5 PR. Permanent test-only RED: local `a807645898df3b303bfd034f7829a462381343c4`, published `642ab2c108ba5b0183e4b0fe718cf678a8b1a57c`, identical tree `6c6eee3d2497bf5597b16387a2f90098cb1854f6`. Unchanged production: R5 84 tests / 52 PASS / 32 expected FAIL / 0 SKIP. Twelve failures are synthetic answer/tool completion witnesses (HTTP 502 vs expected 200); twenty assert missing 1024 headroom on persistent-failure/denial controls. They do not establish 32 separate production bugs. Baseline complete Worker check: 651 PASS.

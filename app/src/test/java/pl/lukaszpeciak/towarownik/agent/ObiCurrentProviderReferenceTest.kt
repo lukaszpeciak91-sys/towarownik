@@ -198,9 +198,9 @@ class ObiCurrentProviderReferenceTest {
         for (stock in listOf(9, 0, null)) assertVerified(observe(RE02_INPUT, stock = stock), stock = stock)
     }
 
-    @Test fun `RE02 change is discovery only and does not repair unrelated web phrasing`() {
+    @Test fun `RE02 remains discovery only while R6 handles online research phrasing`() {
         assertEquals(BranchResolution.UnknownMention, BranchResolver.resolve(RE02_INPUT, branches, BranchId("075")))
-        assertEquals(BranchResolution.UnknownMention,
+        assertEquals(BranchResolution.NotMentioned,
             BranchResolver.resolveDiscovery("Znajdź w sieci kody producenta", branches, BranchId("075"), true))
     }
 }

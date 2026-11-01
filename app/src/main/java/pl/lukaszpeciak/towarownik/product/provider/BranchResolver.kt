@@ -35,7 +35,7 @@ internal object BranchResolver {
         currentBranchId: BranchId,
         obiMarketScope: Boolean = false,
     ): BranchResolution {
-        val text = discoveryLocationText(userText, branches)
+        val text = discoveryLocationText(userText, branches, if (obiMarketScope) "kwant" else "obi")
         return if (obiMarketScope) resolveObiMarketScope(
             text, branches, currentBranchId, allowBareBranchIds = text == userText,
             allowCurrentObiReference = true,
@@ -43,17 +43,21 @@ internal object BranchResolver {
         else resolve(text, branches, currentBranchId, allowBareBranchIds = false)
     }
 
-    private fun discoveryLocationText(userText: String, branches: List<ProviderBranch>): String {
+    private fun discoveryLocationText(userText: String, branches: List<ProviderBranch>, foreignProvider: String): String {
         val text = normalizedText(userText)
         if (UNRESOLVED_LOCATION.containsMatchIn(text)) return userText
         val originalCase = normalizedText(userText, preserveCase = true)
         if (originalCase.length != text.length) return userText
         val markers = LOCATION_MARKER.findAll(text).toList()
         val clauses = (APPLICATION_CLAUSE.findAll(text) + COUNTED_PRODUCT_CLAUSE.findAll(text) +
-            DOCUMENT_REFERENCE_CLAUSE.findAll(text))
+            DOCUMENT_REFERENCE_CLAUSE.findAll(text) + ONLINE_RESEARCH_CLAUSE.findAll(text))
             .sortedBy { it.range.first }.toList()
         val applications = clauses.mapIndexedNotNull { index, application ->
             val source = text.substring(application.range.first).substringAfter(' ')
+            val onlineResearch = application.value == "w sieci" || application.value == "w internecie"
+            // A foreign-provider selector cannot become authority merely
+            // because its city/number also exists in the active directory.
+            if (onlineResearch && markers.any { it.value.trim() == foreignProvider }) return@mapIndexedNotNull null
             // A count of contacts/sockets/etc. is product grammar, not a
             // department number. Never erase known cities or store nouns
             // even if they follow a number.
@@ -68,7 +72,7 @@ internal object BranchResolver {
             if (branches.any { branch -> cityAliases(branch.name).any { startsWithPhrase(source, it) } } ||
                 matchStreet(source, branches) != null ||
                 EXPLICIT_PLACE_PREFIX.containsMatchIn(text.take(application.range.first)) ||
-                originalCase.substring(application.range).split(' ').drop(1).any { it.first().isUpperCase() }
+                !onlineResearch && originalCase.substring(application.range).split(' ').drop(1).any { it.first().isUpperCase() }
             ) return@mapIndexedNotNull null
             // Bound the application to its own clause. Every following place
             // marker or joined locality must still reach canonical validation.
@@ -81,6 +85,10 @@ internal object BranchResolver {
             if (GEOGRAPHICAL_LABEL.containsMatchIn(text.substring(application.range.last + 1, end))) {
                 return@mapIndexedNotNull null
             }
+            // Remove only the internet-medium phrase, never its research
+            // object or any following explicit/unknown place. Retail-network
+            // wording does not match this bounded research-noun lookahead.
+            if (onlineResearch) return@mapIndexedNotNull application.range
             if (DOCUMENT_REFERENCE_CLAUSE.matches(application.value)) {
                 // Only a complete document noun phrase with a recognized
                 // continuation is non-geographical. A bare unknown place
@@ -484,6 +492,10 @@ internal object BranchResolver {
     // contradictory places must still reach the canonical resolver.
     private val DOCUMENT_REFERENCE_CLAUSE = Regex(
         """\b(?:na (?:te )?artykuly|na screenach|w ofercie)\b""",
+    )
+    private val ONLINE_RESEARCH_CLAUSE = Regex(
+        """\bw (?:sieci|internecie)(?= (?:kod(?:y|ow)?|instrukcj(?:a|i|e)|""" +
+            """kart(?:a|e|y) katalogow(?:a|ej|e)|katalog(?:u)?)\b)""",
     )
     // A small number followed by a countable product feature is not
     // an address (e.g. "na 5 bolców", "na 3 gniazda"). Keep three-digit

@@ -1,5 +1,15 @@
 # Decisions
 
+## 2026-11-01 — R6: bounded internet-medium projection, preserve geography
+
+Verified base `2c91ccff5cbd7bdfcf8ac150c50c84264d65043a` includes merged #144 and #145. The original multiline Karlik request makes discovery parse `w sieci` as a location, return `UnknownMention`, and produce `unknown_location` before any product execution. Replacing only that phrase with `przez internet` admits the existing KWANT/205 path. This confirms Android authorization behavior with scripted model plans, not actual model tool selection.
+
+Extend the existing discovery projection with an exact medium phrase plus bounded research-noun lookahead (codes, instructions, catalogue/datasheet). Remove only `w sieci`/`w internecie`, never the following object/tail. Preserve canonical city/street priority, explicit geography, unresolved deictics and directory validation. Case-insensitive matching applies only to this explicit phrase, preserving existing capitalization safeguards for application clauses. Do not add a general context word, global UnknownMention fallback, model-facing rewrite, internet/retail-network classifier or forced web search. Existing shared and provider-specific schemas/policies remain authoritative.
+
+Adversarial local re-audit exposed four failing assertions in the first candidate: after removing internet wording, an explicitly foreign provider's overlapping city/number could be interpreted in the active directory. Keep the original phrase whenever a qualified foreign-provider marker is present, retaining rejection for these newly admitted combinations; do not change unrelated legacy foreign-provider parsing. Permanent controls cover both directions. Neither model branch hints nor provider labels become new authority.
+
+One production file changes, `BranchResolver.kt` (+16/-4). Raw resolver/place consumption, Controller, ProxyClient, provider HTTP/parsers, prompts/tools, Worker/output budgets, persistence/UI and release configuration remain unchanged. Keep the existing joined-action tail grammar rather than expanding this repair to unrelated sentence structures. New web intent phrasing outside the finite research-noun pattern can still clarify/reject. Physical-device and live-model behavior require separately authorized validation; deterministic facts are not live stock/manufacturer codes.
+
 ## 2026-11-01 — Worker R5: extend established headroom, no retry
 
 Base main `32711ef4cba7fb84bb95e910cab8a35f17dd806d` includes merged PR #144. Supplied incident `294a0e52-ff82-459b-ab28-799133f25945`, Worker version `0f9b050f-313d-41c1-b315-c86f3f135254`: START upstream HTTP 200, Worker 502, `upstream_incomplete_output_budget`, input 16196 / output 302 / reasoning 73, 8487 ms. This confirms the supplied incomplete-budget category, not HTTP provider outage or the independent Android `w sieci` defect. Serving git SHA/request ceiling remain unverified; do not infer them from current source or add reasoning to output.

@@ -209,11 +209,18 @@ class WebResearchLocationPhraseTest(private val case: Case) {
                     rows += Case("$p retail $network", network, p, "unknown", null, reason = "unknown_location")
                 }
                 for (text in listOf("Znajdź w oddziale w sieci kody producenta", "Znajdź w sieci Zakopane",
-                    "Znajdź w sieci sklepów instrukcję", "Znajdź w sieci kody producenta w mieście Atlantyda")) {
+                    "Znajdź w sieci sklepów instrukcję", "Znajdź w sieci kody producenta w mieście Atlantyda",
+                    "Znajdź w sieci kody producenta adres Atlantyda", "Znajdź w sieci kodowanie",
+                    "Znajdź w sieci instrukcyjnej")) {
                     rows += Case("$p bounded $text", text, p, "unknown", null, reason = "unknown_location")
                 }
                 rows += Case("$p wrong model provider", inputs[0], p, branch = null,
                     modelProvider = if (p == "obi-pl") "kwant-pl" else "obi-pl", reason = "wrong_provider")
+                // Internet wording cannot unmask an overlapping foreign-provider
+                // city/number as authority in the active provider's directory.
+                val foreign = if (p == "kwant-pl") "OBI Nowy Sącz 205" else "KWANT Nowy Sącz 075"
+                rows += Case("$p foreign provider scope", "Znajdź w sieci kody, a stan sprawdź w $foreign", p,
+                    "unknown", null, reason = "unknown_location")
                 for (stock in listOf(0, null)) rows += Case("$p stock $stock", inputs[0], p, stock = stock)
             }
             rows += Case("KWANT Bochnia after instruction", "Poszukaj w sieci instrukcji, a dostępność sprawdź w Bochni",
