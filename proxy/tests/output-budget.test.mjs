@@ -90,7 +90,8 @@ function assertFailure(r, category = "upstream_incomplete_output_budget") {
 }
 
 for (const v of [1, 2, 3, 4, 5]) {
-  for (const [name, counts, budget] of [["simple", [1], 384], ["two products", [2], 1024], ["five products", [5], 1024]]) {
+  // R5 extends the F4 ceiling to simple results; keep all F4 safety fixtures.
+  for (const [name, counts, budget] of [["simple", [1], 1024], ["two products", [2], 1024], ["five products", [5], 1024]]) {
     test(`F4 v${v} ${name} CONTINUE budget and unchanged identity/configuration`, async () => {
       const local = result(v, counts);
       const r = await invoke(v, "continue", local);
@@ -109,7 +110,7 @@ for (const v of [1, 2, 3, 4, 5]) {
   test(`F4 v${v} authorization rejection keeps base budget`, async () => {
     const r = await invoke(v, "continue", rejection(v, v <= 2 ? "store_not_authorized" : "branch_not_authorized"));
     assert.equal(r.response.status, 200);
-    assert.equal(r.sent[0].max_output_tokens, 384);
+    assert.equal(r.sent[0].max_output_tokens, 1024);
   });
   if (v === 1) continue;
   for (const [name, counts, status] of [["production-shaped 3 queries/5 products", [2, 2, 1], "verified"],
@@ -120,10 +121,10 @@ for (const v of [1, 2, 3, 4, 5]) {
       assert.equal(r.sent[0].max_output_tokens, 1024);
     });
   }
-  test(`F4 v${v} exhausted local-tool budget keeps 384 and tools disabled`, async () => {
+  test(`F4 v${v} exhausted local-tool budget keeps tools disabled with R5 headroom`, async () => {
     const r = await invoke(v, "continue", rejection(v, "local_tool_limit_reached"));
     assert.equal(r.response.status, 200);
-    assert.equal(r.sent[0].max_output_tokens, 384);
+    assert.equal(r.sent[0].max_output_tokens, 1024);
     assert.deepEqual(r.sent[0].tools, [{ type: "web_search" }]);
   });
 }
@@ -199,7 +200,7 @@ test("F4 incomplete other retains its category and validated usage without parsi
 });
 
 for (const v of [1, 2, 3, 4, 5]) for (const stage of ["start", "message"]) {
-  test(`F4 v${v} ${stage} remains 384 including attachment entrypoints`, async () => {
+  test(`F4 v${v} ${stage} uses R5 headroom including attachment entrypoints`, async () => {
     const sent = [];
     const fake = async (_url, init) => { sent.push(JSON.parse(init.body)); return new Response(JSON.stringify(answer())); };
     const provider = v <= 2 ? "obi-pl" : "kwant-pl";
@@ -207,7 +208,7 @@ for (const v of [1, 2, 3, 4, 5]) for (const stage of ["start", "message"]) {
     const attachments = v >= 4 ? [{ mimeType: "image/jpeg", filename: "synthetic.jpg", bytes: new Uint8Array([255, 216, 255]) }] : undefined;
     if (stage === "start") await startAgent("synthetic", provider, branch, "synthetic", fake, v, attachments);
     else await messageAgent("resp_previous", "synthetic", provider, branch, "synthetic", fake, v, attachments);
-    assert.equal(sent[0].max_output_tokens, 384);
+    assert.equal(sent[0].max_output_tokens, 1024);
     assert.equal(sent[0].max_output_tokens, OPENAI_MAX_OUTPUT_TOKENS);
   });
 }
@@ -231,7 +232,7 @@ test("F4 multi-location inventory result retains the base budget", async () => {
   };
   const r = await invoke(3, "continue", local, answer(), { tool: "find_product_locations" });
   assert.equal(r.response.status, 200);
-  assert.equal(r.sent[0].max_output_tokens, 384);
+  assert.equal(r.sent[0].max_output_tokens, 1024);
 });
 
 for (const [name, mutate, category] of [

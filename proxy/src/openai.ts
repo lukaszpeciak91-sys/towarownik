@@ -16,7 +16,6 @@ import {
   MAX_WEB_CITATION_URL_CHARS,
   MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
   OPENAI_MAX_OUTPUT_TOKENS,
-  OPENAI_COMPLEX_CONTINUE_MAX_OUTPUT_TOKENS,
   OPENAI_MODEL,
   OPENAI_REASONING_EFFORT,
   OPENAI_RESPONSES_URL,
@@ -226,7 +225,7 @@ export async function continueAgent(
       reasoning: {
         effort: OPENAI_REASONING_EFFORT,
       },
-      max_output_tokens: outputBudgetForContinuation(result),
+      max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
       parallel_tool_calls: false,
       tool_choice: "auto",
       max_tool_calls: MAX_WEB_SEARCH_CALLS_PER_RESPONSE,
@@ -247,17 +246,6 @@ export async function continueAgent(
     protocolVersion,
     locationsEnabled,
   );
-}
-
-function outputBudgetForContinuation(result: ToolContinuationResult): number {
-  // The Worker validates client result shape/counts before reaching this path.
-  // Authorization/tool-limit rejections and location results keep the base cap.
-  const complex = ("products" in result && result.products.length > 1) ||
-    ("results" in result && (result.results.length > 1 ||
-      result.results.some((entry) => entry.products.length > 1)));
-  return complex
-    ? OPENAI_COMPLEX_CONTINUE_MAX_OUTPUT_TOKENS
-    : OPENAI_MAX_OUTPUT_TOKENS;
 }
 
 async function requestOpenAI(

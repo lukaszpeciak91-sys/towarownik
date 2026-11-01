@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-11-01 — Worker R5 output-budget repair (independent review pending)
+
+Verified base main `32711ef4cba7fb84bb95e910cab8a35f17dd806d`; PR #144 merged at that SHA, no existing open R5 PR. Permanent test-only RED: local `a807645898df3b303bfd034f7829a462381343c4`, published `642ab2c108ba5b0183e4b0fe718cf678a8b1a57c`, identical tree `6c6eee3d2497bf5597b16387a2f90098cb1854f6`. Unchanged production: R5 84 tests / 52 PASS / 32 expected FAIL / 0 SKIP. Twelve failures are synthetic answer/tool completion witnesses (HTTP 502 vs expected 200); twenty assert missing 1024 headroom on persistent-failure/denial controls. They do not establish 32 separate production bugs. Baseline complete Worker check: 651 PASS.
+
+Minimal production diff: `proxy/src/config.ts` (+3/-3), `proxy/src/openai.ts` (+1/-13). Uniform 1024 cap; remove obsolete complex-count selector. No retry, lower reasoning, prompt/schema/model, normalization/accounting, Android, provider HTTP/parser, UI, version or AAB change. F4 tests retain every safety case and the explicit 384 witness; only obsolete cap expectations/names change. New R5 mocks verify all endpoints, both providers, partial text/arguments, reasoning-only exhaustion, repeated exhaustion, complete small responses, web fees, denials, invalid payloads, HTTP/network/abort categories and one attempt.
+
+Executed locally under Node 22.23.3 / TypeScript 5.9.3, from `proxy`, Node 22 prepended to PATH:
+
+```bash
+npm run check # baseline 651 PASS; final 735 PASS / 0 FAIL / 0 SKIP
+node node_modules/typescript/bin/tsc --noEmit false --outDir .test-dist
+node --test tests/output-budget-r5.test.mjs # RED 84 / 32 FAIL before production edit
+node --test tests/output-budget-r5.test.mjs tests/output-budget.test.mjs # GREEN 160 PASS
+npm run eval:build
+node --check evals/run-taksula-behavior.mjs
+```
+
+Supplemental independent comparison: unchanged base vs final compiled production modules, `node /workspace/scratch/9a99a272326b/r5-audit/compare.mjs`, 270/270 comparisons PASS (255 completed envelopes, 15 identical tool-limit denials); request bodies differ only in `max_output_tokens`. Covers v1–v5, OBI/KWANT, attachment input, location-capability flag, single/multiple products, rejection and disabled tools, all three stages, ordinary/tool/web output and exact usage. One attempt per revision/case. This is synthetic transport equivalence, not model behavior.
+
+All commands completed; overlapping counts are not summed. Full Worker tests include protocol, behavioral/tool-selection mocks, OBI/KWANT result transports, authorization/result validation, observability, token/cost and failure regressions. No live OpenAI, OBI/KWANT or production Worker requests. Final exact-head CI, committed implementation and Draft PR identities are recorded in the PR and downloadable `TAKSULA_WORKER_R5_OUTPUT_BUDGET_IMPLEMENTATION_AUDIT.md`; no merge/deploy/AAB. Unknown: deployed SHA/cap, live completion-rate/latency, 1024 sufficiency, model-selected web routing and Android failure accounting. Independent `w sieci`/other historical 502 issues remain outside scope.
+
 ## 2026-11-01 — OBI RE-02 current-provider reference repair (PR #144, independent audit pending)
 
 Base main `6ef1b5e3aa4345dc891831893fc034b4a6943af7`, app 0.1.33 (34). Exact reported USER: `Znajdź mi w naszym OBI kompakt WC Cersanit Kier II z odpływem poziomym. Sprawdź aktualną cenę i stan w naszym markecie.` Controller replay on unchanged production rejects before product execution: the nested `OBI` marker treats `kompakt WC...` as a place and returns `unknown_location` before the valid current-market alias is considered. The OBI v2 client generalizes that rejection to `store_not_authorized`.
