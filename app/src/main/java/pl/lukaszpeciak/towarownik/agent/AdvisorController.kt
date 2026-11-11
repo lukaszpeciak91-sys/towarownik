@@ -413,6 +413,7 @@ internal class AdvisorController(
                 arguments.queries.any { it.query.isBlank() || it.query.length > MAX_TOOL_QUERY_CHARS || it.limit !in 1..MAX_TOOL_PRODUCTS }
             ) return AdvisorToolExecutionResult.Failure
             val pending = arguments.queries.filter { queryKey(arguments.branchId, it.query) !in scopedQueryResults }
+                .groupBy { queryKey(arguments.branchId, it.query) }.values.map { group -> group.maxBy { it.limit } }
             val fresh = if (pending.isEmpty()) null else {
                 when (val result = safeExecuteTool(conversationProviderId, arguments.copy(queries = pending))) {
                     is AdvisorToolExecutionResult.Success -> result

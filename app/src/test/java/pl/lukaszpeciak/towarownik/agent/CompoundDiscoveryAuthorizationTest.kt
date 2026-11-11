@@ -222,4 +222,16 @@ class CompoundDiscoveryAuthorizationTest {
             assertFalse(r is BranchResolution.Resolved)
         }
     }
+    @Test fun researchObjectCannotHideLabelledOrDestinationGeography() {
+        for (tail in listOf("miasto Zakopane", "ul Nieistniejąca", "do Zakopanego")) {
+            val r = run("Sprawdź w KWANT Tarnów i znajdź kody producenta $tail", listOf(request("204", "MBN116E")))
+            assertTrue("Research clause must retain geography: $tail", r.executions.isEmpty())
+        }
+    }
+    @Test fun duplicateQueriesInOneBatchAreCoalescedWithoutCrashingOrRepeatingLookup() {
+        val r = run(twoBranches, listOf(request("205", "MBN116E", "MBN116E")))
+        assertEquals(listOf("205" to listOf("MBN116E")), r.executions)
+        assertEquals(2, (r.outputs.single() as AdvisorToolContinuation.Verified).result.results.size)
+        assertTrue(r.state is AdvisorUiState.Success)
+    }
 }

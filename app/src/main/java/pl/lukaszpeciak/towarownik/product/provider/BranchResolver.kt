@@ -530,8 +530,9 @@ internal object BranchResolver {
     private fun discoveryActionTail(tail: String): Boolean =
         // Require a complete research action, not merely an imperative prefix.
         // Its object may name a product, but a joined place is never swallowed.
-        Regex("""^(?:i|oraz) (?:znajdz|wyszukaj|poszukaj) (?:kody(?: producenta)?|instrukcje|karte katalogowa|katalog)(?: (?!i\b|oraz\b|a\b)[a-z0-9]+)*$""")
-            .matches(tail) ||
+        !GEOGRAPHICAL_LABEL.containsMatchIn(tail) &&
+            Regex("""^(?:i|oraz) (?:znajdz|wyszukaj|poszukaj) (?:kody(?: producenta)?|instrukcje|karte katalogowa|katalog)(?: (?!i\b|oraz\b|a\b|do\b)[a-z0-9]+)*$""")
+                .matches(tail) ||
             DISCOVERY_FALLBACK.find(tail)?.range?.first == 0 ||
             tail == "podsumuj wyniki"
 
