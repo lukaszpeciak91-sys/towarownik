@@ -201,11 +201,13 @@ internal class AdvisorController(
         // Current-turn evidence only, used exclusively by the new explicit named
         // discovery scope. Neither history nor model hints can satisfy a fallback.
         var namedDiscoveryScope: BranchResolution.Ambiguous? = null
-        val scopedQueryResults = mutableMapOf<Pair<String, String>, AdvisorToolExecutionResult.Success>()
+        data class ScopedQueryResult(val requestedLimit: Int, val execution: AdvisorToolExecutionResult.Success)
+        val scopedQueryResults = mutableMapOf<Pair<String, String>, ScopedQueryResult>()
         fun queryKey(branch: String, query: String) = branch to query.normalizeWhitespace().lowercase()
-        fun missingInPrimary(scope: BranchResolution.Ambiguous, query: String): Boolean {
+        fun missingInPrimary(scope: BranchResolution.Ambiguous, requested: AdvisorToolQuery): Boolean {
             val primary = scope.prerequisiteBranchId ?: return true
-            val group = scopedQueryResults[queryKey(primary.value, query)]?.result?.results?.singleOrNull()
+            val group = scopedQueryResults[queryKey(primary.value, requested.query)]
+                ?.takeIf { it.requestedLimit >= requested.limit }?.execution?.result?.results?.singleOrNull()
                 ?: return false
             return group.status == AdvisorQueryResultStatus.NOT_FOUND ||
                 group.status == AdvisorQueryResultStatus.VERIFIED && group.products.isNotEmpty() &&
@@ -377,7 +379,7 @@ internal class AdvisorController(
                             if (resolution.isNamedDiscoveryScope) {
                                 if (resolution.prerequisiteBranchId != null &&
                                     hinted.branchId != resolution.prerequisiteBranchId &&
-                                    !effectiveArguments.queries.all { missingInPrimary(resolution, it.query) }
+                                    !effectiveArguments.queries.all { missingInPrimary(resolution, it) }
                                 ) return ToolBranchAuthorization.Rejected("tool_rejected")
                                 namedDiscoveryScope = resolution
                             }
@@ -412,7 +414,11 @@ internal class AdvisorController(
                 arguments.queries.sumOf { it.limit.toLong() } > MAX_TOOL_PRODUCTS ||
                 arguments.queries.any { it.query.isBlank() || it.query.length > MAX_TOOL_QUERY_CHARS || it.limit !in 1..MAX_TOOL_PRODUCTS }
             ) return AdvisorToolExecutionResult.Failure
-            val pending = arguments.queries.filter { queryKey(arguments.branchId, it.query) !in scopedQueryResults }
+            // A result count never proves exhaustion. Reuse only an equal or
+            // wider completed bounded search, not a smaller requested limit.
+            val pending = arguments.queries.filter { requested ->
+                (scopedQueryResults[queryKey(arguments.branchId, requested.query)]?.requestedLimit ?: 0) < requested.limit
+            }
                 .groupBy { queryKey(arguments.branchId, it.query) }.values.map { group -> group.maxBy { it.limit } }
             val fresh = if (pending.isEmpty()) null else {
                 when (val result = safeExecuteTool(conversationProviderId, arguments.copy(queries = pending))) {
@@ -423,12 +429,16 @@ internal class AdvisorController(
             val results = arguments.queries.map { requested ->
                 val key = queryKey(arguments.branchId, requested.query)
                 val cached = scopedQueryResults[key]
-                val original = cached ?: requireNotNull(fresh)
+                val refreshed = pending.singleOrNull { queryKey(arguments.branchId, it.query) == key }
+                // Every duplicate slot sees the same fresh wider read. A later
+                // smaller projection must not downgrade the cached full result.
+                val original = if (refreshed != null) requireNotNull(fresh) else requireNotNull(cached).execution
+                val requestedLimit = refreshed?.limit ?: requireNotNull(cached).requestedLimit
                 var group = original.result.results.single { queryKey(arguments.branchId, it.query) == key }
                 val primary = scope.prerequisiteBranchId
-                if (cached == null && primary != null && primary.value != arguments.branchId) {
+                if (refreshed != null && primary != null && primary.value != arguments.branchId) {
                     val prior = scopedQueryResults[queryKey(primary.value, requested.query)]
-                        ?.result?.results?.singleOrNull()
+                        ?.execution?.result?.results?.singleOrNull()
                     // A zero-stock verified product remains that exact product
                     // across branches; a different search hit is not its fallback.
                     if (prior?.status == AdvisorQueryResultStatus.VERIFIED &&
@@ -443,7 +453,9 @@ internal class AdvisorController(
                             it.providerId == conversationProviderId
                     },
                 )
-                if (group.status != AdvisorQueryResultStatus.UNAVAILABLE) scopedQueryResults[key] = entry
+                if (group.status != AdvisorQueryResultStatus.UNAVAILABLE) {
+                    scopedQueryResults[key] = ScopedQueryResult(requestedLimit, entry)
+                }
                 entry.copy(result = entry.result.copy(results = listOf(group.copy(
                     query = requested.query, products = group.products.take(requested.limit),
                 ))))

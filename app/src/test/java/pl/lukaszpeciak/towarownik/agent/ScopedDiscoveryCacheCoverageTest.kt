@@ -21,6 +21,7 @@ class ScopedDiscoveryCacheCoverageTest {
     private fun run(
         requests: List<AdvisorToolArguments>, text: String = user, candidateCount: Int = 5,
         unavailableLimits: Set<Int> = emptySet(), primaryStock: Int? = 7,
+        wrongThirdFallbackProduct: Boolean = false,
     ): Seen = runBlocking {
         val branches = listOf(
             ProviderBranch(BranchId("205"), "Nowy Sącz"), ProviderBranch(BranchId("204"), "Tarnów"),
@@ -28,6 +29,7 @@ class ScopedDiscoveryCacheCoverageTest {
         val executed = mutableListOf<AdvisorToolArguments>()
         val outputs = mutableListOf<AdvisorToolContinuation>()
         val articleById = mutableMapOf<String, String>()
+        var executingBranch = "205"
         val provider = object : ProductProvider {
             override val providerId = ProviderId("kwant-pl")
             override fun branches() = ProviderBranchResult.Available(branches)
@@ -36,7 +38,7 @@ class ScopedDiscoveryCacheCoverageTest {
                 if (candidateCount == 0) return ProviderSearchResult.NotFound
                 val base = if (query.trim().equals(this@ScopedDiscoveryCacheCoverageTest.query, true)) 90000 else 90100
                 return ProviderSearchResult.Candidates((1..minOf(candidateCount, maxResults)).map { index ->
-                    val id = (base + index).toString()
+                    val id = (base + index + if (wrongThirdFallbackProduct && executingBranch == "204" && index == 3) 1000 else 0).toString()
                     articleById[id] = "SYNTHETIC_$id"
                     ProviderProductCandidate(ProductRef(providerId, id), "Synthetic", articleById[id])
                 })
@@ -65,7 +67,7 @@ class ScopedDiscoveryCacheCoverageTest {
             messageAgent = { _, _, _, _ -> error("New conversation only") },
             continueAgent = { _, _, p, b, _, result -> assertEquals("kwant-pl", p); assertEquals("205", b); outputs += result; next() },
             executeObiTool = { error("OBI execution forbidden") },
-            executeProviderTool = { args -> executed += args; tool.execute(args) },
+            executeProviderTool = { args -> executingBranch = args.branchId; executed += args; tool.execute(args) },
             executeLocationsTool = { error("Inventory execution forbidden") },
             branchDirectory = { ProviderBranchResult.Available(branches) },
         )
@@ -152,5 +154,17 @@ class ScopedDiscoveryCacheCoverageTest {
         val r = run(listOf(request(3), request(1)), candidateCount = 1)
         assertEquals(listOf(3), r.executed.map { it.queries.single().limit })
         assertEquals(listOf(1, 1), r.outputs.indices.map { r.groups(it).single().products.size })
+    }
+    @Test fun sufficientPrimaryCoverageAllowsFreshLargerFallback() {
+        val r = run(listOf(request(3), request(1, "204"), request(3, "204")), text = conditional, primaryStock = 0)
+        assertEquals(listOf("205" to 3, "204" to 1, "204" to 3), r.executed.map { it.branchId to it.queries.single().limit })
+        assertEquals(setOf("90001", "90002", "90003"), r.groups(2).single().products.map { it.productId }.toSet())
+    }
+    @Test fun refreshedFallbackStillValidatesIdentityWhenASmallerCachedReadExists() {
+        val r = run(listOf(request(3), request(1, "204"), request(3, "204")), text = conditional, primaryStock = 0, wrongThirdFallbackProduct = true)
+        assertEquals(3, r.executed.size)
+        assertEquals(AdvisorQueryResultStatus.UNAVAILABLE, r.groups(2).single().status)
+        assertTrue(r.groups(2).single().products.isEmpty())
+        assertTrue((r.state as AdvisorUiState.Success).products.none { it.effectiveProductId == "91003" })
     }
 }
