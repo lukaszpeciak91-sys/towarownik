@@ -703,13 +703,28 @@ internal class AdvisorController(
                             (verifiedByKey.isEmpty() || it.status != "verified" || it.coverage == "partial" || it.coverage == "unknown")
                     } == true || lastDiscoveryRejectionReason != null && lastLocationEvidence == null ||
                         obiCityWideMarketIds.isNotEmpty() || recoveredIndependentQuery
+                    // The wire authenticates web-reference metadata, not the
+                    // safety of arbitrary prose (even with empty productRefs).
+                    // Preserve only navigational evidence after an unresolved
+                    // rejected discovery, never any model-authored claim/title.
+                    val researchReferences = if (authoritativeLocalText &&
+                        lastDiscoveryRejectionReason != null && lastLocationEvidence == null &&
+                        verifiedByKey.isEmpty() && obiCityWideMarketIds.isEmpty() &&
+                        !recoveredIndependentQuery && !misleadingGroupedModelText && proxyResult.webSearchCalls > 0
+                    ) proxyResult.sources.distinctBy { it.url }.mapIndexed { index, source ->
+                        source.copy(title = "Źródło zewnętrzne ${index + 1}", startIndex = null, endIndex = null)
+                    } else emptyList()
                     return AdvisorUiState.Success(
-                        text = if (authoritativeLocalText) completeLocationList else if (completeLocationList.isBlank()) safeAnswerText else {
+                        text = if (researchReferences.isNotEmpty()) {
+                            "Zachowałam odnośniki z wyszukiwania internetowego. Nie potwierdzają stanów ani cen w wybranej firmie.\n\n" +
+                                completeLocationList
+                        } else if (authoritativeLocalText) completeLocationList else if (completeLocationList.isBlank()) safeAnswerText else {
                             safeAnswerText + "\n\n" + completeLocationList
                         },
                         responseId = proxyResult.responseId,
                         products = selectedProducts,
-                        sources = if (authoritativeLocalText || misleadingGroupedModelText) emptyList() else proxyResult.sources,
+                        sources = if (researchReferences.isNotEmpty()) researchReferences else
+                            if (authoritativeLocalText || misleadingGroupedModelText) emptyList() else proxyResult.sources,
                         searchActions = searchActionsByKey.values.toList(),
                         traceId = turnTraceId,
                         locationReportEvidence = locationReportEvidence.toList(),
