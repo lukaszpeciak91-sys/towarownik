@@ -182,4 +182,44 @@ class CompoundDiscoveryAuthorizationTest {
         val r = BranchResolver.resolve("Sprawdź w KWANT Tarnów i znajdź w sieci kody producenta", branches, BranchId("205"))
         assertEquals(BranchResolution.UnknownMention, r)
     }
+    @Test fun anActionVerbCannotHideAnUnparsedLocalityTail() {
+        for (tail in listOf("i sprawdź Zakopane", "i znajdź Zakopane", "i znajdź w sieci kody producenta i Zakopane")) {
+            val r = run("Sprawdź w KWANT Tarnów $tail", listOf(request("204", "MBN116E")))
+            assertTrue("Unparsed place must not be erased: $tail", r.executions.isEmpty())
+        }
+    }
+    @Test fun unsupportedConditionalCannotBecomeAnUnconditionalBranchGrant() {
+        val r = run("Sprawdź w KWANT Nowy Sącz jeśli brak w KWANT Tarnów", listOf(request("204", "MBN116E")))
+        assertTrue(r.executions.isEmpty())
+    }
+    @Test fun conflictingModelHintsDoNotSelectAMemberOfTheUserScope() {
+        val r = run(twoBranches, listOf(request("205", "MBN116E").copy(requestedBranch = "Tarnów")))
+        assertTrue(r.executions.isEmpty())
+    }
+    @Test fun cachedQueriesCannotBypassTheFiveSlotBatchContract() {
+        val r = run(twoBranches, listOf(request("205", "MBN116E"), request("205", "MBN116E").copy(
+            queries = listOf(AdvisorToolQuery("MBN116E", 6)))))
+        assertEquals(1, r.executions.size)
+        assertTrue(r.state is AdvisorUiState.Error || r.outputs.last() is AdvisorToolContinuation.RejectedStore)
+    }
+    @Test fun cachedReadsStillReachTheExistingThreeCallLimit() {
+        val r = run(twoBranches, List(4) { request("205", "MBN116E") })
+        assertEquals(1, r.executions.size)
+        assertEquals(4, r.outputs.size)
+        assertTrue(r.outputs.last() is AdvisorToolContinuation.LocalToolLimitReached)
+    }
+    @Test fun malformedLimitCannotBorrowANotFoundFallback() {
+        val r = run(conditional, listOf(request("205", "MBN116E"), request("204", "MBN116E").copy(
+            queries = listOf(AdvisorToolQuery("MBN116E", 0)))), mapOf(("205" to "MBN116E") to Fact(status = "not_found")))
+        assertEquals(listOf("205"), r.executions.map { it.first })
+    }
+    @Test fun incompleteOrAmbiguousDirectoryCannotCreateANamedScope() {
+        for (directory in listOf(branches + branches.first(), emptyList(), branches.map {
+            if (it.branchId.value == "203") it.copy(name = "Tarnów") else it
+        })) {
+            val r = BranchResolver.resolveDiscovery(twoBranches, directory, BranchId("205"))
+            assertFalse(r is BranchResolution.Ambiguous && r.allowsExplicitBranchHint)
+            assertFalse(r is BranchResolution.Resolved)
+        }
+    }
 }

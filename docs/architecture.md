@@ -1,5 +1,13 @@
 # Architecture
 
+## 2026-11-11 — R7B: bounded compound KWANT discovery scope
+
+KWANT discovery distinguishes a complete joined research action from another place. Every explicit location marker still reaches the canonical directory; unknown joined localities, contradictory city/number/street pairs, unresolved deictics, qualified foreign-provider selectors and ambiguous directory names remain fail-closed. Multiple independently canonical singleton cities form a USER-owned per-turn discovery scope; the model may select only a member. Raw resolve, inventory/history and OBI market scope retain their previous entry-point semantics, including numeric comparisons and city-wide OBI identity seeding. Original model-facing USER text and WorkingProfile never change.
+
+The bounded `a brakujące w …` form records one primary and one fallback branch. A fallback query is admitted only after the same current-turn query is NOT_FOUND or all its verified products have stock exactly zero in the primary branch. Positive, null and unavailable observations do not fulfil that condition; mixed batches fail closed. For a verified zero product, fallback hits must retain its provider product ID; mismatches become unavailable with no fresh product/card. This is query-level evidence, never proof that a bounded category search exhausted the assortment.
+
+Completed query results in this new named scope are reused only within the current USER turn, per branch and normalized query. Overlapping batches execute only uncached queries. Original batch limits are checked before cache subtraction, every logical request still counts toward three, and unavailable results are not promoted to completed evidence. The 5-slot, 3-call and 1024-output budgets, Worker/protocols/prompts/model, provider HTTP/parsers and rendering policies are unchanged. Unsupported compound/conditional syntax stays conservative; this does not claim general Polish understanding or real-model autonomy.
+
 ## 2026-11-01 — R6: internet research is not a selected place
 
 Only discovery's existing authorization projection recognizes `w sieci` / `w internecie` immediately before bounded code, instruction, datasheet or catalogue nouns. It removes only that medium phrase from the location projection, retaining the research object and every later marker. The model-facing canonical USER text, multiline formatting, queries and WorkingProfile remain unchanged. It neither selects a tool nor forces web search.
