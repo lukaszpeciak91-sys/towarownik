@@ -191,9 +191,10 @@ class WebResearchLocationPhraseTest(private val case: Case) {
                 val known = if (p == "kwant-pl") "w KWANT Tarnów" else "w OBI Kraków na Wielickiej"
                 val target = if (p == "kwant-pl") "204" else "003"
                 rows += Case("$p online then known", "Znajdź w sieci kody Karlik, a stan sprawdź $known", p, "resolved:$target", target)
-                // A new joined action after a place was already rejected by
-                // the canonical tail grammar even with 'przez internet'.
-                rows += Case("$p existing joined action guard", "Sprawdź $known i znajdź w sieci kody producenta", p,
+                // R7B admits the complete KWANT research action; OBI retains
+                // its independent market-scope grammar and safety boundary.
+                rows += if (p == "kwant-pl") Case("$p joined research action", "Sprawdź $known i znajdź w sieci kody producenta", p,
+                    "resolved:$target", target) else Case("$p existing joined action guard", "Sprawdź $known i znajdź w sieci kody producenta", p,
                     "unknown", null, reason = "unknown_location")
                 for (tail in listOf("w nieznanym mieście", "w Zakopanem", "w oddziale 999", "tam", "w innym markecie",
                     "$known i w Zakopanem", "w oddziale 205 Bochnia", "$known na Nieistniejącej")) {

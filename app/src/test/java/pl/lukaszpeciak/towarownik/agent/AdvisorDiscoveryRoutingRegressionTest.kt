@@ -219,8 +219,9 @@ class AdvisorDiscoveryRoutingRegressionTest {
             assertEquals(1,r.cards)
         }
     }
-    @Test fun `explicit multiple cities require clarification`() = runBlocking {
-        assertEquals("", search("sprawdź w Bochni i Zamościu","kwant-pl","205","203").called)
+    @Test fun `explicit canonical city set permits only a named discovery member`() = runBlocking {
+        assertEquals("203", search("sprawdź w Bochni i Zamościu","kwant-pl","205","203").called)
+        assertEquals("", search("sprawdź w Bochni i Zamościu","kwant-pl","205","205").called)
     }
     @Test fun `KWANT street identifies one of two same-city directory branches`() = runBlocking {
         val directory = kwant.map { if(it.branchId.value=="203") it.copy(address="Krakowska 10") else it } +

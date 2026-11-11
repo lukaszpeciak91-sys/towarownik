@@ -1,5 +1,15 @@
 # Decisions
 
+## 2026-11-11 — R7B: explicit named discovery subtasks without broader authority
+
+R7A's three positive Controller witnesses fail on main `1bb010c1d1b38e61aa84da105dbaed5de4f76a5f` before any provider execution. Opt into bounded action-tail and independently canonical named-set admission only for KWANT discovery. Keep raw/inventory and OBI behavior separate. Do not weaken unknown-place checks or let a model hint create scope. Preserve the old conservative current-alias-plus-other-place and numeric-only contracts.
+
+Support one primary-to-fallback `a brakujące w …` relation using only current-turn same-query outcomes: NOT_FOUND or verified stock exactly 0. Neither history, unavailable/null stock nor an unrelated query suffices. A verified product's cross-branch identity must match; otherwise return unavailable, not an invented replacement. Reuse completed reads to avoid repeated provider work while retaining logical tool accounting. Validate the original batch before cache reduction. No global retry, budget inflation, model/prompt/Worker/provider changes or final-answer override repair belongs here.
+
+The previous multi-city refusal and joined-research negative expectations are superseded only where the new positive product contract requires admission; all unknown/out-of-scope negatives remain, with added controls. Scripted model tests prove Android mechanics, not actual model selection or successful manufacturer research. The R2 safe-answer override and evaluation harness parity remain separate tasks.
+
+R7B cache completeness iteration on PR HEAD `834f6c62f71ce39f44be011cc0eda3a39e818d8d`: real Controller RED 13 tests / 8 FAIL proves branch+query presence alone cannot cover an increased result limit. Store the original bounded request limit, not an exhaustion guess from result count; reuse larger results for smaller limits without truncating the cached source. Refresh only insufficient queries, apply primary coverage to conditional fallback, and retain identity validation even when a smaller cached fallback exists. No exact-limit-only cache duplication, provider rewrite, retry or tool allowance change.
+
 ## 2026-11-01 — R6: bounded internet-medium projection, preserve geography
 
 Verified base `2c91ccff5cbd7bdfcf8ac150c50c84264d65043a` includes merged #144 and #145. The original multiline Karlik request makes discovery parse `w sieci` as a location, return `UnknownMention`, and produce `unknown_location` before any product execution. Replacing only that phrase with `przez internet` admits the existing KWANT/205 path. This confirms Android authorization behavior with scripted model plans, not actual model tool selection.

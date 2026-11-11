@@ -17,6 +17,8 @@ internal sealed interface BranchResolution {
         val candidates: List<ProviderBranch>,
         val allowsExplicitBranchHint: Boolean = false,
         val isCityWideScope: Boolean = false,
+        val isNamedDiscoveryScope: Boolean = false,
+        val prerequisiteBranchId: BranchId? = null,
     ) : BranchResolution
 
     data object UnknownMention : BranchResolution
@@ -40,7 +42,40 @@ internal object BranchResolver {
             text, branches, currentBranchId, allowBareBranchIds = text == userText,
             allowCurrentObiReference = true,
         )
-        else resolve(text, branches, currentBranchId, allowBareBranchIds = false)
+        else {
+            val normalized = normalizedText(text)
+            if (UNRESOLVED_LOCATION.containsMatchIn(normalized) ||
+                LOCATION_MARKER.findAll(normalized).any {
+                    it.value.trim() == "obi" && normalized.substring(it.range.last + 1)
+                        .trimStart().substringBefore(' ').let { first -> first.isNotEmpty() && first !in CONTEXT_WORDS }
+                }
+            ) return BranchResolution.UnknownMention
+            val resolution = resolve(text, branches, currentBranchId, allowBareBranchIds = false,
+                allowDiscoveryActions = true)
+            if (resolution !is BranchResolution.Ambiguous || !resolution.isNamedDiscoveryScope) return resolution
+            val conditions = DISCOVERY_FALLBACK.findAll(normalized).toList()
+            if (conditions.isEmpty()) {
+                // Unsupported conditions must not turn into unconditional multi-branch grants.
+                return if (DISCOVERY_CONDITION.containsMatchIn(normalized)) {
+                    resolution.copy(allowsExplicitBranchHint = false, isNamedDiscoveryScope = false)
+                } else resolution
+            }
+            if (conditions.size != 1) return BranchResolution.UnknownMention
+            val condition = conditions.single()
+            fun singleton(part: String): ProviderBranch? = when (val scope = resolve(
+                part, branches, currentBranchId, allowBareBranchIds = false, allowDiscoveryActions = true,
+            )) {
+                is BranchResolution.CurrentBranch -> scope.branch
+                is BranchResolution.Resolved -> scope.branch
+                else -> null
+            }
+            val primary = singleton(normalized.take(condition.range.first))
+            val fallback = singleton(normalized.substring(condition.range.last + 1))
+            if (primary == null || fallback == null || primary.branchId == fallback.branchId ||
+                resolution.candidates.map { it.branchId }.toSet() != setOf(primary.branchId, fallback.branchId)
+            ) return BranchResolution.UnknownMention
+            resolution.copy(prerequisiteBranchId = primary.branchId)
+        }
     }
 
     private fun discoveryLocationText(userText: String, branches: List<ProviderBranch>, foreignProvider: String): String {
@@ -140,6 +175,7 @@ internal object BranchResolver {
         allowBareBranchIds: Boolean = true,
         allowStockActionTail: Boolean = false,
         allowCurrentObiReference: Boolean = false,
+        allowDiscoveryActions: Boolean = false,
     ): BranchResolution {
         if (branches.isEmpty() || branches.size > 100 ||
             branches.map { it.branchId }.distinct().size != branches.size ||
@@ -195,13 +231,20 @@ internal object BranchResolver {
         ) scopes += numericOnly
 
         val candidates = linkedSetOf<ProviderBranch>()
+        var singletonPlaces = true
+        var namedPlace = false
         for (scope in scopes.distinct()) {
             var tail = scope
-            var place = consumePlace(tail, branches, current)
+            var place = consumePlace(tail, branches, current, allowDiscoveryActions)
                 ?: return BranchResolution.UnknownMention
+            singletonPlaces = singletonPlaces && place.branches.size == 1
+            namedPlace = namedPlace || branches.any { b -> cityAliases(b.name).any { startsWithPhrase(scope, it) } }
             candidates += place.branches
             tail = place.tail
             while (true) {
+                // Only discovery may separate a following action. All markers
+                // in that action are still independently validated by the loop above.
+                if (allowDiscoveryActions && discoveryActionTail(tail)) break
                 // A bounded second action ("i pokaż aktualny stan magazynowy")
                 // is not another branch. Never ignore a subsequent unknown
                 // locality: only these COMPLETE non-location tails qualify.
@@ -210,8 +253,9 @@ internal object BranchResolver {
                 val connector = Regex("""^(?:i|oraz)\s+""").find(tail) ?: break
                 tail = tail.drop(connector.value.length)
                     .replaceFirst(Regex("""^(?:w|we|na)\s+"""), "")
-                place = consumePlace(tail, branches, current)
+                place = consumePlace(tail, branches, current, allowDiscoveryActions)
                     ?: return BranchResolution.UnknownMention
+                singletonPlaces = singletonPlaces && place.branches.size == 1
                 candidates += place.branches
                 tail = place.tail
             }
@@ -223,12 +267,16 @@ internal object BranchResolver {
         if (candidates.isEmpty()) return if (UNRESOLVED_LOCATION.containsMatchIn(text)) {
             BranchResolution.UnknownMention
         } else BranchResolution.NotMentioned
+        val namedDiscoveryScope = allowDiscoveryActions && singletonPlaces && namedPlace &&
+            CURRENT_BRANCH_PHRASES.none { containsNormalizedPhrase(text, it) }
         if (candidates.size > 1) return BranchResolution.Ambiguous(
             candidates = candidates.sortedBy { it.branchId.value },
-            // Only an entirely USER-named numeric set can be selected per call.
-            allowsExplicitBranchHint = candidates.all {
+            // Raw/inventory retain numeric-only selection. Discovery additionally
+            // permits a complete set of independently canonical singleton names.
+            allowsExplicitBranchHint = namedDiscoveryScope || candidates.all {
                 explicitNumericScopeContains(scopes, it.branchId.value)
             },
+            isNamedDiscoveryScope = namedDiscoveryScope,
         )
         val branch = candidates.single()
         return if (branch.branchId == currentBranchId) {
@@ -339,6 +387,7 @@ internal object BranchResolver {
         source: String,
         branches: List<ProviderBranch>,
         current: ProviderBranch?,
+        allowDiscoveryActions: Boolean = false,
     ): Place? {
         var remaining = source.replaceFirst(
             Regex("""^(?:(?:w|we|na)\s+)?(?:obi|kwant|market|markecie|sklep|sklepie|oddzial|oddziale|hurtownia|hurtowni|magazyn|magazynie)\s+(?:nr\s+)?"""), "",
@@ -365,7 +414,7 @@ internal object BranchResolver {
                 remaining = remaining.drop(alias.length).trimStart()
             }
             else -> {
-                val street = matchStreet(remaining, branches) ?: return null
+                val street = matchStreet(remaining, branches, allowDiscoveryActions) ?: return null
                 return street
             }
         }
@@ -385,7 +434,7 @@ internal object BranchResolver {
         val streetSource = remaining.replaceFirst(Regex("""^(?:na|przy)\s+"""), "")
         val hasStreetMarker = streetSource != remaining ||
             Regex("""^(?:ul|ulica|al|aleja)\s+""").containsMatchIn(streetSource)
-        val street = matchStreet(streetSource, branches)
+        val street = matchStreet(streetSource, branches, allowDiscoveryActions)
         if (hasStreetMarker || street != null) {
             if (street == null) return null
             val ids = street.branches.map { it.branchId }
@@ -398,12 +447,13 @@ internal object BranchResolver {
         val productReferenceTail = Regex("""^(?:ten produkt|tego produktu)$""").matches(remaining)
         if (remaining.isNotBlank() && !productReferenceTail && remaining.substringBefore(' ') !in CONTEXT_WORDS &&
             !Regex("""^(?:i|oraz|w|we|na)\b""").containsMatchIn(remaining) &&
+            !(allowDiscoveryActions && discoveryActionTail(remaining)) &&
             !MEASUREMENT_PREFIX.containsMatchIn(remaining)
         ) return null
         return Place(matched, remaining)
     }
 
-    private fun matchStreet(source: String, branches: List<ProviderBranch>): Place? {
+    private fun matchStreet(source: String, branches: List<ProviderBranch>, allowDiscoveryActions: Boolean = false): Place? {
         val street = source.replaceFirst(Regex("""^(?:ul|ulica|al|aleja)\s+"""), "")
         val first = street.substringBefore(' ')
         if (first.isBlank()) return null
@@ -429,6 +479,7 @@ internal object BranchResolver {
         // bag of address tokens assembled from different branches.
         if (words.isNotEmpty() && words.first() !in CONTEXT_WORDS &&
             words.first() !in setOf("i", "oraz", "w", "we", "na") &&
+            !(allowDiscoveryActions && discoveryActionTail(words.joinToString(" "))) &&
             !MEASUREMENT_PREFIX.containsMatchIn(words.joinToString(" "))
         ) return null
         return Place(positions.map { it.branch }.distinct(), words.joinToString(" "))
@@ -476,6 +527,17 @@ internal object BranchResolver {
     }
 
     private val LOCATION_NOUNS = setOf("market", "markecie", "sklep", "sklepie", "oddzial", "oddziale", "hurtownia", "hurtowni", "magazyn", "magazynie", "oddzialy", "oddzialach")
+    private fun discoveryActionTail(tail: String): Boolean =
+        // Require a complete research action, not merely an imperative prefix.
+        // Its object may name a product, but a joined place is never swallowed.
+        !GEOGRAPHICAL_LABEL.containsMatchIn(tail) &&
+            Regex("""^(?:i|oraz) (?:znajdz|wyszukaj|poszukaj) (?:kody(?: producenta)?|instrukcje|karte katalogowa|katalog)(?: (?!i\b|oraz\b|a\b|do\b)[a-z0-9]+)*$""")
+                .matches(tail) ||
+            DISCOVERY_FALLBACK.find(tail)?.range?.first == 0 ||
+            tail == "podsumuj wyniki"
+
+    private val DISCOVERY_FALLBACK = Regex("""\ba brakujace(?: artykuly| produkty)? (?=(?:w|we) )""")
+    private val DISCOVERY_CONDITION = Regex("""\b(?:jesli|jezeli|gdy|brakujace|brakujacych|braki)\b""")
     private val LOCATION_MARKER = Regex(
         """\b(?:obi|kwant|market|markecie|sklep|sklepie|oddzial|oddziale|oddzialy|oddzialach|hurtownia|hurtowni|magazyn|magazynie|w|we|na)\s+""",
     )
