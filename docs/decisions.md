@@ -1,5 +1,13 @@
 # Decisions
 
+## 2026-11-11 — R2 iteration: reject fake semantic certificates; retain explicit NO-GO
+
+Do not add a model-controlled `safe`, `answerKind`, `approvedResearchFragments` or citation-coverage gate to unblock RC-3. Current strict Worker and Android schemas reject invented trust fields; real-parser tests demonstrate that completed web work, valid URLs and even full-span citations can accompany unsafe prose. These are protocol/provenance facts, not independent claim verification.
+
+Preserve both original R7A RC-3 methods byte-for-byte as permanent tests. Keep the positive test enabled and failing until its acceptance is met; do not replace it with reference retention, ignore it, change its expected text or report all checks GREEN. Existing source-only recovery is still partial. Full R2 remains **NO-GO**, Draft and unmerged.
+
+Proposed product compromise: approved-fragment/extractive recovery only after a rejected lookup, starting with a small independently reviewed manufacturer-document set. A future trusted producer must resolve versioned approved fragment IDs and construct output from canonical text; model-selected IDs select already approved evidence rather than certify generated prose. No arbitrary wording/stock/price may enter that channel. This trades free paraphrase for useful supported technical content while retaining strict local-fact boundaries. Until that evidence exists, do not fabricate a verifier, introduce a synonym/intent classifier or weaken the current denial. No production, model/prompt/schema/budget or provider changes are made in this iteration.
+
 ## 2026-11-11 — R2: evidence projection instead of unauthenticated prose admission
 
 Main `818ae84bd894d07d29f695bd2fac23d00d0e9463` includes merged PR #147. RC-3 replays with zero provider work: authoritativeLocalText replaces the final answer and clears all sources. Safe and mixed unsafe strings can have identical refs/citations/web metadata. Removing that override, checking only empty refs/citations, or adding phrase filters would weaken the trust boundary. An independent verified-content mechanism is required before arbitrary prose retention can be claimed safe; another model-declared answer kind alone is insufficient.

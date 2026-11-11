@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-11-11 — R2 contract iteration, same Draft PR #148 (acceptance intentionally RED)
+
+Verified PR HEAD `7b1e05fcd7404d0bb67d2db2e24793fabe9331e6`, tree `6a525d815373a2d588ece7be24167552f92cc9f3`, branch `fix/android-rejected-lookup-research-references`, still Draft/unmerged. Copied only the two original RC-3 methods and their original fixture support from R7A into R2OriginalAcceptanceTest, with method text unchanged and no ignores: **2 tests / 1 expected acceptance FAIL / 1 PASS**. The useful-prose expectation remains unmet; it is not relabelled as a source-only success. Its permanent failure now makes full Android CI visibly RED until the product contract is satisfied.
+
+New contract tests: real Worker normalizer **6 PASS**, real Android loopback parser **4 PASS**, including same non-text evidence for safe/mixed prose, complete citation coverage, unreviewed source titles, no current web call and forged safety/approved-fragment fields. Full Worker check/typecheck **741 PASS**. Existing R2/R7B fixtures **61 PASS**; existing Android regressions **788 PASS**; tooling **174 PASS**. No new production change: no independently verified technical-text producer exists in the current contract. The proposed strict compromise is reviewed, versioned extractive technical fragments; it is described in architecture/decisions, not simulated as a working feature.
+
+Commands: focused K2JVMCompiler/JUnit for R2OriginalAcceptanceTest and ResearchEvidenceWireContractTest; unchanged R2/R7B JUnit suite; `bash r2-recovery/run-regression.sh`; `npm run check` in proxy; Python tooling discover. Exact new PR SHA and both CI outcomes are recorded in PR #148. No new PR, merge, deploy, AAB, version change, live model/provider traffic or separate Markdown report. Final full-R2 decision remains **NO-GO** even if all safety/contract controls pass.
+
 ## 2026-11-11 — R2 conservative reference recovery (partial; full prose acceptance NO-GO)
 
 Base main `818ae84bd894d07d29f695bd2fac23d00d0e9463`, merged #147 independently verified. Original R7A replay: 17 tests / 1 FAIL (RC-3 full-prose expectation), both before and after this change. New permanent source-recovery RED: 14 tests / 4 FAIL / 10 PASS on unchanged production, test-only published commit `b293bcf8a62efdf3931079290794f1b6fc036432`, tree `188e59f6b5468a6615b759afd8b15465a36d9ff7` (local `8d770990e963f2e9b25e17d1cf24946100d66a1a`, identical tree).

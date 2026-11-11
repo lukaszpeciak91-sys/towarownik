@@ -1,5 +1,13 @@
 # Architecture
 
+## 2026-11-11 — R2 iteration: missing content authority is an acceptance blocker
+
+PR #148 at `7b1e05fcd7404d0bb67d2db2e24793fabe9331e6` carries text, refs, URL citation offsets and a web-call count. New real Worker-normalizer and Android-parser fixtures show safe and mixed-inventory prose with identical non-text evidence; a citation covering the entire mixed answer still supplies no semantic attestation. The original R7A RC-3 methods are now permanent, unchanged and unignored: the safe-prose positive remains RED, while invented inventory stays blocked. This is intentionally a visible Draft/CI acceptance blocker, not a production regression or a claimed R2 GREEN.
+
+A trustworthy extractive boundary would need an independently reviewed, immutable technical-fragment catalogue: document ID/version/hash, fragment ID, exact approved text, source URL and human-reviewed external-technical scope. A model could select bounded offered IDs, but the server would resolve/render the approved records; arbitrary model prose, labels and URLs could never populate that trusted channel. Hashes establish content identity, not semantic safety: approval must come from outside the generating model. Existing local inventory remains separately authorized and verified in Android. No such catalogue or independent content-verification producer currently exists; adding an `approved` boolean or new response field alone would invent authority.
+
+The realistic strict product compromise is extractive recovery from a small reviewed documentation set, with deterministic linking text and the local-verification failure retained. Planning/tool choice stays autonomous; post-rejection explanations are less freely worded. Unreviewed web results keep the existing reference-only fallback. This is a proposed bounded follow-up, not an implemented catalogue or a recommendation for an agent rewrite. Unrestricted natural paraphrase would require independently assessed residual risk; simply labelling it AI advice cannot meet the current requirement that mixed fabricated inventory never passes. Production remains unchanged in this iteration.
+
 ## 2026-11-11 — R2: conservative research-reference recovery
 
 The current answer wire carries arbitrary model prose, productRefs, citation metadata and completed web-call counts; it does not independently certify that prose contains only technical/manufacturer facts. Empty refs, a model declaration or a citation URL cannot authorize inventory/price claims. Full RC-3 freeform-prose retention therefore remains **NO-GO** under the unchanged contract. No keyword classifier or model-controlled semantic label is introduced.
