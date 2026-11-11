@@ -1,5 +1,13 @@
 # Architecture
 
+## 2026-11-11 — R2: conservative research-reference recovery
+
+The current answer wire carries arbitrary model prose, productRefs, citation metadata and completed web-call counts; it does not independently certify that prose contains only technical/manufacturer facts. Empty refs, a model declaration or a citation URL cannot authorize inventory/price claims. Full RC-3 freeform-prose retention therefore remains **NO-GO** under the unchanged contract. No keyword classifier or model-controlled semantic label is introduced.
+
+The contract-compatible fallback preserves only navigational reference evidence after an unresolved discovery rejection, completed web work, no current-turn verified products and no location/city-wide/identity recovery override. It renders a fixed notice plus the authoritative local failure. URLs come only from the existing validated Worker/ProxyClient citation metadata, never prose. Titles become neutral numbered labels and citation offsets are cleared, so neither source titles nor stale offsets can attach fabricated inventory to the replacement text. This does not assert URL contents or manufacturer facts. No tools, model, prompts, Worker/schema, provider adapters, UI layout or allowances change.
+
+A later authorized lookup retains the existing normal answer/card path; blocked OBI identity substitutions and location-evidence overrides remain stronger. Direct advice without independent evidence, historical/no-current-web references and arbitrary mixed prose remain conservative. The original R7A exact-prose positive witness is still unmet; the green permanent suite establishes only reference recovery and retained safety, not full R2 acceptance.
+
 ## 2026-11-11 — R7B: bounded compound KWANT discovery scope
 
 KWANT discovery distinguishes a complete joined research action from another place. Every explicit location marker still reaches the canonical directory; unknown joined localities, contradictory city/number/street pairs, unresolved deictics, qualified foreign-provider selectors and ambiguous directory names remain fail-closed. Multiple independently canonical singleton cities form a USER-owned per-turn discovery scope; the model may select only a member. Raw resolve, inventory/history and OBI market scope retain their previous entry-point semantics, including numeric comparisons and city-wide OBI identity seeding. Original model-facing USER text and WorkingProfile never change.

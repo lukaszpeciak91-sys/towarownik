@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-11-11 — R2: evidence projection instead of unauthenticated prose admission
+
+Main `818ae84bd894d07d29f695bd2fac23d00d0e9463` includes merged PR #147. RC-3 replays with zero provider work: authoritativeLocalText replaces the final answer and clears all sources. Safe and mixed unsafe strings can have identical refs/citations/web metadata. Removing that override, checking only empty refs/citations, or adding phrase filters would weaken the trust boundary. An independent verified-content mechanism is required before arbitrary prose retention can be claimed safe; another model-declared answer kind alone is insufficient.
+
+Choose the smallest current-wire alternative: preserve returned research reference URLs with deterministic local text, neutral reference titles and no inherited inline offsets. Keep every unverified model claim out of this unresolved-denial path. Source metadata authenticates only the reference envelope/provenance, not its semantic claims. Preserve raw USER/profile, provider isolation, fresh product cards and subsequent authorized recovery. This is intentionally **partial R2, NO-GO for full freeform-answer recovery**; a separate evidence/contract design must resolve that acceptance before release claims. No evaluation-harness or broad orchestration work is bundled.
+
 ## 2026-11-11 — R7B: explicit named discovery subtasks without broader authority
 
 R7A's three positive Controller witnesses fail on main `1bb010c1d1b38e61aa84da105dbaed5de4f76a5f` before any provider execution. Opt into bounded action-tail and independently canonical named-set admission only for KWANT discovery. Keep raw/inventory and OBI behavior separate. Do not weaken unknown-place checks or let a model hint create scope. Preserve the old conservative current-alias-plus-other-place and numeric-only contracts.

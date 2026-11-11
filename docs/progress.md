@@ -1,5 +1,13 @@
 # Progress
 
+## 2026-11-11 — R2 conservative reference recovery (partial; full prose acceptance NO-GO)
+
+Base main `818ae84bd894d07d29f695bd2fac23d00d0e9463`, merged #147 independently verified. Original R7A replay: 17 tests / 1 FAIL (RC-3 full-prose expectation), both before and after this change. New permanent source-recovery RED: 14 tests / 4 FAIL / 10 PASS on unchanged production, test-only published commit `b293bcf8a62efdf3931079290794f1b6fc036432`, tree `188e59f6b5468a6615b759afd8b15465a36d9ff7` (local `8d770990e963f2e9b25e17d1cf24946100d66a1a`, identical tree).
+
+Minimal production change: AdvisorController (+17/-2), retain existing citation reference URLs only through a deterministic notice/local-failure projection, with neutral titles and cleared citation offsets. No arbitrary prose passes unresolved denial. Current metadata does not securely distinguish safe advice from mixed fabricated inventory; therefore **full R2 remains NO-GO**. The new permanent tests record that limitation rather than disguising source recovery as full prose retention. Direct advice without evidence and typed location/identity overrides remain conservative; later authorized execution follows the existing normal path.
+
+Final native: 17 R2 tests + unchanged 44 R7B = 61 PASS; existing Android/provider/authorization regressions 788 PASS; tooling 174 PASS. Worker unchanged; cross-layer citation/protocol validation `npm run check`: typecheck PASS, 735 PASS. Scripted model, synthetic providers/annotations and loopback fixtures only; no live OpenAI/OBI/KWANT calls. Native commands: `python3 r2-recovery/prepare.py`, `bash r2-recovery/compile-production.sh`, focused K2JVMCompiler/JUnit for the three permanent R2/R7B classes, `bash r2-recovery/compile-regression.sh`, `bash r2-recovery/run-regression.sh`. Full exact-head Android CI and implementation SHA are recorded in the single Draft PR. No merge/deploy/AAB/version/eval-harness changes or separate Markdown report.
+
 ## 2026-11-11 — PR #147 cache completeness iteration
 
 Verified existing Draft PR branch `fix/android-compound-user-scope`, HEAD `834f6c62f71ce39f44be011cc0eda3a39e818d8d`, tree `cc2dc4c81b858dc4e894a965d0e5d5ddca82a204`. Permanent test-only RED: published commit `749110a15f5d28000723205aa94546a176f93db9`, tree `2d3061f6bf9a98cd8185fb415ec079e5d492b485`; 13 tests / 8 FAIL / 5 PASS against unchanged PR production. `limit=1 → 3` performed only the first lookup; overlapping and negative-result caches had the same insufficiency. This is Android cache admission, not provider/model failure.

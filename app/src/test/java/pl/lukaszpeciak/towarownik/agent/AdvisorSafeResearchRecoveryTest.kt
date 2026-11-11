@@ -173,4 +173,24 @@ class AdvisorSafeResearchRecoveryTest {
             assertTrue(r.state.products.isEmpty())
         }
     }
+    @Test fun identicalCitationAndRefMetadataCannotAuthenticateSafeVersusMixedProse() {
+        val a = run(prose = safe)
+        val b = run(prose = "$safe $unsafe")
+        assertEquals(a.state.text, b.state.text)
+        assertEquals(a.state.sources, b.state.sources)
+        assertFalse(a.state.text.contains(safe))
+        assertFalse(b.state.text.contains("999"))
+        // This explicitly records the still-unmet full-prose R7A acceptance;
+        // metadata recovery is not claimed as authenticated technical prose.
+    }
+    @Test fun originalMultilineUserTextAndSavedProfileArePreserved() {
+        val r = run(text = "Znajdź w sieci instrukcję Hagera\n  Potrzebuję dokumentacji, nie magazynu.")
+        assertTrue(r.executions.isEmpty())
+        assertEquals(listOf(source.url), r.state.sources.map { it.url })
+    }
+    @Test fun repeatedMetadataNeverCreatesExtraOrRewrittenSourceUrls() {
+        val r = run(sources = listOf(source, source.copy(title = unsafe)))
+        assertEquals(listOf(source.url), r.state.sources.map { it.url })
+        assertTrue(r.state.sources.all { it.startIndex == null && it.endIndex == null })
+    }
 }
