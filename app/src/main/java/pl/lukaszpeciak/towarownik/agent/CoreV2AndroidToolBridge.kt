@@ -120,10 +120,10 @@ internal class CoreV2AndroidToolBridge(
                         ?: return Result(Status.FAILURE, request.providerId, request.branchId,
                             request.query, reason = "unproven_product_identity", coverage = "unknown")
                     if (snapshot.providerId != request.providerId ||
-                        snapshot.branchId != request.branchId ||
+                        snapshot.effectiveBranchId != request.branchId ||
                         snapshot.effectiveProductId != candidate.productId ||
                         snapshot.stock != candidate.stock ||
-                        snapshot.priceScope != candidate.priceScope ||
+                        (snapshot.priceScope?.name?.lowercase() != candidate.priceScope) ||
                         snapshot.grossPrice != candidate.price ||
                         snapshot.verifiedAt <= 0L) {
                         return Result(Status.FAILURE, request.providerId, request.branchId,
@@ -136,7 +136,7 @@ internal class CoreV2AndroidToolBridge(
                         name = snapshot.name.take(300),
                         stock = snapshot.stock,
                         price = snapshot.grossPrice?.toPlainString(),
-                        priceScope = snapshot.priceScope,
+                        priceScope = snapshot.priceScope?.name?.lowercase(),
                         verifiedAtMillis = snapshot.verifiedAt,
                     )
                 }
