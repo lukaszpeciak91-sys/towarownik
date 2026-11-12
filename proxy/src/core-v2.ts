@@ -6,7 +6,7 @@
 import { OPENAI_MODEL, OPENAI_REASONING_EFFORT, OPENAI_RESPONSES_URL } from "./config.js";
 import type { UpstreamFetch } from "./types.js";
 
-export type V2Provider = "obi" | "kwant";
+export type V2Provider = "obi-pl" | "kwant-pl";
 export type V2ToolStatus = "success" | "not_found" | "unavailable" | "rejected" | "unknown" | "failure";
 export type V2Product = {
   providerId: V2Provider;
@@ -16,8 +16,11 @@ export type V2Product = {
   stock: number | null;
   price: number | null;
   priceScope: "branch" | "online" | null;
+  verifiedAtMillis: number;
 };
 export type V2Evidence = {
+  query: string;
+  coverage: "requested_subset" | "partial" | "unknown";
   status: V2ToolStatus;
   providerId: V2Provider;
   branchId: string;
@@ -59,7 +62,7 @@ const QUERY_MAX = 300;
 const BRANCH = /^[A-Za-z0-9._-]{1,64}$/;
 const makeTool = (providerId: V2Provider) => ({
   type: "function",
-  name: providerId === "obi" ? "find_obi_products_v2" : "find_kwant_products_v2",
+  name: providerId === "obi-pl" ? "find_obi_products_v2" : "find_kwant_products_v2",
   description: "Search verified products and selected-branch stock/price through the Android provider. Only call for concrete provider product facts, not general knowledge.",
   strict: true,
   parameters: {
@@ -78,7 +81,7 @@ const record = (v: unknown): v is Record<string, unknown> =>
 const string = (v: unknown): v is string => typeof v === "string";
 const safeId = (v: unknown): v is string => string(v) && BRANCH.test(v);
 const empty = (status: V2ToolStatus, authority: V2Authority, branchId: string, reason: string): V2Evidence =>
-  ({ status, providerId: authority.providerId, branchId, products: [], reason });
+  ({ status, providerId: authority.providerId, branchId, query: "", coverage: "unknown", products: [], reason });
 function parseSearch(raw: unknown, authority: V2Authority): V2Search | null {
   if (!record(raw) || Object.keys(raw).sort().join(",") !== "branchId,limit,query") return null;
   if (!safeId(raw.branchId) || !authority.authorizedBranchIds.includes(raw.branchId)) return null;
@@ -88,16 +91,20 @@ function parseSearch(raw: unknown, authority: V2Authority): V2Search | null {
 }
 function cleanEvidence(value: V2Evidence, request: V2Search): V2Evidence {
   if (!record(value) || value.providerId !== request.providerId ||
-    value.branchId !== request.branchId ||
+    value.branchId !== request.branchId || value.query !== request.query ||
+    !["requested_subset", "partial", "unknown"].includes(value.coverage) ||
     !["success", "not_found", "unavailable", "rejected", "unknown", "failure"].includes(value.status) ||
     !Array.isArray(value.products) || value.products.length > request.limit) {
     return empty("failure", { providerId: request.providerId, currentBranchId: request.branchId, authorizedBranchIds: [request.branchId] }, request.branchId, "invalid_provider_result");
   }
-  if (value.status !== "success" && value.products.length) {
+  if ((value.status !== "success" && value.products.length) ||
+    (value.status === "success" && value.products.length === 0) ||
+    (value.status === "success" && value.coverage === "unknown")) {
     return empty("failure", { providerId: request.providerId, currentBranchId: request.branchId, authorizedBranchIds: [request.branchId] }, request.branchId, "unverified_result");
   }
   if (!value.products.every(p => record(p) && p.providerId === request.providerId &&
-      p.branchId === request.branchId && string(p.productId) && p.productId.length > 0 &&
+      p.branchId === request.branchId && string(p.productId) && /^[A-Za-z0-9._-]{1,128}$/.test(p.productId) &&
+      Number.isSafeInteger(p.verifiedAtMillis) && p.verifiedAtMillis > 0 &&
       string(p.name) && p.name.length > 0 &&
       (p.stock === null || (typeof p.stock === "number" && Number.isFinite(p.stock) && p.stock >= 0)) &&
       (p.price === null || (typeof p.price === "number" && Number.isFinite(p.price) && p.price >= 0)) &&
@@ -108,8 +115,10 @@ function cleanEvidence(value: V2Evidence, request: V2Search): V2Evidence {
     status: value.status,
     providerId: request.providerId,
     branchId: request.branchId,
+    query: request.query,
+    coverage: value.coverage,
     ...(typeof value.reason === "string" ? { reason: value.reason.slice(0, 200) } : {}),
-    products: value.products.map(p => ({
+    products: value.products.filter((p, i) => value.products.findIndex(other => other.productId === p.productId) === i).map(p => ({
       providerId: request.providerId,
       branchId: request.branchId,
       productId: p.productId.slice(0, 128),
@@ -117,6 +126,7 @@ function cleanEvidence(value: V2Evidence, request: V2Search): V2Evidence {
       stock: p.stock,
       price: p.price,
       priceScope: p.priceScope,
+      verifiedAtMillis: p.verifiedAtMillis,
     })),
   };
 }
@@ -157,7 +167,7 @@ export async function runCoreV2(
   upstreamFetch: UpstreamFetch,
 ): Promise<V2Answer> {
   if (!message.trim() || message.length > MAX_TEXT || !apiKey ||
-    !["obi", "kwant"].includes(authority.providerId) ||
+    !["obi-pl", "kwant-pl"].includes(authority.providerId) ||
     !safeId(authority.currentBranchId) ||
     !authority.authorizedBranchIds.includes(authority.currentBranchId) ||
     authority.authorizedBranchIds.length > 20 ||
@@ -170,7 +180,7 @@ export async function runCoreV2(
   let previousId: string | undefined;
   let input: unknown = message;
   let localCalls = 0;
-  const expectedTool = authority.providerId === "obi" ? "find_obi_products_v2" : "find_kwant_products_v2";
+  const expectedTool = authority.providerId === "obi-pl" ? "find_obi_products_v2" : "find_kwant_products_v2";
   const instructions =
     "You are Taksula, a technical and commercial advisor. Decide independently whether tools are needed. " +
     "Use web_search for current external manufacturer documentation. Use local product lookup for provider product facts only. " +
