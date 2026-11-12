@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { runCoreV2 } from "../.test-dist/core-v2.js";
 
-const auth = { providerId: "obi", currentBranchId: "075", authorizedBranchIds: ["075", "076"] };
+const auth = { providerId: "obi-pl", currentBranchId: "075", authorizedBranchIds: ["075", "076"] };
 const response = (id, output) => new Response(JSON.stringify({
   id, status: "completed", model: "gpt-6-luna", output,
   usage: { input_tokens: 100, output_tokens: 30 },
@@ -35,10 +35,10 @@ test("verified card comes only from matching trusted provider bridge", async () 
   let calls = 0; const requests = [];
   const bridge = async req => {
     calls++;
-    assert.equal(req.providerId, "obi");
+    assert.equal(req.providerId, "obi-pl");
     assert.equal(req.branchId, "075");
-    return { status: "success", providerId: "obi", branchId: "075", products: [
-      { providerId: "obi", branchId: "075", productId: "1234", name: "Wyłącznik", stock: 3, price: 19.99, priceScope: "branch" },
+    return { status: "success", providerId: "obi-pl", branchId: "075", query: req.query, coverage: "requested_subset", products: [
+      { providerId: "obi-pl", branchId: "075", productId: "1234", name: "Wyłącznik", stock: 3, price: 19.99, priceScope: "branch", verifiedAtMillis: 1794520000000 },
     ] };
   };
   const result = await runCoreV2("Sprawdź wyłącznik", auth, bridge, "synthetic",
@@ -70,8 +70,8 @@ test("model branch hint cannot authorize third branch", async () => {
 test("unavailable provider facts cannot become cards", async () => {
   const requests = [];
   const result = await runCoreV2("Sprawdź", auth,
-    async () => ({ status: "unavailable", providerId: "obi", branchId: "075", products: [
-      { providerId: "obi", branchId: "075", productId: "1", name: "Fake", stock: 99, price: 2, priceScope: "branch" },
+    async () => ({ status: "unavailable", providerId: "obi-pl", branchId: "075", query: "gniazdo", coverage: "unknown", products: [
+      { providerId: "obi-pl", branchId: "075", productId: "1", name: "Fake", stock: 99, price: 2, priceScope: "branch", verifiedAtMillis: 1794520000000 },
     ] }), "synthetic",
     scripted([response("r1", [call("find_obi_products_v2", { branchId: "075", query: "gniazdo", limit: 1 })]),
       response("r2", [answer("Brak wiarygodnych wyników.")])], requests));
@@ -97,7 +97,7 @@ test("ordinary product description and w naszym OBI are forwarded verbatim, not 
 test("bounded multistep tool use and provider unavailable recovery", async () => {
   const requests = []; let calls = 0;
   const result = await runCoreV2("Porównaj informacje producenta i lokalny produkt", auth,
-    async req => { calls++; return { status: "unavailable", providerId: req.providerId, branchId: req.branchId, products: [] }; },
+    async req => { calls++; return { status: "unavailable", providerId: req.providerId, branchId: req.branchId, query: req.query, coverage: "unknown", products: [] }; },
     "synthetic", scripted([
       response("r1", [call("find_obi_products_v2", { branchId: "075", query: "A", limit: 1 }, "a")]),
       response("r2", [call("find_obi_products_v2", { branchId: "075", query: "B", limit: 1 }, "b")]),
