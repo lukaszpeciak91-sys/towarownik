@@ -76,7 +76,7 @@ const makeTool = (providerId: V2Provider) => ({
 const record = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v);
 const string = (v: unknown): v is string => typeof v === "string";
-const safeId = (v: unknown) => string(v) && BRANCH.test(v);
+const safeId = (v: unknown): v is string => string(v) && BRANCH.test(v);
 const empty = (status: V2ToolStatus, authority: V2Authority, branchId: string, reason: string): V2Evidence =>
   ({ status, providerId: authority.providerId, branchId, products: [], reason });
 function parseSearch(raw: unknown, authority: V2Authority): V2Search | null {
