@@ -15,7 +15,7 @@ import pl.lukaszpeciak.towarownik.product.provider.WorkingProfile
 internal class CoreV2AndroidToolBridge(
     private val executeProvider: suspend (AdvisorToolArguments) -> AdvisorToolExecutionResult,
 ) {
-    data class Scope private constructor(
+    class Scope private constructor(
         val providerId: String,
         val currentBranchId: String,
         val allowedBranchIds: Set<String>,
