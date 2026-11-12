@@ -104,7 +104,21 @@ function cleanEvidence(value: V2Evidence, request: V2Search): V2Evidence {
       (p.priceScope === null || p.priceScope === "branch" || p.priceScope === "online"))) {
     return empty("failure", { providerId: request.providerId, currentBranchId: request.branchId, authorizedBranchIds: [request.branchId] }, request.branchId, "invalid_provider_facts");
   }
-  return value;
+  return {
+    status: value.status,
+    providerId: request.providerId,
+    branchId: request.branchId,
+    ...(typeof value.reason === "string" ? { reason: value.reason.slice(0, 200) } : {}),
+    products: value.products.map(p => ({
+      providerId: request.providerId,
+      branchId: request.branchId,
+      productId: p.productId.slice(0, 128),
+      name: p.name.slice(0, 300),
+      stock: p.stock,
+      price: p.price,
+      priceScope: p.priceScope,
+    })),
+  };
 }
 function references(output: unknown[]): V2Reference[] {
   const sources: V2Reference[] = [];
@@ -151,6 +165,7 @@ export async function runCoreV2(
     throw new Error("invalid_v2_configuration");
   }
   const verified = new Map<string, V2Product>();
+  const collectedSources: V2Reference[] = [];
   const usage = { inputTokens: 0, outputTokens: 0 };
   let previousId: string | undefined;
   let input: unknown = message;
@@ -171,6 +186,7 @@ export async function runCoreV2(
       input,
       reasoning: { effort: OPENAI_REASONING_EFFORT },
       max_output_tokens: 2048,
+      max_tool_calls: 2,
       parallel_tool_calls: false,
       tool_choice: "auto",
       tools: [makeTool(authority.providerId), { type: "web_search" }],
@@ -186,6 +202,9 @@ export async function runCoreV2(
     if (!record(payload) || payload.status !== "completed" ||
       !string(payload.id) || !Array.isArray(payload.output)) throw new Error("v2_upstream_incomplete");
     const output: unknown[] = payload.output;
+    for (const source of references(output)) {
+      if (!collectedSources.some(s => s.url === source.url) && collectedSources.length < 8) collectedSources.push(source);
+    }
     if (record(payload.usage)) {
       const u = payload.usage;
       if (Number.isSafeInteger(u.input_tokens) && (u.input_tokens as number) >= 0) usage.inputTokens += u.input_tokens as number;
@@ -197,7 +216,7 @@ export async function runCoreV2(
     if (!calls.length) {
       const text = finalText(output);
       if (!text || text.length > MAX_TEXT) throw new Error("v2_invalid_final_text");
-      return { text, sources: references(output),
+      return { text, sources: collectedSources,
         products: [...verified.values()], status: "answered", model: OPENAI_MODEL,
         requests: step + 1, toolCalls: localCalls, usage };
     }
