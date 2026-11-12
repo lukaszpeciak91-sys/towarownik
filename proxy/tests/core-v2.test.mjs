@@ -87,7 +87,7 @@ test("only actual OpenAI URL citations are returned, never invented by local ans
   assert.deepEqual(result.sources, [{ title: "Producent", url: "https://example.com/manual" }]);
 });
 test("ordinary product description and w naszym OBI are forwarded verbatim, not parsed by security code", async () => {
-  for (const message of ["wyłącznik do montażu w puszce natynkowej", "Czy w naszym OBI jest ten model?", "farba do wnętrz Kraków"]) {
+  for (const message of ["wyłącznik do montażu w puszce natynkowej", "Czy w naszym OBI jest ten model?", "gniazdo na 5 bolców", "farba do wnętrz Kraków", "wyłącznik we wnęce"]) {
     const requests = [];
     await runCoreV2(message, auth, async () => { throw Error(); }, "synthetic",
       scripted([response("r1", [answer("Porada.")])], requests));
